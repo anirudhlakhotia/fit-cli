@@ -8,3 +8,4 @@ dist/
 *.kate-swp
 
 TODO.md
+.idea

@@ -30,6 +30,38 @@ npm start
    require `../couchbase-jvm-clients`, which the wizard will offer to clone.
 3. Choosing whether to use an existing Couchbase cluster or create a new one.
 
+## Structure
+
+The wizard is split into one file per step. `src/index.ts` only orchestrates;
+each step under `src/steps/` owns its own logic **and** a small CLI so it can be
+run on its own during development. Shared helpers live in `src/lib/`.
+
+```
+src/
+  index.ts                 wizard orchestrator (ties the steps together)
+  lib/
+    cli.ts                 isMain() + runCli() — shared step-CLI plumbing
+    proc.ts                run() — stream a child process (git, mvn) to the console
+    repos.ts               sibling-repo definitions + path/exists/clone helpers
+    sdks.ts                the list of SDKs FIT can test
+  steps/
+    ensure-repo.ts         ensure a sibling repo is present (clone if missing)
+    ensure-fit-grpc.ts     ensure fit-grpc is in the local Maven repo (build if stale)
+    choose-sdk.ts          pick which SDK to test
+    check-performer.ts     verify the chosen SDK's performer exists
+    choose-cluster.ts      pick an existing cluster or create a new one
+```
+
+### Running a single step
+
+Each step file's header comment shows how to run it directly. For example:
+
+```sh
+npx tsx src/steps/ensure-repo.ts fit-performer
+npx tsx src/steps/check-performer.ts dotnet
+npx tsx src/steps/ensure-fit-grpc.ts
+```
+
 ## Scripts
 
 - `npm start` — run the wizard with tsx.
