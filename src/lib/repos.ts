@@ -27,10 +27,17 @@ export const JVM_CLIENTS: Repo = {
   url: "https://github.com/couchbase/couchbase-jvm-clients",
 };
 
+export const JENKINS_SDK: Repo = {
+  name: "jenkins-sdk",
+  dir: "jenkins-sdk",
+  url: "https://github.com/couchbaselabs/jenkins-sdk",
+};
+
 /** Repos addressable by a short key, for the step CLIs. */
 export const REPOS = {
   "fit-performer": FIT_PERFORMER,
   "jvm-clients": JVM_CLIENTS,
+  "jenkins-sdk": JENKINS_SDK,
 } as const;
 
 export type RepoKey = keyof typeof REPOS;

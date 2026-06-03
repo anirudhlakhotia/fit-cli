@@ -7,6 +7,7 @@
  */
 import { select } from "@inquirer/prompts";
 import { runFunctionalTests } from "./workflows/fit-functional/guided/index.js";
+import { runBuildFitPerformer } from "./workflows/build-fit-performer/guided/index.js";
 import { runCli } from "./lib/cli.js";
 import { rootDirFromArgv } from "./lib/root.js";
 
@@ -19,13 +20,16 @@ async function main(): Promise<void> {
     message: "What would you like to do?",
     choices: [
       { name: "Run FIT functional tests", value: "functional-tests" },
-      // More options will follow.
+      { name: "Build a FIT performer", value: "build-fit-performer" },
     ],
   });
 
   switch (choice) {
     case "functional-tests":
       await runFunctionalTests(rootDir);
+      break;
+    case "build-fit-performer":
+      await runBuildFitPerformer(rootDir);
       break;
   }
 }

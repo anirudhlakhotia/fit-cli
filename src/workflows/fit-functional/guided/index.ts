@@ -9,10 +9,11 @@
  *   npx tsx src/workflows/fit-functional/guided/index.ts
  */
 import { isMain, runCli } from "../../../lib/cli.js";
-import { FIT_PERFORMER, JVM_CLIENTS } from "../../../lib/repos.js";
+import { FIT_PERFORMER } from "../../../lib/repos.js";
 import { rootDirFromArgv } from "../../../lib/root.js";
 import { chooseSdk } from "../../../steps/choose-sdk.js";
 import { ensureRepo } from "../../../steps/ensure-repo.js";
+import { ensureSdkWorkspace } from "../../../steps/ensure-sdk-workspace.js";
 import { selectOrCreateCluster } from "../../cluster-select-or-create/index.js";
 import { ensureFitGrpc } from "../steps/ensure-fit-grpc.js";
 import { generateFitConfiguration } from "../steps/generate-fit-configuration.js";
@@ -36,13 +37,9 @@ export async function runFunctionalTests(rootDir: string): Promise<void> {
   const sdk = await chooseSdk();
   checkPerformer(sdk, rootDir);
 
-  // JVM SDKs additionally need couchbase-jvm-clients.
-  if (sdk.jvm) {
-    console.log(`\n${sdk.name} is a JVM SDK, so it needs couchbase-jvm-clients.`);
-    if (!(await ensureRepo(JVM_CLIENTS, rootDir))) {
-      console.log("\nOnce couchbase-jvm-clients is in place, run fit-cli again.");
-      return;
-    }
+  if (!(await ensureSdkWorkspace(sdk, rootDir))) {
+    console.log("\nOnce the SDK workspace repos are in place, run fit-cli again.");
+    return;
   }
 
   // Existing cluster, or create a new one with cbdinocluster.

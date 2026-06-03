@@ -10,9 +10,9 @@ import { select } from "@inquirer/prompts";
 import { isMain, runCli } from "../lib/cli.js";
 import { SDKS, sdkByValue, type Sdk, type SdkValue } from "../lib/sdks.js";
 
-export async function chooseSdk(): Promise<Sdk> {
+export async function chooseSdk(message: string = "Which SDK do you want to test?"): Promise<Sdk> {
   const value = await select<SdkValue>({
-    message: "Which SDK do you want to test?",
+    message,
     choices: SDKS.map((sdk) => ({ name: sdk.name, value: sdk.value })),
   });
   // The selected value always comes from SDKS, so this is never undefined.

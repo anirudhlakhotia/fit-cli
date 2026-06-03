@@ -1,0 +1,1 @@
+Contains reusable pieces of logic that aren't workflow specific (`src/workflows`), and are FIT related (so they can't go in `src/lib`).

@@ -10,8 +10,10 @@
  * Run this workflow on its own:
  *   npx tsx src/workflows/cluster-select-or-create/index.ts
  */
+import { confirm } from "@inquirer/prompts";
 import { isMain, runCli } from "../../lib/cli.js";
 import { createCluster } from "../cluster-create/index.js";
+import { runClusterDiag } from "../cluster-diag/index.js";
 import { selectCluster, type SelectedCluster } from "../cluster-select/index.js";
 
 /** The outcome of getting a cluster to use. */
@@ -29,6 +31,13 @@ export type ClusterOutcome =
 export async function selectOrCreateCluster(): Promise<ClusterOutcome> {
   const selection = await selectCluster();
   if (selection.mode === "existing") {
+    const shouldRunDiag = await confirm({
+      message: "Sanity test the cluster now?",
+      default: true,
+    });
+    if (shouldRunDiag && !(await runClusterDiag(selection.cluster))) {
+      return { ready: false };
+    }
     return { ready: true, cluster: selection.cluster };
   }
 
