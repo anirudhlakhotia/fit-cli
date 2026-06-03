@@ -25,7 +25,9 @@ export interface RunningPerformer {
 }
 
 function performerLogFile(sdk: Sdk, version?: string): string {
-  return createLogFile(`performer-${sdk.value}-${version ?? "main"}`);
+  void sdk;
+  void version;
+  return createLogFile("performer");
 }
 
 async function startPerformerLogCapture(

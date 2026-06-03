@@ -33,12 +33,13 @@ test("combineArtifacts keeps first-seen order and removes duplicates", () => {
 
 test("formatArtifactsSection renders a table", () => {
   assert.equal(
-    formatArtifactsSection([
+    formatArtifactsSection("/tmp/fit-cli/run-123", [
       { filename: "performer.log", explanation: "Performer logs" },
       { filename: "FITConfiguration.json", explanation: "Generated FIT config" },
     ]),
     [
-      "Artifacts (relative to ARTIFACT_DIR):",
+      "Artifacts:",
+      "  ARTIFACT_DIR: /tmp/fit-cli/run-123",
       "Filename              | What it's for",
       "----------------------+--------------",
       "performer.log         | Performer logs",

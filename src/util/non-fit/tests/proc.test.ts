@@ -1,13 +1,23 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { createLogFile, runAndCaptureToFile, streamToFileInBackground } from "../proc.js";
 
 test("createLogFile writes under the shared fit-cli temp directory", () => {
-  const path = createLogFile("performer-node-main");
-  assert.match(path, /^\/tmp\/fit-cli\/run-[^/]+\/performer-node-main-.*\.log$/);
+  const path = createLogFile("performer");
+  assert.match(path, /^\/tmp\/fit-cli\/\d{8}-\d{6}(?:-\d+)?\/performer\.log$/);
+});
+
+test("createLogFile appends a numeric suffix when a log name is reused", () => {
+  const firstPath = createLogFile("driver");
+  writeFileSync(firstPath, "");
+  const secondPath = createLogFile("driver");
+
+  assert.match(firstPath, /\/driver\.log$/);
+  assert.match(secondPath, /\/driver-2\.log$/);
+  assert.notEqual(firstPath, secondPath);
 });
 
 test("streamToFileInBackground writes output as the command runs", async () => {

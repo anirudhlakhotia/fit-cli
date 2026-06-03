@@ -1,6 +1,5 @@
 import * as prompts from "@inquirer/prompts";
-import { randomUUID } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import { inspect } from "node:util";
 
@@ -24,14 +23,21 @@ export interface PromptResolveOptions<T> {
   deserializeResponse?: (response: unknown) => T;
 }
 
+export interface ReplayInvocation {
+  cwd: string;
+  entrypoint: string;
+  args: string[];
+}
+
 export interface PromptSessionHooks {
   onUnusedReplayPrompts?: (entries: readonly PromptLogEntry[]) => Promise<"continue" | "exit">;
 }
 
-interface PromptLogFile {
+export interface PromptLogFile {
   version: 1;
   createdAt: string;
   workflow?: string;
+  invocation?: ReplayInvocation;
   prompts: PromptLogEntry[];
 }
 
@@ -94,7 +100,23 @@ export function extractReplayFlag(
   return { replayRequested, replayDefaults, replayFile, positionals };
 }
 
-function loadPromptLog(logFile: string): PromptLogFile {
+function captureReplayInvocation(
+  argv: string[],
+  entrypoint: string | undefined = process.argv[1],
+  cwd = process.cwd(),
+): ReplayInvocation | undefined {
+  if (!entrypoint) {
+    return undefined;
+  }
+
+  return {
+    cwd,
+    entrypoint: isAbsolute(entrypoint) ? entrypoint : resolve(cwd, entrypoint),
+    args: extractReplayFlag(argv).positionals,
+  };
+}
+
+export function readPromptLog(logFile: string): PromptLogFile {
   let raw: Partial<PromptLogFile>;
   try {
     raw = JSON.parse(readFileSync(logFile, "utf8")) as Partial<PromptLogFile>;
@@ -110,17 +132,62 @@ function loadPromptLog(logFile: string): PromptLogFile {
     version: 1,
     createdAt: raw.createdAt,
     workflow: typeof raw.workflow === "string" ? raw.workflow : undefined,
+    invocation:
+      raw.invocation &&
+      typeof raw.invocation === "object" &&
+      typeof raw.invocation.cwd === "string" &&
+      typeof raw.invocation.entrypoint === "string" &&
+      Array.isArray(raw.invocation.args) &&
+      raw.invocation.args.every((arg) => typeof arg === "string")
+        ? {
+            cwd: raw.invocation.cwd,
+            entrypoint: raw.invocation.entrypoint,
+            args: raw.invocation.args,
+          }
+        : undefined,
     prompts: raw.prompts,
   };
 }
 
 function createRunDir(): string {
   mkdirSync(RUN_ROOT_DIR, { recursive: true, mode: 0o700 });
-  return mkdtempSync(join(RUN_ROOT_DIR, "run-"));
+  const now = new Date();
+  const timestamp = [
+    now.getFullYear().toString(),
+    String(now.getMonth() + 1).padStart(2, "0"),
+    String(now.getDate()).padStart(2, "0"),
+  ].join("") + `-${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}${String(now.getSeconds()).padStart(2, "0")}`;
+
+  for (let attempt = 1; ; attempt++) {
+    const suffix = attempt === 1 ? "" : `-${attempt}`;
+    const runDir = join(RUN_ROOT_DIR, `${timestamp}${suffix}`);
+    try {
+      mkdirSync(runDir, { mode: 0o700 });
+      return runDir;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "EEXIST") {
+        throw err;
+      }
+    }
+  }
+}
+
+function createRunFilePathInDir(runDir: string, filename: string): string {
+  const dotIndex = filename.lastIndexOf(".");
+  const stem = dotIndex > 0 ? filename.slice(0, dotIndex) : filename;
+  const extension = dotIndex > 0 ? filename.slice(dotIndex) : "";
+
+  for (let attempt = 1; ; attempt++) {
+    const suffix = attempt === 1 ? "" : `-${attempt}`;
+    const path = join(runDir, `${stem}${suffix}${extension}`);
+    if (!existsSync(path)) {
+      return path;
+    }
+  }
 }
 
 function createLogFile(runDir: string): string {
-  return join(runDir, `fit-cli-${new Date().toISOString().replaceAll(":", "-")}-${randomUUID()}.json`);
+  return createRunFilePathInDir(runDir, "prompts.json");
 }
 
 function formatReplayResponse(kind: PromptKind, response: unknown): string {
@@ -143,6 +210,7 @@ export class PromptSession {
     public readonly logFile: string,
     private readonly createdAt: string,
     private workflow: string | undefined,
+    private readonly invocation: ReplayInvocation | undefined,
     private readonly prompts: PromptLogEntry[],
     private readonly hooks: PromptSessionHooks,
   ) {}
@@ -157,7 +225,7 @@ export class PromptSession {
     }
     if (replayFile) {
       const resolved = isAbsolute(replayFile) ? replayFile : resolve(process.cwd(), replayFile);
-      const log = loadPromptLog(resolved);
+      const log = readPromptLog(resolved);
       console.log(`ARTIFACT_DIR: ${runDir}`);
       console.log(
         `${replayDefaults ? "Replaying prompt log as defaults" : "Replaying prompt log"}: ${resolved}\n`,
@@ -168,6 +236,7 @@ export class PromptSession {
         resolved,
         log.createdAt,
         log.workflow,
+        log.invocation,
         log.prompts,
         hooks,
       );
@@ -175,7 +244,16 @@ export class PromptSession {
 
     const logFile = createLogFile(runDir);
     const createdAt = new Date().toISOString();
-    const session = new PromptSession("record", runDir, logFile, createdAt, undefined, [], hooks);
+    const session = new PromptSession(
+      "record",
+      runDir,
+      logFile,
+      createdAt,
+      undefined,
+      captureReplayInvocation(argv),
+      [],
+      hooks,
+    );
     session.persist();
     console.log(`ARTIFACT_DIR: ${runDir}`);
     console.log(`Prompt log: ${logFile}\n`);
@@ -184,6 +262,10 @@ export class PromptSession {
 
   getWorkflow(): string | undefined {
     return this.workflow;
+  }
+
+  getInvocation(): ReplayInvocation | undefined {
+    return this.invocation;
   }
 
   replaysStoredWorkflow(): boolean {
@@ -357,7 +439,13 @@ export class PromptSession {
     writeFileSync(
       this.logFile,
       `${JSON.stringify(
-        { version: 1, createdAt: this.createdAt, workflow: this.workflow, prompts: this.prompts },
+        {
+          version: 1,
+          createdAt: this.createdAt,
+          workflow: this.workflow,
+          invocation: this.invocation,
+          prompts: this.prompts,
+        },
         null,
         2,
       )}\n`,
@@ -377,4 +465,10 @@ export function ensurePromptSession(argv: string[] = process.argv.slice(2)): Pro
 
 export function ensureRunDir(argv: string[] = process.argv.slice(2)): string {
   return ensurePromptSession(argv).runDir;
+}
+
+export function createRunFilePath(filename: string, argv: string[] = process.argv.slice(2)): string {
+  const runDir = ensureRunDir(argv);
+  mkdirSync(runDir, { recursive: true, mode: 0o700 });
+  return createRunFilePathInDir(runDir, filename);
 }

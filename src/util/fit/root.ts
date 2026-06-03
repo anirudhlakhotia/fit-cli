@@ -79,6 +79,8 @@ export function extractRootFlag(argv: string[]): { override?: string; positional
 export function rootDirFromArgv(argv: string[]): { rootDir: string; positionals: string[] } {
   const { override, positionals } = extractRootFlag(argv);
   const rootDir = resolveRootDir(override);
-  console.log(`Using ROOT_DIR: ${rootDir}\n`);
+  console.log(
+    `Using ROOT_DIR: ${rootDir}\nOverride with --root <dir>, -r <dir>, or FIT_ROOT=/path.\n`,
+  );
   return { rootDir, positionals };
 }

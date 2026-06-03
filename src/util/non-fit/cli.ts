@@ -27,7 +27,7 @@ export function runCli(main: () => Promise<void | ArtifactCollection>): void {
   Promise.resolve()
     .then(() => main())
     .then((result) => {
-      artifactsOutput = formatArtifactsSection(result?.artifacts ?? []);
+      artifactsOutput = formatArtifactsSection(promptSession.runDir, result?.artifacts ?? []);
       return promptSession.finishReplay();
     })
     .then(() => {
@@ -36,7 +36,6 @@ export function runCli(main: () => Promise<void | ArtifactCollection>): void {
       }
     })
     .finally(() => {
-      console.log(`\n${promptSession.formatRunReminder()}`);
       const replayReminder = promptSession.formatReplayReminder();
       if (replayReminder) {
         console.log(`\n${replayReminder}`);

@@ -95,9 +95,29 @@ test("record mode writes prompt responses to a log file", async () => {
 test("record mode creates a per-run directory under /tmp/fit-cli", () => {
   const session = PromptSession.fromArgv([]);
 
-  assert.match(session.runDir, /^\/tmp\/fit-cli\/run-/);
+  assert.match(session.runDir, /^\/tmp\/fit-cli\/\d{8}-\d{6}(?:-\d+)?$/);
   assert.equal(statSync(session.runDir).isDirectory(), true);
-  assert.equal(session.logFile.startsWith(`${session.runDir}/`), true);
+  assert.equal(session.logFile, join(session.runDir, "prompts.json"));
+});
+
+test("record mode persists the original invocation metadata", () => {
+  const originalArgv = process.argv;
+  process.argv = [originalArgv[0] ?? "node", "/tmp/select-fit-tests.ts", "--root", "/ws", "status"];
+
+  try {
+    const session = PromptSession.fromArgv(process.argv.slice(2));
+    const log = JSON.parse(readFileSync(session.logFile, "utf8")) as {
+      invocation?: { cwd: string; entrypoint: string; args: string[] };
+    };
+
+    assert.deepEqual(log.invocation, {
+      cwd: process.cwd(),
+      entrypoint: "/tmp/select-fit-tests.ts",
+      args: ["--root", "/ws", "status"],
+    });
+  } finally {
+    process.argv = originalArgv;
+  }
 });
 
 test("record mode can serialize a prompt response before saving it", async () => {
@@ -471,4 +491,33 @@ test("replay mode loads stored workflow metadata", () => {
 
   const session = PromptSession.fromArgv(["--replay", logFile]);
   assert.equal(session.getWorkflow(), "functional-tests");
+});
+
+test("replay mode loads stored invocation metadata", () => {
+  const dir = mkdtempSync(join(tmpdir(), "fit-cli-replay-"));
+  const logFile = join(dir, "invocation.json");
+  writeFileSync(
+    logFile,
+    JSON.stringify(
+      {
+        version: 1,
+        createdAt: "2026-06-03T00:00:00.000Z",
+        invocation: {
+          cwd: "/workspace",
+          entrypoint: "/workspace/src/workflows/fit-functional/workflows/select-fit-tests/index.ts",
+          args: ["--root", "/workspace"],
+        },
+        prompts: [],
+      },
+      null,
+      2,
+    ),
+  );
+
+  const session = PromptSession.fromArgv(["--replay", logFile]);
+  assert.deepEqual(session.getInvocation(), {
+    cwd: "/workspace",
+    entrypoint: "/workspace/src/workflows/fit-functional/workflows/select-fit-tests/index.ts",
+    args: ["--root", "/workspace"],
+  });
 });

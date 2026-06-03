@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  buildFitTestChoices,
   buildDefaultFitTestSelection,
   buildFitTestSelection,
   deserializeSelectedFitTestsFromReplay,
@@ -26,15 +27,16 @@ test("listFitTestsArgs uses mvnw exec plugin to find test files", () => {
 test("parseFitTests converts relative paths into display names and class names", () => {
   assert.deepEqual(
     parseFitTests([
-      "java/com/couchbase/transactions/StandardTest.java",
       "scala/com/couchbase/situational/tests/CngTest.scala",
+      "java/com/couchbase/transactions/StandardTest.java",
+      "scala/com/couchbase/transactions/CngTest.scala",
       "java/com/couchbase/client/analytics/DisconnectTest.java",
     ].join("\n")),
     [
       {
         fileName: "CngTest.scala",
-        relativePath: "scala/com/couchbase/situational/tests/CngTest.scala",
-        className: "com.couchbase.situational.tests.CngTest",
+        relativePath: "scala/com/couchbase/transactions/CngTest.scala",
+        className: "com.couchbase.transactions.CngTest",
       },
       {
         fileName: "DisconnectTest.java",
@@ -50,6 +52,36 @@ test("parseFitTests converts relative paths into display names and class names",
   );
 });
 
+test("buildFitTestChoices shows relative paths while keeping short labels concise", () => {
+  const allTests: FitTestCase[] = [
+    {
+      fileName: "GetTest.java",
+      relativePath: "java/com/couchbase/kv/GetTest.java",
+      className: "com.couchbase.kv.GetTest",
+    },
+    {
+      fileName: "GetTest.java",
+      relativePath: "java/com/couchbase/query/GetTest.java",
+      className: "com.couchbase.query.GetTest",
+    },
+  ];
+
+  assert.deepEqual(buildFitTestChoices(allTests), [
+    {
+      name: "java/com/couchbase/kv/GetTest.java",
+      short: "GetTest.java",
+      value: "com.couchbase.kv.GetTest",
+      checked: true,
+    },
+    {
+      name: "java/com/couchbase/query/GetTest.java",
+      short: "GetTest.java",
+      value: "com.couchbase.query.GetTest",
+      checked: true,
+    },
+  ]);
+});
+
 test("buildFitTestSelection omits the surefire selector when all tests are chosen", () => {
   const allTests: FitTestCase[] = [
     {
@@ -59,8 +91,8 @@ test("buildFitTestSelection omits the surefire selector when all tests are chose
     },
     {
       fileName: "CngTest.scala",
-      relativePath: "scala/com/couchbase/situational/tests/CngTest.scala",
-      className: "com.couchbase.situational.tests.CngTest",
+      relativePath: "scala/com/couchbase/transactions/CngTest.scala",
+      className: "com.couchbase.transactions.CngTest",
     },
   ];
 
@@ -80,15 +112,15 @@ test("buildFitTestSelection builds a selector for a subset", () => {
     },
     {
       fileName: "CngTest.scala",
-      relativePath: "scala/com/couchbase/situational/tests/CngTest.scala",
-      className: "com.couchbase.situational.tests.CngTest",
+      relativePath: "scala/com/couchbase/transactions/CngTest.scala",
+      className: "com.couchbase.transactions.CngTest",
     },
   ];
 
   assert.deepEqual(buildFitTestSelection(allTests, [allTests[1].className]), {
     allTests,
     selectedTests: [allTests[1]],
-    mavenTestSelector: "com.couchbase.situational.tests.CngTest",
+    mavenTestSelector: "com.couchbase.transactions.CngTest",
   });
 });
 
@@ -143,8 +175,8 @@ test("serializeSelectedFitTestsForReplay keeps the all-tests case compact", () =
     },
     {
       fileName: "CngTest.scala",
-      relativePath: "scala/com/couchbase/situational/tests/CngTest.scala",
-      className: "com.couchbase.situational.tests.CngTest",
+      relativePath: "scala/com/couchbase/transactions/CngTest.scala",
+      className: "com.couchbase.transactions.CngTest",
     },
   ];
 
@@ -163,8 +195,8 @@ test("deserializeSelectedFitTestsFromReplay expands the compact all-tests marker
     },
     {
       fileName: "CngTest.scala",
-      relativePath: "scala/com/couchbase/situational/tests/CngTest.scala",
-      className: "com.couchbase.situational.tests.CngTest",
+      relativePath: "scala/com/couchbase/transactions/CngTest.scala",
+      className: "com.couchbase.transactions.CngTest",
     },
   ];
 
@@ -183,8 +215,8 @@ test("summarizeFitTestSelection avoids dumping the full allTests list", () => {
     },
     {
       fileName: "CngTest.scala",
-      relativePath: "scala/com/couchbase/situational/tests/CngTest.scala",
-      className: "com.couchbase.situational.tests.CngTest",
+      relativePath: "scala/com/couchbase/transactions/CngTest.scala",
+      className: "com.couchbase.transactions.CngTest",
     },
     {
       fileName: "DisconnectTest.java",
@@ -204,7 +236,7 @@ test("summarizeFitTestSelection avoids dumping the full allTests list", () => {
       selectedCount: 3,
       selectedClassPreview: [
         "com.couchbase.transactions.StandardTest",
-        "com.couchbase.situational.tests.CngTest",
+        "com.couchbase.transactions.CngTest",
       ],
       selectedClassPreviewOmitted: 1,
       mavenTestSelector: undefined,

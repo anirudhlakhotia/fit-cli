@@ -1,8 +1,7 @@
 import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
 import { closeSync, createWriteStream, mkdirSync, openSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { ensureRunDir } from "./replay.js";
+import { createRunFilePath } from "./replay.js";
 
 /**
  * Run a command, streaming its output straight to the console, and resolve when
@@ -50,11 +49,9 @@ export function capture(command: string, args: string[], cwd: string = process.c
   });
 }
 
-/** Create a timestamped log file path under the shared fit-cli temp directory. */
-export function createLogFile(prefix: string, extension: string = "log"): string {
-  const runDir = ensureRunDir();
-  mkdirSync(runDir, { recursive: true, mode: 0o700 });
-  return `${runDir}/${prefix}-${new Date().toISOString().replaceAll(":", "-")}-${randomUUID()}.${extension}`;
+/** Create a log file path under the shared fit-cli temp directory. */
+export function createLogFile(name: string, extension: string = "log"): string {
+  return createRunFilePath(`${name}.${extension}`);
 }
 
 /**

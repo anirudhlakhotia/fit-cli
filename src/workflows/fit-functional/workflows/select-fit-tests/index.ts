@@ -50,6 +50,7 @@ interface PromptChoiceLike {
 }
 
 const ALL_FIT_TESTS_SELECTED = "All FIT tests selected";
+const EXCLUDED_RELATIVE_PATH_PREFIX = "scala/com/couchbase/situational/";
 
 const TEST_LISTING_ARGS = [
   "-q",
@@ -70,6 +71,7 @@ export function parseFitTests(output: string): FitTestCase[] {
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter((line) => line.length > 0)
+    .filter((relativePath) => !relativePath.startsWith(EXCLUDED_RELATIVE_PATH_PREFIX))
     .map((relativePath) => ({
       relativePath,
       fileName: basename(relativePath),

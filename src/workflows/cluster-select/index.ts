@@ -16,8 +16,13 @@ import { isMain, runCli } from "../../util/non-fit/cli.js";
 import { askConnectionString } from "./ask-connection-string.js";
 import { askCredentials, type Credentials } from "./ask-credentials.js";
 import { askTls, type TlsConfig } from "./ask-tls.js";
-import type { ClusterFlavour } from "./classify-connection-string.js";
+import {
+  classifyConnectionString,
+  type ClusterFlavour,
+  type SupportedCluster,
+} from "./classify-connection-string.js";
 import { chooseCluster } from "./choose-cluster.js";
+import { detectCbdinocluster } from "./detect-cbdinocluster.js";
 
 /** Everything needed to connect to an existing cluster. */
 export interface SelectedCluster {
@@ -35,6 +40,27 @@ export type ClusterSelection =
   | { mode: "create" };
 
 /**
+ * Resolve the connection string for an existing cluster: if cbdinocluster is
+ * installed, offer to pick one of its running clusters and use that; otherwise
+ * (or if its connection string isn't one this tool can use) fall back to asking
+ * for it by hand.
+ */
+async function resolveConnection(): Promise<SupportedCluster> {
+  const detected = await detectCbdinocluster();
+  if (detected) {
+    const classification = classifyConnectionString(detected.connectionString);
+    if (classification.kind === "supported") {
+      return classification;
+    }
+    console.log(
+      `cbdinocluster returned ${detected.connectionString}, which this tool can't use ` +
+        "directly — please enter a connection string instead.\n",
+    );
+  }
+  return askConnectionString();
+}
+
+/**
  * Walk the user through choosing a cluster. For an existing cluster this gathers
  * all the details needed to connect; for "create" it just records the intent.
  */
@@ -44,7 +70,7 @@ export async function selectCluster(): Promise<ClusterSelection> {
     return { mode: "create" };
   }
 
-  const connection = await askConnectionString();
+  const connection = await resolveConnection();
   const credentials = await askCredentials();
   // couchbase:// is non-TLS; only couchbases:// needs a TLS decision.
   const tls: TlsConfig =

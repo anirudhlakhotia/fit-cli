@@ -21,6 +21,10 @@ function resolveRepo(arg: string | undefined): Repo | undefined {
   return REPOS[arg as RepoKey] ?? Object.values(REPOS).find((repo) => repo.name === arg);
 }
 
+export function cloneRepoChoiceLabel(repo: Repo, rootDir: string): string {
+  return `Clone it from ${repo.url} to ${repoPath(repo, rootDir)} (under ROOT_DIR: ${rootDir})`;
+}
+
 /**
  * @returns true if the repo is ready to use, false if the user chose to exit or
  * the clone failed.
@@ -37,7 +41,7 @@ export async function ensureRepo(repo: Repo, rootDir: string): Promise<boolean> 
     promptId: `repo.${repo.name}.missing.action`,
     message: `What would you like to do about the missing ${repo.name}?`,
     choices: [
-      { name: `Clone it from ${repo.url}`, value: "clone" },
+      { name: cloneRepoChoiceLabel(repo, rootDir), value: "clone" },
       { name: "Exit so I can sort it out myself", value: "exit" },
     ],
   });
@@ -46,7 +50,7 @@ export async function ensureRepo(repo: Repo, rootDir: string): Promise<boolean> 
     return false;
   }
 
-  console.log(`\nCloning ${repo.name}...\n`);
+  console.log(`\nCloning ${repo.name} into ${repoPath(repo, rootDir)}...\n`);
   try {
     await cloneRepo(repo, rootDir);
     console.log(`\n✓ Cloned ${repo.name} to ${repoPath(repo, rootDir)}`);

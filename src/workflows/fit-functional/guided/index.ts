@@ -18,7 +18,6 @@ import { ensureSdkWorkspace } from "../../../util/sdk/ensure-sdk-workspace.js";
 import { selectOrCreateCluster } from "../../cluster-select-or-create/index.js";
 import { checkBuildAndRunPerformer } from "../../performers/check-build-and-run-performer/index.js";
 import { stopPerformerContainers } from "../../performers/stop-performer/index.js";
-import { ensureFitGrpc } from "../steps/ensure-fit-grpc.js";
 import { generateFitConfiguration } from "../steps/generate-fit-configuration.js";
 import { selectAndRunFitTests } from "../workflows/select-and-run-fit-tests/index.js";
 
@@ -29,12 +28,6 @@ export async function runFunctionalTests(rootDir: string): Promise<ArtifactColle
   // FIT itself must be present.
   if (!(await ensureRepo(FIT_PERFORMER, rootDir))) {
     console.log("\nOnce transactions-fit-performer is in place, run fit-cli again.");
-    return { artifacts };
-  }
-
-  // fit-grpc must be built into the local Maven repo.
-  if (!(await ensureFitGrpc(rootDir))) {
-    console.log("\nOnce fit-grpc is built, run fit-cli again.");
     return { artifacts };
   }
 

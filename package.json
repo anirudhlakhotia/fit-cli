@@ -8,7 +8,7 @@
   },
   "scripts": {
     "start": "tsx src/index.ts",
-    "replay": "tsx src/index.ts --replay",
+    "replay": "tsx src/util/non-fit/replay-entry.ts --replay",
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "typecheck": "tsc --noEmit",

@@ -63,11 +63,14 @@ export function formatArtifactsTable(artifacts: readonly Artifact[]): string | u
 }
 
 /** Format the full artifact section shown at the end of a user-facing run. */
-export function formatArtifactsSection(artifacts: readonly Artifact[]): string | undefined {
+export function formatArtifactsSection(
+  artifactDir: string,
+  artifacts: readonly Artifact[],
+): string | undefined {
   const table = formatArtifactsTable(artifacts);
   if (!table) {
     return undefined;
   }
 
-  return ["Artifacts (relative to ARTIFACT_DIR):", table].join("\n");
+  return ["Artifacts:", `  ARTIFACT_DIR: ${artifactDir}`, table].join("\n");
 }

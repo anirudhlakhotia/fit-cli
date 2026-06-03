@@ -21,7 +21,7 @@ export interface TestRunResult extends ArtifactCollection {
 }
 
 function fitTestLogFile(): string {
-  return createLogFile("fit-test-driver");
+  return createLogFile("driver");
 }
 
 /** Build the `./mvnw` args needed to run the FIT test-driver. */
@@ -38,7 +38,7 @@ export function runTestDriverArgs(
     "test-driver",
     "--also-make",
     "-Dmaven.test.failure.ignore",
-    "-DfailIfNoTests=false",
+    "-Dsurefire.failIfNoSpecifiedTests=false",
     ...(selection.mavenTestSelector ? [`-Dtest=${selection.mavenTestSelector}`] : []),
     ...(fitConfigPath ? [`-Dfit.config=${fitConfigPath}`] : []),
     "test",
