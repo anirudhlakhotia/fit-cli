@@ -1,10 +1,10 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { run } from "./proc.js";
+import { run } from "../non-fit/proc.js";
 
 /**
  * A repository that FIT depends on. These live directly under ROOT_DIR (see
- * lib/root.ts), e.g. <ROOT_DIR>/transactions-fit-performer.
+ * util/fit/root.ts), e.g. <ROOT_DIR>/transactions-fit-performer.
  */
 export interface Repo {
   /** Human-readable name shown to the user. */

@@ -15,8 +15,8 @@
  *
  * Prints the resulting tls value as JSON.
  */
-import { isMain, runCli } from "../../lib/cli.js";
-import { input, select } from "../../lib/prompts.js";
+import { isMain, runCli } from "../../util/non-fit/cli.js";
+import { input, select } from "../../util/non-fit/prompts.js";
 import type { ClusterFlavour } from "./classify-connection-string.js";
 
 /** The tls section of clusterAccess: null (none), insecure, or a cert path. */

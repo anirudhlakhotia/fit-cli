@@ -5,11 +5,11 @@
  * point at another workspace):
  *   npx tsx src/workflows/performers/run-performer/index.ts
  */
-import { isMain, runCli } from "../../../lib/cli.js";
-import { run } from "../../../lib/proc.js";
-import { rootDirFromArgv } from "../../../lib/root.js";
-import { type Sdk } from "../../../lib/sdks.js";
-import { chooseSdk } from "../../../steps/choose-sdk.js";
+import { isMain, runCli } from "../../../util/non-fit/cli.js";
+import { run } from "../../../util/non-fit/proc.js";
+import { rootDirFromArgv } from "../../../util/fit/root.js";
+import { type Sdk } from "../../../util/sdk/sdks.js";
+import { chooseSdk } from "../../../util/sdk/choose-sdk.js";
 import { askVersion } from "../build-performer/ask-version.js";
 import { buildPerformerImageName } from "../build-performer/build-performer.js";
 import { checkAndBuildPerformer } from "../check-and-build-performer/index.js";

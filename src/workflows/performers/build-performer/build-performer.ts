@@ -5,11 +5,11 @@
  *   npx tsx src/workflows/performers/build-performer/build-performer.ts java
  *   npx tsx src/workflows/performers/build-performer/build-performer.ts java main --root /some/workspace
  */
-import { isMain, runCli } from "../../../lib/cli.js";
-import { run } from "../../../lib/proc.js";
-import { JENKINS_SDK, repoPath } from "../../../lib/repos.js";
-import { rootDirFromArgv } from "../../../lib/root.js";
-import { SDKS, sdkByValue, type Sdk } from "../../../lib/sdks.js";
+import { isMain, runCli } from "../../../util/non-fit/cli.js";
+import { run } from "../../../util/non-fit/proc.js";
+import { JENKINS_SDK, repoPath } from "../../../util/fit/repos.js";
+import { rootDirFromArgv } from "../../../util/fit/root.js";
+import { SDKS, sdkByValue, type Sdk } from "../../../util/sdk/sdks.js";
 
 /** Normalize arbitrary text into something safe for a Docker image component. */
 export function dockerImageComponent(value: string): string {

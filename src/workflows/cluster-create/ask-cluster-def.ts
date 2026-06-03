@@ -9,8 +9,8 @@
  *
  * Prints the gathered answers as JSON.
  */
-import { isMain, runCli } from "../../lib/cli.js";
-import { checkbox, confirm, input, number, select } from "../../lib/prompts.js";
+import { isMain, runCli } from "../../util/non-fit/cli.js";
+import { checkbox, confirm, input, number, select } from "../../util/non-fit/prompts.js";
 import type { ClusterDef } from "./build-cluster-def.js";
 
 /** Services offered, with the FIT-typical set selected by default. */

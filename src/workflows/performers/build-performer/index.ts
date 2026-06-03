@@ -5,12 +5,12 @@
  * point at another workspace):
  *   npx tsx src/workflows/performers/build-performer/index.ts
  */
-import { isMain, runCli } from "../../../lib/cli.js";
-import { JENKINS_SDK } from "../../../lib/repos.js";
-import { rootDirFromArgv } from "../../../lib/root.js";
-import { chooseSdk } from "../../../steps/choose-sdk.js";
-import { ensureRepo } from "../../../steps/ensure-repo.js";
-import { ensureSdkWorkspace } from "../../../steps/ensure-sdk-workspace.js";
+import { isMain, runCli } from "../../../util/non-fit/cli.js";
+import { JENKINS_SDK } from "../../../util/fit/repos.js";
+import { rootDirFromArgv } from "../../../util/fit/root.js";
+import { chooseSdk } from "../../../util/sdk/choose-sdk.js";
+import { ensureRepo } from "../../../util/fit/ensure-repo.js";
+import { ensureSdkWorkspace } from "../../../util/sdk/ensure-sdk-workspace.js";
 import { askVersion } from "./ask-version.js";
 import {
   buildPerformer,

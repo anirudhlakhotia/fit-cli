@@ -12,7 +12,7 @@
  * INFO/WARN noise); we take the last line that looks like a Couchbase connection
  * string, so stray log lines on the same stream don't trip us up.
  */
-import { isMain, runCli } from "../../lib/cli.js";
+import { isMain, runCli } from "../../util/non-fit/cli.js";
 
 const CONNSTR_LINE = /^(?:couchbases?|couchbase2):\/\/\S+$/i;
 

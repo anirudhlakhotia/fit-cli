@@ -9,7 +9,7 @@
  * Run this workflow on its own (this really does allocate a cluster):
  *   npx tsx src/workflows/cluster-create/index.ts
  */
-import { isMain, runCli } from "../../lib/cli.js";
+import { isMain, runCli } from "../../util/non-fit/cli.js";
 import { allocateCluster, askDeployer } from "./allocate-cluster.js";
 import { askClusterDef } from "./ask-cluster-def.js";
 import { buildClusterDef } from "./build-cluster-def.js";

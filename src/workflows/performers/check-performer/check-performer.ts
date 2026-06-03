@@ -13,12 +13,12 @@
  */
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { isMain, runCli } from "../../../lib/cli.js";
-import { capture } from "../../../lib/proc.js";
-import { FIT_PERFORMER, JVM_CLIENTS, repoPath } from "../../../lib/repos.js";
-import { rootDirFromArgv } from "../../../lib/root.js";
-import { SDKS, sdkByValue, type Sdk } from "../../../lib/sdks.js";
-import { findOnPath } from "../../../lib/which.js";
+import { isMain, runCli } from "../../../util/non-fit/cli.js";
+import { capture } from "../../../util/non-fit/proc.js";
+import { FIT_PERFORMER, JVM_CLIENTS, repoPath } from "../../../util/fit/repos.js";
+import { rootDirFromArgv } from "../../../util/fit/root.js";
+import { SDKS, sdkByValue, type Sdk } from "../../../util/sdk/sdks.js";
+import { findOnPath } from "../../../util/non-fit/which.js";
 import { buildPerformerImageName } from "../build-performer/build-performer.js";
 
 export interface PerformerStatus {

@@ -17,11 +17,11 @@
 import { existsSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { isMain, runCli } from "../../../lib/cli.js";
-import { confirm } from "../../../lib/prompts.js";
-import { run } from "../../../lib/proc.js";
-import { FIT_PERFORMER, repoPath } from "../../../lib/repos.js";
-import { rootDirFromArgv } from "../../../lib/root.js";
+import { isMain, runCli } from "../../../util/non-fit/cli.js";
+import { confirm } from "../../../util/non-fit/prompts.js";
+import { run } from "../../../util/non-fit/proc.js";
+import { FIT_PERFORMER, repoPath } from "../../../util/fit/repos.js";
+import { rootDirFromArgv } from "../../../util/fit/root.js";
 
 /**
  * Location of the fit-grpc artifact in the local Maven repository. Building FIT

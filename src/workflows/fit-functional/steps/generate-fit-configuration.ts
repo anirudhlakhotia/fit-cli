@@ -1,6 +1,6 @@
 /**
  * Step: turn a selected cluster into a FITConfiguration.json — build the config
- * and write it (backing up any existing hand-written config first).
+ * and write it to a fresh file for passing to test-driver via `-Dfit.config`.
  *
  * Cluster selection itself lives in the reusable src/workflows/cluster-select
  * workflow; this step only deals with FIT configuration.
@@ -9,32 +9,30 @@
  * generates its config; add --root <dir> to point elsewhere):
  *   npx tsx src/workflows/fit-functional/steps/generate-fit-configuration.ts
  */
-import { isMain, runCli } from "../../../lib/cli.js";
-import { rootDirFromArgv } from "../../../lib/root.js";
+import { isMain, runCli } from "../../../util/non-fit/cli.js";
+import { rootDirFromArgv } from "../../../util/fit/root.js";
 import { selectCluster, type SelectedCluster } from "../../cluster-select/index.js";
 import { buildFitConfiguration } from "./build-fit-configuration.js";
 import {
   fitConfigDocPath,
-  fitConfigPath,
   writeFitConfiguration,
 } from "./write-fit-configuration.js";
 
 /** Build and write a FITConfiguration.json for an already-selected cluster. */
-export function generateFitConfiguration(cluster: SelectedCluster, rootDir: string): void {
+export function generateFitConfiguration(cluster: SelectedCluster, rootDir: string): string {
   const config = buildFitConfiguration(cluster);
 
   console.log(
     `\nGenerating a FITConfiguration.json for you. You can also produce this by hand by ` +
       `following ${fitConfigDocPath(rootDir)}.`,
   );
-  console.log(`\nWriting ${fitConfigPath(rootDir)}:\n`);
+  const { path } = writeFitConfiguration(config);
+
+  console.log(`\nWriting ${path}:\n`);
   console.log(JSON.stringify(config, null, 2));
 
-  const { backupPath } = writeFitConfiguration(config, rootDir);
-  if (backupPath) {
-    console.log(`\nYour previous config was not auto-generated, so it was backed up to:\n${backupPath}`);
-  }
-  console.log(`\n✓ Wrote ${fitConfigPath(rootDir)}`);
+  console.log(`\n✓ Wrote ${path}`);
+  return path;
 }
 
 if (isMain(import.meta.url)) {

@@ -6,8 +6,8 @@
  *
  * Prints the chosen version, or an empty string for main.
  */
-import { isMain, runCli } from "../../../lib/cli.js";
-import { input } from "../../../lib/prompts.js";
+import { isMain, runCli } from "../../../util/non-fit/cli.js";
+import { input } from "../../../util/non-fit/prompts.js";
 
 /** Ask which SDK version to build; blank means build main. */
 export async function askVersion(): Promise<string | undefined> {

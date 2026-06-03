@@ -9,8 +9,8 @@
  *
  * Prints the resulting supported classification as JSON.
  */
-import { isMain, runCli } from "../../lib/cli.js";
-import { input } from "../../lib/prompts.js";
+import { isMain, runCli } from "../../util/non-fit/cli.js";
+import { input } from "../../util/non-fit/prompts.js";
 import { classifyConnectionString, type SupportedCluster } from "./classify-connection-string.js";
 
 /** Tell the user which kind of cluster their (supported) string points at. */

@@ -21,10 +21,14 @@ export function isMain(metaUrl: string): boolean {
  * prints and exits non-zero.
  */
 export function runCli(main: () => Promise<void>): void {
+  const promptSession = ensurePromptSession(process.argv.slice(2));
   Promise.resolve()
-    .then(() => {
-      ensurePromptSession(process.argv.slice(2));
-      return main();
+    .then(() => main())
+    .finally(() => {
+      const replayReminder = promptSession.formatReplayReminder();
+      if (replayReminder) {
+        console.log(`\n${replayReminder}`);
+      }
     })
     .catch((err) => {
       if (err instanceof Error && err.name === "ExitPromptError") {

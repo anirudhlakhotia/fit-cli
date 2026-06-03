@@ -2,13 +2,13 @@
  * Step: ask which SDK to test and return it.
  *
  * Run on its own:
- *   npx tsx src/steps/choose-sdk.ts
+ *   npx tsx src/util/sdk/choose-sdk.ts
  *
  * Prints the chosen SDK as JSON.
  */
-import { select } from "../lib/prompts.js";
-import { isMain, runCli } from "../lib/cli.js";
-import { SDKS, sdkByValue, type Sdk, type SdkValue } from "../lib/sdks.js";
+import { select } from "../non-fit/prompts.js";
+import { isMain, runCli } from "../non-fit/cli.js";
+import { SDKS, sdkByValue, type Sdk, type SdkValue } from "./sdks.js";
 
 export async function chooseSdk(message: string = "Which SDK do you want to test?"): Promise<Sdk> {
   const value = await select<SdkValue>({

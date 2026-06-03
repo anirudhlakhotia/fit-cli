@@ -1,7 +1,7 @@
 /**
  * ROOT_DIR — the directory everything file-based is resolved against. The FIT
  * repos (transactions-fit-performer, couchbase-jvm-clients) live directly under
- * it, the generated FITConfiguration.json is written under it, and so on.
+ * it, and other workspace-relative paths are resolved from it.
  *
  * Resolution order:
  *   1. --root <dir> / --root=<dir> / -r <dir> on the command line
@@ -19,7 +19,7 @@
  */
 import { existsSync, statSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
-import { extractReplayFlag } from "./replay.js";
+import { extractReplayFlag } from "../non-fit/replay.js";
 
 /**
  * Resolve `override` (or the default) to an absolute ROOT_DIR and check it's a

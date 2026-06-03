@@ -10,10 +10,10 @@
  *
  * Prints the resolved cbdinocluster command, or exits 1 if it isn't usable.
  */
-import { isMain, runCli } from "../../lib/cli.js";
-import { input } from "../../lib/prompts.js";
-import { run } from "../../lib/proc.js";
-import { findOnPath } from "../../lib/which.js";
+import { isMain, runCli } from "../../util/non-fit/cli.js";
+import { input } from "../../util/non-fit/prompts.js";
+import { run } from "../../util/non-fit/proc.js";
+import { findOnPath } from "../../util/non-fit/which.js";
 
 /** Where to get cbdinocluster, shown when it can't be found on the PATH. */
 export const CBDINOCLUSTER_URL = "https://github.com/couchbaselabs/cbdinocluster";

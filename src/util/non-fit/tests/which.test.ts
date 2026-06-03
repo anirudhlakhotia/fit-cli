@@ -4,7 +4,7 @@
  *
  * Run on their own:
  *   npm test
- *   node --import tsx --test src/lib/tests/which.test.ts
+ *   node --import tsx --test src/util/non-fit/tests/which.test.ts
  */
 import assert from "node:assert/strict";
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";

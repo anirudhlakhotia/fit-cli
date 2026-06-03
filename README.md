@@ -27,7 +27,7 @@ To launch an interactive wizard.
 Your responses will be saved to a file, which you can then rerun to save time in future with:
 
 ```
-`npm start -- --replay <logfile>`
+`npm run replay <logfile>`
 ```
 
 ## ROOT_DIR
@@ -63,7 +63,7 @@ To make debugging and development easier, each step file's header comment shows 
 npx tsx src/steps/ensure-repo.ts fit-performer
 ```
 
-If you find any are broken due to refactorings then please ask an AI to "sweep the files".  It should find the instructions in this file.
+If you find any are broken due to refactorings then please ask an AI to "sweep the files quickly".  It should find the instructions in this file.
 
 ## Scripts
 
@@ -71,29 +71,44 @@ If you find any are broken due to refactorings then please ask an AI to "sweep t
 - `npm run dev` — run the wizard, restarting on file changes.
 - `npm run typecheck` — type-check without emitting.
 - `npm run build` — compile TypeScript to `dist/`.
-- `npm test` — run the unit tests (node:test, via tsx).
+- `npm test` — run the unit tests (node:test, via tsx).  Note - these always need to be kept instant - business logic only.  If it's slow, just don't test it.
 
 ## General rules
 Everyone - AI and human - please follow these as best you can.
 
+- Run `npm run lint` and `npm run typecheck` and `npm test` after writing code.
+
+### ROOT_DIR
+- Everything file-based is relative to a ROOT_DIR (see "ROOT_DIR" below): the FIT repos live directly under it and the generated config is written under it. It defaults to the parent of the current directory and can be overridden with `--root <dir>` or the `FIT_ROOT` env var.
+
+### Comments and code style
+- Avoid comments that have "Step 1", "Step 2", etc.  They need updating too often.
+
+### Code structure
+- Feel free to create files - think one file per clear step - and use a clear directory structure.
+- Small utility business logic - consider moving this under a `util` sub-directory.
+
+### Mini CLI tools
+- Each step should be easily runnable independently via a mini CLI tool that can be called directly, for debugging and development iteration purposes.  
+- Keep this in the same file with its associated step.
+- Include directions in that file on how to call the CLI tool.
+- For these CLI tools, make sure I can test each individual step/function, as well as the full flow.
+- Make the CLI tools take a `--help/-h` argument that explains it and the subcommands.
+- If you move any files around, make sure these instructions continue to work.
+- If asked to "sweep the files quickly" then please check all these CLI tools still look accurate.  You don't have to run them, just make sure the paths are correct.
+- If asked to "sweep the files carefully" then do the above and also check each CLI tool also follows the instructions in this section.
+- Whenever showing a step is about to run, include (if fairly simple) how that can be repro-ed on the cli using this cli tool.
+
+### Testing
+- Anytime there's easy testable business logic, e.g. it doesn't require file access or similar, add unit tests.  Put these in a tests directory off the one being tested.
+- But much of the code is hard and slow to test, depending on external repos, building Docker images etc.  Do not add tests for these. 
+
+### Running workflows and steps
 - Before a step does something, generally explain what will be done.  E.g. File X was written and contains contents Y.
 - Save the full output from each run to a unique debug logfile under /tmp/fit-cli.  Display the filename.
-- Avoid comments that have "Step 1", "Step 2", etc.  They need updating too often.
-- Feel free to create files - think one file per clear step - and use a clear directory structure.
-- Small utility business logic - consider moving this under a `util` sub-directory. 
-- Each step should be easily runnable independently via a mini CLI tool that can be called directly, for debugging and development iteration purposes.  
-  Keep this in the same file with its associated step.
-  Include directions in that file on how to call the CLI tool.
-  For these CLI tools, make sure I can test each individual step/function, as well as the full flow.
-  Make the CLI tools take a `--help/-h` argument that explains it and the subcommands.
-  If you move any files around, make sure these instructions continue to work.
-  If asked to "sweep the files" then please check all these CLI tools still look accurate, and follow the instructions in this file.  You don't have to run them, just make sure the paths are correct.
-  Whenever showing a step is about to run, include (if fairly simple) how that can be repro-ed on the cli using this cli tool.
-- Run `npm run lint` and `npm run typecheck` after writing code.
-- Everything file-based is relative to a ROOT_DIR (see "ROOT_DIR" below): the FIT repos live directly under it and the generated config is written under it. It defaults to the parent of the current directory and can be overridden with `--root <dir>` or the `FIT_ROOT` env var.
-- Anytime there's easy testable business logic, e.g. it doesn't require file access or similar, add unit tests.  Put these in a tests directory off the one being tested.
-- Reproducibility:
-  It's important that whatever inputs a user gives to a workflow be saved and be reusable, for both debugging and re-running.
-  Each fit-cli should create a user log file under /tmp/fit-cli with a unique name.  Display this name.
-  Associate each user prompt with a unique id.  Save the prompt id and the user's response into the log file.
-  The user can replay that with `npm start -- --replay <logfile>`.
+
+### Reproducibility:
+It's important that whatever inputs a user gives to a workflow be saved and be reusable, for both debugging and re-running.
+Each fit-cli should create a user log file under /tmp/fit-cli with a unique name.  Display this name.
+Associate each user prompt with a unique id.  Save the prompt id and the user's response into the log file.
+The user can replay that with `npm run replay <logfile>`.  

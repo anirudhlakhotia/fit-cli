@@ -4,7 +4,7 @@
  *
  * Run on their own:
  *   npm test
- *   node --import tsx --test src/lib/tests/root.test.ts
+ *   node --import tsx --test src/util/fit/tests/root.test.ts
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";

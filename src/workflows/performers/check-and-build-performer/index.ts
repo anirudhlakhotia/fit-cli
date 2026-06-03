@@ -5,14 +5,14 @@
  * point at another workspace):
  *   npx tsx src/workflows/performers/check-and-build-performer/index.ts
  */
-import { isMain, runCli } from "../../../lib/cli.js";
-import { confirm } from "../../../lib/prompts.js";
-import { JENKINS_SDK } from "../../../lib/repos.js";
-import { rootDirFromArgv } from "../../../lib/root.js";
-import { type Sdk } from "../../../lib/sdks.js";
-import { chooseSdk } from "../../../steps/choose-sdk.js";
-import { ensureRepo } from "../../../steps/ensure-repo.js";
-import { ensureSdkWorkspace } from "../../../steps/ensure-sdk-workspace.js";
+import { isMain, runCli } from "../../../util/non-fit/cli.js";
+import { confirm } from "../../../util/non-fit/prompts.js";
+import { JENKINS_SDK } from "../../../util/fit/repos.js";
+import { rootDirFromArgv } from "../../../util/fit/root.js";
+import { type Sdk } from "../../../util/sdk/sdks.js";
+import { chooseSdk } from "../../../util/sdk/choose-sdk.js";
+import { ensureRepo } from "../../../util/fit/ensure-repo.js";
+import { ensureSdkWorkspace } from "../../../util/sdk/ensure-sdk-workspace.js";
 import { askVersion } from "../build-performer/ask-version.js";
 import { buildPerformer, describeBuildPerformerCommand } from "../build-performer/build-performer.js";
 import { performerStatus } from "../check-performer/check-performer.js";

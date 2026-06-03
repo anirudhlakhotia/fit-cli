@@ -1,23 +1,24 @@
 /**
  * The "Run functional tests" guided flow. This orchestrates the steps needed to
  * run FIT functional tests for one SDK. Generic steps it reuses live under
- * src/steps/ and src/lib/; the FIT-functional steps live under ../steps/
+ * src/util/; the FIT-functional steps live under ../steps/
  * alongside this guided flow.
  *
  * Run this flow on its own (skipping the top-level menu; add --root <dir> to
  * point at another workspace):
  *   npx tsx src/workflows/fit-functional/guided/index.ts
  */
-import { isMain, runCli } from "../../../lib/cli.js";
-import { FIT_PERFORMER } from "../../../lib/repos.js";
-import { rootDirFromArgv } from "../../../lib/root.js";
-import { chooseSdk } from "../../../steps/choose-sdk.js";
-import { ensureRepo } from "../../../steps/ensure-repo.js";
-import { ensureSdkWorkspace } from "../../../steps/ensure-sdk-workspace.js";
+import { isMain, runCli } from "../../../util/non-fit/cli.js";
+import { FIT_PERFORMER } from "../../../util/fit/repos.js";
+import { rootDirFromArgv } from "../../../util/fit/root.js";
+import { chooseSdk } from "../../../util/sdk/choose-sdk.js";
+import { ensureRepo } from "../../../util/fit/ensure-repo.js";
+import { ensureSdkWorkspace } from "../../../util/sdk/ensure-sdk-workspace.js";
 import { selectOrCreateCluster } from "../../cluster-select-or-create/index.js";
 import { checkAndBuildPerformer } from "../../performers/check-and-build-performer/index.js";
 import { ensureFitGrpc } from "../steps/ensure-fit-grpc.js";
 import { generateFitConfiguration } from "../steps/generate-fit-configuration.js";
+import { selectAndRunFitTests } from "../workflows/select-and-run-fit-tests/index.js";
 
 /** Walk through everything needed to run FIT functional tests for one SDK. */
 export async function runFunctionalTests(rootDir: string): Promise<void> {
@@ -50,7 +51,9 @@ export async function runFunctionalTests(rootDir: string): Promise<void> {
   if (!outcome.ready) {
     return;
   }
-  generateFitConfiguration(outcome.cluster, rootDir);
+  const fitConfigPath = generateFitConfiguration(outcome.cluster, rootDir);
+
+  await selectAndRunFitTests(rootDir, fitConfigPath);
 }
 
 if (isMain(import.meta.url)) {

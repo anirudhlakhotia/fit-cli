@@ -1,13 +1,18 @@
 import * as prompts from "@inquirer/prompts";
-import { ensurePromptSession, type PromptKind } from "./replay.js";
+import { ensurePromptSession, type PromptKind, type PromptResolveOptions } from "./replay.js";
 
 type PromptContext = Parameters<typeof prompts.input>[1];
 type InputConfig = Parameters<typeof prompts.input>[0];
 type ConfirmConfig = Parameters<typeof prompts.confirm>[0];
 type PasswordConfig = Parameters<typeof prompts.password>[0];
 
-function runPrompt<T>(kind: PromptKind, message: string, prompt: () => Promise<T>): Promise<T> {
-  return ensurePromptSession().resolvePrompt(kind, message, prompt);
+function runPrompt<T>(
+  kind: PromptKind,
+  message: string,
+  prompt: () => Promise<T>,
+  options?: PromptResolveOptions<T>,
+): Promise<T> {
+  return ensurePromptSession().resolvePrompt(kind, message, prompt, options);
 }
 
 export function input(config: InputConfig, context?: PromptContext): Promise<string> {
@@ -51,11 +56,14 @@ export function checkbox<Value>(
     validate?: (choices: readonly unknown[]) => boolean | string | Promise<string | boolean>;
     theme?: unknown;
     shortcuts?: { all?: string | null; invert?: string | null };
+    replay?: PromptResolveOptions<Value[]>;
   },
   context?: PromptContext,
 ): Promise<Value[]> {
+  const { replay, ...promptConfig } = config;
   return runPrompt("checkbox", config.message, () =>
-    prompts.checkbox<Value>(config as never, context),
+    prompts.checkbox<Value>(promptConfig as never, context),
+    replay,
   );
 }
 

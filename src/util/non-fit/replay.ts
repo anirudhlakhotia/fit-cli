@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
+import { inspect } from "node:util";
 
 export type PromptKind =
   | "checkbox"
@@ -17,9 +18,15 @@ export interface PromptLogEntry {
   response: unknown;
 }
 
+export interface PromptResolveOptions<T> {
+  serializeResponse?: (response: T) => unknown;
+  deserializeResponse?: (response: unknown) => T;
+}
+
 interface PromptLogFile {
   version: 1;
   createdAt: string;
+  workflow?: string;
   prompts: PromptLogEntry[];
 }
 
@@ -66,12 +73,27 @@ function loadPromptLog(logFile: string): PromptLogFile {
   if (raw.version !== 1 || !Array.isArray(raw.prompts) || typeof raw.createdAt !== "string") {
     throw new Error(`Invalid replay log file: ${logFile}`);
   }
-  return { version: 1, createdAt: raw.createdAt, prompts: raw.prompts };
+  return {
+    version: 1,
+    createdAt: raw.createdAt,
+    workflow: typeof raw.workflow === "string" ? raw.workflow : undefined,
+    prompts: raw.prompts,
+  };
 }
 
 function createLogFile(): string {
   mkdirSync(LOG_DIR, { recursive: true, mode: 0o700 });
   return `${LOG_DIR}/fit-cli-${new Date().toISOString().replaceAll(":", "-")}-${randomUUID()}.json`;
+}
+
+function formatReplayResponse(kind: PromptKind, response: unknown): string {
+  if (kind === "password") {
+    return "[hidden]";
+  }
+  if (typeof response === "string") {
+    return JSON.stringify(response);
+  }
+  return inspect(response, { depth: null, breakLength: Infinity });
 }
 
 export class PromptSession {
@@ -82,6 +104,7 @@ export class PromptSession {
     private readonly mode: "record" | "replay",
     public readonly logFile: string,
     private readonly createdAt: string,
+    private workflow: string | undefined,
     private readonly prompts: PromptLogEntry[],
   ) {}
 
@@ -94,18 +117,57 @@ export class PromptSession {
       const resolved = isAbsolute(replayFile) ? replayFile : resolve(process.cwd(), replayFile);
       const log = loadPromptLog(resolved);
       console.log(`Replaying prompt log: ${resolved}\n`);
-      return new PromptSession("replay", resolved, log.createdAt, log.prompts);
+      return new PromptSession("replay", resolved, log.createdAt, log.workflow, log.prompts);
     }
 
     const logFile = createLogFile();
     const createdAt = new Date().toISOString();
-    const session = new PromptSession("record", logFile, createdAt, []);
+    const session = new PromptSession("record", logFile, createdAt, undefined, []);
     session.persist();
     console.log(`Prompt log: ${logFile}\n`);
     return session;
   }
 
-  async resolvePrompt<T>(kind: PromptKind, message: string, prompt: () => Promise<T>): Promise<T> {
+  getWorkflow(): string | undefined {
+    return this.workflow;
+  }
+
+  setWorkflow(workflow: string): void {
+    this.workflow = workflow;
+    if (this.mode === "record") {
+      this.persist();
+    }
+  }
+
+  consumeLegacyWorkflowPrompt(workflow: string): void {
+    if (this.mode !== "replay") {
+      return;
+    }
+
+    const entry = this.prompts[this.replayIndex];
+    if (entry?.kind === "select" && entry.response === workflow) {
+      this.replayIndex++;
+      this.nextPromptNumber++;
+    }
+  }
+
+  formatReplayReminder(): string | undefined {
+    if (this.mode !== "record") {
+      return undefined;
+    }
+    return [
+      "Prompt replay:",
+      `  Log file: ${this.logFile}`,
+      `  Replay: npm run replay ${this.logFile}`,
+    ].join("\n");
+  }
+
+  async resolvePrompt<T>(
+    kind: PromptKind,
+    message: string,
+    prompt: () => Promise<T>,
+    options: PromptResolveOptions<T> = {},
+  ): Promise<T> {
     const id = `prompt-${this.nextPromptNumber++}`;
 
     if (this.mode === "replay") {
@@ -118,12 +180,17 @@ export class PromptSession {
           `Replay log mismatch at ${id}: expected ${kind} "${message}", got ${entry.kind} "${entry.message}"`,
         );
       }
-      console.log(`[replay] ${message}`);
-      return entry.response as T;
+      console.log(`[replay] ${message}\n  -> ${formatReplayResponse(kind, entry.response)}`);
+      return options.deserializeResponse ? options.deserializeResponse(entry.response) : (entry.response as T);
     }
 
     const response = await prompt();
-    this.prompts.push({ id, kind, message, response });
+    this.prompts.push({
+      id,
+      kind,
+      message,
+      response: options.serializeResponse ? options.serializeResponse(response) : response,
+    });
     this.persist();
     return response;
   }
@@ -131,7 +198,11 @@ export class PromptSession {
   private persist(): void {
     writeFileSync(
       this.logFile,
-      `${JSON.stringify({ version: 1, createdAt: this.createdAt, prompts: this.prompts }, null, 2)}\n`,
+      `${JSON.stringify(
+        { version: 1, createdAt: this.createdAt, workflow: this.workflow, prompts: this.prompts },
+        null,
+        2,
+      )}\n`,
       { mode: 0o600 },
     );
   }

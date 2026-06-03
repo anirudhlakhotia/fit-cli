@@ -3,15 +3,15 @@
  * is present, offering to clone it if it is missing.
  *
  * Run on its own (optionally with --root <dir> to point at another workspace):
- *   npx tsx src/steps/ensure-repo.ts transactions-fit-performer
- *   npx tsx src/steps/ensure-repo.ts couchbase-jvm-clients --root /some/workspace
+ *   npx tsx src/util/fit/ensure-repo.ts transactions-fit-performer
+ *   npx tsx src/util/fit/ensure-repo.ts couchbase-jvm-clients --root /some/workspace
  *
  * Exits 0 if the repo is ready, 1 if the user chose to bail or the clone failed.
  */
-import { select } from "../lib/prompts.js";
-import { isMain, runCli } from "../lib/cli.js";
-import { REPOS, cloneRepo, repoExists, repoPath, type Repo, type RepoKey } from "../lib/repos.js";
-import { rootDirFromArgv } from "../lib/root.js";
+import { select } from "../non-fit/prompts.js";
+import { isMain, runCli } from "../non-fit/cli.js";
+import { REPOS, cloneRepo, repoExists, repoPath, type Repo, type RepoKey } from "./repos.js";
+import { rootDirFromArgv } from "./root.js";
 
 function resolveRepo(arg: string | undefined): Repo | undefined {
   if (!arg) {
@@ -62,7 +62,7 @@ if (isMain(import.meta.url)) {
     const repo = resolveRepo(positionals[0]);
     if (!repo) {
       console.error(
-        `Usage: tsx src/steps/ensure-repo.ts <${Object.values(REPOS)
+        `Usage: tsx src/util/fit/ensure-repo.ts <${Object.values(REPOS)
           .map((repo) => repo.name)
           .join(" | ")}> [--root <dir>]`,
       );

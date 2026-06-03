@@ -6,8 +6,8 @@
  *
  * Prints the username (and that a password was captured).
  */
-import { isMain, runCli } from "../../lib/cli.js";
-import { input, password } from "../../lib/prompts.js";
+import { isMain, runCli } from "../../util/non-fit/cli.js";
+import { input, password } from "../../util/non-fit/prompts.js";
 
 export interface Credentials {
   username: string;

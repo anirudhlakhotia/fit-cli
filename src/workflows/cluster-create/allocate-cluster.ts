@@ -10,9 +10,9 @@
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { isMain, runCli } from "../../lib/cli.js";
-import { input } from "../../lib/prompts.js";
-import { run } from "../../lib/proc.js";
+import { isMain, runCli } from "../../util/non-fit/cli.js";
+import { input } from "../../util/non-fit/prompts.js";
+import { run } from "../../util/non-fit/proc.js";
 import { buildClusterDef } from "./build-cluster-def.js";
 import { ensureCbdinocluster } from "./ensure-cbdinocluster.js";
 

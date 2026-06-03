@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { sdkByValue } from "../../../../lib/sdks.js";
+import { sdkByValue } from "../../../../util/sdk/sdks.js";
 import { performerImageInspectArgs, performerPath } from "../check-performer.js";
 
 test("jvm performer paths come from couchbase-jvm-clients", () => {

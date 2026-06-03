@@ -12,7 +12,7 @@
  *
  * Prints the selection as JSON.
  */
-import { isMain, runCli } from "../../lib/cli.js";
+import { isMain, runCli } from "../../util/non-fit/cli.js";
 import { askConnectionString } from "./ask-connection-string.js";
 import { askCredentials, type Credentials } from "./ask-credentials.js";
 import { askTls, type TlsConfig } from "./ask-tls.js";

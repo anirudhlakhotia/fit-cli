@@ -8,7 +8,7 @@
  *
  * Prints the classification as JSON.
  */
-import { isMain, runCli } from "../../lib/cli.js";
+import { isMain, runCli } from "../../util/non-fit/cli.js";
 
 /** The kind of cluster a supported connection string points at. */
 export type ClusterFlavour = "internal-capella" | "production-capella" | "self-managed";

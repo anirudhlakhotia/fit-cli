@@ -7,7 +7,7 @@
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { sdkByValue } from "../../../../lib/sdks.js";
+import { sdkByValue } from "../../../../util/sdk/sdks.js";
 import {
   buildPerformerArgs,
   buildPerformerImageName,
