@@ -4,6 +4,8 @@ import {
   buildFit,
   cloneRepo,
   fitGrpcStatus,
+  performerExists,
+  performerPath,
   repoExists,
   repoPath,
   FIT_PERFORMER,
@@ -11,18 +13,22 @@ import {
   type Repo,
 } from "./repos.js";
 
-/** SDKs that FIT can test. The JVM-based ones share couchbase-jvm-clients. */
+/**
+ * SDKs that FIT can test. The JVM-based ones share couchbase-jvm-clients and
+ * the single "java" performer. `performer` is the SDK's directory under
+ * transactions-fit-performer/performers.
+ */
 const SDKS = [
-  { name: "Java", value: "java", jvm: true },
-  { name: "Scala", value: "scala", jvm: true },
-  { name: "Kotlin", value: "kotlin", jvm: true },
-  { name: "C++", value: "cpp", jvm: false },
-  { name: ".NET", value: "dotnet", jvm: false },
-  { name: "Go", value: "go", jvm: false },
-  { name: "Node.js", value: "node", jvm: false },
-  { name: "Python", value: "python", jvm: false },
-  { name: "Ruby", value: "ruby", jvm: false },
-  { name: "Rust", value: "rust", jvm: false },
+  { name: "Java", value: "java", jvm: true, performer: "java" },
+  { name: "Scala", value: "scala", jvm: true, performer: "scala" },
+  { name: "Kotlin", value: "kotlin", jvm: true, performer: "kotlin" },
+  { name: "C++", value: "cpp", jvm: false, performer: "cpp" },
+  { name: ".NET", value: "dotnet", jvm: false, performer: "dotnet" },
+  { name: "Go", value: "go", jvm: false, performer: "go" },
+  { name: "Node.js", value: "node", jvm: false, performer: "node" },
+  { name: "Python", value: "python", jvm: false, performer: "python" },
+  { name: "Ruby", value: "ruby", jvm: false, performer: "ruby" },
+  { name: "Rust", value: "rust", jvm: false, performer: "rust" },
 ] as const;
 
 type Sdk = (typeof SDKS)[number];
@@ -132,6 +138,13 @@ async function runFunctionalTests(): Promise<void> {
     choices: SDKS.map((sdk) => ({ name: sdk.name, value: sdk.value })),
   });
   const sdk = SDKS.find((s) => s.value === sdkValue)!;
+
+  // The SDK's performer must exist within transactions-fit-performer.
+  if (performerExists(sdk.performer)) {
+    console.log(`✓ Found the ${sdk.name} performer at ${performerPath(sdk.performer)}`);
+  } else {
+    console.log(`✗ Could not find the ${sdk.name} performer at ${performerPath(sdk.performer)}`);
+  }
 
   // Step 4: JVM SDKs need couchbase-jvm-clients.
   if (sdk.jvm) {

@@ -46,6 +46,19 @@ export function repoExists(repo: Repo): boolean {
 }
 
 /**
+ * Absolute path to an SDK's performer within transactions-fit-performer. Each
+ * SDK's performer lives in performers/<performerDir> (JVM SDKs share "java").
+ */
+export function performerPath(performerDir: string): string {
+  return join(repoPath(FIT_PERFORMER), "performers", performerDir);
+}
+
+/** True if the given performer directory exists within transactions-fit-performer. */
+export function performerExists(performerDir: string): boolean {
+  return existsSync(performerPath(performerDir));
+}
+
+/**
  * Location of the fit-grpc artifact in the local Maven repository. Building FIT
  * (mvn clean install) installs the jar here.
  */
