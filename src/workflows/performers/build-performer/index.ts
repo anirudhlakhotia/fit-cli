@@ -1,21 +1,25 @@
 /**
- * The "Build FIT performer" guided flow.
+ * The "Build performer" guided flow.
  *
  * Run this flow on its own (skipping the top-level menu; add --root <dir> to
  * point at another workspace):
- *   npx tsx src/workflows/build-fit-performer/guided/index.ts
+ *   npx tsx src/workflows/performers/build-performer/index.ts
  */
 import { isMain, runCli } from "../../../lib/cli.js";
-import { JENKINS_SDK, repoPath } from "../../../lib/repos.js";
+import { JENKINS_SDK } from "../../../lib/repos.js";
 import { rootDirFromArgv } from "../../../lib/root.js";
 import { chooseSdk } from "../../../steps/choose-sdk.js";
 import { ensureRepo } from "../../../steps/ensure-repo.js";
 import { ensureSdkWorkspace } from "../../../steps/ensure-sdk-workspace.js";
-import { askVersion } from "../steps/ask-version.js";
-import { buildFitPerformer, buildPerformerImageName } from "../steps/build-fit-performer.js";
+import { askVersion } from "./ask-version.js";
+import {
+  buildPerformer,
+  buildPerformerImageName,
+  describeBuildPerformerCommand,
+} from "./build-performer.js";
 
 /** Walk through everything needed to build one FIT performer. */
-export async function runBuildFitPerformer(rootDir: string): Promise<void> {
+export async function runBuildPerformer(rootDir: string): Promise<void> {
   console.log(
     "jenkins-sdk is a CLI tool that can, among other things, build FIT performers.",
   );
@@ -34,18 +38,15 @@ export async function runBuildFitPerformer(rootDir: string): Promise<void> {
   const version = await askVersion();
   const imageName = buildPerformerImageName(sdk, version);
 
-  console.log(
-    "\nBuilding performer with:\n" +
-      `  cd ${repoPath(JENKINS_SDK, rootDir)} && ./gradlew buildPerformer --args="-d ${rootDir} -s ${sdk.value}${version ? ` -v ${version}` : ""} -i ${imageName}"\n`,
-  );
+  console.log(`\nBuilding performer with:\n  ${describeBuildPerformerCommand(rootDir, sdk, version)}\n`);
 
-  await buildFitPerformer(rootDir, sdk, version);
-  console.log(`\n✓ Built the ${sdk.name} FIT performer${version ? ` at ${version}` : " from main"}`);
+  await buildPerformer(rootDir, sdk, version);
+  console.log(`\n✓ Built the ${sdk.name} FIT performer${version ? ` at ${version}` : " from main"} as ${imageName}`);
 }
 
 if (isMain(import.meta.url)) {
   runCli(async () => {
     const { rootDir } = rootDirFromArgv(process.argv.slice(2));
-    await runBuildFitPerformer(rootDir);
+    await runBuildPerformer(rootDir);
   });
 }

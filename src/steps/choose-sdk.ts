@@ -6,7 +6,7 @@
  *
  * Prints the chosen SDK as JSON.
  */
-import { select } from "@inquirer/prompts";
+import { select } from "../lib/prompts.js";
 import { isMain, runCli } from "../lib/cli.js";
 import { SDKS, sdkByValue, type Sdk, type SdkValue } from "../lib/sdks.js";
 

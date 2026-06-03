@@ -9,8 +9,8 @@
  *
  * Prints the gathered answers as JSON.
  */
-import { checkbox, confirm, input, number, select } from "@inquirer/prompts";
 import { isMain, runCli } from "../../lib/cli.js";
+import { checkbox, confirm, input, number, select } from "../../lib/prompts.js";
 import type { ClusterDef } from "./build-cluster-def.js";
 
 /** Services offered, with the FIT-typical set selected by default. */
@@ -45,7 +45,7 @@ export async function askClusterDef(): Promise<ClusterDef> {
 
   const version = await input({ message: "Which Couchbase Server version?", default: "8.1.0-2188" });
 
-  const services = await checkbox({
+  const services = await checkbox<string>({
     message: "Which services should the node(s) run?",
     choices: SERVICES,
   });

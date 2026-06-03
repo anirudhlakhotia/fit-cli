@@ -10,8 +10,8 @@
  *
  * Prints the resolved cbdinocluster command, or exits 1 if it isn't usable.
  */
-import { input } from "@inquirer/prompts";
 import { isMain, runCli } from "../../lib/cli.js";
+import { input } from "../../lib/prompts.js";
 import { run } from "../../lib/proc.js";
 import { findOnPath } from "../../lib/which.js";
 

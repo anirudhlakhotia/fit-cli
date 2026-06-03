@@ -41,3 +41,10 @@ test("parses the -r alias in both forms", () => {
     positionals: ["go"],
   });
 });
+
+test("ignores the replay flag while parsing ROOT_DIR", () => {
+  assert.deepEqual(extractRootFlag(["--replay", "/tmp/run.json", "--root", "/ws", "go"]), {
+    override: "/ws",
+    positionals: ["go"],
+  });
+});

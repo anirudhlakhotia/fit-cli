@@ -13,8 +13,8 @@
  *
  * Prints the chosen cluster as JSON, or "(none)".
  */
-import { confirm, select } from "@inquirer/prompts";
 import { isMain, runCli } from "../../lib/cli.js";
+import { confirm, select } from "../../lib/prompts.js";
 import { capture } from "../../lib/proc.js";
 import { findOnPath } from "../../lib/which.js";
 import { parseClusterIds, type CbdinoCluster } from "./parse-cluster-ids.js";

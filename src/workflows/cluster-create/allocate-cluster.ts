@@ -10,8 +10,8 @@
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { input } from "@inquirer/prompts";
 import { isMain, runCli } from "../../lib/cli.js";
+import { input } from "../../lib/prompts.js";
 import { run } from "../../lib/proc.js";
 import { buildClusterDef } from "./build-cluster-def.js";
 import { ensureCbdinocluster } from "./ensure-cbdinocluster.js";

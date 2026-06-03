@@ -6,8 +6,8 @@
  *
  * Prints the choice ("existing" or "create").
  */
-import { select } from "@inquirer/prompts";
 import { isMain, runCli } from "../../lib/cli.js";
+import { select } from "../../lib/prompts.js";
 
 export type ClusterChoice = "existing" | "create";
 

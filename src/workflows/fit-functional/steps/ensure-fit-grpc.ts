@@ -17,8 +17,8 @@
 import { existsSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { confirm } from "@inquirer/prompts";
 import { isMain, runCli } from "../../../lib/cli.js";
+import { confirm } from "../../../lib/prompts.js";
 import { run } from "../../../lib/proc.js";
 import { FIT_PERFORMER, repoPath } from "../../../lib/repos.js";
 import { rootDirFromArgv } from "../../../lib/root.js";

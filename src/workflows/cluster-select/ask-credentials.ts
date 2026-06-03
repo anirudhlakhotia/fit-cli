@@ -6,8 +6,8 @@
  *
  * Prints the username (and that a password was captured).
  */
-import { input, password } from "@inquirer/prompts";
 import { isMain, runCli } from "../../lib/cli.js";
+import { input, password } from "../../lib/prompts.js";
 
 export interface Credentials {
   username: string;

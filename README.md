@@ -80,13 +80,15 @@ Everyone - AI and human - please follow these as best you can.
 - Save the full output from each run to a unique debug logfile under /tmp/fit-cli.  Display the filename.
 - Avoid comments that have "Step 1", "Step 2", etc.  They need updating too often.
 - Feel free to create files - think one file per clear step - and use a clear directory structure.
-- Each step should be easily runnable independently via a small CLI tool that can be called directly, for debugging and development iteration purposes.  
+- Small utility business logic - consider moving this under a `util` sub-directory. 
+- Each step should be easily runnable independently via a mini CLI tool that can be called directly, for debugging and development iteration purposes.  
   Keep this in the same file with its associated step.
   Include directions in that file on how to call the CLI tool.
   For these CLI tools, make sure I can test each individual step/function, as well as the full flow.
   Make the CLI tools take a `--help/-h` argument that explains it and the subcommands.
   If you move any files around, make sure these instructions continue to work.
   If asked to "sweep the files" then please check all these CLI tools still look accurate, and follow the instructions in this file.  You don't have to run them, just make sure the paths are correct.
+  Whenever showing a step is about to run, include (if fairly simple) how that can be repro-ed on the cli using this cli tool.
 - Run `npm run lint` and `npm run typecheck` after writing code.
 - Everything file-based is relative to a ROOT_DIR (see "ROOT_DIR" below): the FIT repos live directly under it and the generated config is written under it. It defaults to the parent of the current directory and can be overridden with `--root <dir>` or the `FIT_ROOT` env var.
 - Anytime there's easy testable business logic, e.g. it doesn't require file access or similar, add unit tests.  Put these in a tests directory off the one being tested.

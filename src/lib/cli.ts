@@ -1,5 +1,6 @@
 import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { ensurePromptSession } from "./replay.js";
 
 /**
  * Shared plumbing for the small per-step CLIs. Every file under steps/ exports
@@ -20,12 +21,17 @@ export function isMain(metaUrl: string): boolean {
  * prints and exits non-zero.
  */
 export function runCli(main: () => Promise<void>): void {
-  main().catch((err) => {
-    if (err instanceof Error && err.name === "ExitPromptError") {
-      console.log("\nCancelled.");
-      process.exit(0);
-    }
-    console.error(err);
-    process.exit(1);
-  });
+  Promise.resolve()
+    .then(() => {
+      ensurePromptSession(process.argv.slice(2));
+      return main();
+    })
+    .catch((err) => {
+      if (err instanceof Error && err.name === "ExitPromptError") {
+        console.log("\nCancelled.");
+        process.exit(0);
+      }
+      console.error(err instanceof Error ? err.message : err);
+      process.exit(1);
+    });
 }

@@ -2,8 +2,8 @@
  * Step: run jenkins-sdk's Gradle task to build a FIT performer.
  *
  * Run on its own (add --root <dir> to point at another workspace):
- *   npx tsx src/workflows/build-fit-performer/steps/build-fit-performer.ts java
- *   npx tsx src/workflows/build-fit-performer/steps/build-fit-performer.ts java main --root /some/workspace
+ *   npx tsx src/workflows/performers/build-performer/build-performer.ts java
+ *   npx tsx src/workflows/performers/build-performer/build-performer.ts java main --root /some/workspace
  */
 import { isMain, runCli } from "../../../lib/cli.js";
 import { run } from "../../../lib/proc.js";
@@ -35,8 +35,17 @@ export function buildPerformerArgs(rootDir: string, sdk: Sdk, version?: string):
   return ["buildPerformer", `--args=${commandArgs.join(" ")}`];
 }
 
+/** Describe the build command that will be run for this performer image. */
+export function describeBuildPerformerCommand(rootDir: string, sdk: Sdk, version?: string): string {
+  return (
+    `cd ${repoPath(JENKINS_SDK, rootDir)} && ` +
+    `./gradlew buildPerformer --args="-d ${rootDir} -s ${sdk.value}` +
+    `${version ? ` -v ${version}` : ""} -i ${buildPerformerImageName(sdk, version)}"`
+  );
+}
+
 /** Build a FIT performer for `sdk`, optionally at a specific version. */
-export function buildFitPerformer(rootDir: string, sdk: Sdk, version?: string): Promise<void> {
+export function buildPerformer(rootDir: string, sdk: Sdk, version?: string): Promise<void> {
   return run("./gradlew", buildPerformerArgs(rootDir, sdk, version), repoPath(JENKINS_SDK, rootDir));
 }
 
@@ -49,10 +58,10 @@ if (isMain(import.meta.url)) {
     if (!sdk) {
       const values = SDKS.map((s) => s.value).join(" | ");
       console.error(
-        `Usage: tsx src/workflows/build-fit-performer/steps/build-fit-performer.ts <${values}> [version] [--root <dir>]`,
+        `Usage: tsx src/workflows/performers/build-performer/build-performer.ts <${values}> [version] [--root <dir>]`,
       );
       process.exit(2);
     }
-    await buildFitPerformer(rootDir, sdk, version);
+    await buildPerformer(rootDir, sdk, version);
   });
 }

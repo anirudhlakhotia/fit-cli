@@ -10,7 +10,7 @@
  * Run this workflow on its own:
  *   npx tsx src/workflows/cluster-select-or-create/index.ts
  */
-import { confirm } from "@inquirer/prompts";
+import { confirm } from "../../lib/prompts.js";
 import { isMain, runCli } from "../../lib/cli.js";
 import { createCluster } from "../cluster-create/index.js";
 import { runClusterDiag } from "../cluster-diag/index.js";

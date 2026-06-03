@@ -3,7 +3,7 @@
  *
  * Run on their own:
  *   npm test
- *   node --import tsx --test src/workflows/build-fit-performer/steps/tests/build-fit-performer.test.ts
+ *   node --import tsx --test src/workflows/performers/build-performer/tests/build-performer.test.ts
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -12,7 +12,7 @@ import {
   buildPerformerArgs,
   buildPerformerImageName,
   dockerImageComponent,
-} from "../build-fit-performer.js";
+} from "../build-performer.js";
 
 test("the default build uses main by omitting -v", () => {
   const sdk = sdkByValue("java");

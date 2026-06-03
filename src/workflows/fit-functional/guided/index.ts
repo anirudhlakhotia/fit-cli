@@ -15,9 +15,9 @@ import { chooseSdk } from "../../../steps/choose-sdk.js";
 import { ensureRepo } from "../../../steps/ensure-repo.js";
 import { ensureSdkWorkspace } from "../../../steps/ensure-sdk-workspace.js";
 import { selectOrCreateCluster } from "../../cluster-select-or-create/index.js";
+import { checkAndBuildPerformer } from "../../performers/check-and-build-performer/index.js";
 import { ensureFitGrpc } from "../steps/ensure-fit-grpc.js";
 import { generateFitConfiguration } from "../steps/generate-fit-configuration.js";
-import { checkPerformer } from "../steps/performers/check-performer.js";
 
 /** Walk through everything needed to run FIT functional tests for one SDK. */
 export async function runFunctionalTests(rootDir: string): Promise<void> {
@@ -33,12 +33,15 @@ export async function runFunctionalTests(rootDir: string): Promise<void> {
     return;
   }
 
-  // Which SDK to test, and whether its performer is present.
+  // Which SDK to test, and whether its performer image is ready.
   const sdk = await chooseSdk();
-  checkPerformer(sdk, rootDir);
-
   if (!(await ensureSdkWorkspace(sdk, rootDir))) {
     console.log("\nOnce the SDK workspace repos are in place, run fit-cli again.");
+    return;
+  }
+
+  if (!(await checkAndBuildPerformer(rootDir, sdk))) {
+    console.log("\nOnce the performer image is ready, run fit-cli again.");
     return;
   }
 

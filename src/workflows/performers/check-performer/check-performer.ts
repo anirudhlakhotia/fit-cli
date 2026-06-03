@@ -1,0 +1,113 @@
+/**
+ * Step: check that an SDK's performer exists on disk and as a Docker image.
+ *
+ * Non-JVM SDKs live in transactions-fit-performer/performers/<performer>.
+ * JVM SDKs (Java, Kotlin, Scala) live in couchbase-jvm-clients as their own
+ * <performer>-fit-performer directory.
+ *
+ * Run on its own (add --root <dir> to point at another workspace):
+ *   npx tsx src/workflows/performers/check-performer/check-performer.ts dotnet
+ *
+ * Exits 0 if the performer path and Docker image both exist, 1 if either does
+ * not (or the SDK is unknown).
+ */
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { isMain, runCli } from "../../../lib/cli.js";
+import { capture } from "../../../lib/proc.js";
+import { FIT_PERFORMER, JVM_CLIENTS, repoPath } from "../../../lib/repos.js";
+import { rootDirFromArgv } from "../../../lib/root.js";
+import { SDKS, sdkByValue, type Sdk } from "../../../lib/sdks.js";
+import { findOnPath } from "../../../lib/which.js";
+import { buildPerformerImageName } from "../build-performer/build-performer.js";
+
+export interface PerformerStatus {
+  path: string;
+  pathExists: boolean;
+  imageName: string;
+  dockerAvailable: boolean;
+  imageExists: boolean;
+}
+
+/** Absolute path to an SDK's performer on disk, under ROOT_DIR. */
+export function performerPath(sdk: Sdk, rootDir: string): string {
+  if (sdk.jvm) {
+    return join(repoPath(JVM_CLIENTS, rootDir), `${sdk.performer}-fit-performer`);
+  }
+  return join(repoPath(FIT_PERFORMER, rootDir), "performers", sdk.performer);
+}
+
+/** Docker inspect args used to check whether an image exists locally. */
+export function performerImageInspectArgs(imageName: string): string[] {
+  return ["image", "inspect", "--format={{.Id}}", imageName];
+}
+
+/** Inspect the on-disk performer and its Docker image. */
+export async function performerStatus(
+  sdk: Sdk,
+  rootDir: string,
+  version?: string,
+): Promise<PerformerStatus> {
+  const path = performerPath(sdk, rootDir);
+  const imageName = buildPerformerImageName(sdk, version);
+  const docker = findOnPath("docker");
+  let imageExists = false;
+
+  if (docker) {
+    try {
+      await capture(docker, performerImageInspectArgs(imageName));
+      imageExists = true;
+    } catch {
+      imageExists = false;
+    }
+  }
+
+  return {
+    path,
+    pathExists: existsSync(path),
+    imageName,
+    dockerAvailable: docker !== null,
+    imageExists,
+  };
+}
+
+/** Report whether the SDK's performer exists on disk and as a Docker image. */
+export async function checkPerformer(sdk: Sdk, rootDir: string, version?: string): Promise<boolean> {
+  const status = await performerStatus(sdk, rootDir, version);
+
+  if (status.pathExists) {
+    console.log(`✓ Found the ${sdk.name} performer at ${status.path}`);
+  } else {
+    console.log(`✗ Could not find the ${sdk.name} performer at ${status.path}`);
+  }
+
+  if (!status.dockerAvailable) {
+    console.log("✗ Could not find docker on your PATH");
+    return false;
+  }
+
+  if (status.imageExists) {
+    console.log(`✓ Found the ${sdk.name} performer Docker image ${status.imageName}`);
+  } else {
+    console.log(`✗ Could not find the ${sdk.name} performer Docker image ${status.imageName}`);
+  }
+
+  return status.pathExists && status.imageExists;
+}
+
+if (isMain(import.meta.url)) {
+  runCli(async () => {
+    const { rootDir, positionals } = rootDirFromArgv(process.argv.slice(2));
+    const value = positionals[0];
+    const sdk = value ? sdkByValue(value) : undefined;
+    const version = positionals[1];
+    if (!sdk) {
+      const values = SDKS.map((s) => s.value).join(" | ");
+      console.error(
+        `Usage: tsx src/workflows/performers/check-performer.ts <${values}> [version] [--root <dir>]`,
+      );
+      process.exit(2);
+    }
+    process.exit((await checkPerformer(sdk, rootDir, version)) ? 0 : 1);
+  });
+}
