@@ -9,6 +9,7 @@ export type PromptKind =
   | "input"
   | "number"
   | "password"
+  | "search"
   | "select";
 
 export interface PromptLogEntry {
@@ -316,7 +317,7 @@ export class PromptSession {
       "Prompt replay:",
       `  Log file: ${this.logFile}`,
       `  Replay: npm run replay ${this.logFile}`,
-      `  Replay with defaults: npm run replay --defaults ${this.logFile}`,
+      `  Replay with default answers: npm run replay --defaults ${this.logFile}`,
     ].join("\n");
   }
 

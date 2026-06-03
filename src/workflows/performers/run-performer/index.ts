@@ -19,7 +19,9 @@ export async function runPerformer(rootDir: string, sdk: Sdk, version?: string):
     return false;
   }
 
-  console.log(`\nPerformer logs are streaming to:\n  ${performer.logFile}`);
+  if (performer.logFile) {
+    console.log(`\nPerformer logs are streaming to:\n  ${performer.logFile}`);
+  }
   return true;
 }
 

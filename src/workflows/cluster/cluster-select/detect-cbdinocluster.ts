@@ -13,10 +13,10 @@
  *
  * Prints the chosen cluster as JSON, or "(none)".
  */
-import { isMain, runCli } from "../../util/non-fit/cli.js";
-import { confirm, select } from "../../util/non-fit/prompts.js";
-import { capture } from "../../util/non-fit/proc.js";
-import { findOnPath } from "../../util/non-fit/which.js";
+import { isMain, runCli } from "../../../util/non-fit/cli.js";
+import { confirm, select } from "../../../util/non-fit/prompts.js";
+import { capture } from "../../../util/non-fit/proc.js";
+import { findOnPath } from "../../../util/non-fit/which.js";
 import { parseClusterIds, type CbdinoCluster } from "./parse-cluster-ids.js";
 import { parseConnstr } from "./parse-connstr.js";
 

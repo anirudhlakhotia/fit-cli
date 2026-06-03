@@ -12,7 +12,7 @@
  *
  * Prints the selection as JSON.
  */
-import { isMain, runCli } from "../../util/non-fit/cli.js";
+import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { askConnectionString } from "./ask-connection-string.js";
 import { askCredentials, type Credentials } from "./ask-credentials.js";
 import { askTls, type TlsConfig } from "./ask-tls.js";
@@ -61,6 +61,27 @@ async function resolveConnection(): Promise<SupportedCluster> {
 }
 
 /**
+ * Gather the rest of what's needed to connect to a classified cluster — its
+ * credentials and (for couchbases://) TLS choice — into a {@link SelectedCluster}.
+ * Shared by the select-existing path and the create-then-use path so a freshly
+ * allocated cluster is finished off exactly like one the user picked.
+ */
+export async function buildSelectedCluster(connection: SupportedCluster): Promise<SelectedCluster> {
+  const credentials = await askCredentials();
+  // couchbase:// is non-TLS; only couchbases:// needs a TLS decision.
+  const tls: TlsConfig =
+    connection.scheme === "couchbases" ? await askTls(connection.flavour) : null;
+
+  return {
+    scheme: connection.scheme,
+    defaultHostname: connection.defaultHostname,
+    flavour: connection.flavour,
+    credentials,
+    tls,
+  };
+}
+
+/**
  * Walk the user through choosing a cluster. For an existing cluster this gathers
  * all the details needed to connect; for "create" it just records the intent.
  */
@@ -71,21 +92,7 @@ export async function selectCluster(): Promise<ClusterSelection> {
   }
 
   const connection = await resolveConnection();
-  const credentials = await askCredentials();
-  // couchbase:// is non-TLS; only couchbases:// needs a TLS decision.
-  const tls: TlsConfig =
-    connection.scheme === "couchbases" ? await askTls(connection.flavour) : null;
-
-  return {
-    mode: "existing",
-    cluster: {
-      scheme: connection.scheme,
-      defaultHostname: connection.defaultHostname,
-      flavour: connection.flavour,
-      credentials,
-      tls,
-    },
-  };
+  return { mode: "existing", cluster: await buildSelectedCluster(connection) };
 }
 
 if (isMain(import.meta.url)) {

@@ -5,6 +5,8 @@ import {
   buildDefaultFitTestSelection,
   buildFitTestSelection,
   deserializeSelectedFitTestsFromReplay,
+  filterFitTests,
+  fitTestSearchSource,
   formatFitTestSelectionOutput,
   listFitTestsArgs,
   parseFitTests,
@@ -13,6 +15,19 @@ import {
   summarizeFitTestSelection,
   type FitTestCase,
 } from "../index.js";
+
+const SAMPLE_TESTS: FitTestCase[] = [
+  {
+    fileName: "DisconnectTest.java",
+    relativePath: "java/com/couchbase/client/analytics/DisconnectTest.java",
+    className: "com.couchbase.client.analytics.DisconnectTest",
+  },
+  {
+    fileName: "StandardTest.java",
+    relativePath: "java/com/couchbase/transactions/StandardTest.java",
+    className: "com.couchbase.transactions.StandardTest",
+  },
+];
 
 test("listFitTestsArgs uses mvnw exec plugin to find test files", () => {
   assert.deepEqual(listFitTestsArgs(), [
@@ -34,11 +49,6 @@ test("parseFitTests converts relative paths into display names and class names",
     ].join("\n")),
     [
       {
-        fileName: "CngTest.scala",
-        relativePath: "scala/com/couchbase/transactions/CngTest.scala",
-        className: "com.couchbase.transactions.CngTest",
-      },
-      {
         fileName: "DisconnectTest.java",
         relativePath: "java/com/couchbase/client/analytics/DisconnectTest.java",
         className: "com.couchbase.client.analytics.DisconnectTest",
@@ -48,8 +58,34 @@ test("parseFitTests converts relative paths into display names and class names",
         relativePath: "java/com/couchbase/transactions/StandardTest.java",
         className: "com.couchbase.transactions.StandardTest",
       },
+      {
+        fileName: "CngTest.scala",
+        relativePath: "scala/com/couchbase/transactions/CngTest.scala",
+        className: "com.couchbase.transactions.CngTest",
+      },
     ],
   );
+});
+
+test("filterFitTests returns all tests for a blank term", () => {
+  assert.deepEqual(filterFitTests(SAMPLE_TESTS, "  "), SAMPLE_TESTS);
+  assert.deepEqual(filterFitTests(SAMPLE_TESTS, undefined), SAMPLE_TESTS);
+});
+
+test("filterFitTests matches case-insensitively on file name or path", () => {
+  assert.deepEqual(filterFitTests(SAMPLE_TESTS, "disconnect"), [SAMPLE_TESTS[0]]);
+  assert.deepEqual(filterFitTests(SAMPLE_TESTS, "transactions"), [SAMPLE_TESTS[1]]);
+  assert.deepEqual(filterFitTests(SAMPLE_TESTS, "nope"), []);
+});
+
+test("fitTestSearchSource maps filtered tests into search choices", () => {
+  assert.deepEqual(fitTestSearchSource(SAMPLE_TESTS)("standard"), [
+    {
+      name: "java/com/couchbase/transactions/StandardTest.java",
+      short: "StandardTest.java",
+      value: "com.couchbase.transactions.StandardTest",
+    },
+  ]);
 });
 
 test("buildFitTestChoices shows relative paths while keeping short labels concise", () => {

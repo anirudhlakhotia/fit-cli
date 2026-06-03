@@ -10,12 +10,13 @@
  * Run this workflow on its own:
  *   npx tsx src/workflows/cluster-select-or-create/index.ts
  */
-import { confirm } from "../../util/non-fit/prompts.js";
-import { type ArtifactCollection } from "../../util/non-fit/artifacts.js";
-import { isMain, runCli } from "../../util/non-fit/cli.js";
+import { confirm } from "../../../util/non-fit/prompts.js";
+import { type ArtifactCollection } from "../../../util/non-fit/artifacts.js";
+import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { createCluster } from "../cluster-create/index.js";
 import { runClusterDiag } from "../cluster-diag/index.js";
-import { selectCluster, type SelectedCluster } from "../cluster-select/index.js";
+import { classifyConnectionString } from "../cluster-select/classify-connection-string.js";
+import { buildSelectedCluster, selectCluster, type SelectedCluster } from "../cluster-select/index.js";
 
 /** The outcome of getting a cluster to use. */
 export type ClusterOutcome =
@@ -43,21 +44,26 @@ export async function selectOrCreateCluster(): Promise<ClusterOutcome> {
     return { ready: true, cluster: selection.cluster, artifacts: [] };
   }
 
-  // mode === "create": allocate a fresh cluster with cbdinocluster.
+  // mode === "create": allocate a fresh cluster with cbdinocluster, then carry on
+  // with its connection string just as if the user had selected an existing one.
   const result = await createCluster();
   if (!result.created) {
     console.log("\nOnce you have a cluster, run fit-cli again.");
     return { ready: false, artifacts: result.artifacts };
   }
 
-  // A freshly-allocated cluster still needs its connection string and credentials
-  // pulled from cbdinocluster before it can be used; that's a future step, so for
-  // now point the user back through the existing-cluster path.
-  console.log(
-    "\nYour cluster is allocated. Re-run fit-cli and choose the existing-cluster path " +
-      "with its connection string.",
-  );
-  return { ready: false, artifacts: result.artifacts };
+  const classification = classifyConnectionString(result.connectionString);
+  if (classification.kind !== "supported") {
+    console.log(
+      `\nYour cluster is allocated, but its connection string (${result.connectionString}) isn't ` +
+        "one this tool can use directly. Re-run fit-cli and choose the existing-cluster path.",
+    );
+    return { ready: false, artifacts: result.artifacts };
+  }
+
+  console.log(`\n✓ Using your new cluster at ${result.connectionString}`);
+  const cluster = await buildSelectedCluster(classification);
+  return { ready: true, cluster, artifacts: result.artifacts };
 }
 
 if (isMain(import.meta.url)) {

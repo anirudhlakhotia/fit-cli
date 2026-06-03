@@ -4,8 +4,9 @@
  * Run on its own (add --root <dir> to point elsewhere):
  *   npx tsx src/workflows/fit-functional/workflows/run-test-driver/index.ts
  */
-import { artifactFromPath, type ArtifactCollection } from "../../../../util/non-fit/artifacts.js";
+import { artifactFromPath, combineArtifacts, type ArtifactCollection } from "../../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../../util/non-fit/cli.js";
+import { collectJunitArtifacts } from "./collect-junit.js";
 import { createLogFile, runAndCaptureToFile } from "../../../../util/non-fit/proc.js";
 import { FIT_PERFORMER, repoPath } from "../../../../util/fit/repos.js";
 import { rootDirFromArgv } from "../../../../util/fit/root.js";
@@ -55,18 +56,24 @@ export async function runTestDriver(
 ): Promise<TestRunResult> {
   const args = runTestDriverArgs(selection, fitConfigPath, extraMavenArgs);
   const logFile = fitTestLogFile();
-  const artifacts = [artifactFromPath(logFile, "FIT test-driver stdout/stderr captured for this run")];
+  const logArtifact = artifactFromPath(logFile, "FIT test-driver stdout/stderr captured for this run");
   console.log(`\nRunning FIT test-driver with:\n  cd ${repoPath(FIT_PERFORMER, rootDir)} && ./mvnw ${args.join(" ")}\n`);
   console.log(`Streaming FIT test-driver output to:\n  ${logFile}\n`);
 
+  // The test-driver still writes JUnit reports when tests fail, so collect them
+  // on both paths — the failing run is the one most worth visualising.
+  let ok: boolean;
   try {
     await runAndCaptureToFile("./mvnw", args, logFile, repoPath(FIT_PERFORMER, rootDir));
     console.log("\n✓ FIT test-driver finished");
-    return { ok: true, logFile, artifacts };
+    ok = true;
   } catch (err) {
     console.error(`\n✗ FIT test-driver failed: ${(err as Error).message}`);
-    return { ok: false, logFile, artifacts };
+    ok = false;
   }
+
+  const artifacts = combineArtifacts([logArtifact], await collectJunitArtifacts(rootDir));
+  return { ok, logFile, artifacts };
 }
 
 if (isMain(import.meta.url)) {

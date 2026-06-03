@@ -49,6 +49,37 @@ export function capture(command: string, args: string[], cwd: string = process.c
   });
 }
 
+/**
+ * Run a command, streaming stderr (and any progress logs) to the terminal while
+ * capturing — and echoing — its stdout, then resolve with the captured stdout.
+ * Rejects if the command can't start or exits non-zero. Used for long-running
+ * tools whose progress we want the user to see but whose stdout result we also
+ * need to parse — e.g. `cbdinocluster allocate`, which logs to stderr and prints
+ * the new cluster's id on stdout.
+ */
+export function runAndCapture(
+  command: string,
+  args: string[],
+  cwd: string = process.cwd(),
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { cwd, stdio: ["inherit", "pipe", "inherit"] });
+    let stdout = "";
+    child.stdout.on("data", (chunk: Buffer) => {
+      process.stdout.write(chunk);
+      stdout += chunk.toString();
+    });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) {
+        resolve(stdout);
+      } else {
+        reject(new Error(`${command} exited with code ${code}`));
+      }
+    });
+  });
+}
+
 /** Create a log file path under the shared fit-cli temp directory. */
 export function createLogFile(name: string, extension: string = "log"): string {
   return createRunFilePath(`${name}.${extension}`);

@@ -14,19 +14,17 @@ import { ensureRunDir } from "../../../util/non-fit/replay.js";
 import { FIT_PERFORMER, repoPath } from "../../../util/fit/repos.js";
 import { rootDirFromArgv } from "../../../util/fit/root.js";
 
-/** Absolute path to a fresh FITConfiguration.json in the current run directory. */
+/**
+ * Absolute path to the FITConfiguration.json in the current run directory.
+ * Each run gets its own ARTIFACT_DIR, so the filename needs no timestamp.
+ */
 export function fitConfigPath(runDir: string = ensureRunDir()): string {
-  return join(runDir, `FITConfiguration-${timestamp()}.json`);
+  return join(runDir, "FITConfiguration.json");
 }
 
 /** Absolute path to the FITConfiguration.md reference doc, under ROOT_DIR. */
 export function fitConfigDocPath(rootDir: string): string {
   return join(repoPath(FIT_PERFORMER, rootDir), "test-driver", "FITConfiguration.md");
-}
-
-/** A filesystem-safe timestamp like 2026-06-03T12-34-56-789Z. */
-function timestamp(): string {
-  return new Date().toISOString().replace(/[:.]/g, "-");
 }
 
 export interface WriteResult {

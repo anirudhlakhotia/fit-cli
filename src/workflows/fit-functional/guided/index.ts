@@ -15,7 +15,7 @@ import { rootDirFromArgv } from "../../../util/fit/root.js";
 import { chooseSdk } from "../../../util/sdk/choose-sdk.js";
 import { ensureRepo } from "../../../util/fit/ensure-repo.js";
 import { ensureSdkWorkspace } from "../../../util/sdk/ensure-sdk-workspace.js";
-import { selectOrCreateCluster } from "../../cluster-select-or-create/index.js";
+import { selectOrCreateCluster } from "../../cluster/cluster-select-or-create/index.js";
 import { checkBuildAndRunPerformer } from "../../performers/check-build-and-run-performer/index.js";
 import { stopPerformerContainers } from "../../performers/stop-performer/index.js";
 import { generateFitConfiguration } from "../steps/generate-fit-configuration.js";
@@ -59,8 +59,12 @@ export async function runFunctionalTests(rootDir: string): Promise<ArtifactColle
     artifacts.push(...testRun.artifacts);
     return { artifacts: combineArtifacts(artifacts) };
   } finally {
-    await stopPerformerContainers([performer.containerId]);
-    console.log(`\nPerformer logs:\n  ${performer.logFile}`);
+    if (performer.containerId) {
+      await stopPerformerContainers([performer.containerId]);
+    }
+    if (performer.logFile) {
+      console.log(`\nPerformer logs:\n  ${performer.logFile}`);
+    }
   }
 }
 

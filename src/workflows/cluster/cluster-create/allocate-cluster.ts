@@ -11,18 +11,20 @@
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { artifactFromPath, type ArtifactCollection, type Artifact } from "../../util/non-fit/artifacts.js";
-import { isMain, runCli } from "../../util/non-fit/cli.js";
-import { input } from "../../util/non-fit/prompts.js";
-import { run } from "../../util/non-fit/proc.js";
-import { ensureRunDir } from "../../util/non-fit/replay.js";
+import { artifactFromPath, type ArtifactCollection, type Artifact } from "../../../util/non-fit/artifacts.js";
+import { isMain, runCli } from "../../../util/non-fit/cli.js";
+import { input } from "../../../util/non-fit/prompts.js";
+import { runAndCapture } from "../../../util/non-fit/proc.js";
+import { ensureRunDir } from "../../../util/non-fit/replay.js";
 import { buildClusterDef } from "./build-cluster-def.js";
 import { ensureCbdinocluster } from "./ensure-cbdinocluster.js";
+import { parseAllocatedId } from "./parse-allocated-id.js";
 
-/** A filesystem-safe timestamp like 2026-06-03T12-34-56-789Z. */
-function timestamp(): string {
-  return new Date().toISOString().replace(/[:.]/g, "-");
-}
+/** A cluster cbdinocluster has just allocated. */
+export type AllocatedCluster = ArtifactCollection & {
+  /** The new cluster's UUID, as passed to `cbdinocluster connstr <id>`. */
+  clusterId: string;
+};
 
 export interface WriteClusterDefResult {
   path: string;
@@ -30,13 +32,13 @@ export interface WriteClusterDefResult {
 }
 
 /**
- * Write the cbdinocluster def to a fresh file in the current run directory and
- * return its absolute path. Timestamped so consecutive writes don't clobber
- * each other.
+ * Write the cbdinocluster def to a file in the current run directory and return
+ * its absolute path. The run directory is already timestamped, so the filename
+ * doesn't need to be.
  */
 export function writeClusterDef(def: string, runDir: string = ensureRunDir()): WriteClusterDefResult {
   mkdirSync(runDir, { recursive: true, mode: 0o700 });
-  const path = join(runDir, `cbdinocluster-${timestamp()}.yaml`);
+  const path = join(runDir, "cbdinocluster.yaml");
   writeFileSync(path, def);
   return {
     path,
@@ -61,13 +63,14 @@ export async function askDeployer(): Promise<string | undefined> {
 /**
  * Allocate a cluster: write `def` to a file and run
  * `cbdinocluster --verbose allocate [--deployer=<deployer>] --def-file=<file>`.
- * Output is streamed; resolves when allocation succeeds and rejects if it fails.
+ * Progress is streamed; resolves with the new cluster's id when allocation
+ * succeeds and rejects if it fails (including if no cluster id comes back).
  */
 export async function allocateCluster(
   cbdinocluster: string,
   def: string,
   deployer?: string,
-): Promise<ArtifactCollection> {
+): Promise<AllocatedCluster> {
   const { path: defFile, artifact } = writeClusterDef(def);
   console.log(`Wrote cbdinocluster def to ${defFile}:\n\n${def}`);
 
@@ -78,8 +81,11 @@ export async function allocateCluster(
   args.push(`--def-file=${defFile}`);
 
   console.log(`Running: ${cbdinocluster} ${args.join(" ")}\n`);
-  await run(cbdinocluster, args);
-  return { artifacts: [artifact] };
+  const clusterId = parseAllocatedId(await runAndCapture(cbdinocluster, args));
+  if (!clusterId) {
+    throw new Error("cbdinocluster allocate didn't print a cluster id");
+  }
+  return { artifacts: [artifact], clusterId };
 }
 
 if (isMain(import.meta.url)) {

@@ -7,7 +7,7 @@
  */
 import { basename } from "node:path";
 import { isMain, runCli } from "../../../../util/non-fit/cli.js";
-import { checkbox } from "../../../../util/non-fit/prompts.js";
+import { checkbox, search, select } from "../../../../util/non-fit/prompts.js";
 import { capture } from "../../../../util/non-fit/proc.js";
 import { FIT_PERFORMER, repoPath } from "../../../../util/fit/repos.js";
 import { rootDirFromArgv } from "../../../../util/fit/root.js";
@@ -80,10 +80,7 @@ export function parseFitTests(output: string): FitTestCase[] {
         .replace(/\.(?:java|scala)$/, "")
         .replaceAll("/", "."),
     }))
-    .sort((left, right) =>
-      left.fileName.localeCompare(right.fileName) ||
-      left.relativePath.localeCompare(right.relativePath),
-    );
+    .sort((left, right) => left.relativePath.localeCompare(right.relativePath));
 }
 
 /** List test-driver tests by running `./mvnw` in transactions-fit-performer. */
@@ -183,6 +180,29 @@ export function buildFitTestChoices(tests: readonly FitTestCase[]) {
   }));
 }
 
+/** Filter tests for the single-test search box by file name or path. */
+export function filterFitTests(tests: readonly FitTestCase[], term: string | undefined): FitTestCase[] {
+  const needle = (term ?? "").trim().toLowerCase();
+  if (needle.length === 0) {
+    return [...tests];
+  }
+  return tests.filter(
+    (test) =>
+      test.fileName.toLowerCase().includes(needle) ||
+      test.relativePath.toLowerCase().includes(needle),
+  );
+}
+
+/** Build a `source` callback for the single-test {@link search} prompt. */
+export function fitTestSearchSource(tests: readonly FitTestCase[]) {
+  return (term: string | undefined) =>
+    filterFitTests(tests, term).map((test) => ({
+      name: test.relativePath,
+      short: test.fileName,
+      value: test.className,
+    }));
+}
+
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string");
 }
@@ -203,29 +223,67 @@ export function deserializeSelectedFitTestsFromReplay(
   return response;
 }
 
+type FitTestRunMode = "all" | "single" | "multiple";
+
+/** Ask whether to run everything, a single searchable test, or a chosen subset. */
+async function askFitTestRunMode(): Promise<FitTestRunMode> {
+  return select<FitTestRunMode>({
+    promptId: "fit.tests.mode",
+    message: "Which FIT test-driver tests do you want to run?",
+    default: "all",
+    choices: [
+      { name: "Run everything", value: "all" },
+      { name: "Run a single test", value: "single" },
+      { name: "Pick multiple tests", value: "multiple" },
+    ],
+  });
+}
+
+/** Single-test picker backed by a type-to-filter search box. */
+async function selectSingleFitTest(tests: FitTestCase[]): Promise<FitTestSelection> {
+  const className = await search<string>({
+    promptId: "fit.tests.single",
+    message: "Search for the FIT test to run:",
+    source: fitTestSearchSource(tests),
+  });
+  return buildFitTestSelection(tests, [className]);
+}
+
+/** Multi-test picker: the checkbox list, all tests pre-selected. */
+async function selectMultipleFitTests(tests: FitTestCase[]): Promise<FitTestSelection> {
+  const selectedClassNames = await checkbox<string>({
+    promptId: "fit.tests.select",
+    message: "Which FIT test-driver tests do you want to run?  (Default is everything)",
+    choices: buildFitTestChoices(tests),
+    required: true,
+    theme: {
+      style: {
+        renderSelectedChoices: renderSelectedFitTestsAnswer,
+      },
+    },
+    replay: {
+      serializeResponse: (selectedClassNames) =>
+        serializeSelectedFitTestsForReplay(selectedClassNames, tests),
+      deserializeResponse: (response) =>
+        deserializeSelectedFitTestsFromReplay(response, tests),
+    },
+  });
+  return buildFitTestSelection(tests, selectedClassNames);
+}
+
 /** Prompt for which FIT test-driver tests to run. */
 export async function selectFitTests(rootDir: string): Promise<FitTestSelection> {
   try {
     const tests = await listFitTests(rootDir);
-    const selectedClassNames = await checkbox<string>({
-      promptId: "fit.tests.select",
-      message: "Which FIT test-driver tests do you want to run?  (Default is everything)",
-      choices: buildFitTestChoices(tests),
-      required: true,
-      theme: {
-        style: {
-          renderSelectedChoices: renderSelectedFitTestsAnswer,
-        },
-      },
-      replay: {
-        serializeResponse: (selectedClassNames) =>
-          serializeSelectedFitTestsForReplay(selectedClassNames, tests),
-        deserializeResponse: (response) =>
-          deserializeSelectedFitTestsFromReplay(response, tests),
-      },
-    });
-
-    return buildFitTestSelection(tests, selectedClassNames);
+    const mode = await askFitTestRunMode();
+    switch (mode) {
+      case "single":
+        return await selectSingleFitTest(tests);
+      case "multiple":
+        return await selectMultipleFitTests(tests);
+      default:
+        return buildDefaultFitTestSelection();
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.warn(`\nCould not select specific FIT tests (${message}). Continuing with all tests.`);

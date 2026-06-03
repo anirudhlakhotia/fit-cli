@@ -9,8 +9,10 @@
  * Run this workflow on its own (this really does allocate a cluster):
  *   npx tsx src/workflows/cluster-create/index.ts
  */
-import { isMain, runCli } from "../../util/non-fit/cli.js";
-import { type ArtifactCollection } from "../../util/non-fit/artifacts.js";
+import { isMain, runCli } from "../../../util/non-fit/cli.js";
+import { type ArtifactCollection } from "../../../util/non-fit/artifacts.js";
+import { capture } from "../../../util/non-fit/proc.js";
+import { parseConnstr } from "../cluster-select/parse-connstr.js";
 import { allocateCluster, askDeployer } from "./allocate-cluster.js";
 import { askClusterDef } from "./ask-cluster-def.js";
 import { buildClusterDef } from "./build-cluster-def.js";
@@ -18,8 +20,8 @@ import { ensureCbdinocluster } from "./ensure-cbdinocluster.js";
 
 /** The outcome of attempting to create a cluster. */
 export type CreateResult =
-  /** cbdinocluster allocated the cluster successfully. */
-  | (ArtifactCollection & { created: true })
+  /** cbdinocluster allocated the cluster and we have its connection string. */
+  | (ArtifactCollection & { created: true; connectionString: string })
   /** cbdinocluster wasn't usable or allocation failed; a reason was printed. */
   | (ArtifactCollection & { created: false });
 
@@ -37,14 +39,33 @@ export async function createCluster(): Promise<CreateResult> {
   const def = buildClusterDef(await askClusterDef());
   const deployer = await askDeployer();
 
+  let allocated;
   try {
-    const result = await allocateCluster(cbdinocluster, def, deployer);
+    allocated = await allocateCluster(cbdinocluster, def, deployer);
     console.log("\n✓ cbdinocluster allocated your cluster");
-    return { created: true, artifacts: result.artifacts };
   } catch (err) {
     console.error(`\n✗ cbdinocluster failed to allocate the cluster: ${(err as Error).message}`);
     return { created: false, artifacts: [] };
   }
+
+  // Pull the connection string straight from cbdinocluster so the caller can use
+  // the new cluster without the user having to look it up and re-run.
+  let connectionString: string | null;
+  try {
+    connectionString = parseConnstr(await capture(cbdinocluster, ["connstr", allocated.clusterId]));
+  } catch (err) {
+    console.error(
+      `\n✗ Couldn't get the connection string for ${allocated.clusterId}: ${(err as Error).message}`,
+    );
+    return { created: false, artifacts: allocated.artifacts };
+  }
+  if (!connectionString) {
+    console.error(`\n✗ cbdinocluster didn't return a connection string for ${allocated.clusterId}.`);
+    return { created: false, artifacts: allocated.artifacts };
+  }
+
+  console.log(`→ Connection string: ${connectionString}`);
+  return { created: true, connectionString, artifacts: allocated.artifacts };
 }
 
 if (isMain(import.meta.url)) {

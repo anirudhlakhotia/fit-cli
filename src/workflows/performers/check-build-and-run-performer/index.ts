@@ -19,8 +19,10 @@ export { DEFAULT_PERFORMER_PORT } from "../performer-port.js";
 import { DEFAULT_PERFORMER_PORT } from "../performer-port.js";
 
 export interface RunningPerformer {
-  containerId: string;
-  logFile: string;
+  // Absent when reusing a performer we didn't start (an external process on the
+  // port), in which case there's no container for us to manage or log.
+  containerId?: string;
+  logFile?: string;
   artifacts: Artifact[];
 }
 
@@ -62,13 +64,19 @@ export async function checkBuildAndRunPerformer(
   sdk: Sdk,
   version?: string,
 ): Promise<RunningPerformer | undefined> {
-  if (!(await checkAndBuildPerformer(rootDir, sdk, version))) {
-    return undefined;
-  }
-
+  // Check what's already running first: if a performer is up (a recognised
+  // container, or just something on the port), we can test against it and skip
+  // locating and building the image entirely.
   const runCheck = await checkRunningPerformer(sdk, version);
   if (runCheck.action === "abort") {
     return undefined;
+  }
+
+  if (runCheck.action === "external") {
+    console.log(
+      `\n→ Testing against the performer already listening on port ${DEFAULT_PERFORMER_PORT}; fit-cli won't manage or stop it.`,
+    );
+    return { artifacts: [] };
   }
 
   if (runCheck.action === "reuse") {
@@ -89,6 +97,12 @@ export async function checkBuildAndRunPerformer(
       console.error(`\n✗ Failed to capture ${sdk.name} performer logs: ${(err as Error).message}`);
       return undefined;
     }
+  }
+
+  // We're going to start (or restart) the performer ourselves, so the image
+  // must be located and built first.
+  if (!(await checkAndBuildPerformer(rootDir, sdk, version))) {
+    return undefined;
   }
 
   if (runCheck.action === "restart" && !(await stopRunningPerformer(runCheck.containers))) {

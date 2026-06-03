@@ -6,8 +6,8 @@
  *
  * Prints the choice ("existing" or "create").
  */
-import { isMain, runCli } from "../../util/non-fit/cli.js";
-import { select } from "../../util/non-fit/prompts.js";
+import { isMain, runCli } from "../../../util/non-fit/cli.js";
+import { select } from "../../../util/non-fit/prompts.js";
 
 export type ClusterChoice = "existing" | "create";
 

@@ -20,7 +20,8 @@
     "node": ">=20"
   },
   "dependencies": {
-    "@inquirer/prompts": "^7.2.0"
+    "@inquirer/prompts": "^7.2.0",
+    "xunit-viewer": "^10.6.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

@@ -1,4 +1,4 @@
-import { isAbsolute, relative } from "node:path";
+import { isAbsolute, join, relative } from "node:path";
 import { ensureRunDir } from "./replay.js";
 
 /** A file produced during the current fit-cli run, stored under ARTIFACT_DIR. */
@@ -51,8 +51,8 @@ export function formatArtifactsTable(artifacts: readonly Artifact[]): string | u
     return undefined;
   }
 
-  const filenameHeader = "Filename";
-  const explanationHeader = "What it's for";
+  const filenameHeader = "Artifact filename";
+  const explanationHeader = "Purpose";
   const filenameWidth = Math.max(filenameHeader.length, ...artifacts.map((artifact) => artifact.filename.length));
 
   return [
@@ -67,10 +67,15 @@ export function formatArtifactsSection(
   artifactDir: string,
   artifacts: readonly Artifact[],
 ): string | undefined {
-  const table = formatArtifactsTable(artifacts);
+  // Prefix every filename with ARTIFACT_DIR so each row is a copy-pasteable path.
+  const fullPaths = artifacts.map((artifact) => ({
+    ...artifact,
+    filename: join(artifactDir, artifact.filename),
+  }));
+  const table = formatArtifactsTable(fullPaths);
   if (!table) {
     return undefined;
   }
 
-  return ["Artifacts:", `  ARTIFACT_DIR: ${artifactDir}`, table].join("\n");
+  return [table].join("\n");
 }

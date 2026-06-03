@@ -1,7 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { runTestDriverArgs } from "../index.js";
+import { surefireReportsDir } from "../collect-junit.js";
 import type { FitTestSelection } from "../../select-fit-tests/index.js";
+
+test("surefireReportsDir points at the test-driver's surefire output", () => {
+  assert.equal(
+    surefireReportsDir("/work/root"),
+    "/work/root/transactions-fit-performer/test-driver/target/surefire-reports",
+  );
+});
 
 test("runTestDriverArgs omits -Dtest when all tests are selected", () => {
   const selection: FitTestSelection = {
@@ -51,7 +59,7 @@ test("runTestDriverArgs adds the generated FIT config path", () => {
     selectedTests: [],
   };
 
-  assert.deepEqual(runTestDriverArgs(selection, "/tmp/fit-cli/run-123/FITConfiguration-123.json"), [
+  assert.deepEqual(runTestDriverArgs(selection, "/tmp/fit-cli/run-123/FITConfiguration.json"), [
     "-q",
     "--no-transfer-progress",
     "--batch-mode",
@@ -60,7 +68,7 @@ test("runTestDriverArgs adds the generated FIT config path", () => {
     "--also-make",
     "-Dmaven.test.failure.ignore",
     "-Dsurefire.failIfNoSpecifiedTests=false",
-    "-Dfit.config=/tmp/fit-cli/run-123/FITConfiguration-123.json",
+    "-Dfit.config=/tmp/fit-cli/run-123/FITConfiguration.json",
     "test",
     "-DexcludedGroups=situational,openshift,syncgateway",
   ]);

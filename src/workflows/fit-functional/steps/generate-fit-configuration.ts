@@ -12,7 +12,8 @@
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { type ArtifactCollection } from "../../../util/non-fit/artifacts.js";
 import { rootDirFromArgv } from "../../../util/fit/root.js";
-import { selectCluster, type SelectedCluster } from "../../cluster-select/index.js";
+import { selectOrCreateCluster } from "../../cluster/cluster-select-or-create/index.js";
+import { type SelectedCluster } from "../../cluster/cluster-select/index.js";
 import { buildFitConfiguration } from "./build-fit-configuration.js";
 import {
   fitConfigDocPath,
@@ -41,11 +42,13 @@ export function generateFitConfiguration(cluster: SelectedCluster, rootDir: stri
 if (isMain(import.meta.url)) {
   runCli(async () => {
     const { rootDir } = rootDirFromArgv(process.argv.slice(2));
-    const selection = await selectCluster();
-    if (selection.mode === "create") {
-      console.log("\nCreating a new cluster is not wired up yet.");
-      return;
+    // Select an existing cluster or create a fresh one; a created Capella cluster
+    // is classified from its connection string so the FITConfig gets the Capella
+    // treatment automatically.
+    const outcome = await selectOrCreateCluster();
+    if (!outcome.ready) {
+      process.exit(1);
     }
-    return generateFitConfiguration(selection.cluster, rootDir);
+    return generateFitConfiguration(outcome.cluster, rootDir);
   });
 }

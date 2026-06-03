@@ -21,7 +21,7 @@
  *
  * Prints a sample def.
  */
-import { isMain, runCli } from "../../util/non-fit/cli.js";
+import { isMain, runCli } from "../../../util/non-fit/cli.js";
 
 /** The Couchbase Autonomous Operator versions used for CNG/Protostellar support. */
 export const CAO_OPERATOR_VERSION = "2.8.0";

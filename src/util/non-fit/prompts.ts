@@ -82,6 +82,29 @@ export function select<Value>(
   );
 }
 
+export function search<Value>(
+  config: {
+    promptId: string;
+    message: string;
+    source: Parameters<typeof prompts.search<Value>>[0]["source"];
+    validate?: (value: Value) => boolean | string | Promise<string | boolean>;
+    pageSize?: number;
+    instructions?: { navigation: string; pager: string };
+    theme?: unknown;
+    replay?: PromptResolveOptions<Value>;
+  },
+  context?: PromptContext,
+): Promise<Value> {
+  const { promptId, replay, ...promptConfig } = config;
+  return runPrompt(
+    promptId,
+    "search",
+    config.message,
+    () => prompts.search<Value>(promptConfig as never, context),
+    replay,
+  );
+}
+
 export function checkbox<Value>(
   config: {
     promptId: string;

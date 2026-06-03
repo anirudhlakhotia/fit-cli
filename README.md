@@ -85,6 +85,7 @@ End-users should be starting at `npm start`.
 - If asked to "sweep the files carefully" then do the above and also check each CLI tool also follows the instructions in this section.
 - Whenever showing a step is about to run, include (if fairly simple) how that can be repro-ed on the cli using this cli tool.
 - The mini CLI tool should output any final artifacts in a table (see Artifacts section).
+- LLMs: after making changes, if possible give me the mini CLI command to run that step/workflow.
 
 ### Testing
 - Anytime there's easy testable business logic, e.g. it doesn't require file access or similar, add unit tests.  Put these in a tests directory off the one being tested.
@@ -104,4 +105,5 @@ The user can replay that with `npm run replay <logfile>`.
 
 ### Artifacts
 Each run of fit-cli will produce a new unique directory (ARTIFACT_DIR) under /tmp/fit-cli/ which will contain any artifacts.
+ARTIFACT_DIR already contains the timestamp, and artifacts under it should have short clear filenames that do not need to be unique.  E.g. "cbdinocluster.yaml" is good.
 Artifacts are returned by workflows and displayed in a table to the user at the end of user-facing ones like runFunctionalTests.

@@ -39,6 +39,7 @@ test("a self-managed cluster uses the localhost layout", () => {
   assert.deepEqual(access.rest, { hostname: "${defaultHostname}", resolveDnsSrv: false });
   assert.deepEqual(access.proxy, { hostname: "localhost" });
   assert.equal(config.skipBucketCreation, undefined);
+  assert.deepEqual(config.excludeTests, ["situational"]);
 });
 
 test("a Capella cluster resolves DNS SRV, skips bucket creation and drops the proxy", () => {
@@ -55,6 +56,7 @@ test("a Capella cluster resolves DNS SRV, skips bucket creation and drops the pr
   assert.deepEqual(access.rest, { hostname: "${defaultHostname}", resolveDnsSrv: true, port: 18091 });
   assert.equal(access.proxy, null);
   assert.equal(config.skipBucketCreation, true);
+  assert.deepEqual(config.excludeTests, ["situational", "ssh", "realCapella"]);
 });
 
 test("the tls choice is passed straight through", () => {

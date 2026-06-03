@@ -5,8 +5,8 @@
  * Run on its own:
  *   npx tsx src/workflows/cluster-diag/index.ts couchbase://127.0.0.1 Administrator password
  */
-import { isMain, runCli } from "../../util/non-fit/cli.js";
-import { run } from "../../util/non-fit/proc.js";
+import { isMain, runCli } from "../../../util/non-fit/cli.js";
+import { run } from "../../../util/non-fit/proc.js";
 import type { SelectedCluster } from "../cluster-select/index.js";
 import { classifyConnectionString } from "../cluster-select/classify-connection-string.js";
 

@@ -40,10 +40,10 @@ test("formatArtifactsSection renders a table", () => {
     [
       "Artifacts:",
       "  ARTIFACT_DIR: /tmp/fit-cli/run-123",
-      "Filename              | What it's for",
-      "----------------------+--------------",
-      "performer.log         | Performer logs",
-      "FITConfiguration.json | Generated FIT config",
+      "Filename                                   | What it's for",
+      "-------------------------------------------+--------------",
+      "/tmp/fit-cli/run-123/performer.log         | Performer logs",
+      "/tmp/fit-cli/run-123/FITConfiguration.json | Generated FIT config",
     ].join("\n"),
   );
 });

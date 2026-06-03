@@ -150,7 +150,7 @@ test("record mode formats a replay reminder with the logfile", () => {
 
   assert.equal(
     session.formatReplayReminder(),
-    `Prompt replay:\n  Log file: ${session.logFile}\n  Replay: npm run replay ${session.logFile}\n  Replay with defaults: npm run replay --defaults ${session.logFile}`,
+    `Prompt replay:\n  Replay: npm run replay ${session.logFile}\n  Replay with defaults: npm run replay --defaults ${session.logFile}`,
   );
 });
 
