@@ -8,8 +8,11 @@ It's written with Node and Typescript.
 
 - Before doing something, generally explain what will be done.  E.g. File X was written and contains contents Y.
 - Save the full output from each run to a unique debug logfile under /tmp/fit-cli.  Display the filename.
-- 
-
+- Avoid comments that have "Step 1", "Step 2", etc.  They need updating too often.
+- Feel free to create files - think one file per clear step - and use a clear directory structure. 
+- Each step should be easily runnable independently via a small CLI tool that can be called directly, for debugging and development iteration purposes.  
+  Keep this in the same file with its associated step.
+  Include directions in that file on how to call the CLI tool.
 
 ## Getting started
 

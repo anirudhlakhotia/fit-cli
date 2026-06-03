@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 import { confirm, select } from "@inquirer/prompts";
 import {
+  buildFit,
   cloneRepo,
+  fitGrpcStatus,
   repoExists,
   repoPath,
   FIT_PERFORMER,
@@ -62,6 +64,54 @@ async function ensureRepo(repo: Repo): Promise<boolean> {
   }
 }
 
+/**
+ * Make sure fit-grpc is available and reasonably fresh in the local Maven repo.
+ * If it is missing or over a month old, offer to build FIT (which installs
+ * fit-grpc into ~/.m2).
+ *
+ * @returns true if fit-grpc is ready to use, false if the user chose to exit.
+ */
+async function ensureFitGrpc(): Promise<boolean> {
+  const status = fitGrpcStatus();
+
+  if (status.present && status.upToDate) {
+    console.log(
+      `✓ fit-grpc is in your local Maven repo (built ${status.builtAt!.toLocaleDateString()})`,
+    );
+    return true;
+  }
+
+  if (status.present) {
+    console.log(
+      `! fit-grpc is in your local Maven repo but is over a month old (built ${status.builtAt!.toLocaleDateString()})`,
+    );
+  } else {
+    console.log("✗ fit-grpc is not in your local Maven repo");
+  }
+
+  console.log(
+    "\nBuilding FIT will run:\n" +
+      "  cd ../transactions-fit-performer && mvn clean install -Dmaven.test.skip\n\n" +
+      "This builds fit-grpc (the JVM build of the GRPC) and puts it into your local Maven repo.\n" +
+      "If the GRPC ever changes, you'll need to rerun that mvn step again.",
+  );
+
+  const build = await confirm({ message: "Build FIT now?" });
+  if (!build) {
+    return false;
+  }
+
+  console.log("\nBuilding FIT...\n");
+  try {
+    await buildFit();
+    console.log("\n✓ Built FIT — fit-grpc is now in your local Maven repo");
+    return true;
+  } catch (err) {
+    console.error(`\n✗ Failed to build FIT: ${(err as Error).message}`);
+    return false;
+  }
+}
+
 /** Run the "Run functional tests" wizard. */
 async function runFunctionalTests(): Promise<void> {
   // Step 1: FIT itself must be present.
@@ -70,14 +120,20 @@ async function runFunctionalTests(): Promise<void> {
     return;
   }
 
-  // Step 2: which SDK to test.
+  // Step 2: fit-grpc must be built into the local Maven repo.
+  if (!(await ensureFitGrpc())) {
+    console.log("\nOnce fit-grpc is built, run fit-cli again.");
+    return;
+  }
+
+  // Step 3: which SDK to test.
   const sdkValue = await select<Sdk["value"]>({
     message: "Which SDK do you want to test?",
     choices: SDKS.map((sdk) => ({ name: sdk.name, value: sdk.value })),
   });
   const sdk = SDKS.find((s) => s.value === sdkValue)!;
 
-  // Step 3: JVM SDKs need couchbase-jvm-clients.
+  // Step 4: JVM SDKs need couchbase-jvm-clients.
   if (sdk.jvm) {
     console.log(`\n${sdk.name} is a JVM SDK, so it needs couchbase-jvm-clients.`);
     if (!(await ensureRepo(JVM_CLIENTS))) {
@@ -86,7 +142,7 @@ async function runFunctionalTests(): Promise<void> {
     }
   }
 
-  // Step 4: cluster.
+  // Step 5: cluster.
   const cluster = await select({
     message: "Do you already have a Couchbase cluster running?",
     choices: [
