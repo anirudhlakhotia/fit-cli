@@ -13,6 +13,11 @@ It's written with Node and Typescript.
 - Each step should be easily runnable independently via a small CLI tool that can be called directly, for debugging and development iteration purposes.  
   Keep this in the same file with its associated step.
   Include directions in that file on how to call the CLI tool.
+  For these CLI tools, let me override each step so I can test each part.  E.g. if one step checks if a path exists, let me pretend it doesn't.
+  If you move any files around, make sure these instructions continue to work.
+- Run `npm run lint` and `npm run typecheck` after writing code.
+- Everything file-based is relative to a ROOT_DIR, which is the directory they ran the tool from by default, and can be overridden on CLI.
+- Anytime there's easy testable business logic, e.g. it doesn't require file access or similar, add unit tests.  Put these in a tests directory off the one being tested.
 
 ## Getting started
 
@@ -31,35 +36,16 @@ npm start
 3. Choosing whether to use an existing Couchbase cluster or create a new one.
 
 ## Structure
+### Running a single step or flow
 
-The wizard is split into one file per step. `src/index.ts` only orchestrates;
-each step under `src/steps/` owns its own logic **and** a small CLI so it can be
-run on its own during development. Shared helpers live in `src/lib/`.
-
-```
-src/
-  index.ts                 wizard orchestrator (ties the steps together)
-  lib/
-    cli.ts                 isMain() + runCli() — shared step-CLI plumbing
-    proc.ts                run() — stream a child process (git, mvn) to the console
-    repos.ts               sibling-repo definitions + path/exists/clone helpers
-    sdks.ts                the list of SDKs FIT can test
-  steps/
-    ensure-repo.ts         ensure a sibling repo is present (clone if missing)
-    ensure-fit-grpc.ts     ensure fit-grpc is in the local Maven repo (build if stale)
-    choose-sdk.ts          pick which SDK to test
-    check-performer.ts     verify the chosen SDK's performer exists
-    choose-cluster.ts      pick an existing cluster or create a new one
-```
-
-### Running a single step
-
-Each step file's header comment shows how to run it directly. For example:
+Each step file's header comment shows how to run it directly, and a flow's
+`index.ts` can be run the same way. For example:
 
 ```sh
+npx tsx src/fit-functional-guided/index.ts                          # the whole flow
 npx tsx src/steps/ensure-repo.ts fit-performer
-npx tsx src/steps/check-performer.ts dotnet
-npx tsx src/steps/ensure-fit-grpc.ts
+npx tsx src/fit-functional-guided/steps/performers/check-performer.ts dotnet
+npx tsx src/fit-functional-guided/steps/ensure-fit-grpc.ts
 ```
 
 ## Scripts

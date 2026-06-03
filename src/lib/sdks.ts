@@ -1,7 +1,11 @@
 /**
- * SDKs that FIT can test. The JVM-based ones share couchbase-jvm-clients and
- * the single "java" performer. `performer` is the SDK's directory under
- * transactions-fit-performer/performers.
+ * SDKs that FIT can test.
+ *
+ * `performer` is the SDK's performer directory name. For non-JVM SDKs that is
+ * the directory under transactions-fit-performer/performers. For JVM SDKs
+ * (Java, Kotlin, Scala) the performer lives in couchbase-jvm-clients as
+ * <performer>-fit-performer; the matching performers/ entry under
+ * transactions-fit-performer is the old one and is no longer used.
  */
 export const SDKS = [
   { name: "Java", value: "java", jvm: true, performer: "java" },

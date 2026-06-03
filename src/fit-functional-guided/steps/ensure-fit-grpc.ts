@@ -5,7 +5,7 @@
  * installs fit-grpc into ~/.m2.
  *
  * Run on its own:
- *   npx tsx src/steps/ensure-fit-grpc.ts
+ *   npx tsx src/fit-functional-guided/steps/ensure-fit-grpc.ts
  *
  * Exits 0 if fit-grpc is ready, 1 if the user declined the build or it failed.
  */
@@ -13,9 +13,9 @@ import { existsSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { confirm } from "@inquirer/prompts";
-import { isMain, runCli } from "../lib/cli.js";
-import { run } from "../lib/proc.js";
-import { FIT_PERFORMER, repoPath } from "../lib/repos.js";
+import { isMain, runCli } from "../../lib/cli.js";
+import { run } from "../../lib/proc.js";
+import { FIT_PERFORMER, repoPath } from "../../lib/repos.js";
 
 /**
  * Location of the fit-grpc artifact in the local Maven repository. Building FIT
@@ -65,7 +65,7 @@ export async function ensureFitGrpc(): Promise<boolean> {
 
   if (status.present && status.upToDate) {
     console.log(
-      `✓ fit-grpc is in your local Maven repo (built ${status.builtAt!.toLocaleDateString()})`,
+      `✓ fit-grpc is in your local Maven repo and recently built (built ${status.builtAt!.toLocaleDateString()})`,
     );
     return true;
   }
