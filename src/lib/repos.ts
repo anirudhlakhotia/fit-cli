@@ -1,16 +1,15 @@
 import { existsSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { run } from "./proc.js";
 
 /**
- * A sibling repository that FIT depends on. By convention these live next to
- * fit-cli, i.e. as siblings of this project's directory.
+ * A repository that FIT depends on. These live directly under ROOT_DIR (see
+ * lib/root.ts), e.g. <ROOT_DIR>/transactions-fit-performer.
  */
 export interface Repo {
   /** Human-readable name shown to the user. */
   name: string;
-  /** Directory name, expected as a sibling of fit-cli (e.g. ../transactions-fit-performer). */
+  /** Directory name, expected directly under ROOT_DIR (e.g. transactions-fit-performer). */
   dir: string;
   /** Git URL used to clone the repo if it is missing. */
   url: string;
@@ -36,23 +35,17 @@ export const REPOS = {
 
 export type RepoKey = keyof typeof REPOS;
 
-/** Absolute path to the fit-cli project root (one level up from src/). */
-export const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
-
-/** The directory that holds fit-cli and its sibling repos. */
-export const siblingRoot = resolve(projectRoot, "..");
-
-/** Absolute path where a sibling repo is (or would be) located. */
-export function repoPath(repo: Repo): string {
-  return join(siblingRoot, repo.dir);
+/** Absolute path where a repo is (or would be) located, directly under ROOT_DIR. */
+export function repoPath(repo: Repo, rootDir: string): string {
+  return join(rootDir, repo.dir);
 }
 
-/** True if the sibling repo already exists on disk. */
-export function repoExists(repo: Repo): boolean {
-  return existsSync(repoPath(repo));
+/** True if the repo already exists on disk under ROOT_DIR. */
+export function repoExists(repo: Repo, rootDir: string): boolean {
+  return existsSync(repoPath(repo, rootDir));
 }
 
-/** Clone a repo into the sibling root, streaming git output to the console. */
-export function cloneRepo(repo: Repo): Promise<void> {
-  return run("git", ["clone", repo.url, repo.dir], siblingRoot);
+/** Clone a repo into ROOT_DIR, streaming git output to the console. */
+export function cloneRepo(repo: Repo, rootDir: string): Promise<void> {
+  return run("git", ["clone", repo.url, repo.dir], rootDir);
 }

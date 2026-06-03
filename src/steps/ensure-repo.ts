@@ -2,27 +2,28 @@
  * Step: make sure a sibling repo (transactions-fit-performer, couchbase-jvm-clients)
  * is present, offering to clone it if it is missing.
  *
- * Run on its own:
+ * Run on its own (optionally with --root <dir> to point at another workspace):
  *   npx tsx src/steps/ensure-repo.ts fit-performer
- *   npx tsx src/steps/ensure-repo.ts jvm-clients
+ *   npx tsx src/steps/ensure-repo.ts jvm-clients --root /some/workspace
  *
  * Exits 0 if the repo is ready, 1 if the user chose to bail or the clone failed.
  */
 import { select } from "@inquirer/prompts";
 import { isMain, runCli } from "../lib/cli.js";
 import { REPOS, cloneRepo, repoExists, repoPath, type Repo, type RepoKey } from "../lib/repos.js";
+import { rootDirFromArgv } from "../lib/root.js";
 
 /**
  * @returns true if the repo is ready to use, false if the user chose to exit or
  * the clone failed.
  */
-export async function ensureRepo(repo: Repo): Promise<boolean> {
-  if (repoExists(repo)) {
-    console.log(`✓ Found ${repo.name} at ${repoPath(repo)}`);
+export async function ensureRepo(repo: Repo, rootDir: string): Promise<boolean> {
+  if (repoExists(repo, rootDir)) {
+    console.log(`✓ Found ${repo.name} at ${repoPath(repo, rootDir)}`);
     return true;
   }
 
-  console.log(`✗ Could not find ${repo.name} at ${repoPath(repo)}`);
+  console.log(`✗ Could not find ${repo.name} at ${repoPath(repo, rootDir)}`);
 
   const action = await select({
     message: `What would you like to do about the missing ${repo.name}?`,
@@ -38,8 +39,8 @@ export async function ensureRepo(repo: Repo): Promise<boolean> {
 
   console.log(`\nCloning ${repo.name}...\n`);
   try {
-    await cloneRepo(repo);
-    console.log(`\n✓ Cloned ${repo.name} to ${repoPath(repo)}`);
+    await cloneRepo(repo, rootDir);
+    console.log(`\n✓ Cloned ${repo.name} to ${repoPath(repo, rootDir)}`);
     return true;
   } catch (err) {
     console.error(`\n✗ Failed to clone ${repo.name}: ${(err as Error).message}`);
@@ -49,13 +50,15 @@ export async function ensureRepo(repo: Repo): Promise<boolean> {
 
 if (isMain(import.meta.url)) {
   runCli(async () => {
-    const key = process.argv[2] as RepoKey;
-    const repo = REPOS[key];
+    const { rootDir, positionals } = rootDirFromArgv(process.argv.slice(2));
+    const repo = REPOS[positionals[0] as RepoKey];
     if (!repo) {
-      console.error(`Usage: tsx src/steps/ensure-repo.ts <${Object.keys(REPOS).join(" | ")}>`);
+      console.error(
+        `Usage: tsx src/steps/ensure-repo.ts <${Object.keys(REPOS).join(" | ")}> [--root <dir>]`,
+      );
       process.exit(2);
     }
-    const ok = await ensureRepo(repo);
+    const ok = await ensureRepo(repo, rootDir);
     process.exit(ok ? 0 : 1);
   });
 }

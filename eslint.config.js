@@ -22,4 +22,11 @@ export default tseslint.config(
     files: ["**/*.js"],
     ...tseslint.configs.disableTypeChecked,
   },
+  {
+    // node:test's top-level test() calls intentionally return floating promises.
+    files: ["**/tests/**/*.ts"],
+    rules: {
+      "@typescript-eslint/no-floating-promises": "off",
+    },
+  },
 );
