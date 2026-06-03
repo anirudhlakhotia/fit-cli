@@ -1,4 +1,8 @@
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { closeSync, createWriteStream, mkdirSync, openSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
+import { ensureRunDir } from "./replay.js";
 
 /**
  * Run a command, streaming its output straight to the console, and resolve when
@@ -42,6 +46,101 @@ export function capture(command: string, args: string[], cwd: string = process.c
         const detail = stderr.trim();
         reject(new Error(`${command} exited with code ${code}${detail ? `: ${detail}` : ""}`));
       }
+    });
+  });
+}
+
+/** Create a timestamped log file path under the shared fit-cli temp directory. */
+export function createLogFile(prefix: string, extension: string = "log"): string {
+  const runDir = ensureRunDir();
+  mkdirSync(runDir, { recursive: true, mode: 0o700 });
+  return `${runDir}/${prefix}-${new Date().toISOString().replaceAll(":", "-")}-${randomUUID()}.${extension}`;
+}
+
+/**
+ * Start a command in the background and stream stdout/stderr directly to a log
+ * file as output is produced.
+ */
+export function streamToFileInBackground(
+  command: string,
+  args: string[],
+  logFile: string,
+  cwd: string = process.cwd(),
+): Promise<void> {
+  mkdirSync(dirname(logFile), { recursive: true, mode: 0o700 });
+
+  return new Promise((resolve, reject) => {
+    const logFd = openSync(logFile, "a", 0o600);
+    writeFileSync(logFd, `# ${new Date().toISOString()} ${command} ${args.join(" ")}\n`);
+
+    let settled = false;
+    const finish = (fn: () => void) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      closeSync(logFd);
+      fn();
+    };
+
+    try {
+      const child = spawn(command, args, {
+        cwd,
+        detached: true,
+        stdio: ["ignore", logFd, logFd],
+      });
+
+      child.once("error", (err) => finish(() => reject(err)));
+      child.once("spawn", () =>
+        finish(() => {
+          child.unref();
+          resolve();
+        }),
+      );
+    } catch (err) {
+      finish(() => reject(err instanceof Error ? err : new Error(String(err))));
+    }
+  });
+}
+
+/**
+ * Run a command while streaming stdout/stderr both to the terminal and to a
+ * log file as output is produced.
+ */
+export function runAndCaptureToFile(
+  command: string,
+  args: string[],
+  logFile: string,
+  cwd: string = process.cwd(),
+): Promise<void> {
+  mkdirSync(dirname(logFile), { recursive: true, mode: 0o700 });
+
+  return new Promise((resolve, reject) => {
+    const log = createWriteStream(logFile, { flags: "a", mode: 0o600 });
+    log.write(`# ${new Date().toISOString()} ${command} ${args.join(" ")}\n`);
+
+    const child = spawn(command, args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
+
+    child.stdout.on("data", (chunk: Buffer) => {
+      process.stdout.write(chunk);
+      log.write(chunk);
+    });
+    child.stderr.on("data", (chunk: Buffer) => {
+      process.stderr.write(chunk);
+      log.write(chunk);
+    });
+
+    child.on("error", (err) => {
+      log.end(() => reject(err));
+    });
+    child.on("close", (code) => {
+      log.end(() => {
+        if (code === 0) {
+          resolve();
+        } else {
+          reject(new Error(`${command} exited with code ${code}`));
+        }
+      });
     });
   });
 }

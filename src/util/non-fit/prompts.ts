@@ -5,30 +5,67 @@ type PromptContext = Parameters<typeof prompts.input>[1];
 type InputConfig = Parameters<typeof prompts.input>[0];
 type ConfirmConfig = Parameters<typeof prompts.confirm>[0];
 type PasswordConfig = Parameters<typeof prompts.password>[0];
+type PromptConfigWithId = { promptId: string; message: string };
+
+function applyCheckboxDefaults<Value>(choices: readonly unknown[], selectedValues: readonly Value[]): readonly unknown[] {
+  const selected = new Set(selectedValues);
+  return choices.map((choice) => {
+    if (!choice || typeof choice !== "object" || !("value" in choice)) {
+      return choice;
+    }
+
+    const entry = choice as { value?: Value; checked?: boolean };
+    return { ...entry, checked: entry.value !== undefined && selected.has(entry.value) };
+  });
+}
 
 function runPrompt<T>(
+  promptId: string,
   kind: PromptKind,
   message: string,
-  prompt: () => Promise<T>,
+  prompt: (replayDefault?: T) => Promise<T>,
   options?: PromptResolveOptions<T>,
 ): Promise<T> {
-  return ensurePromptSession().resolvePrompt(kind, message, prompt, options);
+  return ensurePromptSession().resolvePrompt(promptId, kind, message, prompt, options);
 }
 
-export function input(config: InputConfig, context?: PromptContext): Promise<string> {
-  return runPrompt("input", config.message, () => prompts.input(config, context));
+export function input(config: InputConfig & PromptConfigWithId, context?: PromptContext): Promise<string> {
+  const { promptId, ...promptConfig } = config;
+  return runPrompt(promptId, "input", config.message, (replayDefault) =>
+    prompts.input({ ...promptConfig, default: replayDefault ?? promptConfig.default }, context),
+  );
 }
 
-export function confirm(config: ConfirmConfig, context?: PromptContext): Promise<boolean> {
-  return runPrompt("confirm", config.message, () => prompts.confirm(config, context));
+export function confirm(config: ConfirmConfig & PromptConfigWithId, context?: PromptContext): Promise<boolean> {
+  const { promptId, ...promptConfig } = config;
+  return runPrompt(promptId, "confirm", config.message, (replayDefault) =>
+    prompts.confirm({ ...promptConfig, default: replayDefault ?? promptConfig.default }, context),
+  );
 }
 
-export function password(config: PasswordConfig, context?: PromptContext): Promise<string> {
-  return runPrompt("password", config.message, () => prompts.password(config, context));
+export function password(
+  config: PasswordConfig & PromptConfigWithId,
+  context?: PromptContext,
+): Promise<string> {
+  const { promptId, ...promptConfig } = config;
+  return runPrompt(promptId, "password", config.message, async (replayDefault) => {
+    const validate = promptConfig.validate;
+    const response = await prompts.password(
+      replayDefault === undefined || validate === undefined
+        ? promptConfig
+        : {
+            ...promptConfig,
+            validate: async (value) => (value.length === 0 ? true : validate(value)),
+          },
+      context,
+    );
+    return response || replayDefault || "";
+  });
 }
 
 export function select<Value>(
   config: {
+    promptId: string;
     message: string;
     choices: readonly unknown[];
     pageSize?: number;
@@ -39,13 +76,15 @@ export function select<Value>(
   },
   context?: PromptContext,
 ): Promise<Value> {
-  return runPrompt("select", config.message, () =>
-    prompts.select<Value>(config as never, context),
+  const { promptId, ...promptConfig } = config;
+  return runPrompt(promptId, "select", config.message, (replayDefault) =>
+    prompts.select<Value>({ ...promptConfig, default: replayDefault ?? promptConfig.default } as never, context),
   );
 }
 
 export function checkbox<Value>(
   config: {
+    promptId: string;
     message: string;
     choices: readonly unknown[];
     prefix?: string;
@@ -60,15 +99,25 @@ export function checkbox<Value>(
   },
   context?: PromptContext,
 ): Promise<Value[]> {
-  const { replay, ...promptConfig } = config;
-  return runPrompt("checkbox", config.message, () =>
-    prompts.checkbox<Value>(promptConfig as never, context),
+  const { promptId, replay, ...promptConfig } = config;
+  return runPrompt(promptId, "checkbox", config.message, (replayDefault) =>
+    prompts.checkbox<Value>(
+      {
+        ...promptConfig,
+        choices:
+          replayDefault !== undefined
+            ? applyCheckboxDefaults(promptConfig.choices, replayDefault)
+            : promptConfig.choices,
+      } as never,
+      context,
+    ),
     replay,
   );
 }
 
 export function number<Required extends boolean>(
   config: {
+    promptId: string;
     message: string;
     default?: number;
     min?: number;
@@ -82,7 +131,8 @@ export function number<Required extends boolean>(
   },
   context?: PromptContext,
 ): Promise<Required extends true ? number : number | undefined> {
-  return runPrompt("number", config.message, () =>
-    prompts.number<Required>(config as never, context),
+  const { promptId, ...promptConfig } = config;
+  return runPrompt(promptId, "number", config.message, (replayDefault) =>
+    prompts.number<Required>({ ...promptConfig, default: replayDefault ?? promptConfig.default } as never, context),
   );
 }

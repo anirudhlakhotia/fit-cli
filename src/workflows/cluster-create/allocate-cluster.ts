@@ -1,6 +1,7 @@
 /**
  * Step: allocate a cluster with cbdinocluster from a def document. The def is
- * written to a file under /tmp/fit-cli and then handed to
+ * written to a file in the current run directory under /tmp/fit-cli and then
+ * handed to
  * `cbdinocluster --verbose allocate --def-file=<file>` (with an optional
  * --deployer override), whose output is streamed to the console.
  *
@@ -10,29 +11,37 @@
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { artifactFromPath, type ArtifactCollection, type Artifact } from "../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../util/non-fit/cli.js";
 import { input } from "../../util/non-fit/prompts.js";
 import { run } from "../../util/non-fit/proc.js";
+import { ensureRunDir } from "../../util/non-fit/replay.js";
 import { buildClusterDef } from "./build-cluster-def.js";
 import { ensureCbdinocluster } from "./ensure-cbdinocluster.js";
-
-/** Directory under /tmp where the generated def files are written. */
-const DEF_DIR = "/tmp/fit-cli";
 
 /** A filesystem-safe timestamp like 2026-06-03T12-34-56-789Z. */
 function timestamp(): string {
   return new Date().toISOString().replace(/[:.]/g, "-");
 }
 
+export interface WriteClusterDefResult {
+  path: string;
+  artifact: Artifact;
+}
+
 /**
- * Write the cbdinocluster def to a fresh file under /tmp/fit-cli and return its
- * absolute path. Timestamped so consecutive runs don't clobber each other.
+ * Write the cbdinocluster def to a fresh file in the current run directory and
+ * return its absolute path. Timestamped so consecutive writes don't clobber
+ * each other.
  */
-export function writeClusterDef(def: string): string {
-  mkdirSync(DEF_DIR, { recursive: true });
-  const path = join(DEF_DIR, `cbdinocluster-${timestamp()}.yaml`);
+export function writeClusterDef(def: string, runDir: string = ensureRunDir()): WriteClusterDefResult {
+  mkdirSync(runDir, { recursive: true, mode: 0o700 });
+  const path = join(runDir, `cbdinocluster-${timestamp()}.yaml`);
   writeFileSync(path, def);
-  return path;
+  return {
+    path,
+    artifact: artifactFromPath(path, "cbdinocluster definition used to allocate the cluster", runDir),
+  };
 }
 
 /**
@@ -42,6 +51,7 @@ export function writeClusterDef(def: string): string {
 export async function askDeployer(): Promise<string | undefined> {
   const deployer = (
     await input({
+      promptId: "cluster.create.deployer-override",
       message: "Override the cbdinocluster deployer? (leave blank for the default)",
     })
   ).trim();
@@ -57,8 +67,8 @@ export async function allocateCluster(
   cbdinocluster: string,
   def: string,
   deployer?: string,
-): Promise<void> {
-  const defFile = writeClusterDef(def);
+): Promise<ArtifactCollection> {
+  const { path: defFile, artifact } = writeClusterDef(def);
   console.log(`Wrote cbdinocluster def to ${defFile}:\n\n${def}`);
 
   const args = ["--verbose", "allocate"];
@@ -69,6 +79,7 @@ export async function allocateCluster(
 
   console.log(`Running: ${cbdinocluster} ${args.join(" ")}\n`);
   await run(cbdinocluster, args);
+  return { artifacts: [artifact] };
 }
 
 if (isMain(import.meta.url)) {
@@ -83,6 +94,6 @@ if (isMain(import.meta.url)) {
       services: ["kv", "n1ql", "index", "fts"],
       cng: false,
     });
-    await allocateCluster(cbdinocluster, def, await askDeployer());
+    return allocateCluster(cbdinocluster, def, await askDeployer());
   });
 }

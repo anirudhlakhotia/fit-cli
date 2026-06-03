@@ -12,6 +12,7 @@ import { SDKS, sdkByValue, type Sdk, type SdkValue } from "./sdks.js";
 
 export async function chooseSdk(message: string = "Which SDK do you want to test?"): Promise<Sdk> {
   const value = await select<SdkValue>({
+    promptId: "sdk.choose",
     message,
     choices: SDKS.map((sdk) => ({ name: sdk.name, value: sdk.value })),
   });

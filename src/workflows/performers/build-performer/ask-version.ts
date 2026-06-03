@@ -12,6 +12,7 @@ import { input } from "../../../util/non-fit/prompts.js";
 /** Ask which SDK version to build; blank means build main. */
 export async function askVersion(): Promise<string | undefined> {
   const version = await input({
+    promptId: "performer.version",
     message: "Which version do you want to build? Leave blank for main.",
     default: "",
   });

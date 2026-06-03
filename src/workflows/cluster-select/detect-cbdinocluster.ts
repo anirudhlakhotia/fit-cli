@@ -44,6 +44,7 @@ export async function detectCbdinocluster(): Promise<DetectedCluster | null> {
   }
 
   const autodetect = await confirm({
+    promptId: "cluster.detect-cbdinocluster.confirm",
     message: "cbdinocluster is installed — look for clusters it already has running?",
   });
   if (!autodetect) {
@@ -64,6 +65,7 @@ export async function detectCbdinocluster(): Promise<DetectedCluster | null> {
   }
 
   const id = await select<string>({
+    promptId: "cluster.detect-cbdinocluster.select-cluster",
     message: "Which cbdinocluster cluster do you want to use?",
     choices: clusters.map((cluster) => ({
       name: `${cluster.id}  [${cluster.details}]`,

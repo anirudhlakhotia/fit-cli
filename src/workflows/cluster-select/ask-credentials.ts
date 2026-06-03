@@ -27,10 +27,15 @@ export const DEFAULT_CREDENTIALS: Credentials = {
  */
 export async function askCredentials(): Promise<Credentials> {
   const username = await input({
+    promptId: "cluster.credentials.username",
     message: "Username to test with:",
     default: DEFAULT_CREDENTIALS.username,
   });
-  const pw = await password({ message: "Password to test with:", mask: true });
+  const pw = await password({
+    promptId: "cluster.credentials.password",
+    message: "Password to test with:",
+    mask: true,
+  });
   return { username, password: pw || DEFAULT_CREDENTIALS.password };
 }
 

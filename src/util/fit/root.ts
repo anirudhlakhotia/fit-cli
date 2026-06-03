@@ -14,8 +14,8 @@
  * workspace.
  *
  * Note this governs the workspace repos only — the local Maven repo (~/.m2) and
- * the debug logs (/tmp/fit-cli) are global locations and are not relative to
- * ROOT_DIR.
+ * the per-run temp files under /tmp/fit-cli are global locations and are not
+ * relative to ROOT_DIR.
  */
 import { existsSync, statSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";

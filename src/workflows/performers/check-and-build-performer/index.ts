@@ -46,6 +46,7 @@ export async function checkAndBuildPerformer(
   console.log(`\nBuilding performer with:\n  ${describeBuildPerformerCommand(rootDir, sdk, version)}\n`);
 
   const shouldBuild = await confirm({
+    promptId: "performer.build-now",
     message: `Build the ${sdk.name} performer Docker image now?`,
   });
   if (!shouldBuild) {

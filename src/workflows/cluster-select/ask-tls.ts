@@ -36,6 +36,7 @@ export async function askTls(flavour: ClusterFlavour): Promise<TlsConfig> {
   }
 
   const choice = await select<"cert" | "insecure">({
+    promptId: "cluster.tls.trust-mode",
     message: "How should the SDK trust this cluster over TLS?",
     choices: [
       { name: "Provide the cluster certificate", value: "cert" },
@@ -48,6 +49,7 @@ export async function askTls(flavour: ClusterFlavour): Promise<TlsConfig> {
   }
 
   const certPath = await input({
+    promptId: "cluster.tls.cert-path",
     message: "Path to the cluster certificate (PEM format):",
   });
   return { certPath };

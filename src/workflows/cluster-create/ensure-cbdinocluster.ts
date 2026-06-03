@@ -35,7 +35,10 @@ async function resolveCbdinocluster(): Promise<string> {
   console.log(
     `✗ cbdinocluster is not on your PATH. You can get it from ${CBDINOCLUSTER_URL}.`,
   );
-  return input({ message: "Path to your cbdinocluster binary:" });
+  return input({
+    promptId: "cluster.create.cbdinocluster-path",
+    message: "Path to your cbdinocluster binary:",
+  });
 }
 
 /**

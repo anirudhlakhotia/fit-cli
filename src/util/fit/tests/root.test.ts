@@ -48,3 +48,10 @@ test("ignores the replay flag while parsing ROOT_DIR", () => {
     positionals: ["go"],
   });
 });
+
+test("ignores the replay defaults flag while parsing ROOT_DIR", () => {
+  assert.deepEqual(extractRootFlag(["--replay", "--defaults", "/tmp/run.json", "--root", "/ws", "go"]), {
+    override: "/ws",
+    positionals: ["go"],
+  });
+});

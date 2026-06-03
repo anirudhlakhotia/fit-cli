@@ -171,6 +171,16 @@ export function serializeSelectedFitTestsForReplay(
   return [...selectedClassNames];
 }
 
+/** Show relative test paths in the picker while keeping answer chips concise. */
+export function buildFitTestChoices(tests: readonly FitTestCase[]) {
+  return tests.map((test) => ({
+    name: test.relativePath,
+    short: test.fileName,
+    value: test.className,
+    checked: true,
+  }));
+}
+
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string");
 }
@@ -196,13 +206,9 @@ export async function selectFitTests(rootDir: string): Promise<FitTestSelection>
   try {
     const tests = await listFitTests(rootDir);
     const selectedClassNames = await checkbox<string>({
-      message: "Which FIT test-driver tests do you want to run?",
-      choices: tests.map((test) => ({
-        name: test.fileName,
-        description: test.relativePath,
-        value: test.className,
-        checked: true,
-      })),
+      promptId: "fit.tests.select",
+      message: "Which FIT test-driver tests do you want to run?  (Default is everything)",
+      choices: buildFitTestChoices(tests),
       required: true,
       theme: {
         style: {

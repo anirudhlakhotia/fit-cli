@@ -1,5 +1,6 @@
 import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { formatArtifactsSection, type ArtifactCollection } from "./artifacts.js";
 import { ensurePromptSession } from "./replay.js";
 
 /**
@@ -20,11 +21,22 @@ export function isMain(metaUrl: string): boolean {
  * Esc from @inquirer throws ExitPromptError and exits quietly, anything else
  * prints and exits non-zero.
  */
-export function runCli(main: () => Promise<void>): void {
+export function runCli(main: () => Promise<void | ArtifactCollection>): void {
   const promptSession = ensurePromptSession(process.argv.slice(2));
+  let artifactsOutput: string | undefined;
   Promise.resolve()
     .then(() => main())
+    .then((result) => {
+      artifactsOutput = formatArtifactsSection(result?.artifacts ?? []);
+      return promptSession.finishReplay();
+    })
+    .then(() => {
+      if (artifactsOutput) {
+        console.log(`\n${artifactsOutput}`);
+      }
+    })
     .finally(() => {
+      console.log(`\n${promptSession.formatRunReminder()}`);
       const replayReminder = promptSession.formatReplayReminder();
       if (replayReminder) {
         console.log(`\n${replayReminder}`);

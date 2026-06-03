@@ -33,8 +33,10 @@ function announce(cluster: SupportedCluster): void {
  * tool can use. Returns the supported classification.
  */
 export async function askConnectionString(): Promise<SupportedCluster> {
+  let attempt = 1;
   for (;;) {
     const raw = await input({
+      promptId: `cluster.connection-string.attempt-${attempt++}`,
       message:
         "Enter your cluster's full connection string, including the scheme (e.g. couchbase://localhost):",
     });

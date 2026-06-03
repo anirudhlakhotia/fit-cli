@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -22,6 +22,7 @@ async function captureLogs(run: () => Promise<void>): Promise<string[]> {
 test("extractReplayFlag pulls --replay out of argv", () => {
   assert.deepEqual(extractReplayFlag(["functional", "--replay", "/tmp/run.json", "--root", "/ws"]), {
     replayRequested: true,
+    replayDefaults: false,
     replayFile: "/tmp/run.json",
     positionals: ["functional", "--root", "/ws"],
   });
@@ -30,29 +31,80 @@ test("extractReplayFlag pulls --replay out of argv", () => {
 test("extractReplayFlag notices a missing logfile", () => {
   assert.deepEqual(extractReplayFlag(["functional", "--replay", "--root", "/ws"]), {
     replayRequested: true,
+    replayDefaults: false,
     replayFile: undefined,
     positionals: ["functional", "--root", "/ws"],
   });
 });
 
+test("extractReplayFlag supports replay defaults mode", () => {
+  assert.deepEqual(extractReplayFlag(["functional", "--defaults", "/tmp/run.json", "--root", "/ws"]), {
+    replayRequested: true,
+    replayDefaults: true,
+    replayFile: "/tmp/run.json",
+    positionals: ["functional", "--root", "/ws"],
+  });
+});
+
+test("extractReplayFlag picks up npm replay defaults for the replay script", () => {
+  assert.deepEqual(
+    extractReplayFlag(["--replay", "/tmp/run.json"], {
+      npm_lifecycle_event: "replay",
+      npm_config_defaults: "true",
+    }),
+    {
+      replayRequested: true,
+      replayDefaults: true,
+      replayFile: "/tmp/run.json",
+      positionals: [],
+    },
+  );
+});
+
+test("extractReplayFlag can take the replay logfile from npm config when needed", () => {
+  assert.deepEqual(
+    extractReplayFlag(["--replay"], {
+      npm_lifecycle_event: "replay",
+      npm_config_defaults: "/tmp/run.json",
+    }),
+    {
+      replayRequested: true,
+      replayDefaults: true,
+      replayFile: "/tmp/run.json",
+      positionals: [],
+    },
+  );
+});
+
 test("record mode writes prompt responses to a log file", async () => {
   const session = PromptSession.fromArgv([]);
 
-  const response = await session.resolvePrompt("input", "Which SDK?", () => Promise.resolve("node"));
+  const response = await session.resolvePrompt("sdk.choose", "input", "Which SDK?", () =>
+    Promise.resolve("node"),
+  );
   assert.equal(response, "node");
 
   const log = JSON.parse(readFileSync(session.logFile, "utf8")) as {
     prompts: Array<{ id: string; kind: string; message: string; response: string }>;
   };
   assert.deepEqual(log.prompts, [
-    { id: "prompt-1", kind: "input", message: "Which SDK?", response: "node" },
+    { id: "sdk.choose", kind: "input", message: "Which SDK?", response: "node" },
   ]);
+});
+
+test("record mode creates a per-run directory under /tmp/fit-cli", () => {
+  const session = PromptSession.fromArgv([]);
+
+  assert.match(session.runDir, /^\/tmp\/fit-cli\/run-/);
+  assert.equal(statSync(session.runDir).isDirectory(), true);
+  assert.equal(session.logFile.startsWith(`${session.runDir}/`), true);
 });
 
 test("record mode can serialize a prompt response before saving it", async () => {
   const session = PromptSession.fromArgv([]);
 
   const response = await session.resolvePrompt(
+    "fit.tests.select",
     "checkbox",
     "Which tests?",
     () => Promise.resolve(["a", "b"]),
@@ -65,7 +117,7 @@ test("record mode can serialize a prompt response before saving it", async () =>
   };
   assert.deepEqual(log.prompts, [
     {
-      id: "prompt-1",
+      id: "fit.tests.select",
       kind: "checkbox",
       message: "Which tests?",
       response: "All FIT tests selected",
@@ -78,8 +130,14 @@ test("record mode formats a replay reminder with the logfile", () => {
 
   assert.equal(
     session.formatReplayReminder(),
-    `Prompt replay:\n  Log file: ${session.logFile}\n  Replay: npm run replay ${session.logFile}`,
+    `Prompt replay:\n  Log file: ${session.logFile}\n  Replay: npm run replay ${session.logFile}\n  Replay with defaults: npm run replay --defaults ${session.logFile}`,
   );
+});
+
+test("record mode formats a run directory reminder", () => {
+  const session = PromptSession.fromArgv([]);
+
+  assert.equal(session.formatRunReminder(), `Run files:\n  ARTIFACT_DIR: ${session.runDir}`);
 });
 
 test("record mode persists the chosen workflow", () => {
@@ -103,7 +161,7 @@ test("replay mode reuses saved prompt responses", async () => {
         createdAt: "2026-06-03T00:00:00.000Z",
         prompts: [
           {
-            id: "prompt-1",
+            id: "fit.grpc.build-now",
             kind: "confirm",
             message: "Build FIT now?",
             response: true,
@@ -118,7 +176,7 @@ test("replay mode reuses saved prompt responses", async () => {
   let response: boolean | undefined;
   const logs = await captureLogs(async () => {
     const session = PromptSession.fromArgv(["--replay", logFile]);
-    response = await session.resolvePrompt("confirm", "Build FIT now?", () =>
+    response = await session.resolvePrompt("fit.grpc.build-now", "confirm", "Build FIT now?", () =>
       Promise.resolve(false),
     );
     assert.equal(session.formatReplayReminder(), undefined);
@@ -139,7 +197,7 @@ test("replay mode hides password values in console output", async () => {
         createdAt: "2026-06-03T00:00:00.000Z",
         prompts: [
           {
-            id: "prompt-1",
+            id: "cluster.credentials.password",
             kind: "password",
             message: "Password to test with:",
             response: "super-secret",
@@ -153,8 +211,11 @@ test("replay mode hides password values in console output", async () => {
 
   const logs = await captureLogs(async () => {
     const session = PromptSession.fromArgv(["--replay", logFile]);
-    const response = await session.resolvePrompt("password", "Password to test with:", () =>
-      Promise.resolve("unused"),
+    const response = await session.resolvePrompt(
+      "cluster.credentials.password",
+      "password",
+      "Password to test with:",
+      () => Promise.resolve("unused"),
     );
     assert.equal(response, "super-secret");
   });
@@ -173,7 +234,7 @@ test("replay mode can deserialize a stored prompt response", async () => {
         createdAt: "2026-06-03T00:00:00.000Z",
         prompts: [
           {
-            id: "prompt-1",
+            id: "fit.tests.select",
             kind: "checkbox",
             message: "Which tests?",
             response: "All FIT tests selected",
@@ -186,12 +247,209 @@ test("replay mode can deserialize a stored prompt response", async () => {
   );
 
   const session = PromptSession.fromArgv(["--replay", logFile]);
-  const response = await session.resolvePrompt("checkbox", "Which tests?", () => Promise.resolve([]), {
-    deserializeResponse: (stored) =>
-      stored === "All FIT tests selected" ? ["a", "b"] : [],
-  });
+  const response = await session.resolvePrompt(
+    "fit.tests.select",
+    "checkbox",
+    "Which tests?",
+    () => Promise.resolve([]),
+    {
+      deserializeResponse: (stored) => (stored === "All FIT tests selected" ? ["a", "b"] : []),
+    },
+  );
 
   assert.deepEqual(response, ["a", "b"]);
+});
+
+test("replay defaults mode asks live with the saved answer as the default", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "fit-cli-replay-"));
+  const logFile = join(dir, "defaults.json");
+  writeFileSync(
+    logFile,
+    JSON.stringify(
+      {
+        version: 1,
+        createdAt: "2026-06-03T00:00:00.000Z",
+        prompts: [
+          {
+            id: "fit.grpc.build-now",
+            kind: "confirm",
+            message: "Build FIT now?",
+            response: true,
+          },
+        ],
+      },
+      null,
+      2,
+    ),
+  );
+
+  let replayDefault: boolean | undefined;
+  let response: boolean | undefined;
+  const logs = await captureLogs(async () => {
+    const session = PromptSession.fromArgv(["--defaults", logFile]);
+    response = await session.resolvePrompt(
+      "fit.grpc.build-now",
+      "confirm",
+      "Build FIT now?",
+      (savedDefault) => {
+        replayDefault = savedDefault;
+        return Promise.resolve(false);
+      },
+    );
+  });
+
+  assert.equal(replayDefault, true);
+  assert.equal(response, false);
+  assert.equal(logs.at(-1), "[replay defaults] Build FIT now?\n  -> true");
+});
+
+test("replay defaults mode defers stale saved prompts until finishReplay", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "fit-cli-replay-"));
+  const logFile = join(dir, "stale-defaults.json");
+  writeFileSync(
+    logFile,
+    JSON.stringify(
+      {
+        version: 1,
+        createdAt: "2026-06-03T00:00:00.000Z",
+        prompts: [
+          {
+            id: "old.prompt",
+            kind: "confirm",
+            message: "Old prompt?",
+            response: true,
+          },
+          {
+            id: "fit.grpc.build-now",
+            kind: "confirm",
+            message: "Build FIT now?",
+            response: false,
+          },
+        ],
+      },
+      null,
+      2,
+    ),
+  );
+
+  let replayDefault: boolean | undefined;
+  let askedAboutUnused = false;
+  const session = PromptSession.fromArgv(["--defaults", logFile], {
+    onUnusedReplayPrompts: (entries) => {
+      askedAboutUnused = true;
+      assert.deepEqual(entries.map((entry) => entry.id), ["old.prompt"]);
+      return Promise.resolve("continue" as const);
+    },
+  });
+  const response = await session.resolvePrompt("fit.grpc.build-now", "confirm", "Build FIT now?", (savedDefault) => {
+    replayDefault = savedDefault as boolean | undefined;
+    return Promise.resolve((savedDefault as boolean | undefined) ?? true);
+  });
+
+  assert.equal(replayDefault, false);
+  assert.equal(response, false);
+  assert.equal(askedAboutUnused, false);
+  await session.finishReplay();
+  assert.equal(askedAboutUnused, true);
+});
+
+test("replay mode asks live when a prompt id is missing from the log", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "fit-cli-replay-"));
+  const logFile = join(dir, "missing.json");
+  writeFileSync(
+    logFile,
+    JSON.stringify(
+      {
+        version: 1,
+        createdAt: "2026-06-03T00:00:00.000Z",
+        prompts: [],
+      },
+      null,
+      2,
+    ),
+  );
+
+  const logs = await captureLogs(async () => {
+    const session = PromptSession.fromArgv(["--replay", logFile]);
+    const response = await session.resolvePrompt("sdk.choose", "input", "Which SDK?", () =>
+      Promise.resolve("go"),
+    );
+    assert.equal(response, "go");
+  });
+
+  assert.equal(logs.at(-1), "[replay] No saved answer for sdk.choose; asking now.");
+});
+
+test("replay mode can continue after extra saved answers are ignored", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "fit-cli-replay-"));
+  const logFile = join(dir, "extra.json");
+  writeFileSync(
+    logFile,
+    JSON.stringify(
+      {
+        version: 1,
+        createdAt: "2026-06-03T00:00:00.000Z",
+        prompts: [
+          {
+            id: "old.prompt",
+            kind: "confirm",
+            message: "Old prompt?",
+            response: true,
+          },
+          {
+            id: "fit.grpc.build-now",
+            kind: "confirm",
+            message: "Build FIT now?",
+            response: false,
+          },
+        ],
+      },
+      null,
+      2,
+    ),
+  );
+
+  const session = PromptSession.fromArgv(["--replay", logFile], {
+    onUnusedReplayPrompts: (entries) => {
+      assert.deepEqual(entries.map((entry) => entry.id), ["old.prompt"]);
+      return Promise.resolve("continue" as const);
+    },
+  });
+  const response = await session.resolvePrompt("fit.grpc.build-now", "confirm", "Build FIT now?", () =>
+    Promise.resolve(true),
+  );
+
+  assert.equal(response, false);
+});
+
+test("finishReplay can stop when unused saved answers remain", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "fit-cli-replay-"));
+  const logFile = join(dir, "trailing-extra.json");
+  writeFileSync(
+    logFile,
+    JSON.stringify(
+      {
+        version: 1,
+        createdAt: "2026-06-03T00:00:00.000Z",
+        prompts: [
+          {
+            id: "old.prompt",
+            kind: "confirm",
+            message: "Old prompt?",
+            response: true,
+          },
+        ],
+      },
+      null,
+      2,
+    ),
+  );
+
+  const session = PromptSession.fromArgv(["--replay", logFile], {
+    onUnusedReplayPrompts: () => Promise.resolve("exit" as const),
+  });
+
+  await assert.rejects(() => session.finishReplay(), /Replay stopped because the log contains answers/);
 });
 
 test("replay mode loads stored workflow metadata", () => {

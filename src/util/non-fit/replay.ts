@@ -1,6 +1,7 @@
+import * as prompts from "@inquirer/prompts";
 import { randomUUID } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { isAbsolute, resolve } from "node:path";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { isAbsolute, join, resolve } from "node:path";
 import { inspect } from "node:util";
 
 export type PromptKind =
@@ -23,6 +24,10 @@ export interface PromptResolveOptions<T> {
   deserializeResponse?: (response: unknown) => T;
 }
 
+export interface PromptSessionHooks {
+  onUnusedReplayPrompts?: (entries: readonly PromptLogEntry[]) => Promise<"continue" | "exit">;
+}
+
 interface PromptLogFile {
   version: 1;
   createdAt: string;
@@ -30,15 +35,23 @@ interface PromptLogFile {
   prompts: PromptLogEntry[];
 }
 
-const LOG_DIR = "/tmp/fit-cli";
+type PromptSessionMode = "record" | "replay" | "defaults";
 
-export function extractReplayFlag(argv: string[]): {
+const RUN_ROOT_DIR = "/tmp/fit-cli";
+
+export function extractReplayFlag(
+  argv: string[],
+  env?: NodeJS.ProcessEnv,
+): {
   replayRequested: boolean;
+  replayDefaults: boolean;
   replayFile?: string;
   positionals: string[];
 } {
+  env ??= process.env;
   const positionals: string[] = [];
   let replayRequested = false;
+  let replayDefaults = false;
   let replayFile: string | undefined;
 
   for (let i = 0; i < argv.length; i++) {
@@ -53,12 +66,32 @@ export function extractReplayFlag(argv: string[]): {
     } else if (arg.startsWith("--replay=")) {
       replayRequested = true;
       replayFile = arg.slice("--replay=".length);
+    } else if (arg === "--defaults") {
+      replayRequested = true;
+      replayDefaults = true;
+      const next = argv[i + 1];
+      if (next && !next.startsWith("-")) {
+        replayFile = next;
+        i++;
+      }
+    } else if (arg.startsWith("--defaults=")) {
+      replayRequested = true;
+      replayDefaults = true;
+      replayFile = arg.slice("--defaults=".length);
     } else {
       positionals.push(arg);
     }
   }
 
-  return { replayRequested, replayFile, positionals };
+  const npmReplayDefaults = env.npm_lifecycle_event === "replay" ? env.npm_config_defaults : undefined;
+  if (replayRequested && !replayDefaults && npmReplayDefaults !== undefined && npmReplayDefaults !== "false") {
+    replayDefaults = true;
+    if (!replayFile && npmReplayDefaults !== "true" && npmReplayDefaults.length > 0) {
+      replayFile = npmReplayDefaults;
+    }
+  }
+
+  return { replayRequested, replayDefaults, replayFile, positionals };
 }
 
 function loadPromptLog(logFile: string): PromptLogFile {
@@ -81,9 +114,13 @@ function loadPromptLog(logFile: string): PromptLogFile {
   };
 }
 
-function createLogFile(): string {
-  mkdirSync(LOG_DIR, { recursive: true, mode: 0o700 });
-  return `${LOG_DIR}/fit-cli-${new Date().toISOString().replaceAll(":", "-")}-${randomUUID()}.json`;
+function createRunDir(): string {
+  mkdirSync(RUN_ROOT_DIR, { recursive: true, mode: 0o700 });
+  return mkdtempSync(join(RUN_ROOT_DIR, "run-"));
+}
+
+function createLogFile(runDir: string): string {
+  return join(runDir, `fit-cli-${new Date().toISOString().replaceAll(":", "-")}-${randomUUID()}.json`);
 }
 
 function formatReplayResponse(kind: PromptKind, response: unknown): string {
@@ -97,39 +134,60 @@ function formatReplayResponse(kind: PromptKind, response: unknown): string {
 }
 
 export class PromptSession {
-  private nextPromptNumber = 1;
   private replayIndex = 0;
+  private readonly usedPromptIds = new Set<string>();
 
   private constructor(
-    private readonly mode: "record" | "replay",
+    private readonly mode: PromptSessionMode,
+    public readonly runDir: string,
     public readonly logFile: string,
     private readonly createdAt: string,
     private workflow: string | undefined,
     private readonly prompts: PromptLogEntry[],
+    private readonly hooks: PromptSessionHooks,
   ) {}
 
-  static fromArgv(argv: string[]): PromptSession {
-    const { replayRequested, replayFile } = extractReplayFlag(argv);
+  static fromArgv(argv: string[], hooks: PromptSessionHooks = {}): PromptSession {
+    const { replayRequested, replayDefaults, replayFile } = extractReplayFlag(argv);
+    const runDir = createRunDir();
     if (replayRequested && !replayFile) {
-      throw new Error("Missing replay log file. Usage: npm run replay <logfile>");
+      throw new Error(
+        "Missing replay log file. Usage: npm run replay <logfile> or npm run replay --defaults <logfile>",
+      );
     }
     if (replayFile) {
       const resolved = isAbsolute(replayFile) ? replayFile : resolve(process.cwd(), replayFile);
       const log = loadPromptLog(resolved);
-      console.log(`Replaying prompt log: ${resolved}\n`);
-      return new PromptSession("replay", resolved, log.createdAt, log.workflow, log.prompts);
+      console.log(`ARTIFACT_DIR: ${runDir}`);
+      console.log(
+        `${replayDefaults ? "Replaying prompt log as defaults" : "Replaying prompt log"}: ${resolved}\n`,
+      );
+      return new PromptSession(
+        replayDefaults ? "defaults" : "replay",
+        runDir,
+        resolved,
+        log.createdAt,
+        log.workflow,
+        log.prompts,
+        hooks,
+      );
     }
 
-    const logFile = createLogFile();
+    const logFile = createLogFile(runDir);
     const createdAt = new Date().toISOString();
-    const session = new PromptSession("record", logFile, createdAt, undefined, []);
+    const session = new PromptSession("record", runDir, logFile, createdAt, undefined, [], hooks);
     session.persist();
+    console.log(`ARTIFACT_DIR: ${runDir}`);
     console.log(`Prompt log: ${logFile}\n`);
     return session;
   }
 
   getWorkflow(): string | undefined {
     return this.workflow;
+  }
+
+  replaysStoredWorkflow(): boolean {
+    return this.mode === "replay";
   }
 
   setWorkflow(workflow: string): void {
@@ -147,8 +205,25 @@ export class PromptSession {
     const entry = this.prompts[this.replayIndex];
     if (entry?.kind === "select" && entry.response === workflow) {
       this.replayIndex++;
-      this.nextPromptNumber++;
     }
+  }
+
+  async finishReplay(): Promise<void> {
+    if (this.mode === "record") {
+      return;
+    }
+
+    if (this.mode === "defaults") {
+      await this.handleUnusedReplayPrompts(this.prompts.filter((entry) => !this.usedPromptIds.has(entry.id)));
+      return;
+    }
+
+    if (this.replayIndex >= this.prompts.length) {
+      return;
+    }
+
+    await this.handleUnusedReplayPrompts(this.prompts.slice(this.replayIndex));
+    this.replayIndex = this.prompts.length;
   }
 
   formatReplayReminder(): string | undefined {
@@ -159,29 +234,72 @@ export class PromptSession {
       "Prompt replay:",
       `  Log file: ${this.logFile}`,
       `  Replay: npm run replay ${this.logFile}`,
+      `  Replay with defaults: npm run replay --defaults ${this.logFile}`,
     ].join("\n");
   }
 
+  formatRunReminder(): string {
+    return ["Run files:", `  ARTIFACT_DIR: ${this.runDir}`].join("\n");
+  }
+
   async resolvePrompt<T>(
+    id: string,
     kind: PromptKind,
     message: string,
-    prompt: () => Promise<T>,
+    prompt: (replayDefault?: T) => Promise<T>,
     options: PromptResolveOptions<T> = {},
   ): Promise<T> {
-    const id = `prompt-${this.nextPromptNumber++}`;
+    if (this.usedPromptIds.has(id)) {
+      throw new Error(`Prompt id ${id} was used more than once in this run.`);
+    }
+    this.usedPromptIds.add(id);
+
+    if (this.mode === "defaults") {
+      const entry = this.findPromptById(id);
+      if (!entry) {
+        console.log(`[${this.replayLabel()}] No saved answer for ${id}; asking now.`);
+        return prompt();
+      }
+      if (entry.kind !== kind) {
+        console.log(`[${this.replayLabel()}] Saved answer for ${id} was recorded as ${entry.kind}, but the code now expects ${kind}. Asking now.`);
+        return prompt();
+      }
+      const response = options.deserializeResponse ? options.deserializeResponse(entry.response) : (entry.response as T);
+      console.log(`[${this.replayLabel()}] ${message}\n  -> ${formatReplayResponse(kind, entry.response)}`);
+      return prompt(response);
+    }
 
     if (this.mode === "replay") {
-      const entry = this.prompts[this.replayIndex++];
-      if (!entry) {
-        throw new Error(`Replay log ended before ${id} (${message})`);
+      const replayMatchIndex = this.findReplayPromptIndex(id);
+      if (replayMatchIndex === undefined) {
+        if (this.replayIndex < this.prompts.length) {
+          await this.handleUnusedReplayPrompts(this.prompts.slice(this.replayIndex));
+          this.replayIndex = this.prompts.length;
+        }
+        console.log(`[${this.replayLabel()}] No saved answer for ${id}; asking now.`);
+        return prompt();
       }
-      if (entry.id !== id || entry.kind !== kind || entry.message !== message) {
-        throw new Error(
-          `Replay log mismatch at ${id}: expected ${kind} "${message}", got ${entry.kind} "${entry.message}"`,
-        );
+
+      if (replayMatchIndex > this.replayIndex) {
+        await this.handleUnusedReplayPrompts(this.prompts.slice(this.replayIndex, replayMatchIndex));
+        this.replayIndex = replayMatchIndex;
       }
-      console.log(`[replay] ${message}\n  -> ${formatReplayResponse(kind, entry.response)}`);
-      return options.deserializeResponse ? options.deserializeResponse(entry.response) : (entry.response as T);
+
+      const entry = this.prompts[this.replayIndex];
+      if (!entry || entry.id !== id) {
+        throw new Error(`Replay state error while resolving ${id}.`);
+      }
+      this.replayIndex++;
+
+      if (entry.kind !== kind) {
+        console.log(`[${this.replayLabel()}] Saved answer for ${id} was recorded as ${entry.kind}, but the code now expects ${kind}. Asking now.`);
+        return prompt();
+      }
+      const response = options.deserializeResponse ? options.deserializeResponse(entry.response) : (entry.response as T);
+      console.log(
+        `[${this.replayLabel()}] ${message}\n  -> ${formatReplayResponse(kind, entry.response)}`,
+      );
+      return response;
     }
 
     const response = await prompt();
@@ -193,6 +311,46 @@ export class PromptSession {
     });
     this.persist();
     return response;
+  }
+
+  private findReplayPromptIndex(id: string): number | undefined {
+    for (let index = this.replayIndex; index < this.prompts.length; index++) {
+      if (this.prompts[index]?.id === id) {
+        return index;
+      }
+    }
+    return undefined;
+  }
+
+  private findPromptById(id: string): PromptLogEntry | undefined {
+    return this.prompts.find((entry) => entry.id === id);
+  }
+
+  private replayLabel(): "replay" | "replay defaults" {
+    return this.mode === "defaults" ? "replay defaults" : "replay";
+  }
+
+  private async handleUnusedReplayPrompts(entries: readonly PromptLogEntry[]): Promise<void> {
+    if (entries.length === 0) {
+      return;
+    }
+
+    const action = this.hooks.onUnusedReplayPrompts
+      ? await this.hooks.onUnusedReplayPrompts(entries)
+      : await prompts.select<"continue" | "exit">({
+          message:
+            entries.length === 1
+              ? `Replay log contains a saved answer for ${entries[0].id} that is no longer used. What do you want to do?`
+              : `Replay log contains ${entries.length} saved answers that are no longer used. What do you want to do?`,
+          choices: [
+            { name: "Ignore them and continue", value: "continue" },
+            { name: "Stop replay so I can review the log", value: "exit" },
+          ],
+        });
+
+    if (action === "exit") {
+      throw new Error("Replay stopped because the log contains answers for prompts that are no longer used.");
+    }
   }
 
   private persist(): void {
@@ -215,4 +373,8 @@ export function ensurePromptSession(argv: string[] = process.argv.slice(2)): Pro
     activePromptSession = PromptSession.fromArgv(argv);
   }
   return activePromptSession;
+}
+
+export function ensureRunDir(argv: string[] = process.argv.slice(2)): string {
+  return ensurePromptSession(argv).runDir;
 }

@@ -6,23 +6,20 @@
  *   npx tsx src/workflows/performers/run-performer/index.ts
  */
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
-import { run } from "../../../util/non-fit/proc.js";
 import { rootDirFromArgv } from "../../../util/fit/root.js";
 import { type Sdk } from "../../../util/sdk/sdks.js";
 import { chooseSdk } from "../../../util/sdk/choose-sdk.js";
 import { askVersion } from "../build-performer/ask-version.js";
-import { buildPerformerImageName } from "../build-performer/build-performer.js";
-import { checkAndBuildPerformer } from "../check-and-build-performer/index.js";
+import { checkBuildAndRunPerformer } from "../check-build-and-run-performer/index.js";
 
 /** Run a performer Docker image, building it first if needed. */
 export async function runPerformer(rootDir: string, sdk: Sdk, version?: string): Promise<boolean> {
-  if (!(await checkAndBuildPerformer(rootDir, sdk, version))) {
+  const performer = await checkBuildAndRunPerformer(rootDir, sdk, version);
+  if (!performer) {
     return false;
   }
 
-  const imageName = buildPerformerImageName(sdk, version);
-  console.log(`\nRunning performer with:\n  docker run --rm ${imageName}\n`);
-  await run("docker", ["run", "--rm", imageName]);
+  console.log(`\nPerformer logs are streaming to:\n  ${performer.logFile}`);
   return true;
 }
 

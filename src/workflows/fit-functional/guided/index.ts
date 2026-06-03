@@ -8,6 +8,7 @@
  * point at another workspace):
  *   npx tsx src/workflows/fit-functional/guided/index.ts
  */
+import { combineArtifacts, type Artifact, type ArtifactCollection } from "../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { FIT_PERFORMER } from "../../../util/fit/repos.js";
 import { rootDirFromArgv } from "../../../util/fit/root.js";
@@ -15,50 +16,64 @@ import { chooseSdk } from "../../../util/sdk/choose-sdk.js";
 import { ensureRepo } from "../../../util/fit/ensure-repo.js";
 import { ensureSdkWorkspace } from "../../../util/sdk/ensure-sdk-workspace.js";
 import { selectOrCreateCluster } from "../../cluster-select-or-create/index.js";
-import { checkAndBuildPerformer } from "../../performers/check-and-build-performer/index.js";
+import { checkBuildAndRunPerformer } from "../../performers/check-build-and-run-performer/index.js";
+import { stopPerformerContainers } from "../../performers/stop-performer/index.js";
 import { ensureFitGrpc } from "../steps/ensure-fit-grpc.js";
 import { generateFitConfiguration } from "../steps/generate-fit-configuration.js";
 import { selectAndRunFitTests } from "../workflows/select-and-run-fit-tests/index.js";
 
 /** Walk through everything needed to run FIT functional tests for one SDK. */
-export async function runFunctionalTests(rootDir: string): Promise<void> {
+export async function runFunctionalTests(rootDir: string): Promise<ArtifactCollection> {
+  const artifacts: Artifact[] = [];
+
   // FIT itself must be present.
   if (!(await ensureRepo(FIT_PERFORMER, rootDir))) {
     console.log("\nOnce transactions-fit-performer is in place, run fit-cli again.");
-    return;
+    return { artifacts };
   }
 
   // fit-grpc must be built into the local Maven repo.
   if (!(await ensureFitGrpc(rootDir))) {
     console.log("\nOnce fit-grpc is built, run fit-cli again.");
-    return;
+    return { artifacts };
   }
 
-  // Which SDK to test, and whether its performer image is ready.
+  // Which SDK to test, and whether its performer is ready to run.
   const sdk = await chooseSdk();
   if (!(await ensureSdkWorkspace(sdk, rootDir))) {
     console.log("\nOnce the SDK workspace repos are in place, run fit-cli again.");
-    return;
+    return { artifacts };
   }
 
-  if (!(await checkAndBuildPerformer(rootDir, sdk))) {
-    console.log("\nOnce the performer image is ready, run fit-cli again.");
-    return;
+  const performer = await checkBuildAndRunPerformer(rootDir, sdk);
+  if (!performer) {
+    console.log("\nOnce the performer is ready to run, run fit-cli again.");
+    return { artifacts };
   }
+  artifacts.push(...performer.artifacts);
 
-  // Existing cluster, or create a new one with cbdinocluster.
-  const outcome = await selectOrCreateCluster();
-  if (!outcome.ready) {
-    return;
+  try {
+    // Existing cluster, or create a new one with cbdinocluster.
+    const outcome = await selectOrCreateCluster();
+    artifacts.push(...outcome.artifacts);
+    if (!outcome.ready) {
+      return { artifacts: combineArtifacts(artifacts) };
+    }
+    const fitConfig = generateFitConfiguration(outcome.cluster, rootDir);
+    artifacts.push(...fitConfig.artifacts);
+
+    const testRun = await selectAndRunFitTests(rootDir, fitConfig.path);
+    artifacts.push(...testRun.artifacts);
+    return { artifacts: combineArtifacts(artifacts) };
+  } finally {
+    await stopPerformerContainers([performer.containerId]);
+    console.log(`\nPerformer logs:\n  ${performer.logFile}`);
   }
-  const fitConfigPath = generateFitConfiguration(outcome.cluster, rootDir);
-
-  await selectAndRunFitTests(rootDir, fitConfigPath);
 }
 
 if (isMain(import.meta.url)) {
   runCli(async () => {
     const { rootDir } = rootDirFromArgv(process.argv.slice(2));
-    await runFunctionalTests(rootDir);
+    return runFunctionalTests(rootDir);
   });
 }

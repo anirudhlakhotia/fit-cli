@@ -11,6 +11,7 @@
  *   npx tsx src/workflows/cluster-select-or-create/index.ts
  */
 import { confirm } from "../../util/non-fit/prompts.js";
+import { type ArtifactCollection } from "../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../util/non-fit/cli.js";
 import { createCluster } from "../cluster-create/index.js";
 import { runClusterDiag } from "../cluster-diag/index.js";
@@ -19,9 +20,9 @@ import { selectCluster, type SelectedCluster } from "../cluster-select/index.js"
 /** The outcome of getting a cluster to use. */
 export type ClusterOutcome =
   /** An existing cluster was selected and is ready to use. */
-  | { ready: true; cluster: SelectedCluster }
+  | (ArtifactCollection & { ready: true; cluster: SelectedCluster })
   /** No cluster is ready to use; the reason was already printed. */
-  | { ready: false };
+  | (ArtifactCollection & { ready: false });
 
 /**
  * Get a cluster to use: select an existing one (ready straight away) or create a
@@ -32,20 +33,21 @@ export async function selectOrCreateCluster(): Promise<ClusterOutcome> {
   const selection = await selectCluster();
   if (selection.mode === "existing") {
     const shouldRunDiag = await confirm({
+      promptId: "cluster.diag.run-now",
       message: "Sanity test the cluster now?",
       default: true,
     });
     if (shouldRunDiag && !(await runClusterDiag(selection.cluster))) {
-      return { ready: false };
+      return { ready: false, artifacts: [] };
     }
-    return { ready: true, cluster: selection.cluster };
+    return { ready: true, cluster: selection.cluster, artifacts: [] };
   }
 
   // mode === "create": allocate a fresh cluster with cbdinocluster.
   const result = await createCluster();
   if (!result.created) {
     console.log("\nOnce you have a cluster, run fit-cli again.");
-    return { ready: false };
+    return { ready: false, artifacts: result.artifacts };
   }
 
   // A freshly-allocated cluster still needs its connection string and credentials
@@ -55,7 +57,7 @@ export async function selectOrCreateCluster(): Promise<ClusterOutcome> {
     "\nYour cluster is allocated. Re-run fit-cli and choose the existing-cluster path " +
       "with its connection string.",
   );
-  return { ready: false };
+  return { ready: false, artifacts: result.artifacts };
 }
 
 if (isMain(import.meta.url)) {

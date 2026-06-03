@@ -5,6 +5,7 @@
  * workflows/fit-functional/guided/) and can be run on its own for debugging —
  * see the header of its index.ts.
  */
+import { type ArtifactCollection } from "./util/non-fit/artifacts.js";
 import { isMain, runCli } from "./util/non-fit/cli.js";
 import { select } from "./util/non-fit/prompts.js";
 import { ensurePromptSession, type PromptSession } from "./util/non-fit/replay.js";
@@ -19,6 +20,7 @@ const WORKFLOW_CHOICES = [
 ] as const;
 
 export type WorkflowChoice = (typeof WORKFLOW_CHOICES)[number]["value"];
+const WORKFLOW_PROMPT_ID = "workflow.choose";
 
 function isWorkflowChoice(value: string): value is WorkflowChoice {
   return WORKFLOW_CHOICES.some((choice) => choice.value === value);
@@ -26,40 +28,51 @@ function isWorkflowChoice(value: string): value is WorkflowChoice {
 
 export async function chooseWorkflow(
   promptSession: PromptSession = ensurePromptSession(),
+  selectWorkflow: (config: {
+    promptId: string;
+    message: string;
+    choices: typeof WORKFLOW_CHOICES;
+    default?: WorkflowChoice;
+  }) => Promise<WorkflowChoice> = select,
 ): Promise<WorkflowChoice> {
-  const replayWorkflow = promptSession.getWorkflow();
-  if (replayWorkflow) {
-    if (!isWorkflowChoice(replayWorkflow)) {
-      throw new Error(`Unknown workflow in replay log: ${replayWorkflow}`);
+  const storedWorkflow = promptSession.getWorkflow();
+  let replayWorkflow: WorkflowChoice | undefined;
+  if (storedWorkflow) {
+    if (!isWorkflowChoice(storedWorkflow)) {
+      throw new Error(`Unknown workflow in replay log: ${storedWorkflow}`);
     }
-    promptSession.consumeLegacyWorkflowPrompt(replayWorkflow);
-    return replayWorkflow;
+    replayWorkflow = storedWorkflow;
+    if (promptSession.replaysStoredWorkflow()) {
+      promptSession.consumeLegacyWorkflowPrompt(replayWorkflow);
+      return replayWorkflow;
+    }
   }
 
   // Note - only very high-level workflows should go here. We don't want an overwhelming list of options at the top level.
   // Users can run smaller workflows and steps for debugging or development through the mini cli tools.
-  const choice = await select<WorkflowChoice>({
+  const choice = await selectWorkflow({
+    promptId: WORKFLOW_PROMPT_ID,
     message: WORKFLOW_PROMPT_MESSAGE,
     choices: WORKFLOW_CHOICES,
+    default: replayWorkflow,
   });
   promptSession.setWorkflow(choice);
   return choice;
 }
 
-export async function runWorkflow(choice: WorkflowChoice, rootDir: string): Promise<void> {
+export async function runWorkflow(choice: WorkflowChoice, rootDir: string): Promise<ArtifactCollection> {
   switch (choice) {
     case "functional-tests":
-      await runFunctionalTests(rootDir);
-      break;
+      return runFunctionalTests(rootDir);
   }
 }
 
-export async function main(): Promise<void> {
+export async function main(): Promise<ArtifactCollection> {
   console.log("FIT CLI — making FIT easier to use.\n");
 
   const { rootDir } = rootDirFromArgv(process.argv.slice(2));
   const choice = await chooseWorkflow();
-  await runWorkflow(choice, rootDir);
+  return runWorkflow(choice, rootDir);
 }
 
 if (isMain(import.meta.url)) {

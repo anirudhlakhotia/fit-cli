@@ -13,6 +13,7 @@ export type ClusterChoice = "existing" | "create";
 
 export async function chooseCluster(): Promise<ClusterChoice> {
   return select<ClusterChoice>({
+    promptId: "cluster.choose-mode",
     message: "Do you already have a Couchbase cluster running?",
     choices: [
       { name: "Yes, I have a cluster running already", value: "existing" },

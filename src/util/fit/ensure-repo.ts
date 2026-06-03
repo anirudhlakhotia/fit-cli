@@ -34,6 +34,7 @@ export async function ensureRepo(repo: Repo, rootDir: string): Promise<boolean> 
   console.log(`✗ Could not find ${repo.name} at ${repoPath(repo, rootDir)}`);
 
   const action = await select({
+    promptId: `repo.${repo.name}.missing.action`,
     message: `What would you like to do about the missing ${repo.name}?`,
     choices: [
       { name: `Clone it from ${repo.url}`, value: "clone" },

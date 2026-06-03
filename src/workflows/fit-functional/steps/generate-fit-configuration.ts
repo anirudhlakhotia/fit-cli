@@ -10,6 +10,7 @@
  *   npx tsx src/workflows/fit-functional/steps/generate-fit-configuration.ts
  */
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
+import { type ArtifactCollection } from "../../../util/non-fit/artifacts.js";
 import { rootDirFromArgv } from "../../../util/fit/root.js";
 import { selectCluster, type SelectedCluster } from "../../cluster-select/index.js";
 import { buildFitConfiguration } from "./build-fit-configuration.js";
@@ -19,20 +20,22 @@ import {
 } from "./write-fit-configuration.js";
 
 /** Build and write a FITConfiguration.json for an already-selected cluster. */
-export function generateFitConfiguration(cluster: SelectedCluster, rootDir: string): string {
+export function generateFitConfiguration(cluster: SelectedCluster, rootDir: string): ArtifactCollection & {
+  path: string;
+} {
   const config = buildFitConfiguration(cluster);
 
   console.log(
     `\nGenerating a FITConfiguration.json for you. You can also produce this by hand by ` +
       `following ${fitConfigDocPath(rootDir)}.`,
   );
-  const { path } = writeFitConfiguration(config);
+  const result = writeFitConfiguration(config);
 
-  console.log(`\nWriting ${path}:\n`);
+  console.log(`\nWriting ${result.path}:\n`);
   console.log(JSON.stringify(config, null, 2));
 
-  console.log(`\n✓ Wrote ${path}`);
-  return path;
+  console.log(`\n✓ Wrote ${result.path}`);
+  return { path: result.path, artifacts: [result.artifact] };
 }
 
 if (isMain(import.meta.url)) {
@@ -43,6 +46,6 @@ if (isMain(import.meta.url)) {
       console.log("\nCreating a new cluster is not wired up yet.");
       return;
     }
-    generateFitConfiguration(selection.cluster, rootDir);
+    return generateFitConfiguration(selection.cluster, rootDir);
   });
 }

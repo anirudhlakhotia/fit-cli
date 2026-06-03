@@ -10,6 +10,7 @@
  *   npx tsx src/workflows/cluster-create/index.ts
  */
 import { isMain, runCli } from "../../util/non-fit/cli.js";
+import { type ArtifactCollection } from "../../util/non-fit/artifacts.js";
 import { allocateCluster, askDeployer } from "./allocate-cluster.js";
 import { askClusterDef } from "./ask-cluster-def.js";
 import { buildClusterDef } from "./build-cluster-def.js";
@@ -18,9 +19,9 @@ import { ensureCbdinocluster } from "./ensure-cbdinocluster.js";
 /** The outcome of attempting to create a cluster. */
 export type CreateResult =
   /** cbdinocluster allocated the cluster successfully. */
-  | { created: true }
+  | (ArtifactCollection & { created: true })
   /** cbdinocluster wasn't usable or allocation failed; a reason was printed. */
-  | { created: false };
+  | (ArtifactCollection & { created: false });
 
 /**
  * Walk the user through creating a cluster with cbdinocluster. Returns whether a
@@ -30,19 +31,19 @@ export type CreateResult =
 export async function createCluster(): Promise<CreateResult> {
   const cbdinocluster = await ensureCbdinocluster();
   if (!cbdinocluster) {
-    return { created: false };
+    return { created: false, artifacts: [] };
   }
 
   const def = buildClusterDef(await askClusterDef());
   const deployer = await askDeployer();
 
   try {
-    await allocateCluster(cbdinocluster, def, deployer);
+    const result = await allocateCluster(cbdinocluster, def, deployer);
     console.log("\n✓ cbdinocluster allocated your cluster");
-    return { created: true };
+    return { created: true, artifacts: result.artifacts };
   } catch (err) {
     console.error(`\n✗ cbdinocluster failed to allocate the cluster: ${(err as Error).message}`);
-    return { created: false };
+    return { created: false, artifacts: [] };
   }
 }
 

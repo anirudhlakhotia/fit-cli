@@ -29,6 +29,7 @@ export async function askClusterDef(): Promise<ClusterDef> {
   // Only one cluster type for now, but we still ask so adding more later is
   // natural — and so the limitation is visible.
   await select({
+    promptId: "cluster.create.type",
     message: "What type of cluster would you like?",
     choices: [
       {
@@ -41,16 +42,23 @@ export async function askClusterDef(): Promise<ClusterDef> {
   });
 
   const nodeCount =
-    (await number({ message: "How many nodes?", default: 1, min: 1 })) ?? 1;
+    (await number({ promptId: "cluster.create.node-count", message: "How many nodes?", default: 1, min: 1 })) ??
+    1;
 
-  const version = await input({ message: "Which Couchbase Server version?", default: "8.1.0-2188" });
+  const version = await input({
+    promptId: "cluster.create.server-version",
+    message: "Which Couchbase Server version?",
+    default: "8.1.0-2188",
+  });
 
   const services = await checkbox<string>({
+    promptId: "cluster.create.services",
     message: "Which services should the node(s) run?",
     choices: SERVICES,
   });
 
   const cng = await confirm({
+    promptId: "cluster.create.cng",
     message: "Do you want CNG/Protostellar (Cloud Native Gateway) support?",
     default: false,
   });

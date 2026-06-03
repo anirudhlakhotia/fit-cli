@@ -10,6 +10,8 @@ test("runTestDriverArgs omits -Dtest when all tests are selected", () => {
   };
 
   assert.deepEqual(runTestDriverArgs(selection), [
+    "-q",
+    "--no-transfer-progress",
     "--batch-mode",
     "--projects",
     "test-driver",
@@ -29,6 +31,8 @@ test("runTestDriverArgs adds the selected tests to -Dtest", () => {
   };
 
   assert.deepEqual(runTestDriverArgs(selection), [
+    "-q",
+    "--no-transfer-progress",
     "--batch-mode",
     "--projects",
     "test-driver",
@@ -47,14 +51,16 @@ test("runTestDriverArgs adds the generated FIT config path", () => {
     selectedTests: [],
   };
 
-  assert.deepEqual(runTestDriverArgs(selection, "/tmp/fit-cli/FITConfiguration-123.json"), [
+  assert.deepEqual(runTestDriverArgs(selection, "/tmp/fit-cli/run-123/FITConfiguration-123.json"), [
+    "-q",
+    "--no-transfer-progress",
     "--batch-mode",
     "--projects",
     "test-driver",
     "--also-make",
     "-Dmaven.test.failure.ignore",
     "-DfailIfNoTests=false",
-    "-Dfit.config=/tmp/fit-cli/FITConfiguration-123.json",
+    "-Dfit.config=/tmp/fit-cli/run-123/FITConfiguration-123.json",
     "test",
     "-DexcludedGroups=situational,openshift,syncgateway",
   ]);

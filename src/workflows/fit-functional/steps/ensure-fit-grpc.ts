@@ -99,7 +99,7 @@ export async function ensureFitGrpc(rootDir: string): Promise<boolean> {
       "If the GRPC ever changes, you'll need to rerun that mvn step again.",
   );
 
-  const build = await confirm({ message: "Build FIT now?" });
+  const build = await confirm({ promptId: "fit.grpc.build-now", message: "Build FIT now?" });
   if (!build) {
     return false;
   }
