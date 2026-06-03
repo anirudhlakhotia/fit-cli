@@ -1,0 +1,26 @@
+{
+  "name": "fit-cli",
+  "version": "0.1.0",
+  "description": "A CLI tool to help make FIT (Functional Integration Testing) easier to use.",
+  "type": "module",
+  "bin": {
+    "fit": "./dist/index.js"
+  },
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@inquirer/prompts": "^7.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}
