@@ -9,6 +9,7 @@
   "scripts": {
     "start": "tsx src/index.ts",
     "replay": "tsx src/util/non-fit/replay-entry.ts --replay",
+    "definition": "tsx src/workflows/fit-functional/workflows/run-from-definition/index.ts",
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
@@ -21,7 +22,8 @@
   },
   "dependencies": {
     "@inquirer/prompts": "^7.2.0",
-    "xunit-viewer": "^10.6.1"
+    "xunit-viewer": "^10.6.1",
+    "yaml": "^2.9.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

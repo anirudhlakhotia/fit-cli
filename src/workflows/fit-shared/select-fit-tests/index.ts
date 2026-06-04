@@ -6,11 +6,11 @@
  *   npx tsx src/workflows/fit-functional/workflows/select-fit-tests/index.ts
  */
 import { basename } from "node:path";
-import { isMain, runCli } from "../../../../util/non-fit/cli.js";
-import { checkbox, search, select } from "../../../../util/non-fit/prompts.js";
-import { capture } from "../../../../util/non-fit/proc.js";
-import { FIT_PERFORMER, repoPath } from "../../../../util/fit/repos.js";
-import { rootDirFromArgv } from "../../../../util/fit/root.js";
+import { isMain, runCli } from "../../../util/non-fit/cli.js";
+import { checkbox, search, select } from "../../../util/non-fit/prompts.js";
+import { capture } from "../../../util/non-fit/proc.js";
+import { FIT_PERFORMER, repoPath } from "../../../util/fit/repos.js";
+import { rootDirFromArgv } from "../../../util/fit/root.js";
 
 export interface FitTestCase {
   /** Basename shown in the picker, e.g. StandardTest.java. */
@@ -115,6 +115,26 @@ export function buildDefaultFitTestSelection(): FitTestSelection {
     allTests: [],
     selectedTests: [],
     mavenTestSelector: undefined,
+  };
+}
+
+/**
+ * Build a selection from explicit fully-qualified class names, without
+ * discovering the test files first. Used to drive a run from a definition file,
+ * where the tests are named up front rather than picked interactively. Only the
+ * `mavenTestSelector` reaches Maven; the test-case fields are reconstructed from
+ * each class name so the selection stays self-describing.
+ */
+export function buildFitTestSelectionFromClassNames(classNames: readonly string[]): FitTestSelection {
+  const tests: FitTestCase[] = classNames.map((className) => ({
+    className,
+    fileName: className.split(".").pop() ?? className,
+    relativePath: className,
+  }));
+  return {
+    allTests: tests,
+    selectedTests: tests,
+    mavenTestSelector: classNames.join(","),
   };
 }
 
@@ -262,9 +282,9 @@ async function selectMultipleFitTests(tests: FitTestCase[]): Promise<FitTestSele
       },
     },
     replay: {
-      serializeResponse: (selectedClassNames) =>
+      serializeResponse: (selectedClassNames: string[]) =>
         serializeSelectedFitTestsForReplay(selectedClassNames, tests),
-      deserializeResponse: (response) =>
+      deserializeResponse: (response: unknown) =>
         deserializeSelectedFitTestsFromReplay(response, tests),
     },
   });

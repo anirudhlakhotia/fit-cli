@@ -38,10 +38,8 @@ test("formatArtifactsSection renders a table", () => {
       { filename: "FITConfiguration.json", explanation: "Generated FIT config" },
     ]),
     [
-      "Artifacts:",
-      "  ARTIFACT_DIR: /tmp/fit-cli/run-123",
-      "Filename                                   | What it's for",
-      "-------------------------------------------+--------------",
+      "Artifact filename                          | Purpose",
+      "-------------------------------------------+--------",
       "/tmp/fit-cli/run-123/performer.log         | Performer logs",
       "/tmp/fit-cli/run-123/FITConfiguration.json | Generated FIT config",
     ].join("\n"),

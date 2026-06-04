@@ -20,11 +20,18 @@ nvm install 24
 Then:
 
 ```sh
-npm install
+# One-off install of dependencies
+npm ci
+
+# Start the interactive wizard
 npm start
 ```
 
-To launch an interactive wizard.
+If you hit any problems, either ask on #the-fit-stop or consider just giving it to an LLM with something like:
+
+```
+Please read /tmp/fit-cli/<folder name>/AGENTS.md and investigate the failure.
+```
 
 Your responses will be saved to a file, which you can then rerun to save time in future with:
 
@@ -32,13 +39,26 @@ Your responses will be saved to a file, which you can then rerun to save time in
 `npm run replay <logfile>`
 ```
 
+## Running on a cloud instance (AWS EC2)
+
+At the start of a FIT functional run you can choose to run on your own machine, or on a clean, throwaway AWS EC2 instance.
+
+To use EC2, copy `.env.example` to `.env` and fill in your AWS credentials (or just have working AWS config already — env vars or `~/.aws/credentials` are picked up automatically). If credentials are missing the tool tells you and lets you choose local instead.
+
+When you pick EC2, the tool launches a fresh Ubuntu instance, opens SSH, and tags it `fit-cli=owned`. A key is generated for you (saved into the run folder), and key-based SSH is the only login path the tool enables. At the end of the run you're asked whether to keep it (for debugging) or terminate it — the default is terminate, so you don't leave a paid instance running. The SSH command to reach the box is printed during the run.
+
+Security note: the instance's SSH port is open to the internet, so treat it as disposable — don't put anything sensitive on it.
+
+The AWS building blocks live under `src/util/non-fit/aws/` (generic, reusable) and `src/util/fit/aws/` (FIT-specific). Like everything else, each is runnable on its own — see the header of each file.
+
 ## Running a single step or flow
 
-To make debugging and development easier, each step file's header comment shows how to run it directly, e.g.
+To make debugging and development easier, most files have a header comment showing how to run it directly, e.g.
 
 ```
 npx tsx src/steps/ensure-repo.ts fit-performer
 ```
+Note these aren't intended to be stable CLI commands.  They are just for transient debugging and development.  Paths may change, things may break, don't call these directly from CI - add a proper stable definition file if you need that.
 
 If you find any are broken due to refactorings then please ask an AI to "sweep the files quickly".  It should find the instructions in this file.
 
@@ -54,6 +74,13 @@ If you find any are broken due to refactorings then please ask an AI to "sweep t
 Everyone - AI and human - please follow these as best you can.
 
 - Run `npm run lint` and `npm run typecheck` and `npm test` after writing code.
+
+## Stability
+This project aims to strike a balance between actively encouraging collaboration, and the need for a stable and reliable tool - particularly as it is used from CLI.
+There are two tools here - stable definition files (covered elsewhere), and the `stable` Git tag.
+The `stable` tag is used from CI and by anyone preferring stability over latest features.  
+It is intended that the tag is only a few weeks at most behind main: the aim is to catch glaring problems from new code, rather than guarantee zero regressions.
+So please update the tag regularly - whenever you have been running the tool for a few days without issue, for instance.
 
 ### Workflows
 The basic idea is to break everything down into small workflows that compose into larger workflows.
@@ -74,6 +101,27 @@ End-users should be starting at `npm start`.
 - Feel free to create files - think one file per clear step - and use a clear directory structure.
 - Small utility business logic - consider moving this under a `util` sub-directory.
 
+### Definition files
+A handful of important top-level workflows, generally ones run on CI, have their own YAML definition files.
+These start with:
+```
+version: 1
+type: fit-functional-tests
+```
+These allow us to drive repeatable workflows, much more reliably than replay files.
+See `examples/fit-functional-tests.yaml` for an annotated example; run one with `npm run definition <file.yaml>`.
+
+#### Definition file versions
+- We only have major versions.  Minor and patch are not worth the trouble here.
+- Each type of definition file has its own major version, they don't have to align.
+- Versions only change on breaking changes - moving a field around, for instance.
+- That said: LLMs, please stop and check with the user when considering adding a major version, to confirm it's sensible.  User: don't be afraid to agree :)  Change is good.
+- LLMs, also please don't add multiple versions while iterating through a new feature.  We only need to worry about versions at the point when we're making the feature available to others.
+- Breaking changes are fine and expected.  We should be refactoring the yaml as we go to keep it clear.
+- But, wherever possible, try and automatically upgrade previous versions to new versions, major by major.  Add unit tests for this.
+- Generally do this upgrade in-memory but also provide a mini CLI tool that does an inplace upgrade of the definition file.
+- In the rare case this isn't possible - if we genuinely always need a new field - then explicitly fail fast with an unsupported version error.  Try and provide guidance on how the user can resolve. 
+
 ### Mini CLI tools
 - Each step should be easily runnable independently via a mini CLI tool that can be called directly, for debugging and development iteration purposes.  
 - Keep this in the same file with its associated step.
@@ -91,19 +139,30 @@ End-users should be starting at `npm start`.
 - Anytime there's easy testable business logic, e.g. it doesn't require file access or similar, add unit tests.  Put these in a tests directory off the one being tested.
 - But much of the code is hard and slow to test, depending on external repos, building Docker images etc.  Do not add tests for these. 
 - Do not use mocks.  Only test easy business logic.
+- Golden rule for LLMs: tests should not have side effects, and should not use mocks. Just do not add a test if it would contravene these rules. 
 
 ### Running workflows and steps
 - Before a step does something, generally explain what will be done.  E.g. File X was written and contains contents Y.
   A goal here is to teach people how the individual steps work, so they can easily debug, reproduce, or just work without fit-cli if they prefer.
-- Save the full output from each run to a unique debug logfile under /tmp/fit-cli.  Display the filename.
+- Save the full output from each run to a unique debug logfile under /tmp/fit-cli.  Save that as an Artifact.
 
 ### Reproducibility:
 It's important that whatever inputs a user gives to a workflow be saved and be reusable, for both debugging and re-running.
 Each fit-cli should create a user log file under /tmp/fit-cli with a unique name.  Display this name.
 Associate each user prompt with a unique id.  Save the prompt id and the user's response into the log file.
 The user can replay that with `npm run replay <logfile>`.
+Note that replays are inherently less reliable than definition files, since workflows change, and should be regarded as somewhat experimental and perhaps buggy at present.  So definition files are recommended usually.
 
 ### Artifacts
 Each run of fit-cli will produce a new unique directory (ARTIFACT_DIR) under /tmp/fit-cli/ which will contain any artifacts.
 ARTIFACT_DIR already contains the timestamp, and artifacts under it should have short clear filenames that do not need to be unique.  E.g. "cbdinocluster.yaml" is good.
 Artifacts are returned by workflows and displayed in a table to the user at the end of user-facing ones like runFunctionalTests.
+
+#### Artifact pieces
+Sometimes an artifact, such as a definition file, will be built up in pieces across multiple steps and workflows.
+For YAML/JSON artifacts, the broad idea is that pieces get merged together, with ordering mattering.  Later pieces can overwrite and remove fields.
+Nb the need for later removal does mean it can't be stored internally purely as yaml/json.
+
+### Remote instances
+- Automatically use new temporary keys (`aws ec2 create-key-pair`).
+- Lifetime: give the user the option on whether to delete the instance at the end, or leave it running for debugging.

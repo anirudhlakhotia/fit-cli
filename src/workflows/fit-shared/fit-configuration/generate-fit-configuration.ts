@@ -14,7 +14,7 @@ import { type ArtifactCollection } from "../../../util/non-fit/artifacts.js";
 import { rootDirFromArgv } from "../../../util/fit/root.js";
 import { selectOrCreateCluster } from "../../cluster/cluster-select-or-create/index.js";
 import { type SelectedCluster } from "../../cluster/cluster-select/index.js";
-import { buildFitConfiguration } from "./build-fit-configuration.js";
+import { buildFitConfiguration } from "../../fit-functional/util/build-fit-configuration.js";
 import {
   fitConfigDocPath,
   writeFitConfiguration,

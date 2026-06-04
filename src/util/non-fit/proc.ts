@@ -85,6 +85,51 @@ export function createLogFile(name: string, extension: string = "log"): string {
   return createRunFilePath(`${name}.${extension}`);
 }
 
+type StreamWrite = typeof process.stdout.write;
+
+/**
+ * Tee everything fit-cli writes to stdout/stderr into a log file, so the run
+ * directory holds a full transcript of the session alongside the per-step logs.
+ * Output still appears on the terminal as normal. Returns the log file path.
+ *
+ * This captures fit-cli's own output; child processes we run with stdio
+ * "inherit" (and the FIT test-driver, which streams to its own log) write
+ * straight to their fds and aren't mirrored here.
+ *
+ * Returns a handle with the log path and a flush() to call before exiting.
+ */
+export function startSessionLog(logFile: string): SessionLog {
+  mkdirSync(dirname(logFile), { recursive: true, mode: 0o700 });
+  const log = createWriteStream(logFile, { flags: "a", mode: 0o600 });
+  log.write(`# ${new Date().toISOString()} fit-cli session\n`);
+
+  for (const stream of [process.stdout, process.stderr]) {
+    const original: StreamWrite = stream.write.bind(stream);
+    stream.write = function (...args: Parameters<StreamWrite>): boolean {
+      log.write(args[0]);
+      return original(...args);
+    } as StreamWrite;
+  }
+
+  // The tee'd writes are buffered, so a bare process.exit() can truncate the log
+  // — losing exactly the final error line a failed run most needs. Callers that
+  // are about to exit should await flush() first.
+  const flush = (): Promise<void> =>
+    new Promise((resolve) => {
+      log.end(() => resolve());
+    });
+
+  return { path: logFile, flush };
+}
+
+/** A started session log: where it lives, and how to flush it before exiting. */
+export interface SessionLog {
+  /** Path to the log file. */
+  path: string;
+  /** Flush and close the log stream; resolves once writes have hit disk. */
+  flush: () => Promise<void>;
+}
+
 /**
  * Start a command in the background and stream stdout/stderr directly to a log
  * file as output is produced.
@@ -132,10 +177,13 @@ export function streamToFileInBackground(
 }
 
 /**
- * Run a command while streaming stdout/stderr both to the terminal and to a
- * log file as output is produced.
+ * Run a command in the foreground, streaming stdout/stderr to a log file as
+ * output is produced — without echoing it to the terminal. Resolves when the
+ * command finishes; rejects if it can't start or exits non-zero. Used for noisy
+ * tools (e.g. the FIT test-driver) whose full output belongs in a log file, not
+ * scrolling past in the terminal.
  */
-export function runAndCaptureToFile(
+export function streamToFile(
   command: string,
   args: string[],
   logFile: string,
@@ -149,14 +197,8 @@ export function runAndCaptureToFile(
 
     const child = spawn(command, args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
 
-    child.stdout.on("data", (chunk: Buffer) => {
-      process.stdout.write(chunk);
-      log.write(chunk);
-    });
-    child.stderr.on("data", (chunk: Buffer) => {
-      process.stderr.write(chunk);
-      log.write(chunk);
-    });
+    child.stdout.on("data", (chunk: Buffer) => log.write(chunk));
+    child.stderr.on("data", (chunk: Buffer) => log.write(chunk));
 
     child.on("error", (err) => {
       log.end(() => reject(err));

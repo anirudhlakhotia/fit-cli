@@ -1,16 +1,21 @@
 /**
  * Workflow: run the FIT test-driver Maven command from transactions-fit-performer.
  *
+ * Shared by every FIT flavour (functional, situational, …). The only thing that
+ * varies between them is `extraMavenArgs` — the JUnit group filter — which the
+ * caller supplies (see e.g. FUNCTIONAL_MAVEN_TEST_ARGS in fit-functional and
+ * SITUATIONAL_MAVEN_TEST_ARGS in fit-situational).
+ *
  * Run on its own (add --root <dir> to point elsewhere):
- *   npx tsx src/workflows/fit-functional/workflows/run-test-driver/index.ts
+ *   npx tsx src/workflows/fit-shared/run-test-driver/index.ts
  */
 import { rmSync } from "node:fs";
-import { artifactFromPath, combineArtifacts, type ArtifactCollection } from "../../../../util/non-fit/artifacts.js";
-import { isMain, runCli } from "../../../../util/non-fit/cli.js";
+import { artifactFromPath, combineArtifacts, type ArtifactCollection } from "../../../util/non-fit/artifacts.js";
+import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { collectJunitArtifacts, surefireReportsDir } from "./collect-junit.js";
-import { createLogFile, runAndCaptureToFile } from "../../../../util/non-fit/proc.js";
-import { FIT_PERFORMER, repoPath } from "../../../../util/fit/repos.js";
-import { rootDirFromArgv } from "../../../../util/fit/root.js";
+import { createLogFile, streamToFile } from "../../../util/non-fit/proc.js";
+import { FIT_PERFORMER, repoPath } from "../../../util/fit/repos.js";
+import { rootDirFromArgv } from "../../../util/fit/root.js";
 import { selectFitTests, type FitTestSelection } from "../select-fit-tests/index.js";
 
 export const DEFAULT_MAVEN_TEST_ARGS = [
@@ -74,7 +79,7 @@ export async function runTestDriver(
   // on both paths — the failing run is the one most worth visualising.
   let ok: boolean;
   try {
-    await runAndCaptureToFile("./mvnw", args, logFile, repoPath(FIT_PERFORMER, rootDir));
+    await streamToFile("./mvnw", args, logFile, repoPath(FIT_PERFORMER, rootDir));
     console.log("\n✓ FIT test-driver finished");
     ok = true;
   } catch (err) {

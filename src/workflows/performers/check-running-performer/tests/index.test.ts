@@ -1,8 +1,6 @@
 import assert from "node:assert/strict";
-import { createServer } from "node:net";
 import test from "node:test";
 import {
-  checkPortAvailability,
   handlePortInUse,
   killProcessArgs,
   lsofPortArgs,
@@ -51,39 +49,6 @@ test("parseDockerPs extracts container summaries from docker ps output", () => {
 
 test("stopPerformerContainerArgs stops all provided container ids", () => {
   assert.deepEqual(stopPerformerContainerArgs(["abc123", "def456"]), ["stop", "abc123", "def456"]);
-});
-
-test("checkPortAvailability reports false when the port is already bound", async () => {
-  const server = createServer();
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(0, () => resolve());
-  });
-
-  const address = server.address();
-  assert.ok(address && typeof address === "object");
-
-  try {
-    assert.deepEqual(await checkPortAvailability(address.port), { available: false });
-  } finally {
-    await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
-  }
-});
-
-test("checkPortAvailability reports true when the port is free", async () => {
-  const server = createServer();
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(0, () => resolve());
-  });
-
-  const address = server.address();
-  assert.ok(address && typeof address === "object");
-
-  const port = address.port;
-  await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
-
-  assert.deepEqual(await checkPortAvailability(port), { available: true });
 });
 
 test("lsofPortArgs lists the listening PIDs on a TCP port", () => {

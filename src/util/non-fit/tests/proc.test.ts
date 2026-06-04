@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { createLogFile, runAndCaptureToFile, streamToFileInBackground } from "../proc.js";
+import { capture, createLogFile, streamToFile, streamToFileInBackground } from "../proc.js";
 
 test("createLogFile writes under the shared fit-cli temp directory", () => {
   const path = createLogFile("performer");
@@ -39,11 +39,11 @@ test("streamToFileInBackground writes output as the command runs", async () => {
   assert.match(output, /hello from stderr/);
 });
 
-test("runAndCaptureToFile writes stdout and stderr to a log file", async () => {
+test("streamToFile writes stdout and stderr to a log file", async () => {
   const dir = mkdtempSync(join(tmpdir(), "fit-cli-proc-"));
   const logFile = join(dir, "test-driver.log");
 
-  await runAndCaptureToFile(
+  await streamToFile(
     process.execPath,
     ["-e", "console.log('fit stdout'); console.error('fit stderr');"],
     logFile,
@@ -52,4 +52,24 @@ test("runAndCaptureToFile writes stdout and stderr to a log file", async () => {
   const output = readFileSync(logFile, "utf8");
   assert.match(output, /fit stdout/);
   assert.match(output, /fit stderr/);
+});
+
+test("streamToFile does not echo the command's output to the terminal", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "fit-cli-proc-"));
+  const logFile = join(dir, "test-driver.log");
+  const procModule = new URL("../proc.ts", import.meta.url).href;
+
+  // Run streamToFile in a child process so we can observe its real stdout
+  // without monkeypatching this process's streams (which confuses the test
+  // runner's own reporter). The child prints nothing of its own, so anything on
+  // its stdout would be the grandchild's output leaking through.
+  const driver = [
+    `import { streamToFile } from ${JSON.stringify(procModule)};`,
+    `await streamToFile(${JSON.stringify(process.execPath)}, ["-e", "console.log('fit stdout')"], ${JSON.stringify(logFile)});`,
+  ].join("\n");
+
+  const terminal = await capture(process.execPath, ["--import", "tsx", "--input-type=module", "-e", driver]);
+
+  assert.doesNotMatch(terminal, /fit stdout/);
+  assert.match(readFileSync(logFile, "utf8"), /fit stdout/);
 });

@@ -9,7 +9,7 @@ import { type ArtifactCollection } from "./util/non-fit/artifacts.js";
 import { isMain, runCli } from "./util/non-fit/cli.js";
 import { select } from "./util/non-fit/prompts.js";
 import { ensurePromptSession, type PromptSession } from "./util/non-fit/replay.js";
-import { runFunctionalTests } from "./workflows/fit-functional/guided/index.js";
+import { runFunctionalTests } from "./workflows/fit-functional/workflows/guided/index.js";
 import { rootDirFromArgv } from "./util/fit/root.js";
 
 const WORKFLOW_PROMPT_MESSAGE =
@@ -68,7 +68,7 @@ export async function runWorkflow(choice: WorkflowChoice, rootDir: string): Prom
 }
 
 export async function main(): Promise<ArtifactCollection> {
-  console.log("FIT CLI — making FIT easier to use.\n");
+  console.log("FIT CLI — making FIT easier to use, one vibe-coded feature at a time.\n");
 
   const { rootDir } = rootDirFromArgv(process.argv.slice(2));
   const choice = await chooseWorkflow();

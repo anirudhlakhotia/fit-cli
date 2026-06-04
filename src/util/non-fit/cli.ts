@@ -1,6 +1,13 @@
 import { realpathSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { formatArtifactsSection, type ArtifactCollection } from "./artifacts.js";
+import {
+  artifactFromPath,
+  combineArtifacts,
+  formatArtifactsSection,
+  type ArtifactCollection,
+} from "./artifacts.js";
+import { startSessionLog } from "./proc.js";
 import { ensurePromptSession } from "./replay.js";
 
 /**
@@ -23,11 +30,18 @@ export function isMain(metaUrl: string): boolean {
  */
 export function runCli(main: () => Promise<void | ArtifactCollection>): void {
   const promptSession = ensurePromptSession(process.argv.slice(2));
+  const sessionLog = startSessionLog(join(promptSession.runDir, "session.log"));
+  const sessionLogArtifact = artifactFromPath(
+    sessionLog.path,
+    "Full log of this fit-cli session",
+    promptSession.runDir,
+  );
   let artifactsOutput: string | undefined;
   Promise.resolve()
     .then(() => main())
     .then((result) => {
-      artifactsOutput = formatArtifactsSection(promptSession.runDir, result?.artifacts ?? []);
+      const artifacts = combineArtifacts(result?.artifacts ?? [], [sessionLogArtifact]);
+      artifactsOutput = formatArtifactsSection(promptSession.runDir, artifacts);
       return promptSession.finishReplay();
     })
     .then(() => {
@@ -41,12 +55,16 @@ export function runCli(main: () => Promise<void | ArtifactCollection>): void {
         console.log(`\n${replayReminder}`);
       }
     })
-    .catch((err) => {
+    .catch(async (err) => {
       if (err instanceof Error && err.name === "ExitPromptError") {
         console.log("\nCancelled.");
+        await sessionLog.flush();
         process.exit(0);
       }
       console.error(err instanceof Error ? err.message : err);
+      // Flush the tee'd log before exiting so the error above is actually
+      // persisted to session.log, not lost to a truncated write buffer.
+      await sessionLog.flush();
       process.exit(1);
     });
 }

@@ -10,3 +10,5 @@ dist/
 TODO.md
 .idea
 .factory
+
+.env

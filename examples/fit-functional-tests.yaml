@@ -1,0 +1,47 @@
+# Example fit-functional-tests definition file.
+#
+# A definition file is a repeatable, hand-editable description of a FIT
+# functional test run. Run it with:
+#
+#   npm run definition examples/fit-functional-tests.yaml
+#
+# (add --root <dir> to point at a workspace other than the parent of the cwd).
+#
+# Validate a file without running it:
+#   npx tsx src/workflows/fit-functional/definition/parse-definition.ts <file.yaml>
+
+version: 1
+type: fit-functional-tests
+
+# Which SDK to test. One of: java, scala, kotlin, cpp, dotnet, go, node,
+# python, ruby, rust.
+sdk: java
+
+# Optional: pin the performer image version/tag. Omit to use the build default.
+# performerVersion: "1.2.3"
+
+# The cluster to test against (an already-running cluster).
+cluster:
+  connectionString: couchbase://localhost
+  username: Administrator
+  password: password
+  # How the SDK should trust the cluster over TLS. Only relevant for
+  # couchbases:// clusters; use null for couchbase:// and for production Capella.
+  #   null                        no TLS section
+  #   { insecure: true }          skip certificate verification
+  #   { certPath: /path/cb.pem }  trust this PEM certificate
+  tls: null
+
+# Which FIT test-driver tests to run:
+#   all          run everything (the default)
+#   a YAML list  run just those fully-qualified test classes
+tests: all
+# tests:
+#   - com.couchbase.transactions.StandardTest
+
+# Optional: Maven test groups to exclude (-DexcludedGroups). Omit to use the
+# standard CI exclusions (situational, openshift, syncgateway).
+# excludedGroups:
+#   - situational
+#   - openshift
+#   - syncgateway

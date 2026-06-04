@@ -19,10 +19,10 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { artifactFromPath, type Artifact } from "../../../../util/non-fit/artifacts.js";
-import { run } from "../../../../util/non-fit/proc.js";
-import { ensureRunDir } from "../../../../util/non-fit/replay.js";
-import { FIT_PERFORMER, repoPath } from "../../../../util/fit/repos.js";
+import { artifactFromPath, type Artifact } from "../../../util/non-fit/artifacts.js";
+import { run } from "../../../util/non-fit/proc.js";
+import { ensureRunDir } from "../../../util/non-fit/replay.js";
+import { FIT_PERFORMER, repoPath } from "../../../util/fit/repos.js";
 
 /** Absolute path to the surefire JUnit XML directory the test-driver produces. */
 export function surefireReportsDir(rootDir: string): string {

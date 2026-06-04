@@ -5,8 +5,8 @@
  * --root <dir> to point elsewhere):
  *   npx tsx src/workflows/fit-functional/workflows/select-and-run-fit-tests/index.ts [fitConfigPath]
  */
-import { isMain, runCli } from "../../../../util/non-fit/cli.js";
-import { rootDirFromArgv } from "../../../../util/fit/root.js";
+import { isMain, runCli } from "../../../util/non-fit/cli.js";
+import { rootDirFromArgv } from "../../../util/fit/root.js";
 import { selectFitTests } from "../select-fit-tests/index.js";
 import { runTestDriver } from "../run-test-driver/index.js";
 

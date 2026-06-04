@@ -274,8 +274,7 @@ export class PromptSession {
       hooks,
     );
     session.persist();
-    console.log(`ARTIFACT_DIR: ${runDir}`);
-    console.log(`Prompt log: ${logFile}\n`);
+    console.log(`Artifacts from this run will be written to: ${runDir}`);
     return session;
   }
 
