@@ -9,7 +9,7 @@
  *   npx tsx src/util/non-fit/aws/aws-cli.ts
  */
 import { isMain, runCli } from "../cli.js";
-import { ensureFitCliConfigEnv } from "../config.js";
+import { ensureFitCliConfigEnv } from "../../fit/config.js";
 import { capture } from "../proc.js";
 import { findOnPath } from "../which.js";
 

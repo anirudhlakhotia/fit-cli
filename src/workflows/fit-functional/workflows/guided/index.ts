@@ -16,17 +16,24 @@ import {
   type RunOutput,
 } from "../../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../../util/non-fit/cli.js";
-import { FIT_PERFORMER } from "../../../../util/fit/repos.js";
 import { rootDirFromArgv } from "../../../../util/fit/root.js";
 import { chooseSdk } from "../../../../util/sdk/choose-sdk.js";
-import { ensureRepo } from "../../../../util/fit/ensure-repo.js";
-import { ensureSdkWorkspace } from "../../../../util/sdk/ensure-sdk-workspace.js";
 import { selectOrCreateCluster } from "../../../cluster/cluster-select-or-create/index.js";
-import { checkBuildAndRunPerformer } from "../../../performers/check-build-and-run-performer/index.js";
-import { stopPerformerContainers } from "../../../performers/stop-performer/index.js";
+import {
+  checkBuildAndRunPerformer,
+  stopManagedPerformer,
+  type RunningPerformer,
+} from "../../../performers/check-build-and-run-performer/index.js";
+import { generateFitFunctionalDefinition } from "../../definition/generate-definition.js";
 import { generateFitConfiguration } from "../../../fit-shared/fit-configuration/generate-fit-configuration.js";
+import { createFitExecutionContext } from "../../../fit-shared/remote-fit-run.js";
+import { runTestDriver } from "../../../fit-shared/run-test-driver/index.js";
+import { selectFitTests } from "../../../fit-shared/select-fit-tests/index.js";
 import { writeAgentsGuide } from "../../../fit-shared/write-agents-guide.js";
-import { selectAndRunFitTests } from "../../../fit-shared/select-and-run-fit-tests/index.js";
+import {
+  detectClusterDockerEnvironment,
+  runPerformerClusterSanityCheck,
+} from "../../../fit-shared/performer-cluster-sanity.js";
 import { selectExecutionTarget } from "../select-execution-target/index.js";
 
 /**
@@ -52,34 +59,13 @@ export async function runFunctionalTests(rootDir: string): Promise<RunOutput> {
     return { artifacts, details };
   }
   const { target, cleanup } = executionTarget;
-  if (target.kind === "remote") {
-    console.log(
-      "\n⚠ Running the FIT suite *on* the remote instance isn't wired up yet (that's the next phase).\n" +
-        "  The EC2 box above is provisioned and SSH-able; the steps below execute locally for now.\n",
-    );
-  }
 
   try {
-    // FIT itself must be present.
-    if (!(await ensureRepo(FIT_PERFORMER, rootDir))) {
-      console.log("\nOnce transactions-fit-performer is in place, run fit-cli again.");
-      return { artifacts, details };
-    }
-
-    // Which SDK to test, and whether its performer is ready to run.
     const sdk = await chooseSdk();
-    if (!(await ensureSdkWorkspace(sdk, rootDir))) {
-      console.log("\nOnce the SDK workspace repos are in place, run fit-cli again.");
-      return { artifacts, details };
-    }
-
-    const performer = await checkBuildAndRunPerformer(rootDir, sdk);
-    if (!performer) {
-      console.log("\nOnce the performer is ready to run, run fit-cli again.");
-      return { artifacts, details };
-    }
-    artifacts.push(...performer.artifacts);
-    details.push(...performer.details);
+    const execution = await createFitExecutionContext(target, rootDir, sdk);
+    artifacts.push(...execution.artifacts);
+    details.push(...execution.details);
+    let performer: RunningPerformer | undefined;
 
     try {
       // Existing cluster, or create a new one with cbdinocluster.
@@ -89,21 +75,52 @@ export async function runFunctionalTests(rootDir: string): Promise<RunOutput> {
       if (!outcome.ready) {
         return finalize(artifacts, details);
       }
+      const clusterDockerEnvironment =
+        execution.kind === "local" ? await detectClusterDockerEnvironment(outcome.cluster) : undefined;
+      if (clusterDockerEnvironment) {
+        console.log(
+          `\n→ Cluster Docker networks: ${clusterDockerEnvironment.networkNames.join(", ")} ` +
+            `(containers: ${clusterDockerEnvironment.containerNames.join(", ")})`,
+        );
+      }
+      performer = await checkBuildAndRunPerformer(
+        execution,
+        sdk,
+        undefined,
+        execution.kind === "local" ? clusterDockerEnvironment?.networkNames[0] : undefined,
+      );
+      if (!performer) {
+        console.log("\nOnce the performer is ready to run, run fit-cli again.");
+        return { artifacts, details };
+      }
+      artifacts.push(...performer.artifacts);
+
       const fitConfig = generateFitConfiguration(outcome.cluster, rootDir);
       artifacts.push(...fitConfig.artifacts);
       details.push(...fitConfig.details);
+      const performerSanity = await runPerformerClusterSanityCheck(
+        outcome.cluster,
+        performer.containerId,
+        {
+          captureCommand: (command, args) => execution.capture(command, args),
+          dockerCommand: execution.dockerCommand,
+        },
+      );
+      artifacts.push(...performerSanity.artifacts);
+      if (!performerSanity.ok) {
+        return finalize(artifacts, details);
+      }
 
-      const testRun = await selectAndRunFitTests(rootDir, fitConfig.path);
+      const testSelection = await selectFitTests(execution);
+      const definition = generateFitFunctionalDefinition(sdk, outcome.cluster, testSelection);
+      artifacts.push(...definition.artifacts);
+      details.push(...definition.details);
+      const testRun = await runTestDriver(execution, testSelection, fitConfig.path);
       artifacts.push(...testRun.artifacts);
       details.push(...testRun.details);
       return finalize(artifacts, details);
     } finally {
-      if (performer.containerId) {
-        await stopPerformerContainers([performer.containerId]);
-      }
-      if (performer.logFile) {
-        console.log(`\nPerformer logs:\n  ${performer.logFile}`);
-      }
+      await stopManagedPerformer(execution, performer);
     }
   } finally {
     // Tear down (or keep, if the user wants to debug) the EC2 instance.

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { sdkByValue } from "../../../../util/sdk/sdks.js";
+import { createLocalFitExecutionContext } from "../../../fit-shared/remote-fit-run.js";
 import {
   stopPerformer,
   type StopPerformerDeps,
@@ -12,20 +13,20 @@ test("stopPerformer stops all running containers for the matching image", async 
 
   const stoppedIds: string[][] = [];
   const deps: StopPerformerDeps = {
-    runningContainersForImage(imageName) {
+    runningContainersForImage(_execution, imageName) {
       assert.equal(imageName, "performer-node-main");
       return Promise.resolve([
         { id: "abc123", image: imageName, name: "fit-node-1", ports: "" },
         { id: "def456", image: imageName, name: "fit-node-2", ports: "" },
       ]);
     },
-    stopPerformerContainers(containerIds) {
+    stopPerformerContainers(_execution, containerIds) {
       stoppedIds.push(containerIds);
       return Promise.resolve(true);
     },
   };
 
-  assert.equal(await stopPerformer(sdk, undefined, deps), true);
+  assert.equal(await stopPerformer(createLocalFitExecutionContext("/work/root"), sdk, undefined, deps), true);
   assert.deepEqual(stoppedIds, [["abc123", "def456"]]);
 });
 
@@ -35,7 +36,7 @@ test("stopPerformer succeeds without stopping anything when no containers are ru
 
   let stopCalled = false;
   const deps: StopPerformerDeps = {
-    runningContainersForImage(imageName) {
+    runningContainersForImage(_execution, imageName) {
       assert.equal(imageName, "performer-java-main");
       return Promise.resolve([]);
     },
@@ -45,6 +46,6 @@ test("stopPerformer succeeds without stopping anything when no containers are ru
     },
   };
 
-  assert.equal(await stopPerformer(sdk, undefined, deps), true);
+  assert.equal(await stopPerformer(createLocalFitExecutionContext("/work/root"), sdk, undefined, deps), true);
   assert.equal(stopCalled, false);
 });

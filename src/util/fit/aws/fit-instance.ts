@@ -20,7 +20,7 @@ import { createInstance, waitForInstanceRunning } from "../../non-fit/aws/create
 import { describeInstance } from "../../non-fit/aws/describe-instance.js";
 import { findInstancesByKeyName } from "../../non-fit/aws/list-instances.js";
 import { terminateInstance } from "../../non-fit/aws/terminate-instance.js";
-import { ensureFitCliConfigEnv } from "../../non-fit/config.js";
+import { ensureFitCliConfigEnv } from "../config.js";
 import { createKeyPair, deleteKeyPair } from "../../non-fit/aws/key-pair.js";
 import { ensureSecurityGroup } from "../../non-fit/aws/security-group.js";
 import { createRunFilePath } from "../../non-fit/replay.js";

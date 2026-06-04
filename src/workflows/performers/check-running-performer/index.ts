@@ -4,12 +4,12 @@
  * Run this flow on its own:
  *   npx tsx src/workflows/performers/check-running-performer/index.ts
  */
-import { createServer } from "node:net";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { confirm } from "../../../util/non-fit/prompts.js";
-import { capture, run } from "../../../util/non-fit/proc.js";
+import { rootDirFromArgv } from "../../../util/fit/root.js";
 import { type Sdk } from "../../../util/sdk/sdks.js";
 import { chooseSdk } from "../../../util/sdk/choose-sdk.js";
+import { createLocalFitExecutionContext, type FitExecutionContext } from "../../fit-shared/remote-fit-run.js";
 import { askVersion } from "../build-performer/ask-version.js";
 import { buildPerformerImageName } from "../build-performer/build-performer.js";
 import { DEFAULT_PERFORMER_PORT } from "../performer-port.js";
@@ -52,42 +52,45 @@ export function parseDockerPs(output: string): DockerContainerSummary[] {
     });
 }
 
-export async function checkPortAvailability(port: number = DEFAULT_PERFORMER_PORT): Promise<PortAvailability> {
-  return await new Promise((resolve) => {
-    const server = createServer();
+export async function checkPortAvailability(
+  execution: FitExecutionContext,
+  port: number = DEFAULT_PERFORMER_PORT,
+): Promise<PortAvailability> {
+  if (!(await execution.commandAvailable("lsof"))) {
+    return { available: null, error: "lsof is not available" };
+  }
 
-    server.once("error", (err: NodeJS.ErrnoException) => {
-      if (err.code === "EADDRINUSE") {
-        resolve({ available: false });
-        return;
-      }
-      resolve({ available: null, error: err.message });
-    });
-
-    server.listen(port, () => {
-      server.close((closeErr) => {
-        if (closeErr) {
-          resolve({ available: null, error: closeErr.message });
-          return;
-        }
-        resolve({ available: true });
-      });
-    });
-  });
+  try {
+    const pids = parseLsofPids(await execution.capture("lsof", lsofPortArgs(port)));
+    return { available: pids.length === 0 };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (message.includes("exited with code")) {
+      return { available: true };
+    }
+    return { available: null, error: message };
+  }
 }
 
-export async function runningContainersForImage(imageName: string): Promise<DockerContainerSummary[] | null> {
+export async function runningContainersForImage(
+  execution: FitExecutionContext,
+  imageName: string,
+): Promise<DockerContainerSummary[] | null> {
   try {
-    return parseDockerPs(await capture("docker", runningPerformerPsArgs(imageName)));
+    return parseDockerPs(await execution.capture(execution.dockerCommand, runningPerformerPsArgs(imageName)));
   } catch (err) {
     console.log(`→ Couldn't check whether ${imageName} is already running: ${(err as Error).message}`);
     return null;
   }
 }
 
-export async function checkRunningPerformer(sdk: Sdk, version?: string): Promise<PerformerRunCheckResult> {
+export async function checkRunningPerformer(
+  execution: FitExecutionContext,
+  sdk: Sdk,
+  version?: string,
+): Promise<PerformerRunCheckResult> {
   const imageName = buildPerformerImageName(sdk, version);
-  const runningContainers = await runningContainersForImage(imageName);
+  const runningContainers = await runningContainersForImage(execution, imageName);
 
   if (runningContainers && runningContainers.length > 0) {
     const shouldRestart = await confirm({
@@ -106,9 +109,9 @@ export async function checkRunningPerformer(sdk: Sdk, version?: string): Promise
     return { action: "restart", containers: runningContainers };
   }
 
-  const portAvailability = await checkPortAvailability();
+  const portAvailability = await checkPortAvailability(execution);
   if (portAvailability.available === false) {
-    return handlePortInUse(DEFAULT_PERFORMER_PORT);
+    return handlePortInUse(execution, DEFAULT_PERFORMER_PORT);
   }
 
   if (portAvailability.available === null) {
@@ -143,9 +146,9 @@ export function killProcessArgs(pids: number[]): string[] {
 }
 
 /** Find the PIDs of any process listening on the given port. */
-export async function processesOnPort(port: number): Promise<number[]> {
+export async function processesOnPort(execution: FitExecutionContext, port: number): Promise<number[]> {
   try {
-    return parseLsofPids(await capture("lsof", lsofPortArgs(port)));
+    return parseLsofPids(await execution.capture("lsof", lsofPortArgs(port)));
   } catch {
     // lsof exits non-zero when nothing is listening, or isn't installed.
     return [];
@@ -153,8 +156,8 @@ export async function processesOnPort(port: number): Promise<number[]> {
 }
 
 /** Terminate any process listening on the given port. */
-export async function stopProcessesOnPort(port: number): Promise<boolean> {
-  const pids = await processesOnPort(port);
+export async function stopProcessesOnPort(execution: FitExecutionContext, port: number): Promise<boolean> {
+  const pids = await processesOnPort(execution, port);
   if (pids.length === 0) {
     console.log(
       `→ Couldn't find a local process listening on port ${port}. It may belong to another user or a container.`,
@@ -167,7 +170,7 @@ export async function stopProcessesOnPort(port: number): Promise<boolean> {
   );
 
   try {
-    await run("kill", killProcessArgs(pids));
+    await execution.run("kill", killProcessArgs(pids));
     console.log(`\n✓ Asked process${pids.length === 1 ? "" : "es"} ${pids.join(", ")} to stop.`);
     return true;
   } catch (err) {
@@ -186,10 +189,14 @@ export interface WaitForPortFreeOptions {
 }
 
 /** Poll until the port is free, resolving true once it is (or false on timeout). */
-export async function waitForPortFree(port: number, options: WaitForPortFreeOptions = {}): Promise<boolean> {
+export async function waitForPortFree(
+  execution: FitExecutionContext,
+  port: number,
+  options: WaitForPortFreeOptions = {},
+): Promise<boolean> {
   const intervalMs = options.intervalMs ?? 2000;
   const maxAttempts = options.maxAttempts ?? 150;
-  const checkAvailability = options.checkAvailability ?? checkPortAvailability;
+  const checkAvailability = options.checkAvailability ?? ((checkedPort: number) => checkPortAvailability(execution, checkedPort));
   const waitFor = options.sleep ?? sleep;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -206,8 +213,8 @@ export async function waitForPortFree(port: number, options: WaitForPortFreeOpti
 
 export interface PortInUseDeps {
   confirm: typeof confirm;
-  stopProcessesOnPort: (port: number) => Promise<boolean>;
-  waitForPortFree: (port: number) => Promise<boolean>;
+  stopProcessesOnPort: (execution: FitExecutionContext, port: number) => Promise<boolean>;
+  waitForPortFree: (execution: FitExecutionContext, port: number) => Promise<boolean>;
 }
 
 const DEFAULT_PORT_IN_USE_DEPS: PortInUseDeps = {
@@ -222,6 +229,7 @@ const DEFAULT_PORT_IN_USE_DEPS: PortInUseDeps = {
  * and wait for the port to free up.
  */
 export async function handlePortInUse(
+  execution: FitExecutionContext,
   port: number,
   deps: PortInUseDeps = DEFAULT_PORT_IN_USE_DEPS,
 ): Promise<PerformerRunCheckResult> {
@@ -246,10 +254,10 @@ export async function handlePortInUse(
     return { action: "abort" };
   }
 
-  await deps.stopProcessesOnPort(port);
+  await deps.stopProcessesOnPort(execution, port);
 
   console.log(`\nWaiting for port ${port} to become free… (press Ctrl+C to abort)`);
-  if (await deps.waitForPortFree(port)) {
+  if (await deps.waitForPortFree(execution, port)) {
     console.log(`\n✓ Port ${port} is now free.`);
     return { action: "start" };
   }
@@ -262,7 +270,10 @@ export function stopPerformerContainerArgs(containerIds: string[]): string[] {
   return ["stop", ...containerIds];
 }
 
-export async function stopPerformerContainers(containerIds: string[]): Promise<boolean> {
+export async function stopPerformerContainers(
+  execution: FitExecutionContext,
+  containerIds: string[],
+): Promise<boolean> {
   if (containerIds.length === 0) {
     return true;
   }
@@ -272,7 +283,7 @@ export async function stopPerformerContainers(containerIds: string[]): Promise<b
   );
 
   try {
-    await run("docker", stopPerformerContainerArgs(containerIds));
+    await execution.run(execution.dockerCommand, stopPerformerContainerArgs(containerIds));
     console.log(
       `\n✓ Stopped performer container${containerIds.length === 1 ? "" : "s"} ${containerIds.join(", ")}`,
     );
@@ -285,19 +296,23 @@ export async function stopPerformerContainers(containerIds: string[]): Promise<b
   }
 }
 
-export async function stopRunningPerformer(containers: DockerContainerSummary[]): Promise<boolean> {
-  return stopPerformerContainers(containers.map((container) => container.id));
+export async function stopRunningPerformer(
+  execution: FitExecutionContext,
+  containers: DockerContainerSummary[],
+): Promise<boolean> {
+  return stopPerformerContainers(execution, containers.map((container) => container.id));
 }
 
-export async function runCheckRunningPerformerWorkflow(): Promise<void> {
+export async function runCheckRunningPerformerWorkflow(rootDir: string): Promise<void> {
   const sdk = await chooseSdk("Which SDK performer do you want to check?");
   const version = await askVersion();
-  const result = await checkRunningPerformer(sdk, version);
+  const result = await checkRunningPerformer(createLocalFitExecutionContext(rootDir), sdk, version);
   console.log(JSON.stringify(result, null, 2));
 }
 
 if (isMain(import.meta.url)) {
   runCli(async () => {
-    await runCheckRunningPerformerWorkflow();
+    const { rootDir } = rootDirFromArgv(process.argv.slice(2));
+    await runCheckRunningPerformerWorkflow(rootDir);
   });
 }

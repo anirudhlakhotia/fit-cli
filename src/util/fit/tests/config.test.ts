@@ -17,8 +17,6 @@ test("parses a version 1 fit-cli config", () => {
   const parsed = parseFitCliConfig(`
 version: 1
 aws:
-  accessKeyId: abc
-  secretAccessKey: def
   region: us-east-1
   profile: dev
   instanceType: c5.xlarge
@@ -27,11 +25,28 @@ aws:
   assert.deepEqual(parsed, {
     version: FIT_CLI_CONFIG_VERSION,
     aws: {
-      accessKeyId: "abc",
-      secretAccessKey: "def",
       region: "us-east-1",
       profile: "dev",
       instanceType: "c5.xlarge",
+    },
+  });
+});
+
+test("ignores legacy stored AWS credentials in config", () => {
+  const parsed = parseFitCliConfig(`
+version: 1
+aws:
+  accessKeyId: abc
+  secretAccessKey: def
+  region: us-east-1
+  profile: dev
+`);
+
+  assert.deepEqual(parsed, {
+    version: FIT_CLI_CONFIG_VERSION,
+    aws: {
+      region: "us-east-1",
+      profile: "dev",
     },
   });
 });
@@ -49,8 +64,6 @@ test("applies config values only when the environment is unset", () => {
     {
       version: FIT_CLI_CONFIG_VERSION,
       aws: {
-        accessKeyId: "abc",
-        secretAccessKey: "",
         region: "us-east-1",
         profile: "dev",
         instanceType: "c5.xlarge",
@@ -59,9 +72,8 @@ test("applies config values only when the environment is unset", () => {
     env,
   );
 
-  assert.deepEqual(applied, ["AWS_ACCESS_KEY_ID", "AWS_PROFILE", "FIT_EC2_INSTANCE_TYPE"]);
+  assert.deepEqual(applied, ["AWS_PROFILE", "FIT_EC2_INSTANCE_TYPE"]);
   assert.deepEqual(env, {
-    AWS_ACCESS_KEY_ID: "abc",
     AWS_REGION: "eu-west-1",
     AWS_PROFILE: "dev",
     FIT_EC2_INSTANCE_TYPE: "c5.xlarge",
@@ -109,7 +121,6 @@ test("ensureFitCliConfigEnv can run init and apply the created config", async ()
         {
           version: FIT_CLI_CONFIG_VERSION,
           aws: {
-            accessKeyId: "abc",
             region: "us-east-1",
           },
         },
@@ -121,8 +132,7 @@ test("ensureFitCliConfigEnv can run init and apply the created config", async ()
 
   assert.equal(result.loaded, true);
   assert.equal(result.created, true);
-  assert.deepEqual(result.applied, ["AWS_ACCESS_KEY_ID", "AWS_REGION"]);
-  assert.equal(env.AWS_ACCESS_KEY_ID, "abc");
+  assert.deepEqual(result.applied, ["AWS_REGION"]);
   assert.equal(env.AWS_REGION, "us-east-1");
 });
 

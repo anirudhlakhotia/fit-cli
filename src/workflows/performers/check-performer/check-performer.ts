@@ -11,14 +11,12 @@
  * Exits 0 if the performer path and Docker image both exist, 1 if either does
  * not (or the SDK is unknown).
  */
-import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
-import { capture } from "../../../util/non-fit/proc.js";
 import { FIT_PERFORMER, JVM_CLIENTS, repoPath } from "../../../util/fit/repos.js";
 import { rootDirFromArgv } from "../../../util/fit/root.js";
 import { SDKS, sdkByValue, type Sdk } from "../../../util/sdk/sdks.js";
-import { findOnPath } from "../../../util/non-fit/which.js";
+import { createLocalFitExecutionContext, type FitExecutionContext } from "../../fit-shared/remote-fit-run.js";
 import { buildPerformerImageName } from "../build-performer/build-performer.js";
 
 export interface PerformerStatus {
@@ -44,18 +42,18 @@ export function performerImageInspectArgs(imageName: string): string[] {
 
 /** Inspect the on-disk performer and its Docker image. */
 export async function performerStatus(
+  execution: FitExecutionContext,
   sdk: Sdk,
-  rootDir: string,
   version?: string,
 ): Promise<PerformerStatus> {
-  const path = performerPath(sdk, rootDir);
+  const path = performerPath(sdk, execution.rootDir);
   const imageName = buildPerformerImageName(sdk, version);
-  const docker = findOnPath("docker");
+  const dockerAvailable = await execution.commandAvailable(execution.dockerCommand);
   let imageExists = false;
 
-  if (docker) {
+  if (dockerAvailable) {
     try {
-      await capture(docker, performerImageInspectArgs(imageName));
+      await execution.capture(execution.dockerCommand, performerImageInspectArgs(imageName));
       imageExists = true;
     } catch {
       imageExists = false;
@@ -64,16 +62,16 @@ export async function performerStatus(
 
   return {
     path,
-    pathExists: existsSync(path),
+    pathExists: await execution.pathExists(path),
     imageName,
-    dockerAvailable: docker !== null,
+    dockerAvailable,
     imageExists,
   };
 }
 
 /** Report whether the SDK's performer exists on disk and as a Docker image. */
-export async function checkPerformer(sdk: Sdk, rootDir: string, version?: string): Promise<boolean> {
-  const status = await performerStatus(sdk, rootDir, version);
+export async function checkPerformer(execution: FitExecutionContext, sdk: Sdk, version?: string): Promise<boolean> {
+  const status = await performerStatus(execution, sdk, version);
 
   if (status.pathExists) {
     console.log(`✓ Found the ${sdk.name} performer at ${status.path}`);
@@ -108,6 +106,6 @@ if (isMain(import.meta.url)) {
       );
       process.exit(2);
     }
-    process.exit((await checkPerformer(sdk, rootDir, version)) ? 0 : 1);
+    process.exit((await checkPerformer(createLocalFitExecutionContext(rootDir), sdk, version)) ? 0 : 1);
   });
 }

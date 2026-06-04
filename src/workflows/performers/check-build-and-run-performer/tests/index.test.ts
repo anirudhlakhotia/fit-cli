@@ -31,3 +31,18 @@ test("checkBuildAndRunPerformerArgs publishes a custom host port for versioned i
     "performer-node-4.2.0",
   ]);
 });
+
+test("checkBuildAndRunPerformerArgs can attach the performer to a Docker network", () => {
+  const sdk = sdkByValue("java");
+  assert.ok(sdk);
+  assert.deepEqual(checkBuildAndRunPerformerArgs(sdk, undefined, DEFAULT_PERFORMER_PORT, "fit-net"), [
+    "run",
+    "--detach",
+    "--rm",
+    "--network",
+    "fit-net",
+    "--publish",
+    "8060:8060",
+    "performer-java-main",
+  ]);
+});

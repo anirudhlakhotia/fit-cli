@@ -7,10 +7,14 @@
  */
 import { artifactFromPath, type RunOutput } from "../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
-import { capture, createLogFile, run, streamToFileInBackground } from "../../../util/non-fit/proc.js";
+import { createLogFile } from "../../../util/non-fit/proc.js";
 import { rootDirFromArgv } from "../../../util/fit/root.js";
 import { type Sdk } from "../../../util/sdk/sdks.js";
 import { chooseSdk } from "../../../util/sdk/choose-sdk.js";
+import {
+  createLocalFitExecutionContext,
+  type FitExecutionContext,
+} from "../../fit-shared/remote-fit-run.js";
 import { askVersion } from "../build-performer/ask-version.js";
 import { buildPerformerImageName } from "../build-performer/build-performer.js";
 import { checkAndBuildPerformer } from "../check-and-build-performer/index.js";
@@ -31,42 +35,39 @@ function performerLogFile(sdk: Sdk, version?: string): string {
   return createLogFile("performer");
 }
 
-async function startPerformerLogCapture(
-  containerId: string,
-  sdk: Sdk,
-  version?: string,
-): Promise<string> {
-  const logFile = performerLogFile(sdk, version);
-  await streamToFileInBackground("docker", ["logs", "--follow", "--timestamps", containerId], logFile);
-  return logFile;
-}
-
 /** Build the docker args needed to run a performer locally for FIT. */
 export function checkBuildAndRunPerformerArgs(
   sdk: Sdk,
   version?: string,
   hostPort: number = DEFAULT_PERFORMER_PORT,
+  dockerNetwork?: string,
 ): string[] {
   return [
     "run",
     "--detach",
     "--rm",
+    ...(dockerNetwork ? ["--network", dockerNetwork] : []),
     "--publish",
     `${hostPort}:${DEFAULT_PERFORMER_PORT}`,
     buildPerformerImageName(sdk, version),
   ];
 }
 
-/** Check/build the performer image, then start it in Docker for local FIT. */
+/** Check/build the performer image, then start it in Docker for FIT. */
 export async function checkBuildAndRunPerformer(
-  rootDir: string,
+  execution: FitExecutionContext,
   sdk: Sdk,
   version?: string,
+  dockerNetwork?: string,
 ): Promise<RunningPerformer | undefined> {
+  if (!(await execution.ensureWorkspace(sdk))) {
+    return undefined;
+  }
+
   // Check what's already running first: if a performer is up (a recognised
   // container, or just something on the port), we can test against it and skip
   // locating and building the image entirely.
-  const runCheck = await checkRunningPerformer(sdk, version);
+  const runCheck = await checkRunningPerformer(execution, sdk, version);
   if (runCheck.action === "abort") {
     return undefined;
   }
@@ -83,70 +84,80 @@ export async function checkBuildAndRunPerformer(
     if (!containerId) {
       return undefined;
     }
-
-    try {
-      const logFile = await startPerformerLogCapture(containerId, sdk, version);
-      console.log(`\n✓ Streaming ${sdk.name} performer logs to ${logFile}`);
-      return {
-        containerId,
-        logFile,
-        artifacts: [artifactFromPath(logFile, `${sdk.name} performer logs captured for this FIT run`)],
-        details: [],
-      };
-    } catch (err) {
-      console.error(`\n✗ Failed to capture ${sdk.name} performer logs: ${(err as Error).message}`);
-      return undefined;
-    }
+    const logFile = performerLogFile(sdk, version);
+    return {
+      containerId,
+      logFile,
+      artifacts: [artifactFromPath(logFile, `${sdk.name} performer logs captured for this FIT run`)],
+      details: [],
+    };
   }
 
   // We're going to start (or restart) the performer ourselves, so the image
   // must be located and built first.
-  if (!(await checkAndBuildPerformer(rootDir, sdk, version))) {
+  if (!(await checkAndBuildPerformer(execution, sdk, version))) {
     return undefined;
   }
 
-  if (runCheck.action === "restart" && !(await stopRunningPerformer(runCheck.containers))) {
+  if (runCheck.action === "restart" && !(await stopRunningPerformer(execution, runCheck.containers))) {
     return undefined;
   }
 
-  const args = checkBuildAndRunPerformerArgs(sdk, version);
+  if (dockerNetwork) {
+    console.log(`\n→ Starting the performer on Docker network ${dockerNetwork} so it can reach the cluster container.`);
+  }
+  const args = execution.performerRunArgs(buildPerformerImageName(sdk, version), DEFAULT_PERFORMER_PORT, dockerNetwork);
   console.log(`\nStarting performer with:\n  docker ${args.join(" ")}\n`);
 
   try {
-    const containerId = (await capture("docker", args)).trim();
+    const containerId = (await execution.capture(execution.dockerCommand, args)).trim();
     console.log(`\n✓ Started the ${sdk.name} performer in container ${containerId}`);
-
-    try {
-      const logFile = await startPerformerLogCapture(containerId, sdk, version);
-      console.log(`\n✓ Streaming ${sdk.name} performer logs to ${logFile}`);
-      return {
-        containerId,
-        logFile,
-        artifacts: [artifactFromPath(logFile, `${sdk.name} performer logs captured for this FIT run`)],
-        details: [],
-      };
-    } catch (err) {
-      console.error(`\n✗ Failed to capture ${sdk.name} performer logs: ${(err as Error).message}`);
-      await stopPerformerContainer(containerId);
-      return undefined;
-    }
+    const logFile = performerLogFile(sdk, version);
+    return {
+      containerId,
+      logFile,
+      artifacts: [artifactFromPath(logFile, `${sdk.name} performer logs captured for this FIT run`)],
+      details: [],
+    };
   } catch (err) {
     console.error(`\n✗ Failed to start the ${sdk.name} performer: ${(err as Error).message}`);
     return undefined;
   }
 }
 
-/** Stop a performer container that was started for FIT. */
-export async function stopPerformerContainer(containerId: string): Promise<boolean> {
-  console.log(`\nStopping performer container with:\n  docker stop ${containerId}\n`);
+/** Stop a performer started by checkBuildAndRunPerformer, collecting logs when needed. */
+export async function stopManagedPerformer(
+  execution: FitExecutionContext,
+  performer: RunningPerformer | undefined,
+): Promise<void> {
+  if (!performer?.containerId) {
+    if (performer?.logFile) {
+      console.log(`\nPerformer logs:\n  ${performer.logFile}`);
+    }
+    return;
+  }
 
+  if (performer.logFile) {
+    const targetLogFile = execution.targetFilePath(performer.logFile);
+    try {
+      await execution.runToFile("docker", ["logs", "--timestamps", performer.containerId], targetLogFile);
+      await execution.collectFile(targetLogFile, performer.logFile);
+      console.log(`\n✓ Saved performer logs to ${performer.logFile}`);
+    } catch (err) {
+      console.warn(`\nCould not collect performer logs from ${execution.description}: ${(err as Error).message}`);
+    }
+  }
+
+  console.log(`\nStopping performer container with:\n  docker stop ${performer.containerId}\n`);
   try {
-    await run("docker", ["stop", containerId]);
-    console.log(`\n✓ Stopped performer container ${containerId}`);
-    return true;
+    await execution.run(execution.dockerCommand, ["stop", performer.containerId]);
+    console.log(`\n✓ Stopped performer container ${performer.containerId}`);
   } catch (err) {
-    console.error(`\n✗ Failed to stop performer container ${containerId}: ${(err as Error).message}`);
-    return false;
+    console.error(`\n✗ Failed to stop performer container ${performer.containerId}: ${(err as Error).message}`);
+  }
+
+  if (performer.logFile) {
+    console.log(`\nPerformer logs:\n  ${performer.logFile}`);
   }
 }
 
@@ -154,7 +165,9 @@ export async function stopPerformerContainer(containerId: string): Promise<boole
 export async function runCheckBuildAndRunPerformer(rootDir: string): Promise<void> {
   const sdk = await chooseSdk("Which SDK performer do you want to check, build, and run?");
   const version = await askVersion();
-  await checkBuildAndRunPerformer(rootDir, sdk, version);
+  const execution = createLocalFitExecutionContext(rootDir);
+  const performer = await checkBuildAndRunPerformer(execution, sdk, version);
+  await stopManagedPerformer(execution, performer);
 }
 
 if (isMain(import.meta.url)) {

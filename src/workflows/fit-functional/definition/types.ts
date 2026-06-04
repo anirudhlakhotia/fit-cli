@@ -16,8 +16,6 @@
  *     tls: null
  *   tests: all
  *
- * See examples/fit-functional-tests.yaml in the repo root for an annotated copy.
- *
  * Parsing/validation lives in parse-definition.ts; turning a parsed definition
  * into the concrete run inputs lives in resolve-definition.ts.
  */

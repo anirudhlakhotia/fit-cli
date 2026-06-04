@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { FitExecutionContext } from "../../../fit-shared/remote-fit-run.js";
 import {
   handlePortInUse,
   killProcessArgs,
@@ -11,6 +12,33 @@ import {
   waitForPortFree,
   type PortInUseDeps,
 } from "../index.js";
+
+function fakeExecutionContext(): FitExecutionContext {
+  return {
+    kind: "local",
+    description: "test",
+    target: {} as never,
+    rootDir: "/work/root",
+    fitPerformerDir: "/work/root/transactions-fit-performer",
+    jenkinsDir: "/work/root/jenkins-sdk",
+    dockerCommand: "docker",
+    artifacts: [],
+    details: [],
+    ensureWorkspace: () => Promise.resolve(true),
+    ensureBuildWorkspace: () => Promise.resolve(true),
+    run: () => Promise.resolve(),
+    capture: () => Promise.resolve(""),
+    runToFile: () => Promise.resolve(),
+    targetFilePath: (path) => path,
+    stageFile: (path) => Promise.resolve(path),
+    collectFile: () => Promise.resolve(),
+    removeTree: () => Promise.resolve(),
+    collectJunitArtifacts: () => Promise.resolve([]),
+    pathExists: () => Promise.resolve(true),
+    commandAvailable: () => Promise.resolve(true),
+    performerRunArgs: (imageName) => ["run", imageName],
+  };
+}
 
 test("runningPerformerPsArgs filters docker ps by the requested performer image", () => {
   assert.deepEqual(runningPerformerPsArgs("performer-node-main"), [
@@ -70,7 +98,7 @@ test("killProcessArgs renders PIDs as kill arguments", () => {
 test("waitForPortFree resolves true once the port frees up", async () => {
   const availability = [{ available: false }, { available: false }, { available: true }];
   let sleeps = 0;
-  const freed = await waitForPortFree(8060, {
+  const freed = await waitForPortFree(fakeExecutionContext(), 8060, {
     maxAttempts: 5,
     checkAvailability: () => Promise.resolve(availability.shift() ?? { available: true }),
     sleep: () => {
@@ -83,7 +111,7 @@ test("waitForPortFree resolves true once the port frees up", async () => {
 });
 
 test("waitForPortFree resolves false when the port stays in use", async () => {
-  const freed = await waitForPortFree(8060, {
+  const freed = await waitForPortFree(fakeExecutionContext(), 8060, {
     maxAttempts: 3,
     checkAvailability: () => Promise.resolve({ available: false }),
     sleep: () => Promise.resolve(),
@@ -101,12 +129,12 @@ function portInUseDeps(overrides: Partial<PortInUseDeps>): PortInUseDeps {
 }
 
 test("handlePortInUse tests against an external performer when the user agrees", async () => {
-  const result = await handlePortInUse(8060, portInUseDeps({ confirm: () => Promise.resolve(true) }));
+  const result = await handlePortInUse(fakeExecutionContext(), 8060, portInUseDeps({ confirm: () => Promise.resolve(true) }));
   assert.deepEqual(result, { action: "external" });
 });
 
 test("handlePortInUse aborts when the user declines both options", async () => {
-  const result = await handlePortInUse(8060, portInUseDeps({ confirm: () => Promise.resolve(false) }));
+  const result = await handlePortInUse(fakeExecutionContext(), 8060, portInUseDeps({ confirm: () => Promise.resolve(false) }));
   assert.deepEqual(result, { action: "abort" });
 });
 
@@ -114,6 +142,7 @@ test("handlePortInUse stops the process and starts once the port frees up", asyn
   const answers = [false, true];
   let stopped = false;
   const result = await handlePortInUse(
+    fakeExecutionContext(),
     8060,
     portInUseDeps({
       confirm: () => Promise.resolve(answers.shift() ?? false),
@@ -131,6 +160,7 @@ test("handlePortInUse stops the process and starts once the port frees up", asyn
 test("handlePortInUse aborts when the port never frees up after stopping", async () => {
   const answers = [false, true];
   const result = await handlePortInUse(
+    fakeExecutionContext(),
     8060,
     portInUseDeps({
       confirm: () => Promise.resolve(answers.shift() ?? false),

@@ -1,14 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { FIT_CLI_CONFIG_VERSION, type FitCliConfig } from "../util/non-fit/config.js";
+import { FIT_CLI_CONFIG_VERSION, type FitCliConfig } from "../util/fit/config.js";
 import { initAnswersToConfig, initDefaultsFromConfig, initDefaultsFromEnv } from "../init.js";
 
-test("init defaults reuse non-secret config values and blank the secret", () => {
+test("init defaults reuse saved AWS settings", () => {
   const config: FitCliConfig = {
     version: FIT_CLI_CONFIG_VERSION,
     aws: {
-      accessKeyId: "abc",
-      secretAccessKey: "def",
       region: "eu-west-1",
       profile: "dev",
       instanceType: "m6i.large",
@@ -16,8 +14,6 @@ test("init defaults reuse non-secret config values and blank the secret", () => 
   };
 
   assert.deepEqual(initDefaultsFromConfig(config), {
-    accessKeyId: "abc",
-    secretAccessKey: "",
     region: "eu-west-1",
     profile: "dev",
     instanceType: "m6i.large",
@@ -27,15 +23,11 @@ test("init defaults reuse non-secret config values and blank the secret", () => 
 test("init defaults can seed from environment values", () => {
   assert.deepEqual(
     initDefaultsFromEnv({
-      AWS_ACCESS_KEY_ID: "abc",
-      AWS_SECRET_ACCESS_KEY: "def",
       AWS_REGION: "us-east-2",
       AWS_PROFILE: "dev",
       FIT_EC2_INSTANCE_TYPE: "c6i.large",
     }),
     {
-      accessKeyId: "abc",
-      secretAccessKey: "",
       region: "us-east-2",
       profile: "dev",
       instanceType: "c6i.large",
@@ -43,20 +35,14 @@ test("init defaults can seed from environment values", () => {
   );
 });
 
-test("blank secret answers preserve an existing saved secret when access key id remains set", () => {
+test("init answers keep non-secret AWS settings", () => {
   const config = initAnswersToConfig(
     {
-      accessKeyId: "abc",
-      secretAccessKey: "",
-      region: "us-east-1",
-      profile: "",
-      instanceType: "c5.xlarge",
-    },
-    {
-      version: FIT_CLI_CONFIG_VERSION,
+      configureAws: true,
       aws: {
-        accessKeyId: "abc",
-        secretAccessKey: "def",
+        region: "us-east-1",
+        profile: "",
+        instanceType: "c5.xlarge",
       },
     },
   );
@@ -64,28 +50,20 @@ test("blank secret answers preserve an existing saved secret when access key id 
   assert.deepEqual(config, {
     version: FIT_CLI_CONFIG_VERSION,
     aws: {
-      accessKeyId: "abc",
-      secretAccessKey: "def",
       region: "us-east-1",
       instanceType: "c5.xlarge",
     },
   });
 });
 
-test("clearing the access key id also drops any saved secret", () => {
+test("init answers drop legacy stored credentials", () => {
   const config = initAnswersToConfig(
     {
-      accessKeyId: "",
-      secretAccessKey: "",
-      region: "us-east-1",
-      profile: "dev",
-      instanceType: "c5.xlarge",
-    },
-    {
-      version: FIT_CLI_CONFIG_VERSION,
+      configureAws: true,
       aws: {
-        accessKeyId: "abc",
-        secretAccessKey: "def",
+        region: "us-east-1",
+        profile: "dev",
+        instanceType: "c5.xlarge",
       },
     },
   );
@@ -97,5 +75,15 @@ test("clearing the access key id also drops any saved secret", () => {
       profile: "dev",
       instanceType: "c5.xlarge",
     },
+  });
+});
+
+test("init answers can skip AWS entirely", () => {
+  const config = initAnswersToConfig({
+    configureAws: false,
+  });
+
+  assert.deepEqual(config, {
+    version: FIT_CLI_CONFIG_VERSION,
   });
 });

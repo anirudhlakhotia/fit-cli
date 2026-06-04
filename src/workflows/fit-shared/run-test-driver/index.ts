@@ -9,13 +9,13 @@
  * Run on its own (add --root <dir> to point elsewhere):
  *   npx tsx src/workflows/fit-shared/run-test-driver/index.ts
  */
-import { readFileSync, rmSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { artifactFromPath, combineArtifacts, type Detail, type RunOutput } from "../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
-import { collectJunitArtifacts, surefireReportsDir } from "./collect-junit.js";
-import { createLogFile, streamToFile } from "../../../util/non-fit/proc.js";
-import { FIT_PERFORMER, repoPath } from "../../../util/fit/repos.js";
+import { surefireReportsDir } from "./collect-junit.js";
+import { createLogFile } from "../../../util/non-fit/proc.js";
 import { rootDirFromArgv } from "../../../util/fit/root.js";
+import { createLocalFitExecutionContext, type FitExecutionContext } from "../remote-fit-run.js";
 import { selectFitTests, type FitTestSelection } from "../select-fit-tests/index.js";
 
 export const DEFAULT_MAVEN_TEST_ARGS = [
@@ -101,12 +101,13 @@ export function runTestDriverArgs(
 
 /** Run the FIT test-driver using the Jenkins-style Maven invocation. */
 export async function runTestDriver(
-  rootDir: string,
+  execution: FitExecutionContext,
   selection: FitTestSelection,
   fitConfigPath?: string,
   extraMavenArgs: readonly string[] = DEFAULT_MAVEN_TEST_ARGS,
 ): Promise<TestRunResult> {
-  const args = runTestDriverArgs(selection, fitConfigPath, extraMavenArgs);
+  const targetFitConfigPath = fitConfigPath ? await execution.stageFile(fitConfigPath) : undefined;
+  const args = runTestDriverArgs(selection, targetFitConfigPath, extraMavenArgs);
 
   // Surefire only overwrites reports for the classes it actually runs; it never
   // purges the directory. Without this, stale reports from a prior (broader) run
@@ -114,18 +115,19 @@ export async function runTestDriver(
   // didn't run. We delete only surefire-reports, not the whole target/ — a true
   // `mvn clean` (or rm -rf target) would also drop the compiled code, making
   // every iteration pay the recompile cost.
-  rmSync(surefireReportsDir(rootDir), { recursive: true, force: true });
+  await execution.removeTree(surefireReportsDir(execution.rootDir));
 
   const logFile = fitTestLogFile();
+  const targetLogFile = execution.targetFilePath(logFile);
   const logArtifact = artifactFromPath(logFile, "FIT test-driver stdout/stderr captured for this run");
-  console.log(`\nRunning FIT test-driver with:\n  cd ${repoPath(FIT_PERFORMER, rootDir)} && ./mvnw ${args.join(" ")}\n`);
-  console.log(`Streaming FIT test-driver output to:\n  ${logFile}\n`);
+  console.log(`\nRunning FIT test-driver with:\n  cd ${execution.fitPerformerDir} && ./mvnw ${args.join(" ")}\n`);
+  console.log(`Streaming FIT test-driver output to:\n  ${targetLogFile}\n`);
 
   // The test-driver still writes JUnit reports when tests fail, so collect them
   // on both paths — the failing run is the one most worth visualising.
   let ok: boolean;
   try {
-    await streamToFile("./mvnw", args, logFile, repoPath(FIT_PERFORMER, rootDir));
+    await execution.runToFile("./mvnw", args, targetLogFile, execution.fitPerformerDir);
     console.log("\n✓ FIT test-driver finished");
     ok = true;
   } catch (err) {
@@ -133,7 +135,8 @@ export async function runTestDriver(
     ok = false;
   }
 
-  const artifacts = combineArtifacts([logArtifact], await collectJunitArtifacts(rootDir));
+  await execution.collectFile(targetLogFile, logFile);
+  const artifacts = combineArtifacts([logArtifact], await execution.collectJunitArtifacts(surefireReportsDir(execution.rootDir)));
   const summary = extractFitTestDriverSummary(readFileSync(logFile, "utf8"));
   return { ok, logFile, artifacts, details: summary ? fitTestDriverSummaryDetails(summary) : [] };
 }
@@ -141,7 +144,8 @@ export async function runTestDriver(
 if (isMain(import.meta.url)) {
   runCli(async () => {
     const { rootDir } = rootDirFromArgv(process.argv.slice(2));
-    const selection = await selectFitTests(rootDir);
-    return await runTestDriver(rootDir, selection);
+    const execution = createLocalFitExecutionContext(rootDir);
+    const selection = await selectFitTests(execution);
+    return await runTestDriver(execution, selection);
   });
 }

@@ -14,7 +14,7 @@
  */
 import { type RunOutput } from "../../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../../util/non-fit/cli.js";
-import { ensureFitCliConfigEnv } from "../../../../util/non-fit/config.js";
+import { ensureFitCliConfigEnv } from "../../../../util/fit/config.js";
 import { confirm, select } from "../../../../util/non-fit/prompts.js";
 import { LocalTarget } from "../../../../util/non-fit/local-target.js";
 import { resolveRegion } from "../../../../util/non-fit/aws/aws-cli.js";

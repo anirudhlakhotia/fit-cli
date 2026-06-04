@@ -2,15 +2,13 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
 import YAML from "yaml";
-import { confirm } from "./prompts.js";
+import { confirm } from "../non-fit/prompts.js";
 
 export const FIT_CLI_CONFIG_VERSION = 1;
 export const FIT_CLI_CONFIG_DIRNAME = ".fit-cli";
 export const FIT_CLI_CONFIG_BASENAME = "config.yaml";
 
 export interface FitCliAwsConfig {
-  accessKeyId?: string;
-  secretAccessKey?: string;
   region?: string;
   profile?: string;
   instanceType?: string;
@@ -80,8 +78,6 @@ function compactRecord<T extends Record<string, string | undefined>>(record: T):
 
 function configEnvEntries(config: FitCliConfig): Record<string, string> {
   return compactRecord({
-    AWS_ACCESS_KEY_ID: config.aws?.accessKeyId,
-    AWS_SECRET_ACCESS_KEY: config.aws?.secretAccessKey,
     AWS_REGION: config.aws?.region,
     AWS_PROFILE: config.aws?.profile,
     FIT_EC2_INSTANCE_TYPE: config.aws?.instanceType,
@@ -123,8 +119,6 @@ export function validateFitCliConfig(raw: unknown): FitCliConfig {
 
   const aws = awsValue
     ? compactRecord({
-        accessKeyId: readOptionalString(awsValue, "accessKeyId", "aws.accessKeyId"),
-        secretAccessKey: readOptionalString(awsValue, "secretAccessKey", "aws.secretAccessKey"),
         region: readOptionalString(awsValue, "region", "aws.region"),
         profile: readOptionalString(awsValue, "profile", "aws.profile"),
         instanceType: readOptionalString(awsValue, "instanceType", "aws.instanceType"),

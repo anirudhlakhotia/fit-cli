@@ -7,16 +7,17 @@
  */
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { rootDirFromArgv } from "../../../util/fit/root.js";
+import { createLocalFitExecutionContext, type FitExecutionContext } from "../remote-fit-run.js";
 import { selectFitTests } from "../select-fit-tests/index.js";
 import { runTestDriver } from "../run-test-driver/index.js";
 
 /** Prompt for FIT tests and then run the test-driver with that selection. */
 export async function selectAndRunFitTests(
-  rootDir: string,
+  execution: FitExecutionContext,
   fitConfigPath?: string,
 ){
-  const selection = await selectFitTests(rootDir);
-  return runTestDriver(rootDir, selection, fitConfigPath);
+  const selection = await selectFitTests(execution);
+  return runTestDriver(execution, selection, fitConfigPath);
 }
 
 if (isMain(import.meta.url)) {
@@ -29,6 +30,6 @@ if (isMain(import.meta.url)) {
       process.exit(2);
     }
 
-    return await selectAndRunFitTests(rootDir, positionals[0]);
+    return await selectAndRunFitTests(createLocalFitExecutionContext(rootDir), positionals[0]);
   });
 }

@@ -9,6 +9,7 @@ import {
   filterFitTests,
   fitTestSearchSource,
   formatFitTestSelectionOutput,
+  listFitTestsInRepo,
   listFitTestsArgs,
   parseFitTests,
   renderSelectedFitTestsAnswer,
@@ -66,6 +67,28 @@ test("parseFitTests converts relative paths into display names and class names",
       },
     ],
   );
+});
+
+test("listFitTestsInRepo uses the provided capture function and parses its output", async () => {
+  const calls: Array<{ command: string; args: string[]; cwd?: string }> = [];
+  const tests = await listFitTestsInRepo("/remote/transactions-fit-performer", (command, args, cwd) => {
+    calls.push({ command, args, cwd });
+    return Promise.resolve(
+      [
+        "java/com/couchbase/transactions/StandardTest.java",
+        "java/com/couchbase/client/analytics/DisconnectTest.java",
+      ].join("\n"),
+    );
+  });
+
+  assert.deepEqual(calls, [
+    {
+      command: "./mvnw",
+      args: listFitTestsArgs(),
+      cwd: "/remote/transactions-fit-performer",
+    },
+  ]);
+  assert.deepEqual(tests, SAMPLE_TESTS);
 });
 
 test("filterFitTests returns all tests for a blank term", () => {
@@ -164,9 +187,9 @@ test("buildFitTestSelection builds a selector for a subset", () => {
 test("buildSanityFitTestSelection selects the FIT sanity test from discovered tests", () => {
   const allTests: FitTestCase[] = [
     {
-      fileName: "GetTest.java",
-      relativePath: "java/com/couchbase/client/kv/GetTest.java",
-      className: "com.couchbase.client.kv.GetTest",
+      fileName: "SanityTest.java",
+      relativePath: "java/com/couchbase/client/kv/SanityTest.java",
+      className: "com.couchbase.client.kv.SanityTest",
     },
     {
       fileName: "StandardTest.java",
@@ -178,7 +201,7 @@ test("buildSanityFitTestSelection selects the FIT sanity test from discovered te
   assert.deepEqual(buildSanityFitTestSelection(allTests), {
     allTests,
     selectedTests: [allTests[0]],
-    mavenTestSelector: "com.couchbase.client.kv.GetTest",
+    mavenTestSelector: "com.couchbase.client.kv.SanityTest",
   });
 });
 
@@ -186,19 +209,19 @@ test("buildSanityFitTestSelection falls back to the known sanity test class name
   assert.deepEqual(buildSanityFitTestSelection([]), {
     allTests: [
       {
-        className: "com.couchbase.client.kv.GetTest",
-        fileName: "GetTest",
-        relativePath: "com.couchbase.client.kv.GetTest",
+        className: "com.couchbase.client.kv.SanityTest",
+        fileName: "SanityTest",
+        relativePath: "com.couchbase.client.kv.SanityTest",
       },
     ],
     selectedTests: [
       {
-        className: "com.couchbase.client.kv.GetTest",
-        fileName: "GetTest",
-        relativePath: "com.couchbase.client.kv.GetTest",
+        className: "com.couchbase.client.kv.SanityTest",
+        fileName: "SanityTest",
+        relativePath: "com.couchbase.client.kv.SanityTest",
       },
     ],
-    mavenTestSelector: "com.couchbase.client.kv.GetTest",
+    mavenTestSelector: "com.couchbase.client.kv.SanityTest",
   });
 });
 

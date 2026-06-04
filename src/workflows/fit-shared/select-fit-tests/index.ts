@@ -8,9 +8,8 @@
 import { basename } from "node:path";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { checkbox, search, select } from "../../../util/non-fit/prompts.js";
-import { capture } from "../../../util/non-fit/proc.js";
-import { FIT_PERFORMER, repoPath } from "../../../util/fit/repos.js";
 import { rootDirFromArgv } from "../../../util/fit/root.js";
+import { createLocalFitExecutionContext, type FitExecutionContext } from "../remote-fit-run.js";
 
 export interface FitTestCase {
   /** Basename shown in the picker, e.g. StandardTest.java. */
@@ -49,6 +48,12 @@ interface PromptChoiceLike {
   short?: string;
 }
 
+export type CaptureCommand = (
+  command: string,
+  args: string[],
+  cwd?: string,
+) => Promise<string>;
+
 const ALL_FIT_TESTS_SELECTED = "All FIT tests selected";
 const EXCLUDED_RELATIVE_PATH_PREFIX = "scala/com/couchbase/situational/";
 
@@ -84,8 +89,19 @@ export function parseFitTests(output: string): FitTestCase[] {
 }
 
 /** List test-driver tests by running `./mvnw` in transactions-fit-performer. */
-export async function listFitTests(rootDir: string): Promise<FitTestCase[]> {
-  const output = await capture("./mvnw", listFitTestsArgs(), repoPath(FIT_PERFORMER, rootDir));
+export async function listFitTests(execution: FitExecutionContext): Promise<FitTestCase[]> {
+  return await listFitTestsInRepo(
+    execution.fitPerformerDir,
+    (command, args, cwd) => execution.capture(command, args, cwd),
+  );
+}
+
+/** List test-driver tests by running `./mvnw` in a specific performer repo. */
+export async function listFitTestsInRepo(
+  performerRepoDir: string,
+  captureCommand: CaptureCommand,
+): Promise<FitTestCase[]> {
+  const output = await captureCommand("./mvnw", listFitTestsArgs(), performerRepoDir);
   const tests = parseFitTests(output);
   if (tests.length === 0) {
     throw new Error("Could not find any test-driver test files.");
@@ -243,7 +259,7 @@ export function deserializeSelectedFitTestsFromReplay(
   return response;
 }
 
-const FIT_SANITY_TEST_CLASS_NAME = "com.couchbase.client.kv.GetTest";
+const FIT_SANITY_TEST_CLASS_NAME = "com.couchbase.client.kv.SanityTest";
 
 type FitTestRunMode = "all" | "single" | "multiple" | "sanity";
 
@@ -306,21 +322,25 @@ async function selectMultipleFitTests(tests: FitTestCase[]): Promise<FitTestSele
   return buildFitTestSelection(tests, selectedClassNames);
 }
 
+/** Prompt for which FIT test-driver tests to run from a pre-listed test set. */
+export async function promptForFitTestSelection(tests: FitTestCase[]): Promise<FitTestSelection> {
+  const mode = await askFitTestRunMode();
+  switch (mode) {
+    case "single":
+      return await selectSingleFitTest(tests);
+    case "sanity":
+      return buildSanityFitTestSelection(tests);
+    case "multiple":
+      return await selectMultipleFitTests(tests);
+    default:
+      return buildDefaultFitTestSelection();
+  }
+}
+
 /** Prompt for which FIT test-driver tests to run. */
-export async function selectFitTests(rootDir: string): Promise<FitTestSelection> {
+export async function selectFitTests(execution: FitExecutionContext): Promise<FitTestSelection> {
   try {
-    const tests = await listFitTests(rootDir);
-    const mode = await askFitTestRunMode();
-    switch (mode) {
-      case "single":
-        return await selectSingleFitTest(tests);
-      case "sanity":
-        return buildSanityFitTestSelection(tests);
-      case "multiple":
-        return await selectMultipleFitTests(tests);
-      default:
-        return buildDefaultFitTestSelection();
-    }
+    return await promptForFitTestSelection(await listFitTests(execution));
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.warn(`\nCould not select specific FIT tests (${message}). Continuing with all tests.`);
@@ -331,6 +351,7 @@ export async function selectFitTests(rootDir: string): Promise<FitTestSelection>
 if (isMain(import.meta.url)) {
   runCli(async () => {
     const { rootDir } = rootDirFromArgv(process.argv.slice(2));
-    console.log(formatFitTestSelectionOutput(await selectFitTests(rootDir)));
+    const execution = createLocalFitExecutionContext(rootDir);
+    console.log(formatFitTestSelectionOutput(await selectFitTests(execution)));
   });
 }

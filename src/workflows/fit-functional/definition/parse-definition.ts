@@ -138,7 +138,7 @@ export function upgradeDefinitionRaw(raw: Record<string, unknown>): Record<strin
   // version < current with no upgrader registered for it.
   throw new UnsupportedDefinitionVersionError(
     `Definition file version ${version} can no longer be upgraded automatically to version ` +
-      `${CURRENT_FIT_FUNCTIONAL_VERSION}. Recreate the file from examples/fit-functional-tests.yaml.`,
+      `${CURRENT_FIT_FUNCTIONAL_VERSION}. Recreate it from a recent guided run and tweak the generated YAML.`,
   );
 }
 

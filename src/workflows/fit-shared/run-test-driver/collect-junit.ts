@@ -22,6 +22,7 @@ import { join } from "node:path";
 import { artifactFromPath, type Artifact } from "../../../util/non-fit/artifacts.js";
 import { run } from "../../../util/non-fit/proc.js";
 import { ensureRunDir } from "../../../util/non-fit/replay.js";
+import type { ExecutionTarget } from "../../../util/non-fit/target.js";
 import { FIT_PERFORMER, repoPath } from "../../../util/fit/repos.js";
 
 /** Absolute path to the surefire JUnit XML directory the test-driver produces. */
@@ -35,6 +36,13 @@ function junitXmlFiles(sourceDir: string): string[] {
     return [];
   }
   return readdirSync(sourceDir).filter((file) => file.startsWith("TEST-") && file.endsWith(".xml"));
+}
+
+function parseJunitXmlFiles(output: string): string[] {
+  return output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith("TEST-") && line.endsWith(".xml"));
 }
 
 /**
@@ -119,6 +127,40 @@ export async function collectJunitArtifacts(rootDir: string): Promise<Artifact[]
 
   const artifacts: Artifact[] = [
     artifactFromPath(destDir, `JUnit XML reports from the FIT test-driver (${xmlFiles.length} file(s))`),
+  ];
+
+  const reportArtifact = await renderJunitReport(destDir, runDir);
+  if (reportArtifact) {
+    artifacts.push(reportArtifact);
+  }
+  return artifacts;
+}
+
+/**
+ * Copy JUnit XML off an execution target into ARTIFACT_DIR/surefire-reports,
+ * render an HTML report from it locally, and return artifacts for both.
+ */
+export async function collectJunitArtifactsFromTarget(
+  target: ExecutionTarget,
+  sourceDir: string,
+): Promise<Artifact[]> {
+  const xmlFiles = parseJunitXmlFiles(
+    await target.capture("find", [sourceDir, "-maxdepth", "1", "-type", "f", "-name", "TEST-*.xml", "-printf", "%f\n"]),
+  );
+  if (xmlFiles.length === 0) {
+    console.warn(`\nNo JUnit reports found under ${sourceDir}; skipping JUnit artifacts.`);
+    return [];
+  }
+
+  const runDir = ensureRunDir();
+  const destDir = join(runDir, "surefire-reports");
+  mkdirSync(destDir, { recursive: true, mode: 0o700 });
+  for (const file of xmlFiles) {
+    await target.getFile(join(sourceDir, file), join(destDir, file));
+  }
+
+  const artifacts: Artifact[] = [
+    artifactFromPath(destDir, `JUnit XML reports from the FIT test-driver (${xmlFiles.length} file(s))`, runDir),
   ];
 
   const reportArtifact = await renderJunitReport(destDir, runDir);
