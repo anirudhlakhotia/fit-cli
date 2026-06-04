@@ -243,9 +243,11 @@ export function deserializeSelectedFitTestsFromReplay(
   return response;
 }
 
-type FitTestRunMode = "all" | "single" | "multiple";
+const FIT_SANITY_TEST_CLASS_NAME = "com.couchbase.client.kv.GetTest";
 
-/** Ask whether to run everything, a single searchable test, or a chosen subset. */
+type FitTestRunMode = "all" | "single" | "multiple" | "sanity";
+
+/** Ask whether to run everything, a single searchable test, a sanity test, or a chosen subset. */
 async function askFitTestRunMode(): Promise<FitTestRunMode> {
   return select<FitTestRunMode>({
     promptId: "fit.tests.mode",
@@ -254,9 +256,22 @@ async function askFitTestRunMode(): Promise<FitTestRunMode> {
     choices: [
       { name: "Run everything", value: "all" },
       { name: "Run a single test", value: "single" },
+      {
+        name: `Run a single sanity test (${FIT_SANITY_TEST_CLASS_NAME})`,
+        value: "sanity",
+      },
       { name: "Pick multiple tests", value: "multiple" },
     ],
   });
+}
+
+/** Pick the default FIT sanity test without prompting for a searchable test name. */
+export function buildSanityFitTestSelection(tests: FitTestCase[]): FitTestSelection {
+  const sanitySelection = buildFitTestSelection(tests, [FIT_SANITY_TEST_CLASS_NAME]);
+  if (sanitySelection.selectedTests.length > 0) {
+    return sanitySelection;
+  }
+  return buildFitTestSelectionFromClassNames([FIT_SANITY_TEST_CLASS_NAME]);
 }
 
 /** Single-test picker backed by a type-to-filter search box. */
@@ -299,6 +314,8 @@ export async function selectFitTests(rootDir: string): Promise<FitTestSelection>
     switch (mode) {
       case "single":
         return await selectSingleFitTest(tests);
+      case "sanity":
+        return buildSanityFitTestSelection(tests);
       case "multiple":
         return await selectMultipleFitTests(tests);
       default:

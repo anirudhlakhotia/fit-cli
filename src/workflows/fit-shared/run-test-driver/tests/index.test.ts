@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { runTestDriverArgs } from "../index.js";
+import { extractFitTestDriverSummary, fitTestDriverSummaryDetails, runTestDriverArgs } from "../index.js";
 import { collapseSuitesByDefault, stripJunitProperties, surefireReportsDir } from "../collect-junit.js";
 import type { FitTestSelection } from "../../select-fit-tests/index.js";
 
@@ -40,6 +40,49 @@ test("collapseSuitesByDefault flips the xunit-viewer expansion tokens", () => {
 test("collapseSuitesByDefault leaves HTML untouched when tokens are absent", () => {
   const html = "<html>no recognisable xunit-viewer markup</html>";
   assert.equal(collapseSuitesByDefault(html), html);
+});
+
+test("extractFitTestDriverSummary returns the final test summary from the log", () => {
+  const log = [
+    "[INFO] Tests run: 2, Failures: 1, Errors: 0, Skipped: 0",
+    "[INFO] some other output",
+    "[INFO] Tests run: 13, Failures: 7, Errors: 0, Skipped: 2, Time elapsed: 123.456 s",
+  ].join("\n");
+
+  assert.deepEqual(extractFitTestDriverSummary(log), {
+    testsRun: 13,
+    failures: 7,
+    errors: 0,
+    skipped: 2,
+  });
+});
+
+test("extractFitTestDriverSummary returns undefined when the log has no summary line", () => {
+  assert.equal(extractFitTestDriverSummary("[INFO] build still running"), undefined);
+});
+
+test("fitTestDriverSummaryDetails formats the parsed summary for the CLI table", () => {
+  assert.deepEqual(
+    fitTestDriverSummaryDetails({ testsRun: 13, failures: 7, errors: 0, skipped: 2 }),
+    [
+      {
+        label: "Tests run",
+        value: "13",
+      },
+      {
+        label: "Failures",
+        value: "7",
+      },
+      {
+        label: "Errors",
+        value: "0",
+      },
+      {
+        label: "Skipped",
+        value: "2",
+      },
+    ],
+  );
 });
 
 test("runTestDriverArgs omits -Dtest when all tests are selected", () => {

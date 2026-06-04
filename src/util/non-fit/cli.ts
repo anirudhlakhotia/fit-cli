@@ -3,9 +3,10 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   artifactFromPath,
-  combineArtifacts,
   formatArtifactsSection,
-  type ArtifactCollection,
+  formatDetailsSection,
+  combineRunOutputs,
+  type RunOutput,
 } from "./artifacts.js";
 import { startSessionLog } from "./proc.js";
 import { ensurePromptSession } from "./replay.js";
@@ -28,7 +29,7 @@ export function isMain(metaUrl: string): boolean {
  * Esc from @inquirer throws ExitPromptError and exits quietly, anything else
  * prints and exits non-zero.
  */
-export function runCli(main: () => Promise<void | ArtifactCollection>): void {
+export function runCli(main: () => Promise<void | Partial<RunOutput>>): void {
   const promptSession = ensurePromptSession(process.argv.slice(2));
   const sessionLog = startSessionLog(join(promptSession.runDir, "session.log"));
   const sessionLogArtifact = artifactFromPath(
@@ -36,17 +37,21 @@ export function runCli(main: () => Promise<void | ArtifactCollection>): void {
     "Full log of this fit-cli session",
     promptSession.runDir,
   );
-  let artifactsOutput: string | undefined;
+  let summaryOutput: string | undefined;
   Promise.resolve()
     .then(() => main())
     .then((result) => {
-      const artifacts = combineArtifacts(result?.artifacts ?? [], [sessionLogArtifact]);
-      artifactsOutput = formatArtifactsSection(promptSession.runDir, artifacts);
+      const output = combineRunOutputs(result ?? undefined, { artifacts: [sessionLogArtifact] });
+      const sections = [
+        formatArtifactsSection(promptSession.runDir, output.artifacts),
+        formatDetailsSection(output.details),
+      ].filter(Boolean);
+      summaryOutput = sections.join("\n\n") || undefined;
       return promptSession.finishReplay();
     })
     .then(() => {
-      if (artifactsOutput) {
-        console.log(`\n${artifactsOutput}`);
+      if (summaryOutput) {
+        console.log(`\n${summaryOutput}`);
       }
     })
     .finally(() => {

@@ -8,6 +8,7 @@
   },
   "scripts": {
     "start": "tsx src/index.ts",
+    "init": "tsx src/init.ts",
     "replay": "tsx src/util/non-fit/replay-entry.ts --replay",
     "definition": "tsx src/workflows/fit-functional/workflows/run-from-definition/index.ts",
     "dev": "tsx watch src/index.ts",

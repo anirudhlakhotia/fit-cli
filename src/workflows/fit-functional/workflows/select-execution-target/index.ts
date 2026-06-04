@@ -4,18 +4,19 @@
  * flow can run commands against, plus a cleanup handle (a no-op for local; for
  * EC2, a prompt to keep the box for debugging or tear it down).
  *
- * The EC2 path needs AWS credentials. They're read from the environment (loaded
- * from .env — see .env.example); if they're missing or invalid we say so and
- * loop back to the choice, so the user can fall back to local without re-running.
+ * The EC2 path needs AWS credentials. We read them from the normal environment
+ * and the user's fit-cli config file; if they're missing or invalid we
+ * say so and loop back to the choice, so the user can fall back to local
+ * without re-running.
  *
  * Run this workflow on its own (picks a target, runs `uname -a` on it, cleans up):
  *   npx tsx src/workflows/fit-functional/workflows/select-execution-target/index.ts
  */
-import { type ArtifactCollection } from "../../../../util/non-fit/artifacts.js";
+import { type RunOutput } from "../../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../../util/non-fit/cli.js";
+import { ensureFitCliConfigEnv } from "../../../../util/non-fit/config.js";
 import { confirm, select } from "../../../../util/non-fit/prompts.js";
 import { LocalTarget } from "../../../../util/non-fit/local-target.js";
-import { loadDotenv } from "../../../../util/non-fit/dotenv.js";
 import { resolveRegion } from "../../../../util/non-fit/aws/aws-cli.js";
 import { checkCredentials } from "../../../../util/non-fit/aws/identity.js";
 import { type ExecutionTarget } from "../../../../util/non-fit/target.js";
@@ -24,9 +25,9 @@ import { provisionFitInstance } from "../../../../util/fit/aws/fit-instance.js";
 /** The outcome of choosing where to run. */
 export type ExecutionTargetOutcome =
   /** A target is ready; call `cleanup` when the run is done. */
-  | (ArtifactCollection & { ready: true; target: ExecutionTarget; cleanup: () => Promise<void> })
+  | (RunOutput & { ready: true; target: ExecutionTarget; cleanup: () => Promise<void> })
   /** No target is ready; the reason was already printed. */
-  | (ArtifactCollection & { ready: false });
+  | (RunOutput & { ready: false });
 
 type TargetChoice = "local" | "ec2";
 
@@ -47,15 +48,18 @@ export async function selectExecutionTarget(): Promise<ExecutionTargetOutcome> {
     });
 
     if (choice === "local") {
-      return { ready: true, target: new LocalTarget(), cleanup: async () => {}, artifacts: [] };
+      return { ready: true, target: new LocalTarget(), cleanup: async () => {}, artifacts: [], details: [] };
     }
 
-    // EC2: credentials come from the environment / .env.
-    loadDotenv();
+    // EC2: credentials come from the environment or config.yaml.
+    await ensureFitCliConfigEnv({
+      promptId: "execution-target.config.create",
+      promptMessage: "No fit-cli config found. Run `npm run init` now before using EC2?",
+    });
     const creds = await checkCredentials();
     if (!creds.ok) {
       console.log(`\n✗ Can't use EC2: ${creds.message}`);
-      console.log("Add your AWS credentials to .env (copy .env.example), then choose again.\n");
+      console.log("Add your AWS credentials with `npm run init`, or use your normal AWS environment/config, then choose again.\n");
       continue; // back to the local-vs-EC2 prompt
     }
     console.log(`\n✓ Using AWS account ${creds.identity.account} (${creds.identity.arn})`);
@@ -79,10 +83,10 @@ export async function selectExecutionTarget(): Promise<ExecutionTargetOutcome> {
         await instance.terminate();
         console.log("✓ Terminated.");
       };
-      return { ready: true, target: instance.target, cleanup, artifacts: instance.artifacts };
+      return { ready: true, target: instance.target, cleanup, artifacts: instance.artifacts, details: instance.details };
     } catch (err) {
       console.error(`\n✗ Could not provision an EC2 instance: ${err instanceof Error ? err.message : String(err)}`);
-      return { ready: false, artifacts: [] };
+      return { ready: false, artifacts: [], details: [] };
     }
   }
 }
@@ -96,6 +100,6 @@ if (isMain(import.meta.url)) {
     console.log(`\nTarget: ${outcome.target.description} (${outcome.target.kind})`);
     await outcome.target.run("uname", ["-a"]);
     await outcome.cleanup();
-    return { artifacts: outcome.artifacts };
+    return { artifacts: outcome.artifacts, details: outcome.details };
   });
 }

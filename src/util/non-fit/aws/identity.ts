@@ -47,7 +47,7 @@ export async function checkCredentials(options: AwsOptions = {}): Promise<Creden
 
 if (isMain(import.meta.url)) {
   runCli(async () => {
-    const awsOptions = prepareAwsCli(process.argv.slice(2));
+    const awsOptions = await prepareAwsCli(process.argv.slice(2));
     logAwsAction("Checking AWS credentials", awsOptions, { operation: "sts get-caller-identity" });
     const result = await checkCredentials(awsOptions);
     if (!result.ok) {

@@ -5,7 +5,7 @@
  * workflows/fit-functional/guided/) and can be run on its own for debugging —
  * see the header of its index.ts.
  */
-import { type ArtifactCollection } from "./util/non-fit/artifacts.js";
+import { type RunOutput } from "./util/non-fit/artifacts.js";
 import { isMain, runCli } from "./util/non-fit/cli.js";
 import { select } from "./util/non-fit/prompts.js";
 import { ensurePromptSession, type PromptSession } from "./util/non-fit/replay.js";
@@ -60,15 +60,15 @@ export async function chooseWorkflow(
   return choice;
 }
 
-export async function runWorkflow(choice: WorkflowChoice, rootDir: string): Promise<ArtifactCollection> {
+export async function runWorkflow(choice: WorkflowChoice, rootDir: string): Promise<RunOutput> {
   switch (choice) {
     case "functional-tests":
       return runFunctionalTests(rootDir);
   }
 }
 
-export async function main(): Promise<ArtifactCollection> {
-  console.log("FIT CLI — making FIT easier to use, one vibe-coded feature at a time.\n");
+export async function main(): Promise<RunOutput> {
+  console.log("FIT CLI — making FIT easier to use, one vibe-coding session at a time.\n");
 
   const { rootDir } = rootDirFromArgv(process.argv.slice(2));
   const choice = await chooseWorkflow();

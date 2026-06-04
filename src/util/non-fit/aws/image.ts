@@ -66,7 +66,7 @@ export async function findUbuntuAmi(options: AwsOptions = {}): Promise<string> {
 
 if (isMain(import.meta.url)) {
   runCli(async () => {
-    const awsOptions = prepareAwsCli(process.argv.slice(2));
+    const awsOptions = await prepareAwsCli(process.argv.slice(2));
     logAwsAction("Looking up Ubuntu AMI", awsOptions, {
       owner: CANONICAL_OWNER_ID,
       namePattern: UBUNTU_2204_NAME_PATTERN,

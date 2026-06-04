@@ -67,7 +67,7 @@ if (isMain(import.meta.url)) {
     };
     const key = flag("key");
     const tagFlag = flag("tag");
-    const awsOptions = prepareAwsCli(argv);
+    const awsOptions = await prepareAwsCli(argv);
     logAwsAction("Listing EC2 instances", awsOptions, key ? { keyName: key, states: LIVE_STATES } : {
       tag: tagFlag ?? "fit-cli=owned",
       states: LIVE_STATES,

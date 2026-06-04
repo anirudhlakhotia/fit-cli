@@ -37,7 +37,10 @@ test("a self-managed cluster uses the localhost layout", () => {
   const access = config.clusterAccess as Record<string, unknown>;
   assert.equal(access.connectionString, "couchbase://${defaultHostname}");
   assert.deepEqual(access.rest, { hostname: "${defaultHostname}", resolveDnsSrv: false });
-  assert.deepEqual(access.proxy, { hostname: "localhost" });
+  assert.deepEqual(access.proxy, {
+    "//": "The performer is running in Docker and needs to be able to connect to the FIT proxy (the test-driver) running on the host machine",
+    hostname: "host.docker.internal",
+  });
   assert.equal(config.skipBucketCreation, undefined);
   assert.deepEqual(config.excludeTests, ["situational"]);
 });

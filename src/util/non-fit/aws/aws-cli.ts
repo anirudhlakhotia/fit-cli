@@ -9,7 +9,7 @@
  *   npx tsx src/util/non-fit/aws/aws-cli.ts
  */
 import { isMain, runCli } from "../cli.js";
-import { loadDotenv } from "../dotenv.js";
+import { ensureFitCliConfigEnv } from "../config.js";
 import { capture } from "../proc.js";
 import { findOnPath } from "../which.js";
 
@@ -44,9 +44,12 @@ export function regionFromArgv(argv: readonly string[]): string | undefined {
   return undefined;
 }
 
-/** Load `.env`, resolve the AWS region, and return the resulting options. */
-export function prepareAwsCli(argv: readonly string[]): AwsOptions {
-  loadDotenv();
+/** Load config sources, resolve the AWS region, and return the resulting options. */
+export async function prepareAwsCli(argv: readonly string[]): Promise<AwsOptions> {
+  await ensureFitCliConfigEnv({
+    promptId: "aws.config.create",
+    promptMessage: "No fit-cli config found. Run `npm run init` now before continuing with this AWS command?",
+  });
   return { region: regionFromArgv(argv) };
 }
 
@@ -132,7 +135,7 @@ export async function awsText(args: string[], options: AwsOptions = {}): Promise
 
 if (isMain(import.meta.url)) {
   runCli(async () => {
-    prepareAwsCli(process.argv.slice(2));
+    await prepareAwsCli(process.argv.slice(2));
     if (!ensureAwsCli()) {
       process.exit(1);
     }

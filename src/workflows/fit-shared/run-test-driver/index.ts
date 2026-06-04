@@ -9,8 +9,8 @@
  * Run on its own (add --root <dir> to point elsewhere):
  *   npx tsx src/workflows/fit-shared/run-test-driver/index.ts
  */
-import { rmSync } from "node:fs";
-import { artifactFromPath, combineArtifacts, type ArtifactCollection } from "../../../util/non-fit/artifacts.js";
+import { readFileSync, rmSync } from "node:fs";
+import { artifactFromPath, combineArtifacts, type Detail, type RunOutput } from "../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { collectJunitArtifacts, surefireReportsDir } from "./collect-junit.js";
 import { createLogFile, streamToFile } from "../../../util/non-fit/proc.js";
@@ -22,13 +22,59 @@ export const DEFAULT_MAVEN_TEST_ARGS = [
   "-DexcludedGroups=situational,openshift,syncgateway",
 ] as const;
 
-export interface TestRunResult extends ArtifactCollection {
+export interface TestRunResult extends RunOutput {
   ok: boolean;
   logFile: string;
 }
 
+export interface FitTestDriverSummary {
+  testsRun: number;
+  failures: number;
+  errors: number;
+  skipped: number;
+}
+
+const FIT_TEST_DRIVER_SUMMARY_RE =
+  /Tests run:\s*(\d+),\s*Failures:\s*(\d+),\s*Errors:\s*(\d+),\s*Skipped:\s*(\d+)/g;
+
 function fitTestLogFile(): string {
   return createLogFile("driver");
+}
+
+export function extractFitTestDriverSummary(log: string): FitTestDriverSummary | undefined {
+  const matches = Array.from(log.matchAll(FIT_TEST_DRIVER_SUMMARY_RE));
+  const last = matches.at(-1);
+  if (!last) {
+    return undefined;
+  }
+
+  return {
+    testsRun: Number(last[1]),
+    failures: Number(last[2]),
+    errors: Number(last[3]),
+    skipped: Number(last[4]),
+  };
+}
+
+export function fitTestDriverSummaryDetails(summary: FitTestDriverSummary): Detail[] {
+  return [
+    {
+      label: "Tests run",
+      value: String(summary.testsRun),
+    },
+    {
+      label: "Failures",
+      value: String(summary.failures),
+    },
+    {
+      label: "Errors",
+      value: String(summary.errors),
+    },
+    {
+      label: "Skipped",
+      value: String(summary.skipped),
+    },
+  ];
 }
 
 /** Build the `./mvnw` args needed to run the FIT test-driver. */
@@ -88,7 +134,8 @@ export async function runTestDriver(
   }
 
   const artifacts = combineArtifacts([logArtifact], await collectJunitArtifacts(rootDir));
-  return { ok, logFile, artifacts };
+  const summary = extractFitTestDriverSummary(readFileSync(logFile, "utf8"));
+  return { ok, logFile, artifacts, details: summary ? fitTestDriverSummaryDetails(summary) : [] };
 }
 
 if (isMain(import.meta.url)) {

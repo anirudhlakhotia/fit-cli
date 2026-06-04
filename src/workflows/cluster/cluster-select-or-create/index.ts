@@ -11,7 +11,7 @@
  *   npx tsx src/workflows/cluster-select-or-create/index.ts
  */
 import { confirm } from "../../../util/non-fit/prompts.js";
-import { type ArtifactCollection } from "../../../util/non-fit/artifacts.js";
+import { type RunOutput } from "../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { createCluster } from "../cluster-create/index.js";
 import { runClusterDiag } from "../cluster-diag/index.js";
@@ -21,9 +21,9 @@ import { buildSelectedCluster, selectCluster, type SelectedCluster } from "../cl
 /** The outcome of getting a cluster to use. */
 export type ClusterOutcome =
   /** An existing cluster was selected and is ready to use. */
-  | (ArtifactCollection & { ready: true; cluster: SelectedCluster })
+  | (RunOutput & { ready: true; cluster: SelectedCluster })
   /** No cluster is ready to use; the reason was already printed. */
-  | (ArtifactCollection & { ready: false });
+  | (RunOutput & { ready: false });
 
 /**
  * Get a cluster to use: select an existing one (ready straight away) or create a
@@ -37,11 +37,11 @@ export async function selectOrCreateCluster(): Promise<ClusterOutcome> {
       promptId: "cluster.diag.run-now",
       message: "Sanity test the cluster now?",
       default: true,
-    });
+    }, { clearPromptOnDone: true });
     if (shouldRunDiag && !(await runClusterDiag(selection.cluster))) {
-      return { ready: false, artifacts: [] };
+      return { ready: false, artifacts: [], details: [] };
     }
-    return { ready: true, cluster: selection.cluster, artifacts: [] };
+    return { ready: true, cluster: selection.cluster, artifacts: [], details: [] };
   }
 
   // mode === "create": allocate a fresh cluster with cbdinocluster, then carry on
@@ -49,7 +49,7 @@ export async function selectOrCreateCluster(): Promise<ClusterOutcome> {
   const result = await createCluster();
   if (!result.created) {
     console.log("\nOnce you have a cluster, run fit-cli again.");
-    return { ready: false, artifacts: result.artifacts };
+    return { ready: false, artifacts: result.artifacts, details: result.details };
   }
 
   const classification = classifyConnectionString(result.connectionString);
@@ -58,12 +58,12 @@ export async function selectOrCreateCluster(): Promise<ClusterOutcome> {
       `\nYour cluster is allocated, but its connection string (${result.connectionString}) isn't ` +
         "one this tool can use directly. Re-run fit-cli and choose the existing-cluster path.",
     );
-    return { ready: false, artifacts: result.artifacts };
+    return { ready: false, artifacts: result.artifacts, details: result.details };
   }
 
   console.log(`\n✓ Using your new cluster at ${result.connectionString}`);
   const cluster = await buildSelectedCluster(classification);
-  return { ready: true, cluster, artifacts: result.artifacts };
+  return { ready: true, cluster, artifacts: result.artifacts, details: result.details };
 }
 
 if (isMain(import.meta.url)) {

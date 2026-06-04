@@ -76,7 +76,7 @@ export function writeAgentsGuide(
 ): WriteAgentsGuideResult {
   mkdirSync(runDir, { recursive: true, mode: 0o700 });
   const path = agentsGuidePath(runDir);
-  const guideArtifact = artifactFromPath(path, "This guide for agents debugging the run", runDir);
+  const guideArtifact = artifactFromPath(path, "A guide for agents debugging the run", runDir);
   writeFileSync(path, formatAgentsGuide([...artifacts, guideArtifact]));
   return { path, artifact: guideArtifact };
 }

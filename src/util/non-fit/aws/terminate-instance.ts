@@ -22,7 +22,7 @@ if (isMain(import.meta.url)) {
     if (!id) {
       throw new Error("Usage: terminate-instance.ts --id <instance-id> [--region <aws-region>]");
     }
-    const awsOptions = prepareAwsCli(argv);
+    const awsOptions = await prepareAwsCli(argv);
     logAwsAction("Terminating EC2 instance", awsOptions, { instanceId: id });
     await terminateInstance(id, awsOptions);
     console.log(`✓ Terminating ${id}`);

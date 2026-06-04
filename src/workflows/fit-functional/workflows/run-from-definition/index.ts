@@ -9,7 +9,13 @@
  *   npx tsx src/workflows/fit-functional/workflows/run-from-definition/index.ts <file.yaml>
  *   npm run definition examples/fit-functional-tests.yaml
  */
-import { combineArtifacts, type Artifact, type ArtifactCollection } from "../../../../util/non-fit/artifacts.js";
+import {
+  combineArtifacts,
+  combineDetails,
+  type Artifact,
+  type Detail,
+  type RunOutput,
+} from "../../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../../util/non-fit/cli.js";
 import { FIT_PERFORMER } from "../../../../util/fit/repos.js";
 import { rootDirFromArgv } from "../../../../util/fit/root.js";
@@ -38,32 +44,35 @@ function announce(definitionPath: string, resolved: ResolvedDefinition): void {
 }
 
 /** Run FIT functional tests as described by the definition file at `definitionPath`. */
-export async function runFromDefinition(definitionPath: string, rootDir: string): Promise<ArtifactCollection> {
+export async function runFromDefinition(definitionPath: string, rootDir: string): Promise<RunOutput> {
   const resolved = resolveDefinition(loadDefinition(definitionPath));
   announce(definitionPath, resolved);
 
   const artifacts: Artifact[] = [];
+  const details: Detail[] = [];
 
   if (!(await ensureRepo(FIT_PERFORMER, rootDir))) {
     console.log("\nOnce transactions-fit-performer is in place, run fit-cli again.");
-    return { artifacts };
+    return { artifacts, details };
   }
 
   if (!(await ensureSdkWorkspace(resolved.sdk, rootDir))) {
     console.log("\nOnce the SDK workspace repos are in place, run fit-cli again.");
-    return { artifacts };
+    return { artifacts, details };
   }
 
   const performer = await checkBuildAndRunPerformer(rootDir, resolved.sdk, resolved.performerVersion);
   if (!performer) {
     console.log("\nOnce the performer is ready to run, run fit-cli again.");
-    return { artifacts };
+    return { artifacts, details };
   }
   artifacts.push(...performer.artifacts);
+  details.push(...performer.details);
 
   try {
     const fitConfig = generateFitConfiguration(resolved.cluster, rootDir);
     artifacts.push(...fitConfig.artifacts);
+    details.push(...fitConfig.details);
 
     const testRun = await runTestDriver(
       rootDir,
@@ -72,7 +81,8 @@ export async function runFromDefinition(definitionPath: string, rootDir: string)
       resolved.extraMavenArgs,
     );
     artifacts.push(...testRun.artifacts);
-    return { artifacts: combineArtifacts(artifacts) };
+    details.push(...testRun.details);
+    return { artifacts: combineArtifacts(artifacts), details: combineDetails(details) };
   } finally {
     if (performer.containerId) {
       await stopPerformerContainers([performer.containerId]);

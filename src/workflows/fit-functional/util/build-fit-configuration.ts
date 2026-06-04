@@ -36,7 +36,10 @@ export function buildFitConfiguration(cluster: SelectedCluster): Record<string, 
       ...(isCapella ? { port: 18091 } : {}),
     },
     ssh: null,
-    proxy: isCapella ? null : { hostname: "localhost" },
+    proxy: isCapella ? null : {
+      "//": "The performer is running in Docker and needs to be able to connect to the FIT proxy (the test-driver) running on the host machine",
+      hostname: "host.docker.internal"
+    },
   };
 
   // Capella clusters have no direct SSH access, so the ssh-tagged tests can't run;

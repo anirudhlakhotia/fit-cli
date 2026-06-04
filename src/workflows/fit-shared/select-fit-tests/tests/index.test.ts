@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  buildSanityFitTestSelection,
   buildFitTestChoices,
   buildDefaultFitTestSelection,
   buildFitTestSelection,
@@ -157,6 +158,47 @@ test("buildFitTestSelection builds a selector for a subset", () => {
     allTests,
     selectedTests: [allTests[1]],
     mavenTestSelector: "com.couchbase.transactions.CngTest",
+  });
+});
+
+test("buildSanityFitTestSelection selects the FIT sanity test from discovered tests", () => {
+  const allTests: FitTestCase[] = [
+    {
+      fileName: "GetTest.java",
+      relativePath: "java/com/couchbase/client/kv/GetTest.java",
+      className: "com.couchbase.client.kv.GetTest",
+    },
+    {
+      fileName: "StandardTest.java",
+      relativePath: "java/com/couchbase/transactions/StandardTest.java",
+      className: "com.couchbase.transactions.StandardTest",
+    },
+  ];
+
+  assert.deepEqual(buildSanityFitTestSelection(allTests), {
+    allTests,
+    selectedTests: [allTests[0]],
+    mavenTestSelector: "com.couchbase.client.kv.GetTest",
+  });
+});
+
+test("buildSanityFitTestSelection falls back to the known sanity test class name", () => {
+  assert.deepEqual(buildSanityFitTestSelection([]), {
+    allTests: [
+      {
+        className: "com.couchbase.client.kv.GetTest",
+        fileName: "GetTest",
+        relativePath: "com.couchbase.client.kv.GetTest",
+      },
+    ],
+    selectedTests: [
+      {
+        className: "com.couchbase.client.kv.GetTest",
+        fileName: "GetTest",
+        relativePath: "com.couchbase.client.kv.GetTest",
+      },
+    ],
+    mavenTestSelector: "com.couchbase.client.kv.GetTest",
   });
 });
 

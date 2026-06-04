@@ -11,7 +11,7 @@
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { artifactFromPath, type ArtifactCollection, type Artifact } from "../../../util/non-fit/artifacts.js";
+import { artifactFromPath, type RunOutput, type Artifact } from "../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { input } from "../../../util/non-fit/prompts.js";
 import { runAndCapture } from "../../../util/non-fit/proc.js";
@@ -21,7 +21,7 @@ import { ensureCbdinocluster } from "./ensure-cbdinocluster.js";
 import { parseAllocatedId } from "./parse-allocated-id.js";
 
 /** A cluster cbdinocluster has just allocated. */
-export type AllocatedCluster = ArtifactCollection & {
+export type AllocatedCluster = RunOutput & {
   /** The new cluster's UUID, as passed to `cbdinocluster connstr <id>`. */
   clusterId: string;
 };
@@ -85,7 +85,7 @@ export async function allocateCluster(
   if (!clusterId) {
     throw new Error("cbdinocluster allocate didn't print a cluster id");
   }
-  return { artifacts: [artifact], clusterId };
+  return { artifacts: [artifact], details: [], clusterId };
 }
 
 if (isMain(import.meta.url)) {

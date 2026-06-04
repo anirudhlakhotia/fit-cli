@@ -5,7 +5,7 @@
  * point at another workspace):
  *   npx tsx src/workflows/performers/check-build-and-run-performer/index.ts
  */
-import { artifactFromPath, type Artifact } from "../../../util/non-fit/artifacts.js";
+import { artifactFromPath, type RunOutput } from "../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { capture, createLogFile, run, streamToFileInBackground } from "../../../util/non-fit/proc.js";
 import { rootDirFromArgv } from "../../../util/fit/root.js";
@@ -18,12 +18,11 @@ import { checkRunningPerformer, stopRunningPerformer } from "../check-running-pe
 export { DEFAULT_PERFORMER_PORT } from "../performer-port.js";
 import { DEFAULT_PERFORMER_PORT } from "../performer-port.js";
 
-export interface RunningPerformer {
+export interface RunningPerformer extends RunOutput {
   // Absent when reusing a performer we didn't start (an external process on the
   // port), in which case there's no container for us to manage or log.
   containerId?: string;
   logFile?: string;
-  artifacts: Artifact[];
 }
 
 function performerLogFile(sdk: Sdk, version?: string): string {
@@ -76,7 +75,7 @@ export async function checkBuildAndRunPerformer(
     console.log(
       `\n→ Testing against the performer already listening on port ${DEFAULT_PERFORMER_PORT}; fit-cli won't manage or stop it.`,
     );
-    return { artifacts: [] };
+    return { artifacts: [], details: [] };
   }
 
   if (runCheck.action === "reuse") {
@@ -92,6 +91,7 @@ export async function checkBuildAndRunPerformer(
         containerId,
         logFile,
         artifacts: [artifactFromPath(logFile, `${sdk.name} performer logs captured for this FIT run`)],
+        details: [],
       };
     } catch (err) {
       console.error(`\n✗ Failed to capture ${sdk.name} performer logs: ${(err as Error).message}`);
@@ -123,6 +123,7 @@ export async function checkBuildAndRunPerformer(
         containerId,
         logFile,
         artifacts: [artifactFromPath(logFile, `${sdk.name} performer logs captured for this FIT run`)],
+        details: [],
       };
     } catch (err) {
       console.error(`\n✗ Failed to capture ${sdk.name} performer logs: ${(err as Error).message}`);

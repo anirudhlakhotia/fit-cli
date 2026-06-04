@@ -10,7 +10,7 @@
  *   npx tsx src/workflows/fit-functional/steps/generate-fit-configuration.ts
  */
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
-import { type ArtifactCollection } from "../../../util/non-fit/artifacts.js";
+import { type RunOutput } from "../../../util/non-fit/artifacts.js";
 import { rootDirFromArgv } from "../../../util/fit/root.js";
 import { selectOrCreateCluster } from "../../cluster/cluster-select-or-create/index.js";
 import { type SelectedCluster } from "../../cluster/cluster-select/index.js";
@@ -21,7 +21,7 @@ import {
 } from "./write-fit-configuration.js";
 
 /** Build and write a FITConfiguration.json for an already-selected cluster. */
-export function generateFitConfiguration(cluster: SelectedCluster, rootDir: string): ArtifactCollection & {
+export function generateFitConfiguration(cluster: SelectedCluster, rootDir: string): RunOutput & {
   path: string;
 } {
   const config = buildFitConfiguration(cluster);
@@ -36,7 +36,7 @@ export function generateFitConfiguration(cluster: SelectedCluster, rootDir: stri
   console.log(JSON.stringify(config, null, 2));
 
   console.log(`\n✓ Wrote ${result.path}`);
-  return { path: result.path, artifacts: [result.artifact] };
+  return { path: result.path, artifacts: [result.artifact], details: [] };
 }
 
 if (isMain(import.meta.url)) {

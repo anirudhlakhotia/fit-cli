@@ -11,7 +11,7 @@
  *   npx tsx src/util/fit/aws/fit-instance.ts
  */
 import { writeFileSync } from "node:fs";
-import { artifactFromPath, type Artifact } from "../../non-fit/artifacts.js";
+import { artifactFromPath, type Artifact, type Detail } from "../../non-fit/artifacts.js";
 import { isMain, runCli } from "../../non-fit/cli.js";
 import { resolveRegion, type AwsOptions } from "../../non-fit/aws/aws-cli.js";
 import { checkCredentials } from "../../non-fit/aws/identity.js";
@@ -20,9 +20,9 @@ import { createInstance, waitForInstanceRunning } from "../../non-fit/aws/create
 import { describeInstance } from "../../non-fit/aws/describe-instance.js";
 import { findInstancesByKeyName } from "../../non-fit/aws/list-instances.js";
 import { terminateInstance } from "../../non-fit/aws/terminate-instance.js";
+import { ensureFitCliConfigEnv } from "../../non-fit/config.js";
 import { createKeyPair, deleteKeyPair } from "../../non-fit/aws/key-pair.js";
 import { ensureSecurityGroup } from "../../non-fit/aws/security-group.js";
-import { loadDotenv } from "../../non-fit/dotenv.js";
 import { createRunFilePath } from "../../non-fit/replay.js";
 import { waitForSsh, type RemoteHost } from "../../non-fit/ssh.js";
 import { RemoteTarget } from "../../non-fit/remote-target.js";
@@ -54,6 +54,8 @@ export interface ProvisionedInstance {
   target: RemoteTarget;
   /** Files produced (the key, an instance-info record) for the run summary. */
   artifacts: Artifact[];
+  /** Useful commands and facts for debugging and cleanup. */
+  details: Detail[];
   /** Terminate the instance and delete its key pair. Safe to call once. */
   terminate: () => Promise<void>;
 }
@@ -71,9 +73,13 @@ export interface ProvisionOptions {
  * the instance launches, it's terminated so we don't leak a paid box.
  */
 export async function provisionFitInstance(options: ProvisionOptions = {}): Promise<ProvisionedInstance> {
+  await ensureFitCliConfigEnv({
+    promptId: "fit-instance.config.create",
+    promptMessage: "No fit-cli config found. Run `npm run init` now before provisioning an EC2 instance?",
+  });
   const region = options.region ?? resolveRegion();
   if (!region) {
-    throw new Error("No AWS region set. Set AWS_REGION (e.g. in your .env - see .env.example) and try again.");
+    throw new Error("No AWS region set. Set AWS_REGION or create ~/.fit-cli/config.yaml with `npm run init` and try again.");
   }
   const awsOptions: AwsOptions = { region };
 
@@ -138,11 +144,21 @@ export async function provisionFitInstance(options: ProvisionOptions = {}): Prom
       artifactFromPath(keyPath, "SSH private key for the EC2 test instance"),
       artifactFromPath(infoPath, "EC2 test instance details (id, address, region)"),
     ];
+    const details = [
+      {
+        label: "SSH debug command",
+        value: `ssh -i ${keyPath} ${FIT_INSTANCE_USER}@${address}`,
+      },
+      {
+        label: "Terminate instance command",
+        value: `npx tsx src/util/non-fit/aws/terminate-instance.ts --id ${id} --region ${region}`,
+      },
+    ];
 
     console.log(`\n✓ EC2 instance ${id} is ready at ${address}`);
     console.log("Debug it directly with:");
     console.log(`  ssh -i ${keyPath} ${FIT_INSTANCE_USER}@${address}`);
-    return { instanceId: id, address, keyPath, host, target: new RemoteTarget(host), artifacts, terminate };
+    return { instanceId: id, address, keyPath, host, target: new RemoteTarget(host), artifacts, details, terminate };
   } catch (err) {
     // Don't leave a paid box (or its key) lying around if bring-up failed. If we
     // never captured the instance id (e.g. launch threw mid-call), sweep by the
@@ -162,10 +178,9 @@ export async function provisionFitInstance(options: ProvisionOptions = {}): Prom
 
 if (isMain(import.meta.url)) {
   runCli(async () => {
-    loadDotenv();
     const provisioned = await provisionFitInstance();
     console.log(`\nLeaving it running. Terminate when done with:`);
     console.log(`  npx tsx src/util/non-fit/aws/terminate-instance.ts --id ${provisioned.instanceId} --region ${resolveRegion()}`);
-    return { artifacts: provisioned.artifacts };
+    return { artifacts: provisioned.artifacts, details: provisioned.details };
   });
 }

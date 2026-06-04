@@ -44,10 +44,10 @@ export function confirm(config: ConfirmConfig & PromptConfigWithId, context?: Pr
 }
 
 export function password(
-  config: PasswordConfig & PromptConfigWithId,
+  config: PasswordConfig & PromptConfigWithId & { replay?: PromptResolveOptions<string> },
   context?: PromptContext,
 ): Promise<string> {
-  const { promptId, ...promptConfig } = config;
+  const { promptId, replay, ...promptConfig } = config;
   return runPrompt(promptId, "password", config.message, async (replayDefault) => {
     const validate = promptConfig.validate;
     const response = await prompts.password(
@@ -60,7 +60,7 @@ export function password(
       context,
     );
     return response || replayDefault || "";
-  });
+  }, replay);
 }
 
 export function select<Value>(

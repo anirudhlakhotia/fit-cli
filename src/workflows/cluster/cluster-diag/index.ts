@@ -6,7 +6,7 @@
  *   npx tsx src/workflows/cluster-diag/index.ts couchbase://127.0.0.1 Administrator password
  */
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
-import { run } from "../../../util/non-fit/proc.js";
+import { capture } from "../../../util/non-fit/proc.js";
 import type { SelectedCluster } from "../cluster-select/index.js";
 import { classifyConnectionString } from "../cluster-select/classify-connection-string.js";
 
@@ -33,16 +33,14 @@ function managementHost(defaultHostname: string): string {
 /** Run a quick curl-based sanity check against the cluster's management endpoint. */
 export async function runClusterDiag(cluster: SelectedCluster): Promise<boolean> {
   const url = clusterDiagUrl(cluster);
-  console.log(
-    "\nSanity-testing the cluster with:\n" +
-      `  curl -u <username>:<password> -X GET ${url}\n`,
-  );
+  const command = `curl -u <username>:<password> -X GET ${url}`;
 
   try {
-    await run("curl", ["-u", `${cluster.credentials.username}:${cluster.credentials.password}`, "-X", "GET", url]);
+    await capture("curl", ["-u", `${cluster.credentials.username}:${cluster.credentials.password}`, "-X", "GET", url]);
     console.log("\n✓ Cluster sanity test succeeded");
     return true;
   } catch (err) {
+    console.error(`\nSanity-testing the cluster with:\n  ${command}\n`);
     console.error(`\n✗ Cluster sanity test failed: ${(err as Error).message}`);
     return false;
   }

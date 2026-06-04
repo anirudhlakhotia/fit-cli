@@ -92,7 +92,7 @@ export async function deleteSecurityGroup(groupId: string, options: AwsOptions =
 if (isMain(import.meta.url)) {
   runCli(async () => {
     const argv = process.argv.slice(2);
-    const awsOptions = prepareAwsCli(argv);
+    const awsOptions = await prepareAwsCli(argv);
     const flag = (name: string): string | undefined => {
       const index = argv.indexOf(`--${name}`);
       return index !== -1 ? argv[index + 1] : undefined;

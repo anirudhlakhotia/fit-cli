@@ -27,7 +27,7 @@ if (isMain(import.meta.url)) {
     if (!id) {
       throw new Error("Usage: describe-instance.ts --id <instance-id> [--region <aws-region>]");
     }
-    const awsOptions = prepareAwsCli(argv);
+    const awsOptions = await prepareAwsCli(argv);
     logAwsAction("Describing EC2 instance", awsOptions, { instanceId: id });
     console.log(JSON.stringify(await describeInstance(id, awsOptions), null, 2));
   });
