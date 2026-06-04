@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { PromptSession, extractReplayFlag } from "../replay.js";
+import { PromptSession, REPO_ROOT, extractReplayFlag } from "../replay.js";
 
 async function captureLogs(run: () => Promise<void>): Promise<string[]> {
   const logs: string[] = [];
@@ -107,13 +107,34 @@ test("record mode persists the original invocation metadata", () => {
   try {
     const session = PromptSession.fromArgv(process.argv.slice(2));
     const log = JSON.parse(readFileSync(session.logFile, "utf8")) as {
-      invocation?: { cwd: string; entrypoint: string; args: string[] };
+      invocation?: { entrypoint: string; args: string[] };
+    };
+
+    // The entrypoint lives outside the repo, so it stays absolute; cwd is no
+    // longer recorded.
+    assert.deepEqual(log.invocation, {
+      entrypoint: "/tmp/select-fit-tests.ts",
+      args: ["--root", "/ws", "status"],
+    });
+  } finally {
+    process.argv = originalArgv;
+  }
+});
+
+test("record mode records an in-repo entrypoint relative to the repo root", () => {
+  const originalArgv = process.argv;
+  const entrypoint = join(REPO_ROOT, "src/index.ts");
+  process.argv = [originalArgv[0] ?? "node", entrypoint, "status"];
+
+  try {
+    const session = PromptSession.fromArgv(process.argv.slice(2));
+    const log = JSON.parse(readFileSync(session.logFile, "utf8")) as {
+      invocation?: { entrypoint: string; args: string[] };
     };
 
     assert.deepEqual(log.invocation, {
-      cwd: process.cwd(),
-      entrypoint: "/tmp/select-fit-tests.ts",
-      args: ["--root", "/ws", "status"],
+      entrypoint: "src/index.ts",
+      args: ["status"],
     });
   } finally {
     process.argv = originalArgv;
@@ -503,8 +524,7 @@ test("replay mode loads stored invocation metadata", () => {
         version: 1,
         createdAt: "2026-06-03T00:00:00.000Z",
         invocation: {
-          cwd: "/workspace",
-          entrypoint: "/workspace/src/workflows/fit-functional/workflows/select-fit-tests/index.ts",
+          entrypoint: "src/workflows/fit-functional/workflows/select-fit-tests/index.ts",
           args: ["--root", "/workspace"],
         },
         prompts: [],
@@ -516,8 +536,7 @@ test("replay mode loads stored invocation metadata", () => {
 
   const session = PromptSession.fromArgv(["--replay", logFile]);
   assert.deepEqual(session.getInvocation(), {
-    cwd: "/workspace",
-    entrypoint: "/workspace/src/workflows/fit-functional/workflows/select-fit-tests/index.ts",
+    entrypoint: "src/workflows/fit-functional/workflows/select-fit-tests/index.ts",
     args: ["--root", "/workspace"],
   });
 });

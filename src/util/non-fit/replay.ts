@@ -1,7 +1,17 @@
 import * as prompts from "@inquirer/prompts";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { isAbsolute, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { inspect } from "node:util";
+
+/**
+ * Absolute path to the fit-cli repo root, derived from this file's location
+ * (src/util/non-fit/replay.ts → three levels up). The recorded invocation
+ * entrypoint is stored relative to this so a replay log is portable across
+ * checkouts; replay resolves it back against the repo root on the replaying
+ * machine. See {@link captureReplayInvocation}.
+ */
+export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 
 export type PromptKind =
   | "checkbox"
@@ -25,7 +35,12 @@ export interface PromptResolveOptions<T> {
 }
 
 export interface ReplayInvocation {
-  cwd: string;
+  /**
+   * The workflow script that was run, as a path relative to {@link REPO_ROOT}
+   * (e.g. "src/index.ts"). Kept relative so the log doesn't pin to a specific
+   * checkout location. Falls back to an absolute path only if the entrypoint
+   * lives outside the repo.
+   */
   entrypoint: string;
   args: string[];
 }
@@ -110,9 +125,14 @@ function captureReplayInvocation(
     return undefined;
   }
 
+  const absolute = isAbsolute(entrypoint) ? entrypoint : resolve(cwd, entrypoint);
+  const repoRelative = relative(REPO_ROOT, absolute);
+  // Keep the entrypoint relative when it lives inside the repo; only an
+  // entrypoint outside the repo (which escapes with "..") falls back to absolute.
+  const portable = repoRelative.startsWith("..") || isAbsolute(repoRelative) ? absolute : repoRelative;
+
   return {
-    cwd,
-    entrypoint: isAbsolute(entrypoint) ? entrypoint : resolve(cwd, entrypoint),
+    entrypoint: portable,
     args: extractReplayFlag(argv).positionals,
   };
 }
@@ -136,12 +156,10 @@ export function readPromptLog(logFile: string): PromptLogFile {
     invocation:
       raw.invocation &&
       typeof raw.invocation === "object" &&
-      typeof raw.invocation.cwd === "string" &&
       typeof raw.invocation.entrypoint === "string" &&
       Array.isArray(raw.invocation.args) &&
       raw.invocation.args.every((arg) => typeof arg === "string")
         ? {
-            cwd: raw.invocation.cwd,
             entrypoint: raw.invocation.entrypoint,
             args: raw.invocation.args,
           }

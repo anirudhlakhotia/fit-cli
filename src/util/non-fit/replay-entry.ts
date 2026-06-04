@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
 import { accessSync, constants } from "node:fs";
-import { resolve } from "node:path";
+import { isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { readPromptLog, extractReplayFlag } from "./replay.js";
+import { readPromptLog, extractReplayFlag, REPO_ROOT } from "./replay.js";
 
 interface ReplayDispatch {
   entrypoint: string;
@@ -28,7 +28,17 @@ export function buildReplayDispatch(
 
   const resolvedLogFile = resolve(cwd, replayFile);
   const log = readPromptLog(resolvedLogFile);
-  const entrypoint = ensureReadableFile(log.invocation?.entrypoint ?? resolve(cwd, "src/index.ts"));
+  const recordedEntrypoint = log.invocation?.entrypoint;
+  // The recorded entrypoint is repo-relative (older/external logs may be
+  // absolute); resolve it against this checkout's repo root so the replay runs
+  // the same workflow regardless of where it was recorded.
+  const entrypoint = ensureReadableFile(
+    recordedEntrypoint
+      ? isAbsolute(recordedEntrypoint)
+        ? recordedEntrypoint
+        : resolve(REPO_ROOT, recordedEntrypoint)
+      : resolve(REPO_ROOT, "src/index.ts"),
+  );
   const forwardedArgs = positionals.length > 0 ? positionals : (log.invocation?.args ?? []);
 
   return {
