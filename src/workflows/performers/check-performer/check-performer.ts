@@ -13,6 +13,7 @@
  */
 import { join } from "node:path";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
+import { fitCliError } from "../../../util/non-fit/fit-cli-log.js";
 import { FIT_PERFORMER, JVM_CLIENTS, repoPath } from "../../../util/fit/repos.js";
 import { rootDirFromArgv } from "../../../util/fit/root.js";
 import { SDKS, sdkByValue, type Sdk } from "../../../util/sdk/sdks.js";
@@ -76,18 +77,18 @@ export async function checkPerformer(execution: FitExecutionContext, sdk: Sdk, v
   if (status.pathExists) {
     console.log(`✓ Found the ${sdk.name} performer at ${status.path}`);
   } else {
-    console.log(`✗ Could not find the ${sdk.name} performer at ${status.path}`);
+    fitCliError(`Could not find the ${sdk.name} performer at ${status.path}`);
   }
 
   if (!status.dockerAvailable) {
-    console.log("✗ Could not find docker on your PATH");
+    fitCliError("Could not find docker on your PATH");
     return false;
   }
 
   if (status.imageExists) {
     console.log(`✓ Found the ${sdk.name} performer Docker image ${status.imageName}`);
   } else {
-    console.log(`✗ Could not find the ${sdk.name} performer Docker image ${status.imageName}`);
+    fitCliError(`Could not find the ${sdk.name} performer Docker image ${status.imageName}`);
   }
 
   return status.pathExists && status.imageExists;

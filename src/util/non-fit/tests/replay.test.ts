@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { PromptSession, REPO_ROOT, extractReplayFlag } from "../replay.js";
+import { PromptSession, REPO_ROOT, extractInteractiveFlag, extractReplayFlag } from "../replay.js";
 
 async function captureLogs(run: () => Promise<void>): Promise<string[]> {
   const logs: string[] = [];
@@ -76,8 +76,15 @@ test("extractReplayFlag can take the replay logfile from npm config when needed"
   );
 });
 
-test("record mode writes prompt responses to a log file", async () => {
-  const session = PromptSession.fromArgv([]);
+test("extractInteractiveFlag removes --interactive from argv", () => {
+  assert.deepEqual(extractInteractiveFlag(["functional", "--interactive", "--root", "/ws"]), {
+    interactive: true,
+    positionals: ["functional", "--root", "/ws"],
+  });
+});
+
+test("interactive mode writes prompt responses to a log file", async () => {
+  const session = PromptSession.fromArgv(["--interactive"]);
 
   const response = await session.resolvePrompt("sdk.choose", "input", "Which SDK?", () =>
     Promise.resolve("node"),
@@ -92,7 +99,39 @@ test("record mode writes prompt responses to a log file", async () => {
   ]);
 });
 
-test("record mode creates a per-run directory under /tmp/fit-cli", () => {
+test("non-interactive mode is the default and records synthesized answers", async () => {
+  const session = PromptSession.fromArgv([]);
+
+  const logs = await captureLogs(async () => {
+    const response = await session.resolvePrompt(
+      "fit.grpc.build-now",
+      "confirm",
+      "Build FIT now?",
+      () => Promise.resolve(false),
+      { nonInteractiveDefault: () => true },
+    );
+    assert.equal(response, true);
+  });
+
+  const log = JSON.parse(readFileSync(session.logFile, "utf8")) as {
+    prompts: Array<{ id: string; kind: string; message: string; response: boolean }>;
+  };
+  assert.deepEqual(log.prompts, [
+    { id: "fit.grpc.build-now", kind: "confirm", message: "Build FIT now?", response: true },
+  ]);
+  assert.equal(logs.at(-1), "[non-interactive] Build FIT now?\n  -> true");
+});
+
+test("non-interactive mode rejects prompts without a synthesized default", async () => {
+  const session = PromptSession.fromArgv([]);
+
+  await assert.rejects(
+    () => session.resolvePrompt("fit.tests.single", "search", "Search for a test:", () => Promise.resolve("x")),
+    /does not support non-interactive mode; rerun with --interactive/,
+  );
+});
+
+test("default non-interactive mode creates a per-run directory under /tmp/fit-cli", () => {
   const session = PromptSession.fromArgv([]);
 
   assert.match(session.runDir, /^\/tmp\/fit-cli\/\d{8}-\d{6}(?:-\d+)?$/);
@@ -100,7 +139,7 @@ test("record mode creates a per-run directory under /tmp/fit-cli", () => {
   assert.equal(session.logFile, join(session.runDir, "prompts.json"));
 });
 
-test("record mode persists the original invocation metadata", () => {
+test("default non-interactive mode persists the original invocation metadata", () => {
   const originalArgv = process.argv;
   process.argv = [originalArgv[0] ?? "node", "/tmp/select-fit-tests.ts", "--root", "/ws", "status"];
 
@@ -121,7 +160,7 @@ test("record mode persists the original invocation metadata", () => {
   }
 });
 
-test("record mode records an in-repo entrypoint relative to the repo root", () => {
+test("default non-interactive mode records an in-repo entrypoint relative to the repo root", () => {
   const originalArgv = process.argv;
   const entrypoint = join(REPO_ROOT, "src/index.ts");
   process.argv = [originalArgv[0] ?? "node", entrypoint, "status"];
@@ -141,8 +180,8 @@ test("record mode records an in-repo entrypoint relative to the repo root", () =
   }
 });
 
-test("record mode can serialize a prompt response before saving it", async () => {
-  const session = PromptSession.fromArgv([]);
+test("interactive mode can serialize a prompt response before saving it", async () => {
+  const session = PromptSession.fromArgv(["--interactive"]);
 
   const response = await session.resolvePrompt(
     "fit.tests.select",
@@ -166,7 +205,7 @@ test("record mode can serialize a prompt response before saving it", async () =>
   ]);
 });
 
-test("record mode formats a replay reminder with the logfile", () => {
+test("default non-interactive mode formats a replay reminder with the logfile", () => {
   const session = PromptSession.fromArgv([]);
 
   assert.equal(
@@ -175,13 +214,13 @@ test("record mode formats a replay reminder with the logfile", () => {
   );
 });
 
-test("record mode formats a run directory reminder", () => {
+test("default non-interactive mode formats a run directory reminder", () => {
   const session = PromptSession.fromArgv([]);
 
   assert.equal(session.formatRunReminder(), `Run files:\n  ARTIFACT_DIR: ${session.runDir}`);
 });
 
-test("record mode persists the chosen workflow", () => {
+test("default non-interactive mode persists the chosen workflow", () => {
   const session = PromptSession.fromArgv([]);
   session.setWorkflow("functional-tests");
 

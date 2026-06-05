@@ -9,6 +9,7 @@
  * Exits 0 if the repo is ready, 1 if the user chose to bail or the clone failed.
  */
 import { select } from "../non-fit/prompts.js";
+import { fitCliError } from "../non-fit/fit-cli-log.js";
 import { isMain, runCli } from "../non-fit/cli.js";
 import { REPOS, cloneRepo, repoExists, repoPath, type Repo, type RepoKey } from "./repos.js";
 import { rootDirFromArgv } from "./root.js";
@@ -35,7 +36,7 @@ export async function ensureRepo(repo: Repo, rootDir: string): Promise<boolean> 
     return true;
   }
 
-  console.log(`✗ Could not find ${repo.name} at ${repoPath(repo, rootDir)}`);
+  fitCliError(`Could not find ${repo.name} at ${repoPath(repo, rootDir)}`);
 
   const action = await select({
     promptId: `repo.${repo.name}.missing.action`,
@@ -56,7 +57,7 @@ export async function ensureRepo(repo: Repo, rootDir: string): Promise<boolean> 
     console.log(`\n✓ Cloned ${repo.name} to ${repoPath(repo, rootDir)}`);
     return true;
   } catch (err) {
-    console.error(`\n✗ Failed to clone ${repo.name}: ${(err as Error).message}`);
+    fitCliError(`\nFailed to clone ${repo.name}: ${(err as Error).message}`);
     return false;
   }
 }
@@ -66,7 +67,7 @@ if (isMain(import.meta.url)) {
     const { rootDir, positionals } = rootDirFromArgv(process.argv.slice(2));
     const repo = resolveRepo(positionals[0]);
     if (!repo) {
-      console.error(
+      fitCliError(
         `Usage: tsx src/util/fit/ensure-repo.ts <${Object.values(REPOS)
           .map((repo) => repo.name)
           .join(" | ")}> [--root <dir>]`,

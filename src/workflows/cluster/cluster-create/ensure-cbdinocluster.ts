@@ -11,6 +11,7 @@
  * Prints the resolved cbdinocluster command, or exits 1 if it isn't usable.
  */
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
+import { fitCliError } from "../../../util/non-fit/fit-cli-log.js";
 import { input } from "../../../util/non-fit/prompts.js";
 import { run } from "../../../util/non-fit/proc.js";
 import { findOnPath } from "../../../util/non-fit/which.js";
@@ -32,9 +33,7 @@ async function resolveCbdinocluster(): Promise<string> {
     return onPath;
   }
 
-  console.log(
-    `✗ cbdinocluster is not on your PATH. You can get it from ${CBDINOCLUSTER_URL}.`,
-  );
+  fitCliError(`cbdinocluster is not on your PATH. You can get it from ${CBDINOCLUSTER_URL}.`);
   return input({
     promptId: "cluster.create.cbdinocluster-path",
     message: "Path to your cbdinocluster binary:",
@@ -55,7 +54,7 @@ export async function ensureCbdinocluster(): Promise<string | null> {
     console.log("\n✓ cbdinocluster works");
     return cbdinocluster;
   } catch (err) {
-    console.error(`\n✗ cbdinocluster does not seem to work: ${(err as Error).message}`);
+    fitCliError(`\ncbdinocluster does not seem to work: ${(err as Error).message}`);
     return null;
   }
 }

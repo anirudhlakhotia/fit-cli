@@ -59,8 +59,20 @@ export function remoteDockerWrapperPath(rootDir: string): string {
   return join(remoteFitBinDir(rootDir), REMOTE_DOCKER_WRAPPER_FILE);
 }
 
+function uniqueRepos(repos: readonly Repo[]): Repo[] {
+  return [...new Map(repos.map((repo) => [repo.dir, repo])).values()];
+}
+
+export function remoteWorkspaceRepos(sdk: Sdk): Repo[] {
+  return uniqueRepos([FIT_PERFORMER, ...requiredReposForSdk(sdk)]);
+}
+
+export function remoteBuildWorkspaceRepos(sdk: Sdk): Repo[] {
+  return uniqueRepos([FIT_PERFORMER, JENKINS_SDK, ...requiredReposForSdk(sdk)]);
+}
+
 export function remoteFitRepos(sdk: Sdk): Repo[] {
-  return [FIT_PERFORMER, JENKINS_SDK, ...requiredReposForSdk(sdk)];
+  return remoteBuildWorkspaceRepos(sdk);
 }
 
 export function remoteDockerWrapperScript(): string {
@@ -70,6 +82,22 @@ export function remoteDockerWrapperScript(): string {
 /** Where the remote git credentials file lives, under the FIT workspace root. */
 export function remoteGitCredentialsPath(rootDir: string): string {
   return join(rootDir, ".git-credentials");
+}
+
+async function remoteRepoExists(target: ExecutionTarget, rootDir: string, repo: Repo): Promise<boolean> {
+  return target.run("test", ["-d", repoPath(repo, rootDir)]).then(() => true).catch(() => false);
+}
+
+async function ensureRemoteRepos(target: ExecutionTarget, rootDir: string, repos: readonly Repo[]): Promise<void> {
+  await target.run("mkdir", ["-p", rootDir]);
+  for (const repo of repos) {
+    if (await remoteRepoExists(target, rootDir, repo)) {
+      console.log(`✓ Found ${repo.name} on ${target.description} at ${repoPath(repo, rootDir)}`);
+      continue;
+    }
+    console.log(`\nCloning ${repo.name} onto ${target.description}...\n`);
+    await target.run("git", ["clone", repo.url, repo.dir], rootDir);
+  }
 }
 
 /**
@@ -216,7 +244,8 @@ async function createRemoteFitExecutionContext(target: ExecutionTarget, sdk: Sdk
   await target.run("sh", ["-lc", `sudo -n ${aptEnv} apt-get -qq update >/dev/null`]);
   await target.run("sh", [
     "-lc",
-    `sudo -n ${aptEnv} apt-get -qq install -y git docker.io default-jdk-headless lsof >/dev/null`,
+    // JDK 17+ needed for jenkins-sdk ./gradlew
+    `sudo -n ${aptEnv} apt-get -qq install -y git docker.io openjdk-17-jdk-headless lsof >/dev/null`,
   ]);
   await target.run("sudo", ["-n", "systemctl", "enable", "--now", "docker"]);
 
@@ -236,10 +265,7 @@ async function createRemoteFitExecutionContext(target: ExecutionTarget, sdk: Sdk
     );
   }
 
-  for (const repo of remoteFitRepos(sdk)) {
-    console.log(`\nCloning ${repo.name} onto ${target.description}...\n`);
-    await target.run("git", ["clone", repo.url, repo.dir], rootDir);
-  }
+  await ensureRemoteRepos(target, rootDir, remoteFitRepos(sdk));
 
   return {
     kind: "remote",
@@ -251,8 +277,14 @@ async function createRemoteFitExecutionContext(target: ExecutionTarget, sdk: Sdk
     dockerCommand: "docker",
     artifacts: [],
     details: [{ label: "Remote workspace", value: rootDir }],
-    ensureWorkspace: () => Promise.resolve(true),
-    ensureBuildWorkspace: () => Promise.resolve(true),
+    ensureWorkspace: async (sdk) => {
+      await ensureRemoteRepos(target, rootDir, remoteWorkspaceRepos(sdk));
+      return true;
+    },
+    ensureBuildWorkspace: async (sdk) => {
+      await ensureRemoteRepos(target, rootDir, remoteBuildWorkspaceRepos(sdk));
+      return true;
+    },
     run: (command, args, cwd) => target.run("sh", ["-lc", pathPrefixedCommand(binDir, command, args)], cwd),
     capture: (command, args, cwd) => target.capture("sh", ["-lc", pathPrefixedCommand(binDir, command, args)], cwd),
     runToFile: (command, args, targetPath, cwd) =>

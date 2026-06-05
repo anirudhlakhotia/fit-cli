@@ -17,6 +17,7 @@
 import { type RunOutput } from "../../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../../util/non-fit/cli.js";
 import { ensureFitCliConfigEnv } from "../../../../util/fit/config.js";
+import { fitCliError, fitCliWarn } from "../../../../util/non-fit/fit-cli-log.js";
 import { confirm, input, select } from "../../../../util/non-fit/prompts.js";
 import { LocalTarget } from "../../../../util/non-fit/local-target.js";
 import { resolveRegion, type AwsOptions } from "../../../../util/non-fit/aws/aws-cli.js";
@@ -40,6 +41,10 @@ type TargetChoice = "local" | "ec2" | "existing";
 /** Sentinel value for the "type the connection details myself" choice. */
 const MANUAL_INSTANCE = "__manual__";
 
+function promptId(attempt: number, suffix: string): string {
+  return `execution-target.attempt-${attempt}.${suffix}`;
+}
+
 /**
  * Ask where the FIT run should execute and return a ready-to-use target. Local
  * is immediate; the EC2 paths check credentials (looping back to the prompt if
@@ -47,9 +52,10 @@ const MANUAL_INSTANCE = "__manual__";
  * that's already running.
  */
 export async function selectExecutionTarget(): Promise<ExecutionTargetOutcome> {
+  let attempt = 1;
   for (;;) {
     const choice = await select<TargetChoice>({
-      promptId: "execution-target.choose",
+      promptId: promptId(attempt, "choose"),
       message: "Where should this FIT run execute?",
       choices: [
         { name: "This machine (local)", value: "local" },
@@ -64,20 +70,22 @@ export async function selectExecutionTarget(): Promise<ExecutionTargetOutcome> {
 
     // Both EC2 paths need credentials, from the environment or config.yaml.
     await ensureFitCliConfigEnv({
-      promptId: "execution-target.config.create",
+      promptId: promptId(attempt, "config.create"),
       promptMessage: "No fit-cli config found. Run `npm run init` now before using EC2?",
     });
     const creds = await checkCredentials();
     if (!creds.ok) {
-      console.log(`\n✗ Can't use EC2: ${creds.message}`);
+      fitCliError(`\nCan't use EC2: ${creds.message}`);
       console.log("Add your AWS credentials with `npm run init`, or use your normal AWS environment/config, then choose again.\n");
+      attempt += 1;
       continue; // back to the target prompt
     }
     console.log(`\n✓ Using AWS account ${creds.identity.account} (${creds.identity.arn})`);
 
     if (choice === "existing") {
-      const outcome = await connectExistingInstance();
+      const outcome = await connectExistingInstance(attempt);
       if (outcome === "back") {
+        attempt += 1;
         continue; // back to the target prompt
       }
       return outcome;
@@ -120,23 +128,28 @@ export async function selectExecutionTarget(): Promise<ExecutionTargetOutcome> {
  * Returns "back" if the user wants to return to the target prompt (e.g. SSH never
  * came up), so the caller can loop without re-running.
  */
-async function connectExistingInstance(): Promise<ExecutionTargetOutcome | "back"> {
+async function connectExistingInstance(attempt: number): Promise<ExecutionTargetOutcome | "back"> {
   const region = resolveRegion();
   const awsOptions: AwsOptions = region ? { region } : {};
 
-  let running: InstanceInfo[] = [];
+  let running: InstanceInfo[];
   try {
     running = (await listInstances(undefined, awsOptions)).filter(
       (instance) => instance.state === "running" && (instance.publicDns || instance.publicIp),
     );
   } catch (err) {
-    console.log(`\n⚠ Could not list fit-cli instances: ${err instanceof Error ? err.message : String(err)}`);
-    console.log("You can still enter the connection details by hand.");
+    fitCliError(`\nCould not list fit-cli instances: ${err instanceof Error ? err.message : String(err)}\n`);
+    return "back"; // back to the target prompt
+  }
+
+  if (running.length === 0) {
+    fitCliWarn("\nNo running fit-cli EC2 instances found to reuse — pick another way to run.\n");
+    return "back"; // back to the target prompt
   }
 
   const address = await select<string>({
-    promptId: "execution-target.existing.choose",
-    message: running.length ? "Which instance should this FIT run use?" : "No fit-cli instances found — enter details manually.",
+    promptId: promptId(attempt, "existing.choose"),
+    message: "Which instance should this FIT run use?",
     choices: [
       ...running.map((instance) => {
         const addr = instance.publicDns || instance.publicIp!;
@@ -148,20 +161,20 @@ async function connectExistingInstance(): Promise<ExecutionTargetOutcome | "back
 
   const host = address === MANUAL_INSTANCE
     ? await input({
-        promptId: "execution-target.existing.host",
+        promptId: promptId(attempt, "existing.host"),
         message: "Instance public DNS or IP address:",
         validate: (value) => (value.trim().length > 0 ? true : "Enter a host or IP."),
       }).then((value) => value.trim())
     : address;
 
   const user = await input({
-    promptId: "execution-target.existing.user",
+    promptId: promptId(attempt, "existing.user"),
     message: "SSH login user:",
     default: FIT_INSTANCE_USER,
   }).then((value) => value.trim() || FIT_INSTANCE_USER);
 
   const identityFile = await input({
-    promptId: "execution-target.existing.key",
+    promptId: promptId(attempt, "existing.key"),
     message: "Path to the SSH private key (.pem):",
     validate: (value) => (value.trim().length > 0 ? true : "Enter the path to the private key."),
   }).then((value) => value.trim());
@@ -171,7 +184,7 @@ async function connectExistingInstance(): Promise<ExecutionTargetOutcome | "back
   process.stdout.write("Checking SSH...");
   if (!(await waitForSsh(remoteHost))) {
     console.log(" unreachable");
-    console.log(`\n✗ Couldn't reach ${user}@${host} over SSH. Check the address, key and that the box is up.\n`);
+    fitCliError(`\nCouldn't reach ${user}@${host} over SSH. Check the address, key and that the box is up.\n`);
     return "back";
   }
   console.log(" ready");

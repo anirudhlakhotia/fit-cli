@@ -7,9 +7,12 @@
  */
 import { type RunOutput } from "./util/non-fit/artifacts.js";
 import { isMain, runCli } from "./util/non-fit/cli.js";
+import { loadDotenv } from "./util/non-fit/dotenv.js";
 import { select } from "./util/non-fit/prompts.js";
 import { ensurePromptSession, type PromptSession } from "./util/non-fit/replay.js";
 import { runFunctionalTests } from "./workflows/fit-functional/workflows/guided/index.js";
+import { createFitFunctionalDefinition } from "./workflows/fit-functional/workflows/create-definition/index.js";
+import { runSituationalTests } from "./workflows/fit-situational/guided/index.js";
 import { rootDirFromArgv } from "./util/fit/root.js";
 
 const WORKFLOW_PROMPT_MESSAGE =
@@ -17,6 +20,8 @@ const WORKFLOW_PROMPT_MESSAGE =
 
 const WORKFLOW_CHOICES = [
   { name: "Run FIT functional tests", value: "functional-tests" },
+  { name: "Create a FIT functional definition file", value: "functional-definition" },
+  { name: "Run FIT situational tests (FIT/SIT)", value: "situational-tests" },
 ] as const;
 
 export type WorkflowChoice = (typeof WORKFLOW_CHOICES)[number]["value"];
@@ -64,11 +69,19 @@ export async function runWorkflow(choice: WorkflowChoice, rootDir: string): Prom
   switch (choice) {
     case "functional-tests":
       return runFunctionalTests(rootDir);
+    case "functional-definition":
+      return createFitFunctionalDefinition(rootDir);
+    case "situational-tests":
+      return runSituationalTests(rootDir);
   }
 }
 
 export async function main(): Promise<RunOutput> {
   console.log("FIT CLI — making FIT easier to use, one vibe-coding session at a time.\n");
+
+  // Load any .env so secrets like the hosted results-DB password are available
+  // without being passed on the command line. Real exported vars still win.
+  loadDotenv();
 
   const { rootDir } = rootDirFromArgv(process.argv.slice(2));
   const choice = await chooseWorkflow();

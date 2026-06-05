@@ -39,6 +39,28 @@ export interface ClusterDef {
   cng: boolean;
 }
 
+/** The cbdinocluster definition as a structured object (what goes under `config`). */
+export interface CbdinoclusterDef {
+  nodes: { count: number; version: string; services: string[] }[];
+  /** Present only when CNG/Protostellar support is wanted. */
+  cao?: { "operator-version": string; "gateway-version": string };
+}
+
+/**
+ * Build the cbdinocluster definition as a structured object, rather than the YAML
+ * string {@link buildClusterDef} produces. Used when the def is embedded in a
+ * larger document (e.g. a fit-mix definition file's
+ * `setup.cluster.cbdinocluster.config`) rather than written out on its own.
+ */
+export function buildClusterDefObject(def: ClusterDef): CbdinoclusterDef {
+  return {
+    nodes: [{ count: def.nodeCount, version: def.version, services: def.services }],
+    ...(def.cng
+      ? { cao: { "operator-version": CAO_OPERATOR_VERSION, "gateway-version": CAO_GATEWAY_VERSION } }
+      : {}),
+  };
+}
+
 /** Render `def` as the cbdinocluster YAML definition document. */
 export function buildClusterDef(def: ClusterDef): string {
   const lines = [

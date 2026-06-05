@@ -1,6 +1,15 @@
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { extractFitTestDriverSummary, fitTestDriverSummaryDetails, runTestDriverArgs } from "../index.js";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+  didFitTestDriverPass,
+  extractFitTestDriverSummaryFromJunit,
+  extractFitTestDriverSummaryFromJunitReports,
+  fitTestDriverSummaryDetails,
+  runTestDriverArgs,
+} from "../index.js";
 import { collapseSuitesByDefault, stripJunitProperties, surefireReportsDir } from "../collect-junit.js";
 import type { FitTestSelection } from "../../select-fit-tests/index.js";
 
@@ -42,29 +51,56 @@ test("collapseSuitesByDefault leaves HTML untouched when tokens are absent", () 
   assert.equal(collapseSuitesByDefault(html), html);
 });
 
-test("extractFitTestDriverSummary returns the final test summary from the log", () => {
-  const log = [
-    "[INFO] Tests run: 2, Failures: 1, Errors: 0, Skipped: 0",
-    "[INFO] some other output",
-    "[INFO] Tests run: 13, Failures: 7, Errors: 0, Skipped: 2, Time elapsed: 123.456 s",
-  ].join("\n");
+test("extractFitTestDriverSummaryFromJunit reads the suite totals from JUnit XML", () => {
+  const xml =
+    '<testsuite name="SanityTest" tests="3" errors="1" skipped="2" failures="4"><testcase name="basic"/></testsuite>';
 
-  assert.deepEqual(extractFitTestDriverSummary(log), {
-    testsRun: 13,
-    failures: 7,
-    errors: 0,
+  assert.deepEqual(extractFitTestDriverSummaryFromJunit(xml), {
+    testsRun: 3,
+    failures: 4,
+    errors: 1,
     skipped: 2,
   });
 });
 
-test("extractFitTestDriverSummary returns undefined when the log has no summary line", () => {
-  assert.equal(extractFitTestDriverSummary("[INFO] build still running"), undefined);
+test("extractFitTestDriverSummaryFromJunitReports totals multiple XML files", () => {
+  const reportsDir = mkdtempSync(join(tmpdir(), "fit-cli-run-test-driver-"));
+  try {
+    mkdirSync(reportsDir, { recursive: true });
+    writeFileSync(
+      join(reportsDir, "TEST-first.xml"),
+      '<testsuite name="First" tests="2" failures="1" errors="0" skipped="0"/>',
+    );
+    writeFileSync(
+      join(reportsDir, "TEST-second.xml"),
+      '<testsuite name="Second" tests="3" failures="0" errors="1" skipped="2"/>',
+    );
+
+    assert.deepEqual(extractFitTestDriverSummaryFromJunitReports(reportsDir), {
+      testsRun: 5,
+      failures: 1,
+      errors: 1,
+      skipped: 2,
+    });
+  } finally {
+    rmSync(reportsDir, { recursive: true, force: true });
+  }
+});
+
+test("didFitTestDriverPass returns true only when there are no failures or errors", () => {
+  assert.equal(didFitTestDriverPass({ testsRun: 3, failures: 0, errors: 0, skipped: 1 }), true);
+  assert.equal(didFitTestDriverPass({ testsRun: 3, failures: 1, errors: 0, skipped: 1 }), false);
+  assert.equal(didFitTestDriverPass({ testsRun: 3, failures: 0, errors: 1, skipped: 1 }), false);
 });
 
 test("fitTestDriverSummaryDetails formats the parsed summary for the CLI table", () => {
   assert.deepEqual(
     fitTestDriverSummaryDetails({ testsRun: 13, failures: 7, errors: 0, skipped: 2 }),
     [
+      {
+        label: "Result",
+        value: "FAIL",
+      },
       {
         label: "Tests run",
         value: "13",

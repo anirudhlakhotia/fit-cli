@@ -14,6 +14,7 @@ import { writeFileSync } from "node:fs";
 import { artifactFromPath, type Artifact, type Detail } from "../../non-fit/artifacts.js";
 import { isMain, runCli } from "../../non-fit/cli.js";
 import { resolveRegion, type AwsOptions } from "../../non-fit/aws/aws-cli.js";
+import { defaultAwsRegionMessage, resolveAwsRegion } from "../../non-fit/aws/region.js";
 import { checkCredentials } from "../../non-fit/aws/identity.js";
 import { findUbuntuAmi } from "../../non-fit/aws/image.js";
 import { createInstance, waitForInstanceRunning } from "../../non-fit/aws/create-instance.js";
@@ -77,9 +78,9 @@ export async function provisionFitInstance(options: ProvisionOptions = {}): Prom
     promptId: "fit-instance.config.create",
     promptMessage: "No fit-cli config found. Run `npm run init` now before provisioning an EC2 instance?",
   });
-  const region = options.region ?? resolveRegion();
-  if (!region) {
-    throw new Error("No AWS region set. Set AWS_REGION or create ~/.fit-cli/config.yaml with `npm run init` and try again.");
+  const { region, source } = resolveAwsRegion({ region: options.region });
+  if (source === "default") {
+    console.log(defaultAwsRegionMessage(region));
   }
   const awsOptions: AwsOptions = { region };
 

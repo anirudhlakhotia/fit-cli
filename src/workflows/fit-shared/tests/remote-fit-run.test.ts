@@ -4,12 +4,14 @@ import { sdkByValue } from "../../../util/sdk/sdks.js";
 import {
   createLocalFitExecutionContext,
   gitCredentialsLine,
+  remoteBuildWorkspaceRepos,
   pathPrefixedCommand,
   redirectShellCommand,
   redirectToFileCommand,
   remoteDockerWrapperScript,
   remoteFitRepos,
   remoteFitRootDir,
+  remoteWorkspaceRepos,
   remotePerformerArgs,
 } from "../remote-fit-run.js";
 
@@ -31,6 +33,24 @@ test("remoteFitRepos skips couchbase-jvm-clients for non-JVM SDKs", () => {
   assert.ok(sdk);
   assert.deepEqual(
     remoteFitRepos(sdk).map((repo) => repo.dir),
+    ["transactions-fit-performer", "jenkins-sdk"],
+  );
+});
+
+test("remoteWorkspaceRepos only includes repos needed before a build", () => {
+  const sdk = sdkByValue("java");
+  assert.ok(sdk);
+  assert.deepEqual(
+    remoteWorkspaceRepos(sdk).map((repo) => repo.dir),
+    ["transactions-fit-performer", "couchbase-jvm-clients"],
+  );
+});
+
+test("remoteBuildWorkspaceRepos includes jenkins-sdk for performer builds", () => {
+  const sdk = sdkByValue("go");
+  assert.ok(sdk);
+  assert.deepEqual(
+    remoteBuildWorkspaceRepos(sdk).map((repo) => repo.dir),
     ["transactions-fit-performer", "jenkins-sdk"],
   );
 });

@@ -32,6 +32,7 @@ export interface PromptLogEntry {
 export interface PromptResolveOptions<T> {
   serializeResponse?: (response: T) => unknown;
   deserializeResponse?: (response: unknown) => T;
+  nonInteractiveDefault?: () => T | Promise<T>;
 }
 
 export interface ReplayInvocation {
@@ -57,7 +58,7 @@ export interface PromptLogFile {
   prompts: PromptLogEntry[];
 }
 
-type PromptSessionMode = "record" | "replay" | "defaults";
+type PromptSessionMode = "record" | "replay" | "defaults" | "non-interactive";
 
 const RUN_ROOT_DIR = "/tmp/fit-cli";
 
@@ -114,6 +115,24 @@ export function extractReplayFlag(
   }
 
   return { replayRequested, replayDefaults, replayFile, positionals };
+}
+
+export function extractInteractiveFlag(argv: string[]): {
+  interactive: boolean;
+  positionals: string[];
+} {
+  const positionals: string[] = [];
+  let interactive = false;
+
+  for (const arg of argv) {
+    if (arg === "--interactive") {
+      interactive = true;
+    } else {
+      positionals.push(arg);
+    }
+  }
+
+  return { interactive, positionals };
 }
 
 function captureReplayInvocation(
@@ -219,6 +238,17 @@ function formatReplayResponse(kind: PromptKind, response: unknown): string {
   return inspect(response, { depth: null, breakLength: Infinity });
 }
 
+function formatPromptResolution(mode: PromptSessionMode): string {
+  switch (mode) {
+    case "defaults":
+      return "replay defaults";
+    case "non-interactive":
+      return "non-interactive";
+    default:
+      return "replay";
+  }
+}
+
 export class PromptSession {
   private replayIndex = 0;
   private readonly usedPromptIds = new Set<string>();
@@ -235,7 +265,8 @@ export class PromptSession {
   ) {}
 
   static fromArgv(argv: string[], hooks: PromptSessionHooks = {}): PromptSession {
-    const { replayRequested, replayDefaults, replayFile } = extractReplayFlag(argv);
+    const { interactive, positionals } = extractInteractiveFlag(argv);
+    const { replayRequested, replayDefaults, replayFile } = extractReplayFlag(positionals);
     const runDir = createRunDir();
     if (replayRequested && !replayFile) {
       throw new Error(
@@ -264,7 +295,7 @@ export class PromptSession {
     const logFile = createLogFile(runDir);
     const createdAt = new Date().toISOString();
     const session = new PromptSession(
-      "record",
+      interactive ? "record" : "non-interactive",
       runDir,
       logFile,
       createdAt,
@@ -275,6 +306,9 @@ export class PromptSession {
     );
     session.persist();
     console.log(`Artifacts from this run will be written to: ${runDir}`);
+    if (!interactive) {
+      console.log("Running non-interactively with default answers.\n");
+    }
     return session;
   }
 
@@ -292,7 +326,7 @@ export class PromptSession {
 
   setWorkflow(workflow: string): void {
     this.workflow = workflow;
-    if (this.mode === "record") {
+    if (this.mode === "record" || this.mode === "non-interactive") {
       this.persist();
     }
   }
@@ -309,7 +343,7 @@ export class PromptSession {
   }
 
   async finishReplay(): Promise<void> {
-    if (this.mode === "record") {
+    if (this.mode === "record" || this.mode === "non-interactive") {
       return;
     }
 
@@ -327,7 +361,7 @@ export class PromptSession {
   }
 
   formatReplayReminder(): string | undefined {
-    if (this.mode !== "record") {
+    if (this.mode === "replay" || this.mode === "defaults") {
       return undefined;
     }
     return [
@@ -354,18 +388,35 @@ export class PromptSession {
     }
     this.usedPromptIds.add(id);
 
+    if (this.mode === "non-interactive") {
+      if (!options.nonInteractiveDefault) {
+        throw new Error(`Prompt ${id} does not support non-interactive mode; rerun with --interactive.`);
+      }
+      const response = await options.nonInteractiveDefault();
+      const storedResponse = options.serializeResponse ? options.serializeResponse(response) : response;
+      this.prompts.push({
+        id,
+        kind,
+        message,
+        response: storedResponse,
+      });
+      this.persist();
+      console.log(`[${formatPromptResolution(this.mode)}] ${message}\n  -> ${formatReplayResponse(kind, storedResponse)}`);
+      return response;
+    }
+
     if (this.mode === "defaults") {
       const entry = this.findPromptById(id);
       if (!entry) {
-        console.log(`[${this.replayLabel()}] No saved answer for ${id}; asking now.`);
+        console.log(`[${formatPromptResolution(this.mode)}] No saved answer for ${id}; asking now.`);
         return prompt();
       }
       if (entry.kind !== kind) {
-        console.log(`[${this.replayLabel()}] Saved answer for ${id} was recorded as ${entry.kind}, but the code now expects ${kind}. Asking now.`);
+        console.log(`[${formatPromptResolution(this.mode)}] Saved answer for ${id} was recorded as ${entry.kind}, but the code now expects ${kind}. Asking now.`);
         return prompt();
       }
       const response = options.deserializeResponse ? options.deserializeResponse(entry.response) : (entry.response as T);
-      console.log(`[${this.replayLabel()}] ${message}\n  -> ${formatReplayResponse(kind, entry.response)}`);
+      console.log(`[${formatPromptResolution(this.mode)}] ${message}\n  -> ${formatReplayResponse(kind, entry.response)}`);
       return prompt(response);
     }
 
@@ -376,7 +427,7 @@ export class PromptSession {
           await this.handleUnusedReplayPrompts(this.prompts.slice(this.replayIndex));
           this.replayIndex = this.prompts.length;
         }
-        console.log(`[${this.replayLabel()}] No saved answer for ${id}; asking now.`);
+        console.log(`[${formatPromptResolution(this.mode)}] No saved answer for ${id}; asking now.`);
         return prompt();
       }
 
@@ -392,12 +443,12 @@ export class PromptSession {
       this.replayIndex++;
 
       if (entry.kind !== kind) {
-        console.log(`[${this.replayLabel()}] Saved answer for ${id} was recorded as ${entry.kind}, but the code now expects ${kind}. Asking now.`);
+        console.log(`[${formatPromptResolution(this.mode)}] Saved answer for ${id} was recorded as ${entry.kind}, but the code now expects ${kind}. Asking now.`);
         return prompt();
       }
       const response = options.deserializeResponse ? options.deserializeResponse(entry.response) : (entry.response as T);
       console.log(
-        `[${this.replayLabel()}] ${message}\n  -> ${formatReplayResponse(kind, entry.response)}`,
+        `[${formatPromptResolution(this.mode)}] ${message}\n  -> ${formatReplayResponse(kind, entry.response)}`,
       );
       return response;
     }
@@ -424,10 +475,6 @@ export class PromptSession {
 
   private findPromptById(id: string): PromptLogEntry | undefined {
     return this.prompts.find((entry) => entry.id === id);
-  }
-
-  private replayLabel(): "replay" | "replay defaults" {
-    return this.mode === "defaults" ? "replay defaults" : "replay";
   }
 
   private async handleUnusedReplayPrompts(entries: readonly PromptLogEntry[]): Promise<void> {

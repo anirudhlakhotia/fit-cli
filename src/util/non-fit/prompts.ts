@@ -7,6 +7,61 @@ type ConfirmConfig = Parameters<typeof prompts.confirm>[0];
 type PasswordConfig = Parameters<typeof prompts.password>[0];
 type PromptConfigWithId = { promptId: string; message: string };
 
+function firstChoiceValue<Value>(choices: readonly unknown[]): Value | undefined {
+  for (const choice of choices) {
+    if (!choice || typeof choice !== "object") {
+      return choice as Value;
+    }
+    if ("disabled" in choice && choice.disabled) {
+      continue;
+    }
+    if ("value" in choice) {
+      return choice.value as Value;
+    }
+  }
+  return undefined;
+}
+
+function checkedChoiceValues<Value>(choices: readonly unknown[]): Value[] {
+  const values: Value[] = [];
+  for (const choice of choices) {
+    if (!choice || typeof choice !== "object" || !("value" in choice) || !("checked" in choice)) {
+      continue;
+    }
+    if (choice.checked) {
+      values.push(choice.value as Value);
+    }
+  }
+  return values;
+}
+
+async function ensureNonInteractiveValue<T>(
+  promptId: string,
+  value: T,
+  validate?: (value: T) => boolean | string | Promise<string | boolean>,
+): Promise<T> {
+  if (!validate) {
+    return value;
+  }
+  const result = await validate(value);
+  if (result === true) {
+    return value;
+  }
+  throw new Error(
+    typeof result === "string"
+      ? `Prompt ${promptId} has no usable default for non-interactive mode: ${result}. Rerun with --interactive to answer it yourself.`
+      : `Prompt ${promptId} has no usable default for non-interactive mode. Rerun with --interactive to answer it yourself.`,
+  );
+}
+
+function missingNonInteractiveDefault(promptId: string, detail?: string): never {
+  throw new Error(
+    detail
+      ? `Prompt ${promptId} has no usable default for non-interactive mode: ${detail}. Rerun with --interactive to answer it yourself.`
+      : `Prompt ${promptId} has no usable default for non-interactive mode. Rerun with --interactive to answer it yourself.`,
+  );
+}
+
 function applyCheckboxDefaults<Value>(choices: readonly unknown[], selectedValues: readonly Value[]): readonly unknown[] {
   const selected = new Set(selectedValues);
   return choices.map((choice) => {
@@ -32,14 +87,19 @@ function runPrompt<T>(
 export function input(config: InputConfig & PromptConfigWithId, context?: PromptContext): Promise<string> {
   const { promptId, ...promptConfig } = config;
   return runPrompt(promptId, "input", config.message, (replayDefault) =>
-    prompts.input({ ...promptConfig, default: replayDefault ?? promptConfig.default }, context),
+    prompts.input({ ...promptConfig, default: replayDefault ?? promptConfig.default }, context), {
+      nonInteractiveDefault: () =>
+        ensureNonInteractiveValue(promptId, String(promptConfig.default ?? ""), promptConfig.validate),
+    },
   );
 }
 
 export function confirm(config: ConfirmConfig & PromptConfigWithId, context?: PromptContext): Promise<boolean> {
   const { promptId, ...promptConfig } = config;
   return runPrompt(promptId, "confirm", config.message, (replayDefault) =>
-    prompts.confirm({ ...promptConfig, default: replayDefault ?? promptConfig.default }, context),
+    prompts.confirm({ ...promptConfig, default: replayDefault ?? promptConfig.default }, context), {
+      nonInteractiveDefault: () => promptConfig.default ?? true,
+    },
   );
 }
 
@@ -60,7 +120,10 @@ export function password(
       context,
     );
     return response || replayDefault || "";
-  }, replay);
+  }, {
+    ...replay,
+    nonInteractiveDefault: () => ensureNonInteractiveValue(promptId, "", promptConfig.validate),
+  });
 }
 
 export function select<Value>(
@@ -77,8 +140,15 @@ export function select<Value>(
   context?: PromptContext,
 ): Promise<Value> {
   const { promptId, ...promptConfig } = config;
-  return runPrompt(promptId, "select", config.message, (replayDefault) =>
-    prompts.select<Value>({ ...promptConfig, default: replayDefault ?? promptConfig.default } as never, context),
+  return runPrompt<Value>(promptId, "select", config.message, (replayDefault) =>
+    prompts.select<Value>({ ...promptConfig, default: replayDefault ?? promptConfig.default } as never, context), {
+      nonInteractiveDefault: () => {
+        const choice = (promptConfig.default as Value | undefined) ?? firstChoiceValue<Value>(promptConfig.choices);
+        return choice === undefined
+          ? missingNonInteractiveDefault(promptId)
+          : choice;
+      },
+    },
   );
 }
 
@@ -101,7 +171,14 @@ export function search<Value>(
     "search",
     config.message,
     () => prompts.search<Value>(promptConfig as never, context),
-    replay,
+    {
+      ...replay,
+      nonInteractiveDefault: () =>
+        missingNonInteractiveDefault(
+          promptId,
+          "search prompts need an explicit saved answer; use --replay --defaults instead.",
+        ),
+    },
   );
 }
 
@@ -134,7 +211,15 @@ export function checkbox<Value>(
       } as never,
       context,
     ),
-    replay,
+    {
+      ...replay,
+      nonInteractiveDefault: () => {
+        const selected = checkedChoiceValues<Value>(promptConfig.choices);
+        return selected.length > 0 || !promptConfig.required
+          ? ensureNonInteractiveValue(promptId, selected, promptConfig.validate)
+          : missingNonInteractiveDefault(promptId);
+      },
+    },
   );
 }
 
@@ -156,6 +241,17 @@ export function number<Required extends boolean>(
 ): Promise<Required extends true ? number : number | undefined> {
   const { promptId, ...promptConfig } = config;
   return runPrompt(promptId, "number", config.message, (replayDefault) =>
-    prompts.number<Required>({ ...promptConfig, default: replayDefault ?? promptConfig.default } as never, context),
+    prompts.number<Required>({ ...promptConfig, default: replayDefault ?? promptConfig.default } as never, context), {
+      nonInteractiveDefault: () => {
+        if (promptConfig.default === undefined) {
+          return missingNonInteractiveDefault(promptId);
+        }
+        return ensureNonInteractiveValue(
+          promptId,
+          promptConfig.default as Required extends true ? number : number | undefined,
+          promptConfig.validate,
+        );
+      },
+    },
   );
 }

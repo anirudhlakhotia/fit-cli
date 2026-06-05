@@ -20,13 +20,16 @@ import { buildPerformerImageName } from "../build-performer/build-performer.js";
 import { checkAndBuildPerformer } from "../check-and-build-performer/index.js";
 import { checkRunningPerformer, stopRunningPerformer } from "../check-running-performer/index.js";
 export { DEFAULT_PERFORMER_PORT } from "../performer-port.js";
-import { DEFAULT_PERFORMER_PORT } from "../performer-port.js";
+import { DEFAULT_PERFORMER_PORT, type PortInUsePolicy } from "../performer-port.js";
 
 export interface RunningPerformer extends RunOutput {
   // Absent when reusing a performer we didn't start (an external process on the
   // port), in which case there's no container for us to manage or log.
   containerId?: string;
   logFile?: string;
+  // True when we're testing against a performer that was already running rather
+  // than one we started, so we should leave it alone instead of stopping it.
+  reused?: boolean;
 }
 
 function performerLogFile(sdk: Sdk, version?: string): string {
@@ -53,12 +56,24 @@ export function checkBuildAndRunPerformerArgs(
   ];
 }
 
-/** Check/build the performer image, then start it in Docker for FIT. */
+/**
+ * Check/build the performer image, then start it in Docker for FIT.
+ *
+ * @param onPortInUse When set, decide non-interactively what to do if the port
+ *   is already taken (the definition-driven flow passes the file's policy);
+ *   when omitted, the guided flow prompts.
+ * @param hostPort The host port the performer listens on; defaults to
+ *   {@link DEFAULT_PERFORMER_PORT}. The container always listens on
+ *   {@link DEFAULT_PERFORMER_PORT} internally; this is the published host port
+ *   that test-driver connects to.
+ */
 export async function checkBuildAndRunPerformer(
   execution: FitExecutionContext,
   sdk: Sdk,
   version?: string,
   dockerNetwork?: string,
+  onPortInUse?: PortInUsePolicy,
+  hostPort: number = DEFAULT_PERFORMER_PORT,
 ): Promise<RunningPerformer | undefined> {
   if (!(await execution.ensureWorkspace(sdk))) {
     return undefined;
@@ -67,14 +82,14 @@ export async function checkBuildAndRunPerformer(
   // Check what's already running first: if a performer is up (a recognised
   // container, or just something on the port), we can test against it and skip
   // locating and building the image entirely.
-  const runCheck = await checkRunningPerformer(execution, sdk, version);
+  const runCheck = await checkRunningPerformer(execution, sdk, version, onPortInUse, hostPort);
   if (runCheck.action === "abort") {
     return undefined;
   }
 
   if (runCheck.action === "external") {
     console.log(
-      `\n→ Testing against the performer already listening on port ${DEFAULT_PERFORMER_PORT}; fit-cli won't manage or stop it.`,
+      `\n→ Testing against the performer already listening on port ${hostPort}; fit-cli won't manage or stop it.`,
     );
     return { artifacts: [], details: [] };
   }
@@ -88,6 +103,7 @@ export async function checkBuildAndRunPerformer(
     return {
       containerId,
       logFile,
+      reused: true,
       artifacts: [artifactFromPath(logFile, `${sdk.name} performer logs captured for this FIT run`)],
       details: [],
     };
@@ -106,7 +122,7 @@ export async function checkBuildAndRunPerformer(
   if (dockerNetwork) {
     console.log(`\n→ Starting the performer on Docker network ${dockerNetwork} so it can reach the cluster container.`);
   }
-  const args = execution.performerRunArgs(buildPerformerImageName(sdk, version), DEFAULT_PERFORMER_PORT, dockerNetwork);
+  const args = execution.performerRunArgs(buildPerformerImageName(sdk, version), hostPort, dockerNetwork);
   console.log(`\nStarting performer with:\n  docker ${args.join(" ")}\n`);
 
   try {
@@ -134,6 +150,13 @@ export async function stopManagedPerformer(
     if (performer?.logFile) {
       console.log(`\nPerformer logs:\n  ${performer.logFile}`);
     }
+    return;
+  }
+
+  // We didn't start this performer (we're reusing one that was already up), so
+  // leave it running rather than stopping someone else's process.
+  if (performer.reused) {
+    console.log(`\n→ Leaving the reused performer container ${performer.containerId} running.`);
     return;
   }
 

@@ -1,0 +1,31 @@
+version: 1
+type: fit-mix
+setup:
+  cluster:
+    cbdinocluster:
+      config:
+        nodes:
+          - count: 1
+            version: '8.1.0-2188'
+            services: [ kv, n1ql, index ]
+
+iterations:
+  # First thing we are testing
+  - type: functional
+    setup:
+      performer:
+        sdk: java
+        port: 8060
+        # What to do if the performer port is already in use:
+        #   fail    - stop the run.
+        #   restart - stop what's there and bring up a fresh performer (default).
+        #   reuse   - assume a performer is already running and test against it
+        #             (convenient for local development).
+        onPortInUse: restart
+
+    runtime:
+      tests:
+        - com.couchbase.client.kv.SanityTest
+
+  # Could test other SDKs here.
+  # - setup:

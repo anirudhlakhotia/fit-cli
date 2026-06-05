@@ -6,6 +6,7 @@
  *   npx tsx src/workflows/performers/check-and-build-performer/index.ts
  */
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
+import { fitCliError } from "../../../util/non-fit/fit-cli-log.js";
 import { confirm } from "../../../util/non-fit/prompts.js";
 import { rootDirFromArgv } from "../../../util/fit/root.js";
 import { type Sdk } from "../../../util/sdk/sdks.js";
@@ -26,12 +27,12 @@ export async function checkAndBuildPerformer(
   if (status.pathExists) {
     console.log(`✓ Found the ${sdk.name} performer at ${status.path}`);
   } else {
-    console.log(`✗ Could not find the ${sdk.name} performer at ${status.path}`);
+    fitCliError(`Could not find the ${sdk.name} performer at ${status.path}`);
     return false;
   }
 
   if (!status.dockerAvailable) {
-    console.log("✗ Could not find docker on your PATH");
+    fitCliError("Could not find docker on your PATH");
     return false;
   }
 
@@ -40,7 +41,7 @@ export async function checkAndBuildPerformer(
     return true;
   }
 
-  console.log(`✗ Could not find the ${sdk.name} performer Docker image ${status.imageName}`);
+  fitCliError(`Could not find the ${sdk.name} performer Docker image ${status.imageName}`);
   console.log(`\nBuilding performer with:\n  cd ${execution.jenkinsDir} && ./gradlew ${buildPerformerArgs(execution.rootDir, sdk, version).join(" ")}\n`);
 
   const shouldBuild = await confirm({
@@ -59,13 +60,13 @@ export async function checkAndBuildPerformer(
   try {
     await execution.run("./gradlew", buildPerformerArgs(execution.rootDir, sdk, version), execution.jenkinsDir);
   } catch (err) {
-    console.error(`\n✗ Failed to build the ${sdk.name} performer: ${(err as Error).message}`);
+    fitCliError(`\nFailed to build the ${sdk.name} performer: ${(err as Error).message}`);
     return false;
   }
 
   const updatedStatus = await performerStatus(execution, sdk, version);
   if (!updatedStatus.imageExists) {
-    console.log(`\n✗ Built the ${sdk.name} performer, but ${updatedStatus.imageName} is still missing`);
+    fitCliError(`\nBuilt the ${sdk.name} performer, but ${updatedStatus.imageName} is still missing`);
     return false;
   }
 

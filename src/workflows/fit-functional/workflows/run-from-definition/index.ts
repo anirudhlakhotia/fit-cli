@@ -1,13 +1,24 @@
 /**
- * Workflow: run FIT functional tests from a `fit-functional-tests` definition
- * file, with no prompting. This is the repeatable counterpart to the guided
- * flow (../guided/index.ts) — same steps, but the SDK, cluster and test
- * selection all come from the file instead of being asked for. It's the
- * recommended way to run FIT on CI.
+ * Workflow: run FIT functional tests from a `fit-mix` definition
+ * file. This is the repeatable counterpart to the guided flow
+ * (../guided/index.ts) — same steps, but the cluster, SDK and test selection
+ * all come from the file instead of being asked for. The only prompt is where
+ * to execute the run: local, a clean EC2 instance, or an existing EC2 instance.
+ *
+ * The cluster is shared across the whole run; each iteration stands up its own
+ * performer and runs its own tests. Pass an optional CSV of steps to run only
+ * part of it, e.g. stand the performer up once and re-run the tests:
+ *   npm run definition <file.yaml>                 # everything
+ *   npm run definition <file.yaml> setup-performer # just build/run the performer
+ *   npm run definition <file.yaml> run             # just run the tests
+ *   npm run definition <file.yaml> setup,run       # setup (cluster+performer) then run
  *
  * Run on its own (add --root <dir> to point at another workspace):
- *   npx tsx src/workflows/fit-functional/workflows/run-from-definition/index.ts <file.yaml>
- *   npm run definition <file.yaml>
+ *   npx tsx src/workflows/fit-functional/workflows/run-from-definition/index.ts <file.yaml> [steps]
+ *
+ * Note: cluster setup (allocating a cbdinocluster) isn't wired up yet — the
+ * setup-cluster step is a placeholder. Use setup.cluster.connection to run
+ * against an already-running cluster.
  */
 import {
   combineArtifacts,
@@ -17,97 +28,244 @@ import {
   type RunOutput,
 } from "../../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../../util/non-fit/cli.js";
+import { fitCliError, fitCliWarn } from "../../../../util/non-fit/fit-cli-log.js";
 import { rootDirFromArgv } from "../../../../util/fit/root.js";
-import { checkBuildAndRunPerformer, stopManagedPerformer } from "../../../performers/check-build-and-run-performer/index.js";
+import {
+  checkBuildAndRunPerformer,
+  stopManagedPerformer,
+  type RunningPerformer,
+} from "../../../performers/check-build-and-run-performer/index.js";
 import { generateFitConfiguration } from "../../../fit-shared/fit-configuration/generate-fit-configuration.js";
-import { createLocalFitExecutionContext } from "../../../fit-shared/remote-fit-run.js";
+import { createFitExecutionContext, type FitExecutionContext } from "../../../fit-shared/remote-fit-run.js";
 import { loadDefinition } from "../../definition/parse-definition.js";
-import { resolveDefinition, type ResolvedDefinition } from "../../definition/resolve-definition.js";
+import { resolveDefinition, type ResolvedDefinition, type ResolvedIteration } from "../../definition/resolve-definition.js";
+import { parseSteps, type DefinitionStep } from "../../definition/steps.js";
 import { runTestDriver } from "../../../fit-shared/run-test-driver/index.js";
 import {
   detectClusterDockerEnvironment,
   runPerformerClusterSanityCheck,
 } from "../../../fit-shared/performer-cluster-sanity.js";
+import { selectExecutionTarget } from "../select-execution-target/index.js";
 
-/** Print what the definition resolved to, so a CI log shows the run's inputs. */
-function announce(definitionPath: string, resolved: ResolvedDefinition): void {
-  const { testSelection } = resolved;
+/** Describe the shared cluster for the run header / setup-cluster step. */
+function clusterLabel(resolved: ResolvedDefinition): string {
+  const cluster = resolved.iterations.find((iteration) => iteration.cluster)?.cluster;
+  if (cluster) {
+    return `${cluster.scheme}://${cluster.defaultHostname} (${cluster.flavour})`;
+  }
+  if (resolved.clusterMode === "connection") {
+    return "existing cluster from setup.cluster.connection";
+  }
+  if (resolved.clusterMode === "useExisting") {
+    return "existing cluster from iteration fitConfig.clusterAccess";
+  }
+  return "none configured (cluster setup not wired up yet)";
+}
+
+/** Print what an iteration resolved to, so a CI log shows the run's inputs. */
+function announce(index: number, total: number, iteration: ResolvedIteration, steps: readonly DefinitionStep[]): void {
+  const { testSelection } = iteration;
   const testsLabel = testSelection.mavenTestSelector
     ? `${testSelection.selectedTests.length} test(s): ${testSelection.mavenTestSelector}`
     : "all tests";
-  console.log(`\nRunning FIT functional tests from definition:\n  ${definitionPath}\n`);
-  console.log(`  SDK:     ${resolved.sdk.name}`);
-  console.log(`  Cluster: ${resolved.cluster.scheme}://${resolved.cluster.defaultHostname} (${resolved.cluster.flavour})`);
+  console.log(`\n=== Iteration ${index + 1}/${total} — steps: ${steps.join(", ")} ===`);
+  console.log(`  SDK:     ${iteration.sdk.name}`);
   console.log(`  Tests:   ${testsLabel}`);
-  if (resolved.performerVersion) {
-    console.log(`  Performer version: ${resolved.performerVersion}`);
+  console.log(`  Performer port: ${iteration.performerPort}`);
+  if (iteration.performerVersion) {
+    console.log(`  Performer version: ${iteration.performerVersion}`);
   }
 }
 
-/** Run FIT functional tests as described by the definition file at `definitionPath`. */
-export async function runFromDefinition(definitionPath: string, rootDir: string): Promise<RunOutput> {
-  const resolved = resolveDefinition(loadDefinition(definitionPath));
-  announce(definitionPath, resolved);
+/**
+ * The setup-cluster step. Allocating a cbdinocluster isn't implemented yet, so
+ * this only reports what the file asked for and how the run will proceed.
+ */
+function setupCluster(resolved: ResolvedDefinition): void {
+  if (resolved.clusterMode === "connection") {
+    fitCliWarn("\nsetup-cluster: using the existing cluster from setup.cluster.connection; nothing to allocate.");
+    return;
+  }
+  if (resolved.clusterMode === "useExisting") {
+    fitCliWarn("\nsetup-cluster: using the existing cluster described by iteration fitConfig.clusterAccess; nothing to allocate.");
+    return;
+  }
+  if (resolved.cbdinocluster) {
+    fitCliWarn(
+      "\nsetup-cluster: allocating a cbdinocluster isn't wired up yet — skipping. " +
+        "Add setup.cluster.connection to run against an already-running cluster.",
+    );
+    return;
+  }
+  fitCliWarn("\nsetup-cluster: no cluster configured.");
+}
 
-  const artifacts: Artifact[] = [];
-  const details: Detail[] = [];
-  const execution = createLocalFitExecutionContext(rootDir);
-  const clusterDockerEnvironment = await detectClusterDockerEnvironment(resolved.cluster);
+/** The setup-performer step: build the performer image and start it in Docker. */
+async function setupPerformer(
+  execution: FitExecutionContext,
+  iteration: ResolvedIteration,
+): Promise<RunningPerformer | undefined> {
+  const clusterDockerEnvironment = iteration.cluster
+    ? await detectClusterDockerEnvironment(iteration.cluster)
+    : undefined;
   if (clusterDockerEnvironment) {
     console.log(
       `\n→ Cluster Docker networks: ${clusterDockerEnvironment.networkNames.join(", ")} ` +
         `(containers: ${clusterDockerEnvironment.containerNames.join(", ")})`,
     );
   }
-  const performer = await checkBuildAndRunPerformer(
+  return checkBuildAndRunPerformer(
     execution,
-    resolved.sdk,
-    resolved.performerVersion,
+    iteration.sdk,
+    iteration.performerVersion,
     clusterDockerEnvironment?.networkNames[0],
+    iteration.onPortInUse,
+    iteration.performerPort,
   );
-  if (!performer) {
-    console.log("\nOnce the performer is ready to run, run fit-cli again.");
+}
+
+/** The run step: generate a FITConfiguration, sanity-check, and run the test driver. */
+async function runTests(
+  execution: FitExecutionContext,
+  iteration: ResolvedIteration,
+  performer: RunningPerformer | undefined,
+): Promise<RunOutput> {
+  if (!iteration.cluster) {
+    fitCliWarn(
+      "\nrun: no cluster available (cluster setup isn't wired up yet), so a FITConfiguration can't be " +
+        "generated. Add setup.cluster.connection to run the tests. Skipping.",
+    );
+    return { artifacts: [], details: [] };
+  }
+
+  const artifacts: Artifact[] = [];
+  const details: Detail[] = [];
+
+  const fitConfig = generateFitConfiguration(
+    iteration.cluster,
+    execution.rootDir,
+    iteration.performerPort,
+    iteration.fitConfig,
+  );
+  artifacts.push(...fitConfig.artifacts);
+  details.push(...fitConfig.details);
+
+  const performerSanity = await runPerformerClusterSanityCheck(iteration.cluster, performer?.containerId, {
+    captureCommand: (command, args) => execution.capture(command, args),
+    dockerCommand: execution.dockerCommand,
+  });
+  artifacts.push(...performerSanity.artifacts);
+  if (!performerSanity.ok) {
     return { artifacts, details };
   }
-  artifacts.push(...performer.artifacts);
+
+  const testRun = await runTestDriver(
+    execution,
+    iteration.testSelection,
+    fitConfig.path,
+    iteration.extraMavenArgs,
+  );
+  artifacts.push(...testRun.artifacts);
+  details.push(...testRun.details);
+  return { artifacts, details };
+}
+
+/** Run the per-iteration steps (setup-performer, run) for one iteration. */
+async function runIteration(
+  execution: FitExecutionContext,
+  iteration: ResolvedIteration,
+  steps: readonly DefinitionStep[],
+): Promise<RunOutput> {
+  const artifacts: Artifact[] = [];
+  const details: Detail[] = [];
+  let performer: RunningPerformer | undefined;
+
+  // Only tear the performer down when this invocation both started it and ran
+  // tests against it. A bare `setup-performer` leaves it up for a later `run`.
+  const stopPerformerAfter = steps.includes("setup-performer") && steps.includes("run");
 
   try {
-    const fitConfig = generateFitConfiguration(resolved.cluster, rootDir);
-    artifacts.push(...fitConfig.artifacts);
-    details.push(...fitConfig.details);
-    const performerSanity = await runPerformerClusterSanityCheck(resolved.cluster, performer.containerId, {
-      captureCommand: (command, args) => execution.capture(command, args),
-      dockerCommand: execution.dockerCommand,
-    });
-    artifacts.push(...performerSanity.artifacts);
-    if (!performerSanity.ok) {
-      return { artifacts: combineArtifacts(artifacts), details: combineDetails(details) };
+    for (const step of steps) {
+      if (step === "setup-performer") {
+        performer = await setupPerformer(execution, iteration);
+        if (!performer) {
+          fitCliError("\nThe performer isn't ready to run; stopping this iteration.");
+          break;
+        }
+        artifacts.push(...performer.artifacts);
+      } else if (step === "run") {
+        const output = await runTests(execution, iteration, performer);
+        artifacts.push(...output.artifacts);
+        details.push(...output.details);
+      }
     }
-
-    const testRun = await runTestDriver(
-      execution,
-      resolved.testSelection,
-      fitConfig.path,
-      resolved.extraMavenArgs,
-    );
-    artifacts.push(...testRun.artifacts);
-    details.push(...testRun.details);
     return { artifacts: combineArtifacts(artifacts), details: combineDetails(details) };
   } finally {
-    await stopManagedPerformer(execution, performer);
+    if (stopPerformerAfter) {
+      await stopManagedPerformer(execution, performer);
+    } else if (performer?.logFile) {
+      console.log(`\nPerformer left running. Logs:\n  ${performer.logFile}`);
+    }
+  }
+}
+
+/** Run FIT functional tests as described by the definition file at `definitionPath`. */
+export async function runFromDefinition(
+  definitionPath: string,
+  rootDir: string,
+  steps: DefinitionStep[] = parseSteps(),
+): Promise<RunOutput> {
+  const resolved = resolveDefinition(loadDefinition(definitionPath));
+  console.log(`\nRunning FIT functional tests from definition:\n  ${definitionPath}`);
+  console.log(`  Cluster: ${clusterLabel(resolved)}`);
+
+  const artifacts: Artifact[] = [];
+  const details: Detail[] = [];
+  const executionTarget = await selectExecutionTarget();
+  artifacts.push(...executionTarget.artifacts);
+  details.push(...executionTarget.details);
+  if (!executionTarget.ready) {
+    return { artifacts: combineArtifacts(artifacts), details: combineDetails(details) };
+  }
+
+  try {
+    const execution = await createFitExecutionContext(executionTarget.target, rootDir, resolved.iterations[0].sdk);
+    artifacts.push(...execution.artifacts);
+    details.push(...execution.details);
+
+    // The cluster is shared across iterations, so set it up once up front.
+    if (steps.includes("setup-cluster")) {
+      setupCluster(resolved);
+    }
+
+    const iterationSteps = steps.filter((step) => step !== "setup-cluster");
+    for (const [index, iteration] of resolved.iterations.entries()) {
+      announce(index, resolved.iterations.length, iteration, steps);
+      if (iterationSteps.length === 0) {
+        continue;
+      }
+      const output = await runIteration(execution, iteration, iterationSteps);
+      artifacts.push(...output.artifacts);
+      details.push(...output.details);
+    }
+
+    return { artifacts: combineArtifacts(artifacts), details: combineDetails(details) };
+  } finally {
+    await executionTarget.cleanup();
   }
 }
 
 if (isMain(import.meta.url)) {
   runCli(async () => {
     const { rootDir, positionals } = rootDirFromArgv(process.argv.slice(2));
-    const definitionPath = positionals[0];
-    if (!definitionPath || positionals.length > 1) {
+    const [definitionPath, stepsCsv, ...rest] = positionals;
+    if (!definitionPath || rest.length > 0) {
       console.error(
-        "Usage: tsx src/workflows/fit-functional/workflows/run-from-definition/index.ts <file.yaml> [--root <dir>]",
+        "Usage: tsx src/workflows/fit-functional/workflows/run-from-definition/index.ts <file.yaml> [steps] [--root <dir>] [--interactive]\n" +
+          "  steps: CSV of setup, setup-cluster, setup-performer, run (default: all)",
       );
       process.exit(2);
     }
-    return runFromDefinition(definitionPath, rootDir);
+    return runFromDefinition(definitionPath, rootDir, parseSteps(stepsCsv));
   });
 }

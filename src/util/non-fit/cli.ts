@@ -8,6 +8,7 @@ import {
   combineRunOutputs,
   type RunOutput,
 } from "./artifacts.js";
+import { installFitCliConsoleFormatting } from "./fit-cli-log.js";
 import { startSessionLog } from "./proc.js";
 import { ensurePromptSession } from "./replay.js";
 
@@ -30,6 +31,7 @@ export function isMain(metaUrl: string): boolean {
  * prints and exits non-zero.
  */
 export function runCli(main: () => Promise<void | Partial<RunOutput>>): void {
+  installFitCliConsoleFormatting();
   const promptSession = ensurePromptSession(process.argv.slice(2));
   const sessionLog = startSessionLog(join(promptSession.runDir, "session.log"));
   const sessionLogArtifact = artifactFromPath(

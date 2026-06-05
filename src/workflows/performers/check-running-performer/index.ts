@@ -12,7 +12,7 @@ import { chooseSdk } from "../../../util/sdk/choose-sdk.js";
 import { createLocalFitExecutionContext, type FitExecutionContext } from "../../fit-shared/remote-fit-run.js";
 import { askVersion } from "../build-performer/ask-version.js";
 import { buildPerformerImageName } from "../build-performer/build-performer.js";
-import { DEFAULT_PERFORMER_PORT } from "../performer-port.js";
+import { DEFAULT_PERFORMER_PORT, type PortInUsePolicy } from "../performer-port.js";
 
 export interface DockerContainerSummary {
   id: string;
@@ -84,15 +84,28 @@ export async function runningContainersForImage(
   }
 }
 
+/**
+ * @param policy When set, the port-in-use decision is made non-interactively
+ *   from this policy instead of by prompting — the path the definition-driven
+ *   (CI) flow takes. When omitted, the guided flow asks the user.
+ * @param hostPort The host port the performer will listen on; defaults to
+ *   {@link DEFAULT_PERFORMER_PORT}.
+ */
 export async function checkRunningPerformer(
   execution: FitExecutionContext,
   sdk: Sdk,
   version?: string,
+  policy?: PortInUsePolicy,
+  hostPort: number = DEFAULT_PERFORMER_PORT,
 ): Promise<PerformerRunCheckResult> {
   const imageName = buildPerformerImageName(sdk, version);
   const runningContainers = await runningContainersForImage(execution, imageName);
 
   if (runningContainers && runningContainers.length > 0) {
+    if (policy) {
+      return applyPolicyToRunningContainers(sdk, runningContainers, policy);
+    }
+
     const shouldRestart = await confirm({
       promptId: "performer.run.restart-existing",
       message:
@@ -109,14 +122,16 @@ export async function checkRunningPerformer(
     return { action: "restart", containers: runningContainers };
   }
 
-  const portAvailability = await checkPortAvailability(execution);
+  const portAvailability = await checkPortAvailability(execution, hostPort);
   if (portAvailability.available === false) {
-    return handlePortInUse(execution, DEFAULT_PERFORMER_PORT);
+    return policy
+      ? applyPortInUsePolicy(execution, hostPort, policy)
+      : handlePortInUse(execution, hostPort);
   }
 
   if (portAvailability.available === null) {
     console.log(
-      `→ Couldn't check whether port ${DEFAULT_PERFORMER_PORT} is available: ${portAvailability.error ?? "unknown error"}`,
+      `→ Couldn't check whether port ${hostPort} is available: ${portAvailability.error ?? "unknown error"}`,
     );
   }
 
@@ -226,7 +241,8 @@ const DEFAULT_PORT_IN_USE_DEPS: PortInUseDeps = {
 /**
  * Decide what to do when the performer port is already taken. Rather than
  * bailing out, offer to test against whatever is already there, or to stop it
- * and wait for the port to free up.
+ * and wait for the port to free up. This is the interactive (guided) path; the
+ * definition-driven flow uses {@link applyPortInUsePolicy} instead.
  */
 export async function handlePortInUse(
   execution: FitExecutionContext,
@@ -254,6 +270,40 @@ export async function handlePortInUse(
     return { action: "abort" };
   }
 
+  return stopAndWaitForPort(execution, port, deps);
+}
+
+/**
+ * Apply a {@link PortInUsePolicy} to a port that's already in use, without
+ * prompting. This is the non-interactive counterpart to {@link handlePortInUse},
+ * taken by the definition-driven flow where the policy comes from the file.
+ */
+export async function applyPortInUsePolicy(
+  execution: FitExecutionContext,
+  port: number,
+  policy: PortInUsePolicy,
+  deps: PortInUseDeps = DEFAULT_PORT_IN_USE_DEPS,
+): Promise<PerformerRunCheckResult> {
+  console.error(`\n✗ Port ${port} is already in use.`);
+  switch (policy) {
+    case "fail":
+      console.error(`→ onPortInUse is "fail", so leaving port ${port} untouched and stopping.`);
+      return { action: "abort" };
+    case "reuse":
+      console.log(`→ onPortInUse is "reuse": assuming a performer is on port ${port} and testing against it.`);
+      return { action: "external" };
+    case "restart":
+      console.log(`→ onPortInUse is "restart": stopping whatever is on port ${port}, then starting a fresh performer.`);
+      return stopAndWaitForPort(execution, port, deps);
+  }
+}
+
+/** Stop whatever holds `port`, wait for it to free up, and report start/abort. */
+async function stopAndWaitForPort(
+  execution: FitExecutionContext,
+  port: number,
+  deps: PortInUseDeps,
+): Promise<PerformerRunCheckResult> {
   await deps.stopProcessesOnPort(execution, port);
 
   console.log(`\nWaiting for port ${port} to become free… (press Ctrl+C to abort)`);
@@ -264,6 +314,32 @@ export async function handlePortInUse(
 
   console.error(`\n✗ Port ${port} is still in use. Once it's free, run fit-cli again.`);
   return { action: "abort" };
+}
+
+/**
+ * Apply a {@link PortInUsePolicy} to a recognised performer container that's
+ * already running, without prompting (the definition-driven path).
+ */
+export function applyPolicyToRunningContainers(
+  sdk: Sdk,
+  containers: DockerContainerSummary[],
+  policy: PortInUsePolicy,
+): PerformerRunCheckResult {
+  const where =
+    containers.length === 1 ? `container ${containers[0].id}` : `${containers.length} containers`;
+  switch (policy) {
+    case "fail":
+      console.error(
+        `\n✗ The ${sdk.name} performer is already running in ${where} and onPortInUse is "fail". Stopping.`,
+      );
+      return { action: "abort" };
+    case "reuse":
+      console.log(`→ onPortInUse is "reuse": testing against the ${sdk.name} performer already in ${where}.`);
+      return { action: "reuse", containers };
+    case "restart":
+      console.log(`→ onPortInUse is "restart": restarting the ${sdk.name} performer in ${where}.`);
+      return { action: "restart", containers };
+  }
 }
 
 export function stopPerformerContainerArgs(containerIds: string[]): string[] {

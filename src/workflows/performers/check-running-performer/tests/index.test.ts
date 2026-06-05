@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { FitExecutionContext } from "../../../fit-shared/remote-fit-run.js";
 import {
+  applyPolicyToRunningContainers,
+  applyPortInUsePolicy,
   handlePortInUse,
   killProcessArgs,
   lsofPortArgs,
@@ -10,8 +12,10 @@ import {
   runningPerformerPsArgs,
   stopPerformerContainerArgs,
   waitForPortFree,
+  type DockerContainerSummary,
   type PortInUseDeps,
 } from "../index.js";
+import { sdkByValue } from "../../../../util/sdk/sdks.js";
 
 function fakeExecutionContext(): FitExecutionContext {
   return {
@@ -168,4 +172,55 @@ test("handlePortInUse aborts when the port never frees up after stopping", async
     }),
   );
   assert.deepEqual(result, { action: "abort" });
+});
+
+test("applyPortInUsePolicy fail aborts without touching the port", async () => {
+  let stopped = false;
+  const result = await applyPortInUsePolicy(
+    fakeExecutionContext(),
+    8060,
+    "fail",
+    portInUseDeps({ stopProcessesOnPort: () => { stopped = true; return Promise.resolve(true); } }),
+  );
+  assert.deepEqual(result, { action: "abort" });
+  assert.equal(stopped, false);
+});
+
+test("applyPortInUsePolicy reuse tests against the external performer", async () => {
+  const result = await applyPortInUsePolicy(fakeExecutionContext(), 8060, "reuse", portInUseDeps({}));
+  assert.deepEqual(result, { action: "external" });
+});
+
+test("applyPortInUsePolicy restart stops the process and starts once free", async () => {
+  let stopped = false;
+  const result = await applyPortInUsePolicy(
+    fakeExecutionContext(),
+    8060,
+    "restart",
+    portInUseDeps({
+      stopProcessesOnPort: () => { stopped = true; return Promise.resolve(true); },
+      waitForPortFree: () => Promise.resolve(true),
+    }),
+  );
+  assert.equal(stopped, true);
+  assert.deepEqual(result, { action: "start" });
+});
+
+test("applyPortInUsePolicy restart aborts when the port never frees up", async () => {
+  const result = await applyPortInUsePolicy(
+    fakeExecutionContext(),
+    8060,
+    "restart",
+    portInUseDeps({ waitForPortFree: () => Promise.resolve(false) }),
+  );
+  assert.deepEqual(result, { action: "abort" });
+});
+
+test("applyPolicyToRunningContainers maps each policy to an action", () => {
+  const sdk = sdkByValue("java");
+  assert.ok(sdk);
+  const containers: DockerContainerSummary[] = [{ id: "abc123", image: "performer-java-main", name: "fit-java", ports: "" }];
+  assert.deepEqual(applyPolicyToRunningContainers(sdk, containers, "fail"), { action: "abort" });
+  assert.deepEqual(applyPolicyToRunningContainers(sdk, containers, "reuse"), { action: "reuse", containers });
+  assert.deepEqual(applyPolicyToRunningContainers(sdk, containers, "restart"), { action: "restart", containers });
 });

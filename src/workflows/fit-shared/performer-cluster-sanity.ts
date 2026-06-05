@@ -7,6 +7,7 @@
  *   npx tsx src/workflows/fit-shared/performer-cluster-sanity.ts --help
  */
 import { isMain, runCli } from "../../util/non-fit/cli.js";
+import { fitCliError, fitCliWarn } from "../../util/non-fit/fit-cli-log.js";
 import { type Detail, type RunOutput } from "../../util/non-fit/artifacts.js";
 import { capture } from "../../util/non-fit/proc.js";
 import type { SelectedCluster } from "../cluster/cluster-select/index.js";
@@ -358,7 +359,7 @@ export async function runPerformerClusterSanityCheck(
   options: PerformerClusterSanityOptions = {},
 ): Promise<PerformerClusterSanityAssessment> {
   if (!performerContainerId) {
-    console.log("\n→ Skipping performer/cluster sanity check because fit-cli is not managing a performer container.");
+    fitCliWarn("\nSkipping performer/cluster sanity check because fit-cli is not managing a performer container.");
     return performerClusterSanityDetails(true, "skipped: performer container is externally managed");
   }
 
@@ -371,7 +372,7 @@ export async function runPerformerClusterSanityCheck(
     const containers = parseDockerInspect(await captureCommand(dockerCommand, dockerInspectArgs(containerIds)));
     const performer = containers.find((container) => container.id === performerContainerId);
     if (!performer) {
-      console.warn(`\n→ Skipping performer/cluster sanity check because ${performerContainerId} is no longer running.`);
+      fitCliWarn(`\nSkipping performer/cluster sanity check because ${performerContainerId} is no longer running.`);
       return performerClusterSanityDetails(true, `skipped: performer container ${performerContainerId} is no longer running`);
     }
 
@@ -379,14 +380,14 @@ export async function runPerformerClusterSanityCheck(
     if (result.ok) {
       console.log(`\n✓ Performer/cluster sanity check passed: ${result.details[0]?.value}`);
     } else {
-      console.error(`\n✗ Performer/cluster sanity check failed: ${result.details[0]?.value}`);
+      fitCliError(`\nPerformer/cluster sanity check failed: ${result.details[0]?.value}`);
       for (const detail of result.details.slice(1)) {
-        console.error(`  ${detail.label}: ${detail.value}`);
+        fitCliError(`  ${detail.label}: ${detail.value}`);
       }
     }
     return result;
   } catch (err) {
-    console.warn(`\n→ Skipping performer/cluster sanity check: ${(err as Error).message}`);
+    fitCliWarn(`\nSkipping performer/cluster sanity check: ${(err as Error).message}`);
     return performerClusterSanityDetails(true, `skipped: ${(err as Error).message}`);
   }
 }

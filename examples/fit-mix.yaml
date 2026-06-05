@@ -1,0 +1,97 @@
+# Example fit-mix definition file.
+#
+# A definition file is a repeatable, hand-editable description of one or more FIT
+# functional test runs. Run it with:
+#
+#   npm run definition examples/fit-mix.yaml
+#
+# Run only some steps (CSV of: setup, setup-cluster, setup-performer, run):
+#
+#   npm run definition examples/fit-mix.yaml setup-performer
+#   npm run definition examples/fit-mix.yaml run
+#
+# (add --root <dir> to point at a workspace other than the parent of the cwd).
+#
+# Validate a file without running it:
+#   npx tsx src/workflows/fit-functional/definition/parse-definition.ts <file.yaml>
+
+version: 1
+type: fit-mix
+
+# Shared setup, stood up once for the whole run. The cluster lives here so every
+# iteration tests against the same one.
+setup:
+  cluster:
+    # Point at an already-running cluster. Put the connection details under each
+    # iteration's fitConfig piece so they line up with FITConfiguration.md.
+    useExisting: {}
+
+    # Allocating a fresh cbdinocluster is not wired up yet — this block is parsed
+    # and kept, but the setup-cluster step doesn't act on it. Provide `useExisting`
+    # above to actually run.
+    # cbdinocluster:
+    #   config:
+    #     nodes:
+    #       - count: 1
+    #         version: '8.1.0-2188'
+    #         services: [ kv, n1ql, index ]
+
+# A list of iterations. We generate a single iteration, but you can add more to
+# describe a matrix of runs (e.g. several SDKs against the one cluster).
+iterations:
+  - type: functional
+    # FITConfiguration.md artifact piece for this iteration. fit-cli merges this
+    # with generated runtime fields; some values, such as
+    # clusterAccess.defaultHostname, are filled in at runtime.
+    fitConfig:
+      clusterAccess:
+        connectionString: couchbase://localhost
+        username: Administrator
+        password: password
+        # How the SDK should trust a couchbases:// cluster. Use null for
+        # couchbase:// and for production Capella.
+        #   null                        no TLS section
+        #   { insecure: true }          skip certificate verification
+        #   { certPath: /path/cb.pem }  trust this PEM certificate
+        tls: null
+
+    # What to stand up for this iteration.
+    setup:
+      performer:
+        # Which SDK to test. One of: java, scala, kotlin, cpp, dotnet, go, node,
+        # python, ruby, rust.
+        sdk: java
+        # Port the performer listens on (default 8060).
+        port: 8060
+        # Optional: pin the performer image version/tag.
+        # version: "1.2.3"
+
+    # What to do once setup is up.
+    runtime:
+      # Which FIT test-driver tests to run:
+      #   all          run everything (the default)
+      #   a YAML list  run just those fully-qualified test classes
+      tests: all
+      # tests:
+      #   - com.couchbase.client.kv.SanityTest
+
+      # Optional: Maven test groups to exclude (-DexcludedGroups). Omit to use
+      # the standard CI exclusions (situational, openshift, syncgateway).
+      # excludedGroups:
+      #   - situational
+      #   - openshift
+      #   - syncgateway
+
+  # Could test other SDKs against the same cluster here:
+  # - type: functional
+  #   fitConfig:
+  #     clusterAccess:
+  #       connectionString: couchbase://localhost
+  #       username: Administrator
+  #       password: password
+  #       tls: null
+  #   setup:
+  #     performer:
+  #       sdk: python
+  #   runtime:
+  #     tests: all

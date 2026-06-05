@@ -88,6 +88,21 @@ test("init answers can skip AWS entirely", () => {
   });
 });
 
+test("init answers keep existing AWS settings when AWS is declined", () => {
+  const existing: FitCliConfig = {
+    version: FIT_CLI_CONFIG_VERSION,
+    aws: { region: "eu-west-2", profile: "dev", instanceType: "m6i.large" },
+  };
+
+  const config = initAnswersToConfig({ configureAws: false, githubToken: "ghp_new" }, existing);
+
+  assert.deepEqual(config, {
+    version: FIT_CLI_CONFIG_VERSION,
+    aws: { region: "eu-west-2", profile: "dev", instanceType: "m6i.large" },
+    github: { token: "ghp_new" },
+  });
+});
+
 test("init answers store a GitHub token alongside (or without) AWS", () => {
   assert.deepEqual(initAnswersToConfig({ configureAws: false, githubToken: "ghp_example" }), {
     version: FIT_CLI_CONFIG_VERSION,

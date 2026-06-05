@@ -14,17 +14,30 @@ import { type RunOutput } from "../../../util/non-fit/artifacts.js";
 import { rootDirFromArgv } from "../../../util/fit/root.js";
 import { selectOrCreateCluster } from "../../cluster/cluster-select-or-create/index.js";
 import { type SelectedCluster } from "../../cluster/cluster-select/index.js";
+import { DEFAULT_PERFORMER_PORT } from "../../performers/performer-port.js";
 import { buildFitConfiguration } from "../../fit-functional/util/build-fit-configuration.js";
+import type { PieceData } from "../../../util/non-fit/config-pieces.js";
 import {
   fitConfigDocPath,
   writeFitConfiguration,
 } from "./write-fit-configuration.js";
 
-/** Build and write a FITConfiguration.json for an already-selected cluster. */
-export function generateFitConfiguration(cluster: SelectedCluster, rootDir: string): RunOutput & {
+/**
+ * Build and write a FITConfiguration.json for an already-selected cluster.
+ * `performerPort` is the host port the performer listens on (goes into
+ * `performerPorts`); it defaults to {@link DEFAULT_PERFORMER_PORT}. When
+ * `fitConfigPiece` is provided, it is merged in as an artifact piece before
+ * fit-cli overlays the runtime-generated fields.
+ */
+export function generateFitConfiguration(
+  cluster: SelectedCluster,
+  rootDir: string,
+  performerPort: number = DEFAULT_PERFORMER_PORT,
+  fitConfigPiece?: PieceData,
+): RunOutput & {
   path: string;
 } {
-  const config = buildFitConfiguration(cluster);
+  const config = buildFitConfiguration(cluster, performerPort, fitConfigPiece);
 
   console.log(
     `\nGenerating a FITConfiguration.json for you. You can also produce this by hand by ` +

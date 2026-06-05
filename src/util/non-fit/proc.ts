@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { closeSync, createWriteStream, mkdirSync, openSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { formatTimestampedChunk } from "./fit-cli-log.js";
 import { createRunFilePath } from "./replay.js";
 
 /**
@@ -103,10 +104,18 @@ export function startSessionLog(logFile: string): SessionLog {
   const log = createWriteStream(logFile, { flags: "a", mode: 0o600 });
   log.write(`# ${new Date().toISOString()} fit-cli session\n`);
 
+  const logLineStarts = new Map<NodeJS.WriteStream, boolean>();
   for (const stream of [process.stdout, process.stderr]) {
+    logLineStarts.set(stream, true);
     const original: StreamWrite = stream.write.bind(stream);
     stream.write = function (...args: Parameters<StreamWrite>): boolean {
-      log.write(args[0]);
+      const chunk = args[0];
+      const text = typeof chunk === "string"
+        ? chunk
+        : Buffer.from(chunk).toString(typeof args[1] === "string" ? args[1] : undefined);
+      const formatted = formatTimestampedChunk(text, logLineStarts.get(stream) ?? true);
+      logLineStarts.set(stream, formatted.atLineStart);
+      log.write(formatted.text);
       return original(...args);
     } as StreamWrite;
   }

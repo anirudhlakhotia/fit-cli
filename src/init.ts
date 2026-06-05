@@ -6,10 +6,10 @@ import {
   saveFitCliConfig,
   type FitCliConfig,
 } from "./util/fit/config.js";
+import { DEFAULT_AWS_REGION, awsRegionPromptMessage } from "./util/non-fit/aws/region.js";
 import { isMain, runCli } from "./util/non-fit/cli.js";
 import { confirm, input, password } from "./util/non-fit/prompts.js";
 
-const DEFAULT_AWS_REGION = "us-east-1";
 const DEFAULT_EC2_INSTANCE_TYPE = "c5.xlarge";
 
 export interface AwsInitAnswers {
@@ -61,8 +61,11 @@ function awsAnswersToConfig(answers: AwsInitAnswers): FitCliConfig["aws"] {
   };
 }
 
-export function initAnswersToConfig(answers: InitAnswers): FitCliConfig {
-  const aws = answers.configureAws && answers.aws ? awsAnswersToConfig(answers.aws) : undefined;
+export function initAnswersToConfig(answers: InitAnswers, existing?: FitCliConfig): FitCliConfig {
+  // Declining the AWS prompt leaves any saved AWS settings untouched rather
+  // than wiping them, so re-running init to update the token is non-destructive.
+  const aws =
+    answers.configureAws && answers.aws ? awsAnswersToConfig(answers.aws) : existing?.aws;
   const token = trimOptional(answers.githubToken);
 
   return {
@@ -93,10 +96,13 @@ async function promptForGithubToken(existing?: FitCliConfig): Promise<string | u
 async function promptForConfig(existing?: FitCliConfig): Promise<InitAnswers> {
   const githubToken = await promptForGithubToken(existing);
   const defaults = buildInitialDefaults(existing);
+  const hasExistingAws = existing?.aws !== undefined;
   const configureAws = await confirm({
     promptId: "init.aws.configure",
-    message: "Configure AWS settings? This is only required for some workflows.",
-    default: existing?.aws !== undefined,
+    message: hasExistingAws
+      ? "Edit AWS settings? This is only required for some workflows."
+      : "Configure AWS settings? This is only required for some workflows.",
+    default: false,
   });
 
   if (!configureAws) {
@@ -109,7 +115,7 @@ async function promptForConfig(existing?: FitCliConfig): Promise<InitAnswers> {
     aws: {
       region: await input({
         promptId: "init.aws.region",
-        message: "AWS region:",
+        message: awsRegionPromptMessage(defaults.region),
         default: defaults.region,
       }),
       profile: await input({
@@ -129,7 +135,7 @@ async function promptForConfig(existing?: FitCliConfig): Promise<InitAnswers> {
 export async function runInitWorkflow(path: string = defaultFitCliConfigPath()): Promise<string> {
   const existing = loadFitCliConfig(path);
   const answers = await promptForConfig(existing.config);
-  const config = initAnswersToConfig(answers);
+  const config = initAnswersToConfig(answers, existing.config);
   const savedPath = saveFitCliConfig(config, existing.path);
   console.log(`Saved fit-cli config to ${savedPath}`);
   return savedPath;

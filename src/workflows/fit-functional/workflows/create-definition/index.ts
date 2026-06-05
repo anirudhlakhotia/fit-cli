@@ -1,0 +1,89 @@
+/**
+ * The "Create a FIT functional definition file" flow. This asks the same kinds
+ * of questions as the guided functional flow — which cluster, which performer
+ * and version, which tests — but stands *nothing* up: no cluster is allocated, no
+ * performer is built, no tests are run. It just captures the answers and writes a
+ * reusable `fit-mix.yaml` you can run later with
+ * `npm run definition <file.yaml>` or hand-edit into a matrix of runs.
+ *
+ * Because it sets nothing up, the cluster question has two outcomes that mirror
+ * the definition format directly: an existing cluster becomes a `connection`
+ * block, and "create one with cbdinocluster" becomes a `cbdinocluster` block
+ * (parsed and kept for when definition-driven cluster setup lands).
+ *
+ * Run this flow on its own (skipping the top-level menu; add --root <dir> to
+ * point at another workspace):
+ *   npx tsx src/workflows/fit-functional/workflows/create-definition/index.ts
+ */
+import { type RunOutput } from "../../../../util/non-fit/artifacts.js";
+import { isMain, runCli } from "../../../../util/non-fit/cli.js";
+import { rootDirFromArgv } from "../../../../util/fit/root.js";
+import { chooseSdk } from "../../../../util/sdk/choose-sdk.js";
+import { askClusterDef } from "../../../cluster/cluster-create/ask-cluster-def.js";
+import { selectCluster } from "../../../cluster/cluster-select/index.js";
+import { askVersion } from "../../../performers/build-performer/ask-version.js";
+import { createLocalFitExecutionContext } from "../../../fit-shared/remote-fit-run.js";
+import { selectFitTests } from "../../../fit-shared/select-fit-tests/index.js";
+import {
+  buildFitFunctionalDefinitionFrom,
+  formatFitFunctionalDefinition,
+  writeFitFunctionalDefinition,
+  type DefinitionCluster,
+} from "../../definition/generate-definition.js";
+
+/**
+ * Ask which cluster the definition should target, without standing anything up.
+ * Reuses the cluster-select prompts: an existing cluster yields the connection
+ * details; "create with cbdinocluster" yields the desired cluster shape, which we
+ * record as a `cbdinocluster` block rather than allocating now.
+ */
+export async function chooseDefinitionCluster(): Promise<DefinitionCluster> {
+  const selection = await selectCluster();
+  if (selection.mode === "existing") {
+    return { kind: "connection", cluster: selection.cluster };
+  }
+  const def = await askClusterDef();
+  return { kind: "cbdinocluster", def };
+}
+
+/**
+ * Walk through the definition questions and write the resulting fit-mix.yaml.
+ * Nothing is built, allocated, or run.
+ */
+export async function createFitFunctionalDefinition(rootDir: string): Promise<RunOutput> {
+  console.log(
+    "\nThis builds a reusable fit-mix definition file. Nothing is set up — " +
+      "no cluster is allocated, no performer built, no tests run.\n",
+  );
+
+  const cluster = await chooseDefinitionCluster();
+  const sdk = await chooseSdk();
+  const version = await askVersion();
+
+  // Listing tests needs the test-driver checkout; selectFitTests falls back to
+  // "all" (with a warning) if it isn't present, which is fine here — we're only
+  // recording the choice, not running anything.
+  const selection = await selectFitTests(createLocalFitExecutionContext(rootDir));
+
+  const definition = buildFitFunctionalDefinitionFrom({
+    cluster,
+    sdk,
+    ...(version ? { version } : {}),
+    selection,
+  });
+
+  const result = writeFitFunctionalDefinition(definition);
+  console.log(`\nWriting ${result.path}:\n`);
+  console.log(formatFitFunctionalDefinition(definition));
+  console.log(`\n✓ Wrote ${result.path}`);
+  console.log(`\nRun it later with:\n  npm run definition ${result.path}`);
+
+  return { artifacts: [result.artifact], details: [] };
+}
+
+if (isMain(import.meta.url)) {
+  runCli(async () => {
+    const { rootDir } = rootDirFromArgv(process.argv.slice(2));
+    return createFitFunctionalDefinition(rootDir);
+  });
+}

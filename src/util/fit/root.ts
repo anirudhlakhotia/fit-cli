@@ -19,7 +19,7 @@
  */
 import { existsSync, statSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
-import { extractReplayFlag } from "../non-fit/replay.js";
+import { extractInteractiveFlag, extractReplayFlag } from "../non-fit/replay.js";
 
 /**
  * Resolve `override` (or the default) to an absolute ROOT_DIR and check it's a
@@ -50,7 +50,8 @@ export function resolveRootDir(override?: string): string {
  * `-r <dir>` and `-r=<dir>`. Pass process.argv.slice(2).
  */
 export function extractRootFlag(argv: string[]): { override?: string; positionals: string[] } {
-  const { positionals: args } = extractReplayFlag(argv);
+  const { positionals: replayArgs } = extractReplayFlag(argv);
+  const { positionals: args } = extractInteractiveFlag(replayArgs);
   const positionals: string[] = [];
   let override: string | undefined;
 

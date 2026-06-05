@@ -1,9 +1,5 @@
 /**
- * Unit tests for the fit-functional definition parser/validator.
- *
- * Run on their own:
- *   npm test
- *   node --import tsx --test src/workflows/fit-functional/definition/tests/parse-definition.test.ts
+ * Unit tests for the fit-mix definition parser/validator.
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -12,110 +8,201 @@ import {
   UnsupportedDefinitionVersionError,
   parseDefinition,
 } from "../parse-definition.js";
-import { CURRENT_FIT_FUNCTIONAL_VERSION } from "../types.js";
+import { CURRENT_FIT_DEFINITION_VERSION } from "../types.js";
 
 const MINIMAL = `
 version: 1
-type: fit-functional-tests
-sdk: java
-cluster:
-  connectionString: couchbase://localhost
-  username: Administrator
-  password: password
-  tls: null
-tests: all
+type: fit-mix
+setup:
+  cluster:
+    connection:
+      connectionString: couchbase://localhost
+      username: Administrator
+      password: password
+      tls: null
+iterations:
+  - type: functional
+    setup:
+      performer:
+        sdk: java
+    runtime:
+      tests: all
 `;
 
 test("parses a minimal valid definition", () => {
   const def = parseDefinition(MINIMAL);
-  assert.equal(def.version, CURRENT_FIT_FUNCTIONAL_VERSION);
-  assert.equal(def.type, "fit-functional-tests");
-  assert.equal(def.sdk, "java");
-  assert.deepEqual(def.cluster, {
+  assert.equal(def.version, CURRENT_FIT_DEFINITION_VERSION);
+  assert.equal(def.type, "fit-mix");
+  assert.deepEqual(def.setup?.cluster?.connection, {
     connectionString: "couchbase://localhost",
     username: "Administrator",
     password: "password",
     tls: null,
   });
-  assert.equal(def.tests, "all");
-  assert.equal(def.performerVersion, undefined);
-  assert.equal(def.excludedGroups, undefined);
+  assert.equal(def.iterations[0].fitConfig, undefined);
+  assert.equal(def.iterations.length, 1);
+  const [iteration] = def.iterations;
+  assert.equal(iteration.type, "functional");
+  assert.equal(iteration.setup.performer.sdk, "java");
+  assert.equal(iteration.runtime.tests, "all");
 });
 
-test("a missing tls field defaults to null", () => {
+test("supports multiple iterations sharing the top-level cluster", () => {
   const def = parseDefinition(`
 version: 1
-type: fit-functional-tests
-sdk: python
-cluster:
-  connectionString: couchbase://localhost
-  username: u
-  password: p
-tests: all
+type: fit-mix
+setup:
+  cluster:
+    connection:
+      connectionString: couchbases://cb.example.com
+      username: u
+      password: p
+      tls:
+        certPath: /tmp/cb.pem
+iterations:
+  - type: functional
+    setup:
+      performer:
+        sdk: java
+    runtime:
+      tests: all
+  - type: functional
+    setup:
+      performer:
+        sdk: python
+    runtime:
+      tests:
+        - com.couchbase.SanityTest
 `);
-  assert.equal(def.cluster.tls, null);
+  assert.equal(def.iterations.length, 2);
+  assert.equal(def.iterations[0].setup.performer.sdk, "java");
+  assert.deepEqual(def.iterations[1].runtime.tests, ["com.couchbase.SanityTest"]);
 });
 
-test("a missing tests field defaults to all", () => {
+test("matches the sample file shape: shared cbdinocluster + performer port", () => {
   const def = parseDefinition(`
 version: 1
-type: fit-functional-tests
-sdk: python
-cluster:
-  connectionString: couchbase://localhost
-  username: u
-  password: p
+type: fit-mix
+setup:
+  cluster:
+    cbdinocluster:
+      config:
+        nodes:
+          - count: 1
+            version: '8.1.0-2188'
+            services: [ kv, n1ql, index ]
+iterations:
+  - type: functional
+    setup:
+      performer:
+        sdk: java
+        port: 8060
+    runtime:
+      tests:
+        - com.couchbase.client.kv.SanityTest
 `);
-  assert.equal(def.tests, "all");
+  assert.deepEqual(def.setup?.cluster?.cbdinocluster, {
+    config: { nodes: [{ count: 1, version: "8.1.0-2188", services: ["kv", "n1ql", "index"] }] },
+  });
+  assert.equal(def.iterations[0].setup.performer.port, 8060);
 });
 
-test("an explicit test list is preserved", () => {
+test("an omitted shared setup is allowed", () => {
   const def = parseDefinition(`
 version: 1
-type: fit-functional-tests
-sdk: java
-cluster:
-  connectionString: couchbase://localhost
-  username: u
-  password: p
-tests:
-  - com.couchbase.StandardTest
-  - com.couchbase.OtherTest
+type: fit-mix
+iterations:
+  - type: functional
+    setup:
+      performer:
+        sdk: java
+    runtime:
+      tests: all
 `);
-  assert.deepEqual(def.tests, ["com.couchbase.StandardTest", "com.couchbase.OtherTest"]);
+  assert.equal(def.setup, undefined);
+});
+
+test("a missing runtime.tests defaults to all", () => {
+  const def = parseDefinition(`
+version: 1
+type: fit-mix
+iterations:
+  - type: functional
+    setup:
+      performer:
+        sdk: java
+    runtime: {}
+`);
+  assert.equal(def.iterations[0].runtime.tests, "all");
 });
 
 test("tls insecure and certPath are accepted", () => {
-  const insecure = parseDefinition(MINIMAL.replace("tls: null", "tls:\n    insecure: true"));
-  assert.deepEqual(insecure.cluster.tls, { insecure: true });
+  const insecure = parseDefinition(MINIMAL.replace("tls: null", "tls:\n        insecure: true"));
+  assert.deepEqual((insecure.setup?.cluster?.connection as { tls?: unknown }).tls, { insecure: true });
 
-  const cert = parseDefinition(MINIMAL.replace("tls: null", "tls:\n    certPath: /tmp/cb.pem"));
-  assert.deepEqual(cert.cluster.tls, { certPath: "/tmp/cb.pem" });
+  const cert = parseDefinition(MINIMAL.replace("tls: null", "tls:\n        certPath: /tmp/cb.pem"));
+  assert.deepEqual((cert.setup?.cluster?.connection as { tls?: unknown }).tls, { certPath: "/tmp/cb.pem" });
 });
 
-test("performerVersion and excludedGroups round-trip when present", () => {
+test("performer version and excludedGroups round-trip when present", () => {
   const def = parseDefinition(`
 version: 1
-type: fit-functional-tests
-sdk: java
-performerVersion: "1.2.3"
-cluster:
-  connectionString: couchbase://localhost
-  username: u
-  password: p
-tests: all
-excludedGroups:
-  - situational
-  - openshift
+type: fit-mix
+iterations:
+  - type: functional
+    setup:
+      performer:
+        sdk: java
+        version: "1.2.3"
+    runtime:
+      tests: all
+      excludedGroups:
+        - situational
+        - openshift
 `);
-  assert.equal(def.performerVersion, "1.2.3");
-  assert.deepEqual(def.excludedGroups, ["situational", "openshift"]);
+  assert.equal(def.iterations[0].setup.performer.version, "1.2.3");
+  assert.deepEqual(def.iterations[0].runtime.excludedGroups, ["situational", "openshift"]);
+});
+
+test("performer onPortInUse round-trips when valid", () => {
+  for (const policy of ["fail", "restart", "reuse"]) {
+    const def = parseDefinition(
+      MINIMAL.replace("        sdk: java\n", `        sdk: java\n        onPortInUse: ${policy}\n`),
+    );
+    assert.equal(def.iterations[0].setup.performer.onPortInUse, policy);
+  }
+});
+
+test("legacy useExisting remains accepted", () => {
+  const def = parseDefinition(MINIMAL.replace(
+    `    connection:
+      connectionString: couchbase://localhost
+      username: Administrator
+      password: password
+      tls: null`,
+    "    useExisting: {}",
+  ));
+  assert.deepEqual(def.setup?.cluster?.useExisting, {});
 });
 
 test("rejects the wrong type", () => {
   assert.throws(
-    () => parseDefinition(MINIMAL.replace("fit-functional-tests", "something-else")),
+    () => parseDefinition(MINIMAL.replace("fit-mix", "something-else")),
     InvalidDefinitionError,
+  );
+});
+
+test("rejects a missing iteration type", () => {
+  assert.throws(
+    () => parseDefinition(MINIMAL.replace("  - type: functional\n", "  -\n")),
+    (err: unknown) => err instanceof InvalidDefinitionError && /iterations\[\]\.type/.test(err.message),
+  );
+});
+
+test("rejects an unsupported iteration type", () => {
+  assert.throws(
+    () => parseDefinition(MINIMAL.replace("type: functional", "type: perf")),
+    (err: unknown) => err instanceof InvalidDefinitionError && /iterations\[\]\.type/.test(err.message),
   );
 });
 
@@ -126,24 +213,65 @@ test("rejects a future version with an upgrade hint", () => {
   );
 });
 
-test("rejects a missing required field", () => {
+test("rejects an older version", () => {
   assert.throws(
-    () => parseDefinition(MINIMAL.replace("sdk: java\n", "")),
-    (err: unknown) => err instanceof InvalidDefinitionError && /sdk/.test(err.message),
+    () => parseDefinition(MINIMAL.replace("version: 1", "version: 0")),
+    (err: unknown) => err instanceof UnsupportedDefinitionVersionError && /no longer supported/i.test(err.message),
   );
 });
 
-test("rejects a cluster missing its connection string", () => {
+test("rejects a missing iterations list", () => {
   assert.throws(
-    () => parseDefinition(MINIMAL.replace("  connectionString: couchbase://localhost\n", "")),
-    (err: unknown) => err instanceof InvalidDefinitionError && /connectionString/.test(err.message),
+    () => parseDefinition("version: 1\ntype: fit-mix\n"),
+    (err: unknown) => err instanceof InvalidDefinitionError && /iterations/.test(err.message),
   );
 });
 
-test("rejects an invalid tls shape", () => {
+test("rejects an empty iterations list", () => {
   assert.throws(
-    () => parseDefinition(MINIMAL.replace("tls: null", "tls:\n    bogus: true")),
-    (err: unknown) => err instanceof InvalidDefinitionError && /tls/.test(err.message),
+    () => parseDefinition("version: 1\ntype: fit-mix\niterations: []\n"),
+    (err: unknown) => err instanceof InvalidDefinitionError && /at least one/.test(err.message),
+  );
+});
+
+test("rejects a missing performer sdk", () => {
+  assert.throws(
+    () => parseDefinition(MINIMAL.replace("        sdk: java\n", '        version: "1.0"\n')),
+    (err: unknown) => err instanceof InvalidDefinitionError && /setup\.performer\.sdk/.test(err.message),
+  );
+});
+
+test("rejects a non-integer performer port", () => {
+  assert.throws(
+    () => parseDefinition(MINIMAL.replace("        sdk: java\n", "        sdk: java\n        port: nope\n")),
+    (err: unknown) => err instanceof InvalidDefinitionError && /setup\.performer\.port/.test(err.message),
+  );
+});
+
+test("rejects a non-empty useExisting block", () => {
+  assert.throws(
+    () =>
+      parseDefinition(
+        MINIMAL.replace(
+          `    connection:
+      connectionString: couchbase://localhost
+      username: Administrator
+      password: password
+      tls: null`,
+          "    useExisting:\n      foo: bar",
+        ),
+      ),
+    (err: unknown) => err instanceof InvalidDefinitionError && /useExisting/.test(err.message),
+  );
+});
+
+test("rejects multiple cluster setup modes", () => {
+  assert.throws(
+    () =>
+      parseDefinition(
+        `${MINIMAL.replace("tls: null", "tls: null\n    useExisting: {}")}`,
+      ),
+    (err: unknown) => err instanceof InvalidDefinitionError && /setup\.cluster/.test(err.message),
   );
 });
 

@@ -100,6 +100,7 @@ End-users should be starting at `npm start`.
 ### Code structure
 - Feel free to create files - think one file per clear step - and use a clear directory structure.
 - Small utility business logic - consider moving this under a `util` sub-directory.
+- Prefer `workflows/create-definition/create-definition.ts` over `workflows/create-definition/index.ts`, as it's easier to look for. 
 
 ### Definition files
 A handful of important top-level workflows, generally ones run on CI, have their own YAML definition files.
@@ -147,11 +148,22 @@ See `examples/fit-functional-tests.yaml` for an annotated example; run one with 
 - Save the full output from each run to a unique debug logfile under /tmp/fit-cli.  Save that as an Artifact.
 
 ### Reproducibility:
+Very key to this project is reproducibility.  It should be possible to recreate the same env that CI runs.
+This leads us either to Docker or using cloud instances, and the latter is both more natively Windows friendly, and supports some key testing such as private links.
+
 It's important that whatever inputs a user gives to a workflow be saved and be reusable, for both debugging and re-running.
 Each fit-cli should create a user log file under /tmp/fit-cli with a unique name.  Display this name.
 Associate each user prompt with a unique id.  Save the prompt id and the user's response into the log file.
 The user can replay that with `npm run replay <logfile>`.
 Note that replays are inherently less reliable than definition files, since workflows change, and should be regarded as somewhat experimental and perhaps buggy at present.  So definition files are recommended usually.
+
+### Iteration
+Reproducibility is crucial - see above.
+But creating a clean room every single iteration is also very slow, so we also allow many options that balance it with developer productivity.
+Namely, we endeavour to support in addition to the primary clean instance flow:
+- Running locally.
+- Running on existing remote instances.
+- Logic to handle pre-existing clusters, performers, etc. 
 
 ### Artifacts
 Each run of fit-cli will produce a new unique directory (ARTIFACT_DIR) under /tmp/fit-cli/ which will contain any artifacts.

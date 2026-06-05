@@ -1,40 +1,35 @@
 /**
- * Parse and validate a `fit-functional-tests` definition file. Pure logic — no
- * file IO — so the validation rules are easy to unit test (see
- * tests/parse-definition.test.ts).
- *
- * Validation here is structural: it checks the file is the right type/version
- * and that every field has a usable shape. Semantic checks that need the rest of
- * the tool (is "java" a known SDK? is the connection string one we support?)
- * live in resolve-definition.ts, so this stays a self-contained, dependency-light
- * gate.
- *
- * Versioning: older major versions are upgraded in-memory to the current version
- * by {@link upgradeDefinitionRaw} before validation, so callers always get the
- * latest shape. There's only one version today; the upgrade seam is ready for
- * when that changes (see the README "Definition files" section).
- *
- * Run on its own (validate a file and print the parsed result as JSON):
- *   npx tsx src/workflows/fit-functional/definition/parse-definition.ts <file.yaml>
- *   npx tsx src/workflows/fit-functional/definition/parse-definition.ts --help
+ * Parse and validate a `fit-mix` definition file.
  */
 import { readFileSync } from "node:fs";
 import YAML from "yaml";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { SDKS } from "../../../util/sdk/sdks.js";
+import { PORT_IN_USE_POLICIES, type PortInUsePolicy } from "../../performers/performer-port.js";
 import {
-  CURRENT_FIT_FUNCTIONAL_VERSION,
-  FIT_FUNCTIONAL_DEFINITION_TYPE,
-  type DefinitionCluster,
+  CLUSTER_EXISTS_POLICIES,
+  type ClusterExistsPolicy,
+} from "../../cluster/cluster-create/cluster-exists-policy.js";
+import type { CbdinoclusterDef } from "../../cluster/cluster-create/build-cluster-def.js";
+import {
+  CURRENT_FIT_DEFINITION_VERSION,
+  FIT_DEFINITION_TYPE,
+  FIT_ITERATION_TYPES,
+  type CbdinoclusterSetup,
+  type ConnectionClusterSetup,
+  type ClusterSetup,
+  type ClusterTls,
   type DefinitionTests,
-  type FitFunctionalDefinition,
+  type FitConfigPiece,
+  type FitDefinition,
+  type FunctionalIteration,
+  type IterationSetup,
+  type PerformerSetup,
+  type RuntimeSection,
+  type SharedSetup,
+  type UseExistingClusterSetup,
 } from "./types.js";
 
-/**
- * Thrown when a file's version can't be used by this build — either newer than
- * we understand, or an old one we have no upgrade path for. The message tells the
- * user how to get unstuck.
- */
 export class UnsupportedDefinitionVersionError extends Error {
   constructor(message: string) {
     super(message);
@@ -42,7 +37,6 @@ export class UnsupportedDefinitionVersionError extends Error {
   }
 }
 
-/** Thrown when a file is the right type/version but malformed. */
 export class InvalidDefinitionError extends Error {
   constructor(message: string) {
     super(message);
@@ -54,48 +48,232 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function requireField<T>(record: Record<string, unknown>, key: string, check: (v: unknown) => v is T): T {
-  if (!(key in record)) {
-    throw new InvalidDefinitionError(`Missing required field: ${key}`);
-  }
-  const value = record[key];
-  if (!check(value)) {
-    throw new InvalidDefinitionError(`Field "${key}" has the wrong type: ${JSON.stringify(value)}`);
+const isString = (value: unknown): value is string => typeof value === "string";
+const isStringArray = (value: unknown): value is string[] => Array.isArray(value) && value.every(isString);
+
+type JsonLike = string | number | boolean | null | JsonLike[] | { [key: string]: JsonLike };
+
+function requireRecord(value: unknown, path: string): Record<string, unknown> {
+  if (!isRecord(value)) {
+    throw new InvalidDefinitionError(`"${path}" must be a mapping; got ${JSON.stringify(value)}`);
   }
   return value;
 }
 
-const isString = (v: unknown): v is string => typeof v === "string";
-const isStringArray = (v: unknown): v is string[] => Array.isArray(v) && v.every(isString);
+function requireString(record: Record<string, unknown>, key: string, path: string): string {
+  if (!(key in record)) {
+    throw new InvalidDefinitionError(`Missing required field: ${path}`);
+  }
+  if (!isString(record[key])) {
+    throw new InvalidDefinitionError(`"${path}" must be a string; got ${JSON.stringify(record[key])}`);
+  }
+  return record[key];
+}
 
-/** Validate the `tls` sub-field of a cluster against {@link TlsConfig}. */
-function validateTls(value: unknown): DefinitionCluster["tls"] {
-  if (value === null || value === undefined) {
-    return null;
+function validateJsonLike(value: unknown, path: string): JsonLike {
+  if (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry, index) => validateJsonLike(entry, `${path}[${index}]`));
   }
   if (isRecord(value)) {
-    if (value.insecure === true) {
-      return { insecure: true };
-    }
-    if (isString(value.certPath)) {
-      return { certPath: value.certPath };
-    }
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [key, validateJsonLike(entry, `${path}.${key}`)]),
+    );
   }
   throw new InvalidDefinitionError(
-    `cluster.tls must be null, { insecure: true }, or { certPath: <path> }; got ${JSON.stringify(value)}`,
+    `"${path}" must contain only JSON-compatible values; got ${JSON.stringify(value)}`,
   );
 }
 
-function validateCluster(value: unknown): DefinitionCluster {
-  if (!isRecord(value)) {
-    throw new InvalidDefinitionError(`Field "cluster" must be a mapping; got ${JSON.stringify(value)}`);
+function validateFitConfig(value: unknown, path: string): FitConfigPiece {
+  const record = requireRecord(value, path);
+  return validateJsonLike(record, path) as FitConfigPiece;
+}
+
+function validateTls(value: unknown, path: string): ClusterTls {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  const record = requireRecord(value, path);
+  if (record.insecure === true) {
+    return { insecure: true };
+  }
+  if (isString(record.certPath)) {
+    return { certPath: record.certPath };
+  }
+  throw new InvalidDefinitionError(
+    `"${path}" must be null, { insecure: true }, or { certPath: <path> }; got ${JSON.stringify(value)}`,
+  );
+}
+
+function validateConnection(value: unknown): ConnectionClusterSetup {
+  const record = requireRecord(value, "setup.cluster.connection");
+  return {
+    connectionString: requireString(record, "connectionString", "setup.cluster.connection.connectionString"),
+    username: requireString(record, "username", "setup.cluster.connection.username"),
+    password: requireString(record, "password", "setup.cluster.connection.password"),
+    ...(record.tls !== undefined ? { tls: validateTls(record.tls, "setup.cluster.connection.tls") } : {}),
+  };
+}
+
+function validateUseExisting(value: unknown): UseExistingClusterSetup {
+  if (value === null || value === undefined) {
+    return {};
+  }
+  const record = requireRecord(value, "setup.cluster.useExisting");
+  if (Object.keys(record).length > 0) {
+    throw new InvalidDefinitionError(
+      `"setup.cluster.useExisting" must be empty; put clusterAccess fields under ` +
+        `"iterations[].fitConfig" instead.`,
+    );
+  }
+  return {};
+}
+
+function requirePositiveInteger(record: Record<string, unknown>, key: string, path: string): number {
+  const value = record[key];
+  if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
+    throw new InvalidDefinitionError(`"${path}" must be a positive integer; got ${JSON.stringify(value)}`);
+  }
+  return value;
+}
+
+function isClusterExistsPolicy(value: unknown): value is ClusterExistsPolicy {
+  return isString(value) && (CLUSTER_EXISTS_POLICIES as readonly string[]).includes(value);
+}
+
+function validateClusterNode(value: unknown, path: string): CbdinoclusterDef["nodes"][number] {
+  const record = requireRecord(value, path);
+  const services = record.services;
+  if (!isStringArray(services) || services.length === 0) {
+    throw new InvalidDefinitionError(
+      `"${path}.services" must be a non-empty list of service names; got ${JSON.stringify(services)}`,
+    );
   }
   return {
-    connectionString: requireField(value, "connectionString", isString),
-    username: requireField(value, "username", isString),
-    password: requireField(value, "password", isString),
-    tls: validateTls(value.tls),
+    count: requirePositiveInteger(record, "count", `${path}.count`),
+    version: requireString(record, "version", `${path}.version`),
+    services,
   };
+}
+
+function validateCbdinoclusterDef(value: unknown): CbdinoclusterDef {
+  const record = requireRecord(value, "setup.cluster.cbdinocluster.config");
+  if (!Array.isArray(record.nodes) || record.nodes.length === 0) {
+    throw new InvalidDefinitionError(
+      `"setup.cluster.cbdinocluster.config.nodes" must be a non-empty list; got ${JSON.stringify(record.nodes)}`,
+    );
+  }
+  const def: CbdinoclusterDef = {
+    nodes: record.nodes.map((node, index) =>
+      validateClusterNode(node, `setup.cluster.cbdinocluster.config.nodes[${index}]`),
+    ),
+  };
+  if (record.cao !== undefined) {
+    const cao = requireRecord(record.cao, "setup.cluster.cbdinocluster.config.cao");
+    def.cao = {
+      "operator-version": requireString(cao, "operator-version", "setup.cluster.cbdinocluster.config.cao.operator-version"),
+      "gateway-version": requireString(cao, "gateway-version", "setup.cluster.cbdinocluster.config.cao.gateway-version"),
+    };
+  }
+  return def;
+}
+
+function validateCbdinocluster(value: unknown): CbdinoclusterSetup {
+  const record = requireRecord(value, "setup.cluster.cbdinocluster");
+  if (record.config === undefined) {
+    throw new InvalidDefinitionError("Missing required field: setup.cluster.cbdinocluster.config");
+  }
+  const cbdinocluster: CbdinoclusterSetup = { config: validateCbdinoclusterDef(record.config) };
+  if (record.onClusterExists !== undefined) {
+    if (!isClusterExistsPolicy(record.onClusterExists)) {
+      throw new InvalidDefinitionError(
+        `"setup.cluster.cbdinocluster.onClusterExists" must be one of ${CLUSTER_EXISTS_POLICIES.join(", ")} ` +
+          `when present; got ${JSON.stringify(record.onClusterExists)}`,
+      );
+    }
+    cbdinocluster.onClusterExists = record.onClusterExists;
+  }
+  if (record.deployer !== undefined) {
+    cbdinocluster.deployer = requireString(record, "deployer", "setup.cluster.cbdinocluster.deployer");
+  }
+  return cbdinocluster;
+}
+
+function validateCluster(value: unknown): ClusterSetup {
+  const record = requireRecord(value, "setup.cluster");
+  const cluster: ClusterSetup = {};
+  if (record.connection !== undefined) {
+    cluster.connection = validateConnection(record.connection);
+  }
+  if (record.useExisting !== undefined) {
+    cluster.useExisting = validateUseExisting(record.useExisting);
+  }
+  if (record.cbdinocluster !== undefined) {
+    cluster.cbdinocluster = validateCbdinocluster(record.cbdinocluster);
+  }
+  const configuredModes = [cluster.connection, cluster.useExisting, cluster.cbdinocluster].filter(
+    (mode) => mode !== undefined,
+  );
+  if (configuredModes.length > 1) {
+    throw new InvalidDefinitionError(
+      `"setup.cluster" must have at most one of "connection", "useExisting", or "cbdinocluster".`,
+    );
+  }
+  return cluster;
+}
+
+function isPortInUsePolicy(value: unknown): value is PortInUsePolicy {
+  return isString(value) && (PORT_IN_USE_POLICIES as readonly string[]).includes(value);
+}
+
+function validatePerformer(value: unknown): PerformerSetup {
+  const record = requireRecord(value, "setup.performer");
+  const performer: PerformerSetup = {
+    sdk: requireString(record, "sdk", "setup.performer.sdk") as PerformerSetup["sdk"],
+  };
+  if (record.port !== undefined) {
+    if (typeof record.port !== "number" || !Number.isInteger(record.port) || record.port <= 0) {
+      throw new InvalidDefinitionError(
+        `"setup.performer.port" must be a positive integer when present; got ${JSON.stringify(record.port)}`,
+      );
+    }
+    performer.port = record.port;
+  }
+  if (record.version !== undefined) {
+    performer.version = requireString(record, "version", "setup.performer.version");
+  }
+  if (record.onPortInUse !== undefined) {
+    if (!isPortInUsePolicy(record.onPortInUse)) {
+      throw new InvalidDefinitionError(
+        `"setup.performer.onPortInUse" must be one of ${PORT_IN_USE_POLICIES.join(", ")} when present; ` +
+          `got ${JSON.stringify(record.onPortInUse)}`,
+      );
+    }
+    performer.onPortInUse = record.onPortInUse;
+  }
+  return performer;
+}
+
+function validateIterationSetup(value: unknown): IterationSetup {
+  const record = requireRecord(value, "setup");
+  return { performer: validatePerformer(record.performer) };
+}
+
+function validateSharedSetup(value: unknown): SharedSetup {
+  const record = requireRecord(value, "setup");
+  const setup: SharedSetup = {};
+  if (record.cluster !== undefined) {
+    setup.cluster = validateCluster(record.cluster);
+  }
+  return setup;
 }
 
 function validateTests(value: unknown): DefinitionTests {
@@ -104,87 +282,95 @@ function validateTests(value: unknown): DefinitionTests {
   }
   if (isStringArray(value)) {
     if (value.length === 0) {
-      throw new InvalidDefinitionError(`"tests" must be "all" or a non-empty list of test class names`);
+      throw new InvalidDefinitionError(`"runtime.tests" must be "all" or a non-empty list of test class names`);
     }
     return value;
   }
   throw new InvalidDefinitionError(
-    `"tests" must be "all" or a list of test class names; got ${JSON.stringify(value)}`,
+    `"runtime.tests" must be "all" or a list of test class names; got ${JSON.stringify(value)}`,
   );
 }
 
-/**
- * Bring a raw, parsed object up to the current major version. Today every
- * supported file is already version {@link CURRENT_FIT_FUNCTIONAL_VERSION}, so
- * this only gatekeeps the version; future major bumps add a `case` per old
- * version that rewrites the object one step forward, chaining up to current.
- */
-export function upgradeDefinitionRaw(raw: Record<string, unknown>): Record<string, unknown> {
-  const { version } = raw;
-  if (version === CURRENT_FIT_FUNCTIONAL_VERSION) {
-    return raw;
+function validateRuntime(value: unknown): RuntimeSection {
+  const record = requireRecord(value, "runtime");
+  const runtime: RuntimeSection = { tests: validateTests(record.tests) };
+  if (record.excludedGroups !== undefined) {
+    if (!isStringArray(record.excludedGroups)) {
+      throw new InvalidDefinitionError(
+        `"runtime.excludedGroups" must be a list of strings when present; got ${JSON.stringify(record.excludedGroups)}`,
+      );
+    }
+    runtime.excludedGroups = record.excludedGroups;
   }
+  return runtime;
+}
+
+function validateFunctionalIteration(value: unknown): FunctionalIteration {
+  const record = requireRecord(value, "iterations[]");
+  const type = requireString(record, "type", "iterations[].type");
+  if (!FIT_ITERATION_TYPES.includes(type as (typeof FIT_ITERATION_TYPES)[number])) {
+    throw new InvalidDefinitionError(
+      `"iterations[].type" must be one of ${FIT_ITERATION_TYPES.join(", ")}; got ${JSON.stringify(type)}`,
+    );
+  }
+  return {
+    type: "functional",
+    ...(record.fitConfig !== undefined ? { fitConfig: validateFitConfig(record.fitConfig, "iterations[].fitConfig") } : {}),
+    setup: validateIterationSetup(record.setup),
+    runtime: validateRuntime(record.runtime),
+  };
+}
+
+function validateVersion(version: unknown): number {
   if (typeof version !== "number" || !Number.isInteger(version)) {
     throw new InvalidDefinitionError(
       `Missing or invalid "version" (expected an integer); got ${JSON.stringify(version)}`,
     );
   }
-  if (version > CURRENT_FIT_FUNCTIONAL_VERSION) {
+  if (version > CURRENT_FIT_DEFINITION_VERSION) {
     throw new UnsupportedDefinitionVersionError(
       `This definition file is version ${version}, but this fit-cli only understands up to version ` +
-        `${CURRENT_FIT_FUNCTIONAL_VERSION}. Update fit-cli (git pull) to run it.`,
+        `${CURRENT_FIT_DEFINITION_VERSION}. Update fit-cli (git pull) to run it.`,
     );
   }
-  // version < current with no upgrader registered for it.
-  throw new UnsupportedDefinitionVersionError(
-    `Definition file version ${version} can no longer be upgraded automatically to version ` +
-      `${CURRENT_FIT_FUNCTIONAL_VERSION}. Recreate it from a recent guided run and tweak the generated YAML.`,
-  );
+  if (version < CURRENT_FIT_DEFINITION_VERSION) {
+    throw new UnsupportedDefinitionVersionError(
+      `Definition file version ${version} is no longer supported. Recreate it as version ` +
+        `${CURRENT_FIT_DEFINITION_VERSION}.`,
+    );
+  }
+  return version;
 }
 
-/** Validate an already-upgraded raw object into a typed definition. */
-export function validateDefinition(raw: unknown): FitFunctionalDefinition {
+export function validateDefinition(raw: unknown): FitDefinition {
   if (!isRecord(raw)) {
     throw new InvalidDefinitionError("Definition file must be a YAML mapping at the top level.");
   }
 
-  const type = raw.type;
-  if (type !== FIT_FUNCTIONAL_DEFINITION_TYPE) {
+  validateVersion(raw.version);
+
+  if (raw.type !== FIT_DEFINITION_TYPE) {
     throw new InvalidDefinitionError(
-      `Expected "type: ${FIT_FUNCTIONAL_DEFINITION_TYPE}"; got ${JSON.stringify(type)}`,
+      `Expected "type: ${FIT_DEFINITION_TYPE}"; got ${JSON.stringify(raw.type)}`,
     );
   }
 
-  const upgraded = upgradeDefinitionRaw(raw);
-
-  const sdk = requireField(upgraded, "sdk", isString);
-  const performerVersion = upgraded.performerVersion;
-  if (performerVersion !== undefined && !isString(performerVersion)) {
-    throw new InvalidDefinitionError(
-      `"performerVersion" must be a string when present; got ${JSON.stringify(performerVersion)}`,
-    );
+  if (!Array.isArray(raw.iterations)) {
+    throw new InvalidDefinitionError(`"iterations" must be a list; got ${JSON.stringify(raw.iterations)}`);
   }
-  const excludedGroups = upgraded.excludedGroups;
-  if (excludedGroups !== undefined && !isStringArray(excludedGroups)) {
-    throw new InvalidDefinitionError(
-      `"excludedGroups" must be a list of strings when present; got ${JSON.stringify(excludedGroups)}`,
-    );
+  if (raw.iterations.length === 0) {
+    throw new InvalidDefinitionError(`"iterations" must contain at least one iteration.`);
   }
 
   return {
-    version: CURRENT_FIT_FUNCTIONAL_VERSION,
-    type: FIT_FUNCTIONAL_DEFINITION_TYPE,
-    // Structural check only — that this names a real SDK is resolve-definition's job.
-    sdk: sdk as FitFunctionalDefinition["sdk"],
-    ...(performerVersion !== undefined ? { performerVersion } : {}),
-    cluster: validateCluster(upgraded.cluster),
-    tests: validateTests(upgraded.tests),
-    ...(excludedGroups !== undefined ? { excludedGroups } : {}),
+    version: CURRENT_FIT_DEFINITION_VERSION,
+    type: FIT_DEFINITION_TYPE,
+    ...(raw.setup !== undefined ? { setup: validateSharedSetup(raw.setup) } : {}),
+    iterations: raw.iterations.map(validateFunctionalIteration),
   };
 }
 
-/** Parse YAML text into a validated, current-version definition. */
-export function parseDefinition(text: string): FitFunctionalDefinition {
+export function parseDefinition(text: string): FitDefinition {
   let raw: unknown;
   try {
     raw = YAML.parse(text);
@@ -194,12 +380,11 @@ export function parseDefinition(text: string): FitFunctionalDefinition {
   return validateDefinition(raw);
 }
 
-/** Read and parse a definition file from disk. */
-export function loadDefinition(path: string): FitFunctionalDefinition {
+export function loadDefinition(path: string): FitDefinition {
   return parseDefinition(readFileSync(path, "utf8"));
 }
 
-const HELP = `Validate a fit-functional-tests definition file and print the parsed result.
+const HELP = `Validate a fit-mix definition file and print the parsed result.
 
 Usage:
   npx tsx src/workflows/fit-functional/definition/parse-definition.ts <file.yaml>
@@ -217,7 +402,10 @@ if (isMain(import.meta.url)) {
       return Promise.resolve();
     }
     const definition = loadDefinition(path);
-    console.log(`✓ Valid ${FIT_FUNCTIONAL_DEFINITION_TYPE} definition (version ${definition.version}).`);
+    console.log(
+      `✓ Valid ${FIT_DEFINITION_TYPE} definition (version ${definition.version}, ` +
+        `${definition.iterations.length} iteration(s)).`,
+    );
     console.log(`Known SDK values: ${SDKS.map((sdk) => sdk.value).join(", ")}\n`);
     console.log(JSON.stringify(definition, null, 2));
     return Promise.resolve();

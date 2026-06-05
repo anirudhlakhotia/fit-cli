@@ -10,24 +10,26 @@
  */
 import { isMain, runCli } from "../cli.js";
 import { ensureFitCliConfigEnv } from "../../fit/config.js";
+import { fitCliError } from "../fit-cli-log.js";
 import { capture } from "../proc.js";
 import { findOnPath } from "../which.js";
+import { defaultAwsRegionMessage, resolveAwsRegion } from "./region.js";
 
 /** Where to get the AWS CLI, shown when it can't be found on the PATH. */
 export const AWS_CLI_URL = "https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html";
 
 /** Options common to every aws invocation. */
 export interface AwsOptions {
-  /** Region to target. Defaults to AWS_REGION / AWS_DEFAULT_REGION from the env. */
+  /** Region to target. Defaults to AWS_REGION / AWS_DEFAULT_REGION, then us-east-1. */
   region?: string;
 }
 
 /**
  * The region to use: an explicit option wins, otherwise the standard AWS env
- * vars. Undefined when none is set — callers that need a region should say so.
+ * vars, otherwise fit-cli falls back to us-east-1.
  */
-export function resolveRegion(options: AwsOptions = {}): string | undefined {
-  return options.region ?? process.env.AWS_REGION ?? process.env.AWS_DEFAULT_REGION;
+export function resolveRegion(options: AwsOptions = {}): string {
+  return resolveAwsRegion({ region: options.region }).region;
 }
 
 /** Read a `--region` flag from argv, supporting both `--region x` and `--region=x`. */
@@ -71,8 +73,8 @@ function formatAwsDetail(value: unknown): string {
 
 /** Print a short, consistent summary of the AWS action the CLI is about to run. */
 export function logAwsAction(action: string, options: AwsOptions = {}, details: Record<string, unknown> = {}): void {
-  const region = resolveRegion(options);
-  console.log(`${action}${region ? ` (region: ${region})` : " (region: AWS default / not set)"}`);
+  const { region, source } = resolveAwsRegion({ region: options.region });
+  console.log(`${action} (region: ${region}${source === "default" ? ", default" : ""})`);
   for (const [key, value] of Object.entries(details)) {
     if (value === undefined) {
       continue;
@@ -95,7 +97,7 @@ export function ensureAwsCli(): string | null {
   if (onPath) {
     return onPath;
   }
-  console.log(`✗ The AWS CLI ('aws') is not on your PATH. You can install it from ${AWS_CLI_URL}.`);
+  fitCliError(`The AWS CLI ('aws') is not on your PATH. You can install it from ${AWS_CLI_URL}.`);
   return null;
 }
 
@@ -139,8 +141,11 @@ if (isMain(import.meta.url)) {
     if (!ensureAwsCli()) {
       process.exit(1);
     }
-    const region = resolveRegion();
-    console.log(`✓ aws CLI found${region ? ` (region: ${region})` : " (no region set — set AWS_REGION)"}`);
+    const { region, source } = resolveAwsRegion();
+    console.log(`✓ aws CLI found (region: ${region}${source === "default" ? ", default" : ""})`);
+    if (source === "default") {
+      console.log(defaultAwsRegionMessage(region));
+    }
     const version = await capture("aws", ["--version"]).catch((err: Error) => err.message);
     console.log(version.trim());
   });

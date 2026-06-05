@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { accessSync, constants } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { installFitCliConsoleFormatting } from "./fit-cli-log.js";
 import { readPromptLog, extractReplayFlag, REPO_ROOT } from "./replay.js";
 
 interface ReplayDispatch {
@@ -53,6 +54,7 @@ export function buildReplayDispatch(
 }
 
 export function main(argv: string[] = process.argv.slice(2)): void {
+  installFitCliConsoleFormatting();
   const { entrypoint, args } = buildReplayDispatch(argv);
   const child = spawn(process.platform === "win32" ? "tsx.cmd" : "tsx", [entrypoint, ...args], {
     stdio: "inherit",

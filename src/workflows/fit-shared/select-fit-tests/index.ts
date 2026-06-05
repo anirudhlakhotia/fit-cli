@@ -2,8 +2,11 @@
  * Workflow: list FIT test-driver test files and let the user run all of them
  * (the default) or a checked subset.
  *
+ * Shared by every FIT flavour; callers pass a FitTestDomain to pick which slice
+ * of the test-driver's tests they care about (functional vs situational, …).
+ *
  * Run on its own (add --root <dir> to point elsewhere):
- *   npx tsx src/workflows/fit-functional/workflows/select-fit-tests/index.ts
+ *   npx tsx src/workflows/fit-shared/select-fit-tests/index.ts
  */
 import { basename } from "node:path";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
@@ -55,7 +58,30 @@ export type CaptureCommand = (
 ) => Promise<string>;
 
 const ALL_FIT_TESTS_SELECTED = "All FIT tests selected";
-const EXCLUDED_RELATIVE_PATH_PREFIX = "scala/com/couchbase/situational/";
+
+/** Relative-path prefix (under test-driver/src/test) the situational tests live at. */
+export const SITUATIONAL_TEST_PATH_PREFIX = "scala/com/couchbase/situational/";
+
+/**
+ * Which slice of the test-driver's tests a flow cares about, and which test it
+ * runs in "sanity" mode. Functional and situational tests share one test-driver
+ * but live in different packages, so each flow filters the discovered list to
+ * its own and offers its own quick sanity test.
+ */
+export interface FitTestDomain {
+  /** Keep only tests whose relativePath starts with this prefix, if set. */
+  includePrefix?: string;
+  /** Drop tests whose relativePath starts with this prefix, if set. */
+  excludePrefix?: string;
+  /** Maven `-Dtest` selector (a class, or Class#method) used by the sanity run mode. */
+  sanitySelector: string;
+}
+
+/** The functional flow: everything except the situational package. */
+export const FUNCTIONAL_TEST_DOMAIN: FitTestDomain = {
+  excludePrefix: SITUATIONAL_TEST_PATH_PREFIX,
+  sanitySelector: "com.couchbase.client.kv.SanityTest",
+};
 
 const TEST_LISTING_ARGS = [
   "-q",
@@ -70,13 +96,24 @@ export function listFitTestsArgs(): string[] {
   return [...TEST_LISTING_ARGS];
 }
 
+/** Keep only the test paths the domain cares about (include/exclude prefixes). */
+function matchesDomain(relativePath: string, domain: FitTestDomain): boolean {
+  if (domain.includePrefix && !relativePath.startsWith(domain.includePrefix)) {
+    return false;
+  }
+  if (domain.excludePrefix && relativePath.startsWith(domain.excludePrefix)) {
+    return false;
+  }
+  return true;
+}
+
 /** Parse the `find` output produced by {@link listFitTests}. */
-export function parseFitTests(output: string): FitTestCase[] {
+export function parseFitTests(output: string, domain: FitTestDomain = FUNCTIONAL_TEST_DOMAIN): FitTestCase[] {
   return output
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter((line) => line.length > 0)
-    .filter((relativePath) => !relativePath.startsWith(EXCLUDED_RELATIVE_PATH_PREFIX))
+    .filter((relativePath) => matchesDomain(relativePath, domain))
     .map((relativePath) => ({
       relativePath,
       fileName: basename(relativePath),
@@ -89,10 +126,14 @@ export function parseFitTests(output: string): FitTestCase[] {
 }
 
 /** List test-driver tests by running `./mvnw` in transactions-fit-performer. */
-export async function listFitTests(execution: FitExecutionContext): Promise<FitTestCase[]> {
+export async function listFitTests(
+  execution: FitExecutionContext,
+  domain: FitTestDomain = FUNCTIONAL_TEST_DOMAIN,
+): Promise<FitTestCase[]> {
   return await listFitTestsInRepo(
     execution.fitPerformerDir,
     (command, args, cwd) => execution.capture(command, args, cwd),
+    domain,
   );
 }
 
@@ -100,9 +141,10 @@ export async function listFitTests(execution: FitExecutionContext): Promise<FitT
 export async function listFitTestsInRepo(
   performerRepoDir: string,
   captureCommand: CaptureCommand,
+  domain: FitTestDomain = FUNCTIONAL_TEST_DOMAIN,
 ): Promise<FitTestCase[]> {
   const output = await captureCommand("./mvnw", listFitTestsArgs(), performerRepoDir);
-  const tests = parseFitTests(output);
+  const tests = parseFitTests(output, domain);
   if (tests.length === 0) {
     throw new Error("Could not find any test-driver test files.");
   }
@@ -259,12 +301,10 @@ export function deserializeSelectedFitTestsFromReplay(
   return response;
 }
 
-const FIT_SANITY_TEST_CLASS_NAME = "com.couchbase.client.kv.SanityTest";
-
 type FitTestRunMode = "all" | "single" | "multiple" | "sanity";
 
 /** Ask whether to run everything, a single searchable test, a sanity test, or a chosen subset. */
-async function askFitTestRunMode(): Promise<FitTestRunMode> {
+async function askFitTestRunMode(domain: FitTestDomain): Promise<FitTestRunMode> {
   return select<FitTestRunMode>({
     promptId: "fit.tests.mode",
     message: "Which FIT test-driver tests do you want to run?",
@@ -273,7 +313,7 @@ async function askFitTestRunMode(): Promise<FitTestRunMode> {
       { name: "Run everything", value: "all" },
       { name: "Run a single test", value: "single" },
       {
-        name: `Run a single sanity test (${FIT_SANITY_TEST_CLASS_NAME})`,
+        name: `Run a single sanity test (${domain.sanitySelector})`,
         value: "sanity",
       },
       { name: "Pick multiple tests", value: "multiple" },
@@ -281,13 +321,21 @@ async function askFitTestRunMode(): Promise<FitTestRunMode> {
   });
 }
 
-/** Pick the default FIT sanity test without prompting for a searchable test name. */
-export function buildSanityFitTestSelection(tests: FitTestCase[]): FitTestSelection {
-  const sanitySelection = buildFitTestSelection(tests, [FIT_SANITY_TEST_CLASS_NAME]);
+/**
+ * Pick the domain's sanity test without prompting for a searchable test name.
+ * The selector may be a plain class (matched against the discovered tests) or a
+ * `Class#method` form, which won't match a discovered class — so we fall back to
+ * passing it straight to Maven as the `-Dtest` selector.
+ */
+export function buildSanityFitTestSelection(
+  tests: FitTestCase[],
+  domain: FitTestDomain = FUNCTIONAL_TEST_DOMAIN,
+): FitTestSelection {
+  const sanitySelection = buildFitTestSelection(tests, [domain.sanitySelector]);
   if (sanitySelection.selectedTests.length > 0) {
     return sanitySelection;
   }
-  return buildFitTestSelectionFromClassNames([FIT_SANITY_TEST_CLASS_NAME]);
+  return buildFitTestSelectionFromClassNames([domain.sanitySelector]);
 }
 
 /** Single-test picker backed by a type-to-filter search box. */
@@ -323,13 +371,16 @@ async function selectMultipleFitTests(tests: FitTestCase[]): Promise<FitTestSele
 }
 
 /** Prompt for which FIT test-driver tests to run from a pre-listed test set. */
-export async function promptForFitTestSelection(tests: FitTestCase[]): Promise<FitTestSelection> {
-  const mode = await askFitTestRunMode();
+export async function promptForFitTestSelection(
+  tests: FitTestCase[],
+  domain: FitTestDomain = FUNCTIONAL_TEST_DOMAIN,
+): Promise<FitTestSelection> {
+  const mode = await askFitTestRunMode(domain);
   switch (mode) {
     case "single":
       return await selectSingleFitTest(tests);
     case "sanity":
-      return buildSanityFitTestSelection(tests);
+      return buildSanityFitTestSelection(tests, domain);
     case "multiple":
       return await selectMultipleFitTests(tests);
     default:
@@ -338,9 +389,12 @@ export async function promptForFitTestSelection(tests: FitTestCase[]): Promise<F
 }
 
 /** Prompt for which FIT test-driver tests to run. */
-export async function selectFitTests(execution: FitExecutionContext): Promise<FitTestSelection> {
+export async function selectFitTests(
+  execution: FitExecutionContext,
+  domain: FitTestDomain = FUNCTIONAL_TEST_DOMAIN,
+): Promise<FitTestSelection> {
   try {
-    return await promptForFitTestSelection(await listFitTests(execution));
+    return await promptForFitTestSelection(await listFitTests(execution, domain), domain);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.warn(`\nCould not select specific FIT tests (${message}). Continuing with all tests.`);

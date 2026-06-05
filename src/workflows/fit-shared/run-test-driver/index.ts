@@ -9,7 +9,8 @@
  * Run on its own (add --root <dir> to point elsewhere):
  *   npx tsx src/workflows/fit-shared/run-test-driver/index.ts
  */
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { artifactFromPath, combineArtifacts, type Detail, type RunOutput } from "../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { surefireReportsDir } from "./collect-junit.js";
@@ -34,30 +35,76 @@ export interface FitTestDriverSummary {
   skipped: number;
 }
 
-const FIT_TEST_DRIVER_SUMMARY_RE =
-  /Tests run:\s*(\d+),\s*Failures:\s*(\d+),\s*Errors:\s*(\d+),\s*Skipped:\s*(\d+)/g;
+const JUNIT_ATTRIBUTE_RE = (name: string): RegExp => new RegExp(`\\b${name}="(\\d+)"`);
 
 function fitTestLogFile(): string {
   return createLogFile("driver");
 }
 
-export function extractFitTestDriverSummary(log: string): FitTestDriverSummary | undefined {
-  const matches = Array.from(log.matchAll(FIT_TEST_DRIVER_SUMMARY_RE));
-  const last = matches.at(-1);
-  if (!last) {
+function extractJunitAttribute(xml: string, name: string): number | undefined {
+  const match = xml.match(JUNIT_ATTRIBUTE_RE(name));
+  return match ? Number(match[1]) : undefined;
+}
+
+export function extractFitTestDriverSummaryFromJunit(xml: string): FitTestDriverSummary | undefined {
+  if (!xml.includes("<testsuite") && !xml.includes("<testsuites")) {
+    return undefined;
+  }
+
+  const testsRun = extractJunitAttribute(xml, "tests");
+  const failures = extractJunitAttribute(xml, "failures");
+  const errors = extractJunitAttribute(xml, "errors");
+  const skipped = extractJunitAttribute(xml, "skipped");
+  if (testsRun === undefined || failures === undefined || errors === undefined || skipped === undefined) {
     return undefined;
   }
 
   return {
-    testsRun: Number(last[1]),
-    failures: Number(last[2]),
-    errors: Number(last[3]),
-    skipped: Number(last[4]),
+    testsRun,
+    failures,
+    errors,
+    skipped,
   };
+}
+
+export function extractFitTestDriverSummaryFromJunitReports(reportsDir: string): FitTestDriverSummary | undefined {
+  if (!existsSync(reportsDir)) {
+    return undefined;
+  }
+
+  const xmlFiles = readdirSync(reportsDir).filter((file) => file.startsWith("TEST-") && file.endsWith(".xml"));
+  if (xmlFiles.length === 0) {
+    return undefined;
+  }
+
+  const summaries = xmlFiles
+    .map((file) => extractFitTestDriverSummaryFromJunit(readFileSync(join(reportsDir, file), "utf8")))
+    .filter((summary): summary is FitTestDriverSummary => summary !== undefined);
+  if (summaries.length === 0) {
+    return undefined;
+  }
+
+  return summaries.reduce<FitTestDriverSummary>(
+    (combined, summary) => ({
+      testsRun: combined.testsRun + summary.testsRun,
+      failures: combined.failures + summary.failures,
+      errors: combined.errors + summary.errors,
+      skipped: combined.skipped + summary.skipped,
+    }),
+    { testsRun: 0, failures: 0, errors: 0, skipped: 0 },
+  );
+}
+
+export function didFitTestDriverPass(summary: FitTestDriverSummary): boolean {
+  return summary.failures === 0 && summary.errors === 0;
 }
 
 export function fitTestDriverSummaryDetails(summary: FitTestDriverSummary): Detail[] {
   return [
+    {
+      label: "Result",
+      value: didFitTestDriverPass(summary) ? "PASS" : "FAIL",
+    },
     {
       label: "Tests run",
       value: String(summary.testsRun),
@@ -125,19 +172,20 @@ export async function runTestDriver(
 
   // The test-driver still writes JUnit reports when tests fail, so collect them
   // on both paths — the failing run is the one most worth visualising.
-  let ok: boolean;
+  let commandOk: boolean;
   try {
     await execution.runToFile("./mvnw", args, targetLogFile, execution.fitPerformerDir);
     console.log("\n✓ FIT test-driver finished");
-    ok = true;
+    commandOk = true;
   } catch (err) {
     console.error(`\n✗ FIT test-driver failed: ${(err as Error).message}`);
-    ok = false;
+    commandOk = false;
   }
 
   await execution.collectFile(targetLogFile, logFile);
   const artifacts = combineArtifacts([logArtifact], await execution.collectJunitArtifacts(surefireReportsDir(execution.rootDir)));
-  const summary = extractFitTestDriverSummary(readFileSync(logFile, "utf8"));
+  const summary = extractFitTestDriverSummaryFromJunitReports(join(dirname(logFile), "surefire-reports"));
+  const ok = commandOk && (summary ? didFitTestDriverPass(summary) : true);
   return { ok, logFile, artifacts, details: summary ? fitTestDriverSummaryDetails(summary) : [] };
 }
 

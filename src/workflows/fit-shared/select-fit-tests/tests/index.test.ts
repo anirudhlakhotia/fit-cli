@@ -15,7 +15,9 @@ import {
   renderSelectedFitTestsAnswer,
   serializeSelectedFitTestsForReplay,
   summarizeFitTestSelection,
+  SITUATIONAL_TEST_PATH_PREFIX,
   type FitTestCase,
+  type FitTestDomain,
 } from "../index.js";
 
 const SAMPLE_TESTS: FitTestCase[] = [
@@ -343,4 +345,30 @@ test("summarizeFitTestSelection avoids dumping the full allTests list", () => {
       mavenTestSelector: undefined,
     },
   );
+});
+
+const SITUATIONAL_DOMAIN: FitTestDomain = {
+  includePrefix: SITUATIONAL_TEST_PATH_PREFIX,
+  sanitySelector: "com.couchbase.situational.tests.VolumeTest#steadyStateKvGets",
+};
+
+test("parseFitTests with a situational domain keeps only situational tests", () => {
+  const output = [
+    "scala/com/couchbase/situational/tests/CngTest.scala",
+    "java/com/couchbase/transactions/StandardTest.java",
+    "scala/com/couchbase/situational/tests/cbdino_tests/CbDinoRebalanceTest.scala",
+  ].join("\n");
+
+  assert.deepEqual(
+    parseFitTests(output, SITUATIONAL_DOMAIN).map((test) => test.className),
+    [
+      "com.couchbase.situational.tests.cbdino_tests.CbDinoRebalanceTest",
+      "com.couchbase.situational.tests.CngTest",
+    ],
+  );
+});
+
+test("buildSanityFitTestSelection passes a Class#method sanity selector straight to Maven", () => {
+  const selection = buildSanityFitTestSelection([], SITUATIONAL_DOMAIN);
+  assert.equal(selection.mavenTestSelector, "com.couchbase.situational.tests.VolumeTest#steadyStateKvGets");
 });

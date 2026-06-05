@@ -55,3 +55,10 @@ test("ignores the replay defaults flag while parsing ROOT_DIR", () => {
     positionals: ["go"],
   });
 });
+
+test("ignores the interactive flag while parsing ROOT_DIR", () => {
+  assert.deepEqual(extractRootFlag(["--interactive", "--root", "/ws", "go"]), {
+    override: "/ws",
+    positionals: ["go"],
+  });
+});
