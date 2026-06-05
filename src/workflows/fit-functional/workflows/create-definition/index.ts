@@ -76,7 +76,10 @@ export async function createFitFunctionalDefinition(rootDir: string): Promise<Ru
   console.log(`\nWriting ${result.path}:\n`);
   console.log(formatFitFunctionalDefinition(definition));
   console.log(`\n✓ Wrote ${result.path}`);
-  console.log(`\nRun it later with:\n  npm run definition ${result.path}`);
+  console.log(`\nRun it later with:\n  
+  npm run definition -- --interactive ${result.path}\n
+  Or if on CI choose default options with:\n
+  npm run definition ${result.path}`);
 
   return { artifacts: [result.artifact], details: [] };
 }
