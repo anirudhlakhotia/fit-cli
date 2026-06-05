@@ -15,7 +15,7 @@ import { awsJson, logAwsAction, prepareAwsCli, type AwsOptions } from "./aws-cli
 import { parseInstances, type DescribeInstancesResponse, type InstanceInfo } from "./parse-instance.js";
 
 /** Instance states worth listing — everything except terminated. */
-const LIVE_STATES = "pending,running,stopping,stopped";
+export const LIVE_STATES = "pending,running,stopping,stopped";
 
 /**
  * List instances carrying a given tag (default the fit-cli ownership tag),

@@ -95,6 +95,17 @@ function missingClusterMessage(clusterMode: ResolvedDefinition["clusterMode"]): 
   );
 }
 
+export function cbdinoclusterSetupFailed(
+  resolved: ResolvedDefinition,
+  steps: readonly DefinitionStep[],
+): boolean {
+  return (
+    resolved.clusterMode === "cbdinocluster" &&
+    steps.includes("setup-cluster") &&
+    resolved.iterations.some((iteration) => !iteration.cluster)
+  );
+}
+
 /**
  * Combine the run's artifacts, drop an AGENTS.md guide describing them into the
  * run directory, and return the combined list including that guide.
@@ -110,7 +121,13 @@ export function finalizeRunFromDefinition(
 }
 
 /** Print what an iteration resolved to, so a CI log shows the run's inputs. */
-function announce(index: number, total: number, iteration: ResolvedIteration, steps: readonly DefinitionStep[]): void {
+function announce(
+  index: number,
+  total: number,
+  resolved: ResolvedDefinition,
+  iteration: ResolvedIteration,
+  steps: readonly DefinitionStep[],
+): void {
   const { testSelection } = iteration;
   const testsLabel = testSelection.mavenTestSelector
     ? `${testSelection.selectedTests.length} test(s): ${testSelection.mavenTestSelector}`
@@ -122,8 +139,8 @@ function announce(index: number, total: number, iteration: ResolvedIteration, st
   if (iteration.performerVersion) {
     console.log(`  Performer version: ${iteration.performerVersion}`);
   }
-  if (iteration.performerGerritRef) {
-    console.log(`  Performer Gerrit ref: ${iteration.performerGerritRef}`);
+  if (resolved.fitPerformerGerritRef) {
+    console.log(`  FIT Gerrit ref: ${resolved.fitPerformerGerritRef}`);
   }
 }
 
@@ -160,6 +177,7 @@ export async function setupCluster(
 /** The setup-performer step: build the performer image and start it in Docker. */
 async function setupPerformer(
   execution: FitExecutionContext,
+  resolved: ResolvedDefinition,
   iteration: ResolvedIteration,
   iterationIndex: number,
 ): Promise<RunningPerformer | undefined> {
@@ -183,7 +201,7 @@ async function setupPerformer(
     iteration.onPortInUse,
     iteration.performerPort,
     iterationIndex,
-    iteration.performerGerritRef,
+    resolved.fitPerformerGerritRef,
   );
 }
 
@@ -271,7 +289,7 @@ async function runIteration(
   try {
     for (const step of steps) {
       if (step === "setup-performer") {
-        performer = await setupPerformer(execution, iteration, iterationIndex);
+        performer = await setupPerformer(execution, resolved, iteration, iterationIndex);
         if (!performer) {
           fitCliError("\nThe performer isn't ready to run; stopping this iteration.");
           break;
@@ -323,11 +341,15 @@ export async function runFromDefinition(
       resolved = setup.resolved;
       artifacts.push(...setup.artifacts);
       details.push(...setup.details);
+      if (cbdinoclusterSetupFailed(resolved, steps)) {
+        fitCliError("\nsetup-cluster didn't produce a cluster, so this definition run can't continue.");
+        throw new Error("setup-cluster failed");
+      }
     }
 
     const iterationSteps = steps.filter((step) => step !== "setup-cluster");
     for (const [index, iteration] of resolved.iterations.entries()) {
-      announce(index, resolved.iterations.length, iteration, steps);
+      announce(index, resolved.iterations.length, resolved, iteration, steps);
       if (iterationSteps.length === 0) {
         continue;
       }

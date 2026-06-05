@@ -29,6 +29,7 @@ npm ci
 # Start the interactive wizard
 npm start
 ```
+This will guide you through the available options in a (crosses fingers) self-documenting way.
 
 If you hit any problems, either ask on #the-fit-stop or consider just giving it to an LLM with something like:
 
@@ -59,9 +60,13 @@ Note these aren't intended to be stable CLI commands.  They are just for transie
 
 If you find any are broken due to refactorings then please ask an AI to "sweep the files quickly".  It should find the instructions in this file.
 
+## Contributing
+
+
+
 ## Scripts
 
-- `npm start` — run the wizard with tsx.
+- `npm start` — run the interactive wizard.
 - `npm run dev` — run the wizard, restarting on file changes.
 - `npm run typecheck` — type-check without emitting.
 - `npm run build` — compile TypeScript to `dist/`.

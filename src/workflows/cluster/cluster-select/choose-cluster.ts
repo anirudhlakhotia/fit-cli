@@ -16,8 +16,8 @@ export async function chooseCluster(): Promise<ClusterChoice> {
     promptId: "cluster.choose-mode",
     message: "Do you already have a Couchbase cluster running?",
     choices: [
-      { name: "Yes, I have a cluster running already", value: "existing" },
       { name: "No, I want to create one with cbdinocluster", value: "create" },
+      { name: "Yes, I have a cluster running already (for local testing)", value: "existing" },
     ],
   });
 }

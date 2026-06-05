@@ -44,8 +44,6 @@ export interface ResolvedIteration {
   testSelection: FitTestSelection;
   /** Performer image version, if the iteration pinned one. */
   performerVersion?: string;
-  /** FIT Gerrit patch-set ref to fetch before building/running, if pinned. */
-  performerGerritRef?: string;
   /** What to do if the performer port is already in use (defaults to {@link DEFAULT_PORT_IN_USE_POLICY}). */
   onPortInUse: PortInUsePolicy;
   /** Extra `./mvnw` args (the excludedGroups flag). */
@@ -54,6 +52,10 @@ export interface ResolvedIteration {
 
 /** A cbdinocluster to allocate at setup-cluster time, with its defaults filled in. */
 export interface ResolvedCbdinocluster {
+  /** Optional full ~/.cbdinocluster file to upload before remote setup. */
+  init?: {
+    config: PieceData;
+  };
   /** The cbdinocluster def to allocate (what gets written to the def file). */
   config: CbdinoclusterDef;
   /** What to do if cbdinocluster already has a cluster running. */
@@ -66,6 +68,8 @@ export interface ResolvedCbdinocluster {
 export interface ResolvedDefinition {
   /** Which top-level cluster mode this definition selected, if any. */
   clusterMode?: "connection" | "useExisting" | "cbdinocluster";
+  /** FIT Gerrit patch-set ref to fetch before building/running, if configured. */
+  fitPerformerGerritRef?: string;
   /**
    * A cbdinocluster to allocate for the run (setup.cluster.cbdinocluster). The
    * setup-cluster step stands it up and the resulting cluster is what the
@@ -183,6 +187,7 @@ export function resolveCbdinocluster(
   return {
     config: cbdinocluster.config,
     onClusterExists: cbdinocluster.onClusterExists ?? DEFAULT_CLUSTER_EXISTS_POLICY,
+    ...(cbdinocluster.init !== undefined ? { init: { config: cbdinocluster.init.config } } : {}),
     ...(cbdinocluster.deployer !== undefined ? { deployer: cbdinocluster.deployer } : {}),
   };
 }
@@ -205,9 +210,6 @@ export function resolveIteration(iteration: FunctionalIteration): ResolvedIterat
     ...(iteration.setup.performer.version !== undefined
       ? { performerVersion: iteration.setup.performer.version }
       : {}),
-    ...(iteration.setup.performer.gerritRef !== undefined
-      ? { performerGerritRef: iteration.setup.performer.gerritRef }
-      : {}),
     onPortInUse: iteration.setup.performer.onPortInUse ?? DEFAULT_PORT_IN_USE_POLICY,
     extraMavenArgs: resolveMavenArgs(iteration.runtime),
   };
@@ -223,6 +225,9 @@ export function resolveDefinition(definition: FitDefinition): ResolvedDefinition
     ...(connection ? { clusterMode: "connection" as const } : {}),
     ...(useExisting ? { clusterMode: "useExisting" as const } : {}),
     ...(cbdinocluster ? { clusterMode: "cbdinocluster" as const } : {}),
+    ...(definition.setup?.repos?.["transactions-fit-performer"]?.gerritRef !== undefined
+      ? { fitPerformerGerritRef: definition.setup.repos["transactions-fit-performer"].gerritRef }
+      : {}),
     ...(cbdinocluster ? { cbdinocluster } : {}),
     iterations: definition.iterations.map((iteration) => {
       const resolved = resolveIteration(iteration);

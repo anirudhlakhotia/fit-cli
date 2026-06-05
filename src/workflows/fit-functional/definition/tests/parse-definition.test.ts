@@ -86,6 +86,12 @@ type: fit
 setup:
   cluster:
     cbdinocluster:
+      init:
+        config:
+          version: 6
+          docker:
+            enabled: "true"
+            network: fit
       config:
         nodes:
           - count: 1
@@ -102,6 +108,15 @@ iterations:
         - com.couchbase.client.kv.SanityTest
 `);
   assert.deepEqual(def.setup?.cluster?.cbdinocluster, {
+    init: {
+      config: {
+        version: 6,
+        docker: {
+          enabled: "true",
+          network: "fit",
+        },
+      },
+    },
     config: { nodes: [{ count: 1, version: "8.1.0-2188", services: ["kv", "n1ql", "index"] }] },
   });
   assert.equal(def.iterations[0].setup.performer.port, 8060);
@@ -144,17 +159,20 @@ test("tls insecure and certPath are accepted", () => {
   assert.deepEqual((cert.setup?.cluster?.connection as { tls?: unknown }).tls, { certPath: "/tmp/cb.pem" });
 });
 
-test("performer version, Gerrit ref, and excludedGroups round-trip when present", () => {
+test("performer version, repo Gerrit ref, and excludedGroups round-trip when present", () => {
   const def = parseDefinition(`
 version: 1
 type: fit
+setup:
+  repos:
+    transactions-fit-performer:
+      gerritRef: "refs/changes/29/246329/1"
 iterations:
   - type: functional
     setup:
       performer:
         sdk: java
         version: "1.2.3"
-        gerritRef: "refs/changes/29/246329/1"
     runtime:
       tests: all
       excludedGroups:
@@ -162,7 +180,7 @@ iterations:
         - openshift
 `);
   assert.equal(def.iterations[0].setup.performer.version, "1.2.3");
-  assert.equal(def.iterations[0].setup.performer.gerritRef, "refs/changes/29/246329/1");
+  assert.equal(def.setup?.repos?.["transactions-fit-performer"]?.gerritRef, "refs/changes/29/246329/1");
   assert.deepEqual(def.iterations[0].runtime.excludedGroups, ["situational", "openshift"]);
 });
 
@@ -173,6 +191,33 @@ test("performer onPortInUse round-trips when valid", () => {
     );
     assert.equal(def.iterations[0].setup.performer.onPortInUse, policy);
   }
+});
+
+test("rejects a cbdinocluster init block without config", () => {
+  assert.throws(
+    () =>
+      parseDefinition(`
+version: 1
+type: fit
+setup:
+  cluster:
+    cbdinocluster:
+      init: {}
+      config:
+        nodes:
+          - count: 1
+            version: "8.1.0"
+            services: [kv]
+iterations:
+  - type: functional
+    setup:
+      performer:
+        sdk: java
+    runtime:
+      tests: all
+`),
+    (err: unknown) => err instanceof InvalidDefinitionError && /cbdinocluster\.init\.config/.test(err.message),
+  );
 });
 
 test("legacy useExisting remains accepted", () => {

@@ -7,7 +7,7 @@ import { sdkByValue } from "../../../../../util/sdk/sdks.js";
 import type { ClusterCommandExecutor } from "../../../../cluster/cluster-create/allocate-cluster.js";
 import type { ResolvedDefinition } from "../../../definition/resolve-definition.js";
 import type { FitExecutionContext } from "../../../../fit-shared/remote-fit-run.js";
-import { finalizeRunFromDefinition, runTests, setupCluster } from "../index.js";
+import { cbdinoclusterSetupFailed, finalizeRunFromDefinition, runTests, setupCluster } from "../index.js";
 
 function definition(): ResolvedDefinition {
   const sdk = sdkByValue("java");
@@ -153,6 +153,15 @@ test("setupCluster leaves the iterations unchanged when allocation fails", async
     result.resolved.iterations.map((iteration) => iteration.cluster),
     [undefined, undefined],
   );
+});
+
+test("cbdinoclusterSetupFailed flags a missing shared cluster after setup-cluster", () => {
+  assert.equal(cbdinoclusterSetupFailed(definition(), ["setup-cluster", "run"]), true);
+
+  const resolved = definition();
+  resolved.iterations = resolved.iterations.map((iteration) => ({ ...iteration, cluster: cluster() }));
+  assert.equal(cbdinoclusterSetupFailed(resolved, ["setup-cluster", "run"]), false);
+  assert.equal(cbdinoclusterSetupFailed(definition(), ["run"]), false);
 });
 
 test("finalizeRunFromDefinition writes AGENTS.md and includes it in artifacts", () => {

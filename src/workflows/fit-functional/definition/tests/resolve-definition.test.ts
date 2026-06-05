@@ -31,7 +31,6 @@ function iteration(overrides: {
   sdk?: string;
   port?: number;
   performerVersion?: string;
-  performerGerritRef?: string;
   onPortInUse?: FunctionalIteration["setup"]["performer"]["onPortInUse"];
   tests?: FunctionalIteration["runtime"]["tests"];
   excludedGroups?: string[];
@@ -45,7 +44,6 @@ function iteration(overrides: {
         sdk: (overrides.sdk ?? "java") as FunctionalIteration["setup"]["performer"]["sdk"],
         ...(overrides.port !== undefined ? { port: overrides.port } : {}),
         ...(overrides.performerVersion !== undefined ? { version: overrides.performerVersion } : {}),
-        ...(overrides.performerGerritRef !== undefined ? { gerritRef: overrides.performerGerritRef } : {}),
         ...(overrides.onPortInUse !== undefined ? { onPortInUse: overrides.onPortInUse } : {}),
       },
     },
@@ -123,6 +121,12 @@ test("a cbdinocluster-only setup keeps the allocation settings", () => {
       setup: {
         cluster: {
           cbdinocluster: {
+            init: {
+              config: {
+                version: 6,
+                docker: { enabled: "true", network: "fit" },
+              },
+            },
             config: { nodes: [{ count: 1, version: "8.1.0-2188", services: ["kv"] }] },
           },
         },
@@ -131,6 +135,12 @@ test("a cbdinocluster-only setup keeps the allocation settings", () => {
   );
   assert.equal(resolved.clusterMode, "cbdinocluster");
   assert.deepEqual(resolved.cbdinocluster, {
+    init: {
+      config: {
+        version: 6,
+        docker: { enabled: "true", network: "fit" },
+      },
+    },
     config: { nodes: [{ count: 1, version: "8.1.0-2188", services: ["kv"] }] },
     onClusterExists: "destroyAndRecreate",
   });
@@ -186,12 +196,31 @@ test("performerVersion is carried through when present", () => {
   assert.equal(resolveIteration(iteration()).performerVersion, undefined);
 });
 
-test("performerGerritRef is carried through when present", () => {
+test("top-level fit performer Gerrit ref is carried through when present", () => {
+  const resolved = resolveDefinition(
+    definition({
+      setup: {
+        cluster: {
+          connection: {
+            connectionString: "couchbase://localhost",
+            username: "Administrator",
+            password: "password",
+            tls: null,
+          },
+        },
+        repos: {
+          "transactions-fit-performer": {
+            gerritRef: "refs/changes/29/246329/1",
+          },
+        },
+      },
+    }),
+  );
   assert.equal(
-    resolveIteration(iteration({ performerGerritRef: "refs/changes/29/246329/1" })).performerGerritRef,
+    resolved.fitPerformerGerritRef,
     "refs/changes/29/246329/1",
   );
-  assert.equal(resolveIteration(iteration()).performerGerritRef, undefined);
+  assert.equal(resolveDefinition(definition()).fitPerformerGerritRef, undefined);
 });
 
 test("resolveDefinition resolves every iteration", () => {

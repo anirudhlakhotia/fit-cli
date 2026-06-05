@@ -19,6 +19,12 @@ export interface InstanceInfo {
   publicDns?: string;
   /** Public IPv4 address, present once the instance is running. */
   publicIp?: string;
+  /** Value of the Name tag, if the instance carries one. */
+  name?: string;
+  /** Instance type, e.g. "t3.medium". */
+  instanceType?: string;
+  /** Launch time as the ISO string EC2 returns, if present. */
+  launchTime?: string;
 }
 
 /** A raw EC2 instance entry, as it appears in either response shape. */
@@ -27,6 +33,9 @@ interface RawInstance {
   State?: { Name?: string };
   PublicDnsName?: string;
   PublicIpAddress?: string;
+  InstanceType?: string;
+  LaunchTime?: string;
+  Tags?: Array<{ Key?: string; Value?: string }>;
 }
 
 /**
@@ -52,11 +61,18 @@ export function parseInstances(response: DescribeInstancesResponse): InstanceInf
     if (!instance.InstanceId) {
       continue;
     }
+    // Keep the new fields conditional so an instance with no tags/type/launch
+    // time has exactly the same shape it always did — callers (and tests) that
+    // only know about the original fields stay unaffected.
+    const name = instance.Tags?.find((tag) => tag.Key === "Name")?.Value || undefined;
     instances.push({
       instanceId: instance.InstanceId,
       state: instance.State?.Name ?? "unknown",
       publicDns: instance.PublicDnsName || undefined,
       publicIp: instance.PublicIpAddress || undefined,
+      ...(name ? { name } : {}),
+      ...(instance.InstanceType ? { instanceType: instance.InstanceType } : {}),
+      ...(instance.LaunchTime ? { launchTime: instance.LaunchTime } : {}),
     });
   }
   return instances;

@@ -16,6 +16,7 @@ import {
   FIT_DEFINITION_TYPE,
   FIT_ITERATION_TYPES,
   type CbdinoclusterSetup,
+  type CbdinoclusterInitSetup,
   type ConnectionClusterSetup,
   type ClusterSetup,
   type ClusterTls,
@@ -186,12 +187,25 @@ function validateCbdinoclusterDef(value: unknown): CbdinoclusterDef {
   return def;
 }
 
+function validateCbdinoclusterInit(value: unknown): CbdinoclusterInitSetup {
+  const record = requireRecord(value, "setup.cluster.cbdinocluster.init");
+  if (record.config === undefined) {
+    throw new InvalidDefinitionError("Missing required field: setup.cluster.cbdinocluster.init.config");
+  }
+  return {
+    config: validateFitConfig(record.config, "setup.cluster.cbdinocluster.init.config"),
+  };
+}
+
 function validateCbdinocluster(value: unknown): CbdinoclusterSetup {
   const record = requireRecord(value, "setup.cluster.cbdinocluster");
   if (record.config === undefined) {
     throw new InvalidDefinitionError("Missing required field: setup.cluster.cbdinocluster.config");
   }
   const cbdinocluster: CbdinoclusterSetup = { config: validateCbdinoclusterDef(record.config) };
+  if (record.init !== undefined) {
+    cbdinocluster.init = validateCbdinoclusterInit(record.init);
+  }
   if (record.onClusterExists !== undefined) {
     if (!isClusterExistsPolicy(record.onClusterExists)) {
       throw new InvalidDefinitionError(
@@ -230,6 +244,29 @@ function validateCluster(value: unknown): ClusterSetup {
   return cluster;
 }
 
+function validateRepos(value: unknown): SharedSetup["repos"] {
+  const record = requireRecord(value, "setup.repos");
+  const repos: NonNullable<SharedSetup["repos"]> = {};
+  if (record["transactions-fit-performer"] !== undefined) {
+    const fitPerformer = requireRecord(
+      record["transactions-fit-performer"],
+      "setup.repos.transactions-fit-performer",
+    );
+    repos["transactions-fit-performer"] = {
+      ...(fitPerformer.gerritRef !== undefined
+        ? {
+            gerritRef: requireString(
+              fitPerformer,
+              "gerritRef",
+              "setup.repos.transactions-fit-performer.gerritRef",
+            ),
+          }
+        : {}),
+    };
+  }
+  return repos;
+}
+
 function isPortInUsePolicy(value: unknown): value is PortInUsePolicy {
   return isString(value) && (PORT_IN_USE_POLICIES as readonly string[]).includes(value);
 }
@@ -249,9 +286,6 @@ function validatePerformer(value: unknown): PerformerSetup {
   }
   if (record.version !== undefined) {
     performer.version = requireString(record, "version", "setup.performer.version");
-  }
-  if (record.gerritRef !== undefined) {
-    performer.gerritRef = requireString(record, "gerritRef", "setup.performer.gerritRef");
   }
   if (record.onPortInUse !== undefined) {
     if (!isPortInUsePolicy(record.onPortInUse)) {
@@ -275,6 +309,9 @@ function validateSharedSetup(value: unknown): SharedSetup {
   const setup: SharedSetup = {};
   if (record.cluster !== undefined) {
     setup.cluster = validateCluster(record.cluster);
+  }
+  if (record.repos !== undefined) {
+    setup.repos = validateRepos(record.repos);
   }
   return setup;
 }

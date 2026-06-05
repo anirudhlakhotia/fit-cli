@@ -10,6 +10,7 @@ import { ensureRunDir } from "../../../util/non-fit/replay.js";
 import type { Sdk } from "../../../util/sdk/sdks.js";
 import type { PieceData } from "../../../util/non-fit/config-pieces.js";
 import { buildClusterDefObject, type ClusterDef } from "../../cluster/cluster-create/build-cluster-def.js";
+import { defaultCbdinoclusterInitConfig } from "../../cluster/cluster-create/default-cbdinocluster-init-config.js";
 import type { SelectedCluster } from "../../cluster/cluster-select/index.js";
 import type { FitTestSelection } from "../../fit-shared/select-fit-tests/index.js";
 import {
@@ -61,11 +62,21 @@ function buildClusterAccessFitConfig(cluster: SelectedCluster): FitConfigPiece {
 }
 
 /** Build the top-level shared setup from the chosen cluster description. */
-function buildSharedSetup(cluster: DefinitionCluster): FitDefinition["setup"] {
-  if (cluster.kind === "connection") {
-    return { cluster: { useExisting: {} } };
+function buildSharedSetup(cluster: DefinitionCluster, gerritRef?: string): FitDefinition["setup"] {
+  const setup: NonNullable<FitDefinition["setup"]> = cluster.kind === "connection"
+    ? { cluster: { useExisting: {} } }
+    : {
+        cluster: {
+          cbdinocluster: {
+            init: { config: defaultCbdinoclusterInitConfig() },
+            config: buildClusterDefObject(cluster.def),
+          },
+        },
+      };
+  if (gerritRef) {
+    setup.repos = { "transactions-fit-performer": { gerritRef } };
   }
-  return { cluster: { cbdinocluster: { config: buildClusterDefObject(cluster.def) } } };
+  return setup;
 }
 
 /**
@@ -77,7 +88,6 @@ export function buildFitFunctionalDefinitionFrom(inputs: DefinitionInputs): FitD
   const performer: PerformerSetup = {
     sdk: inputs.sdk.value,
     ...(inputs.version ? { version: inputs.version } : {}),
-    ...(inputs.gerritRef ? { gerritRef: inputs.gerritRef } : {}),
   };
   const fitConfig = inputs.cluster.kind === "connection"
     ? buildClusterAccessFitConfig(inputs.cluster.cluster)
@@ -85,7 +95,7 @@ export function buildFitFunctionalDefinitionFrom(inputs: DefinitionInputs): FitD
   return {
     version: CURRENT_FIT_DEFINITION_VERSION,
     type: FIT_DEFINITION_TYPE,
-    setup: buildSharedSetup(inputs.cluster),
+    setup: buildSharedSetup(inputs.cluster, inputs.gerritRef),
     iterations: [
       {
         type: "functional",
@@ -117,6 +127,9 @@ export function buildFitFunctionalDefinition(
 /** Render a definition file as YAML text ready to save. */
 export function formatFitFunctionalDefinition(definition: FitDefinition): string {
   let text = YAML.stringify(definition);
+  text = text.replace(/(^\s*init:\n)(\s*)config:$/gm, (_match, initLine: string, indent: string) =>
+    `${initLine}${indent}# This file will be uploaded verbatim into clean environments as ~/.cbdinocluster$\n${indent}It comes from defaultCbdinoclusterInitConfig()\n${indent}config:`
+  );
   text = text.replace(
     /^(\s*)fitConfig:$/gm,
     [

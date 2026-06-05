@@ -14,8 +14,13 @@
  *   npx tsx src/workflows/cluster/cluster-create/setup-declarative-cluster.ts
  */
 import YAML from "yaml";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { type RunOutput } from "../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
+import type { PieceData } from "../../../util/non-fit/config-pieces.js";
+import { ensureRunDir } from "../../../util/non-fit/replay.js";
+import { posixQuote } from "../../../util/non-fit/remote-target.js";
 import { findOnPath } from "../../../util/non-fit/which.js";
 import { DEFAULT_CREDENTIALS } from "../cluster-select/ask-credentials.js";
 import { classifyConnectionString } from "../cluster-select/classify-connection-string.js";
@@ -33,6 +38,9 @@ import { type CbdinoclusterDef } from "./build-cluster-def.js";
 
 /** The bare command name we look for on the PATH. */
 const CBDINOCLUSTER = "cbdinocluster";
+const CBDINOCLUSTER_INIT_REQUIRED = "you must run the `init` command first";
+const CBDINOCLUSTER_CONFIG_FILENAME = ".cbdinocluster";
+const CBDINOCLUSTER_DEFAULT_REMOTE_CONFIG_PATH = `~/${CBDINOCLUSTER_CONFIG_FILENAME}`;
 
 async function resolveCbdinoclusterCommand(execution: ClusterCommandExecutor): Promise<string | undefined> {
   if (await execution.commandAvailable(CBDINOCLUSTER)) {
@@ -53,6 +61,89 @@ async function resolveCbdinoclusterCommand(execution: ClusterCommandExecutor): P
   await execution.stageFile(localBinary, remoteBinary);
   await execution.run("chmod", ["755", remoteBinary]);
   return remoteBinary;
+}
+
+export function cbdinoclusterNeedsInit(message: string): boolean {
+  return message.includes(CBDINOCLUSTER_INIT_REQUIRED);
+}
+
+function dockerNetworkFromInitConfig(config: PieceData): string | undefined {
+  const docker = config.docker;
+  if (!docker || typeof docker !== "object" || Array.isArray(docker) || docker === null) {
+    return undefined;
+  }
+  return typeof docker.network === "string" && docker.network.trim() ? docker.network.trim() : undefined;
+}
+
+async function uploadCbdinoclusterConfig(execution: ClusterCommandExecutor, config: PieceData): Promise<void> {
+  const runDir = ensureRunDir();
+  const localConfigPath = join(runDir, "cbdinocluster-init.yaml");
+  writeFileSync(localConfigPath, YAML.stringify(config));
+  const stagedConfigPath = await execution.stageFile(localConfigPath, execution.targetFilePath(localConfigPath));
+  await execution.run("sh", [
+    "-lc",
+    `cp ${posixQuote(stagedConfigPath)} ${CBDINOCLUSTER_DEFAULT_REMOTE_CONFIG_PATH} && chmod 600 ${CBDINOCLUSTER_DEFAULT_REMOTE_CONFIG_PATH}`,
+  ]);
+}
+
+async function ensureDockerNetwork(execution: ClusterCommandExecutor, network: string): Promise<void> {
+  if (["bridge", "host", "none"].includes(network)) {
+    return;
+  }
+  await execution.run("sh", [
+    "-lc",
+    `docker network inspect ${posixQuote(network)} >/dev/null 2>&1 || docker network create ${posixQuote(network)} >/dev/null`,
+  ]);
+}
+
+async function prepareCbdinoclusterConfig(execution: ClusterCommandExecutor, config: PieceData | undefined): Promise<void> {
+  if (!config || !("kind" in execution) || execution.kind !== "remote") {
+    return;
+  }
+  console.log(
+    `→ setup-cluster: uploading cbdinocluster config to ${execution.description} as ${CBDINOCLUSTER_DEFAULT_REMOTE_CONFIG_PATH}`,
+  );
+  await uploadCbdinoclusterConfig(execution, config);
+  const network = dockerNetworkFromInitConfig(config);
+  if (network) {
+    console.log(`→ setup-cluster: ensuring Docker network ${network} exists on ${execution.description}`);
+    await ensureDockerNetwork(execution, network);
+  }
+}
+
+async function listExistingClusters(
+  cbdinocluster: string,
+  execution: ClusterCommandExecutor,
+): Promise<CbdinoCluster[] | undefined> {
+  try {
+    return parseClusterIds(await execution.capture(cbdinocluster, ["ps"]));
+  } catch (err) {
+    const message = (err as Error).message;
+    if (!cbdinoclusterNeedsInit(message)) {
+      console.error(`\n✗ setup-cluster: couldn't list clusters (cbdinocluster ps): ${message}`);
+      return undefined;
+    }
+
+    console.log(
+      `→ setup-cluster: ${execution.description} has no cbdinocluster config yet — ` +
+        `initializing a default one with \`${cbdinocluster} init --auto\`.`,
+    );
+    try {
+      await execution.run(cbdinocluster, ["init", "--auto"]);
+    } catch (initErr) {
+      console.error(`\n✗ setup-cluster: couldn't initialize cbdinocluster: ${(initErr as Error).message}`);
+      return undefined;
+    }
+
+    try {
+      return parseClusterIds(await execution.capture(cbdinocluster, ["ps"]));
+    } catch (retryErr) {
+      console.error(
+        `\n✗ setup-cluster: couldn't list clusters (cbdinocluster ps) after init: ${(retryErr as Error).message}`,
+      );
+      return undefined;
+    }
+  }
 }
 
 /** What setup-declarative-cluster decided to do about existing clusters (pure). */
@@ -213,6 +304,7 @@ async function allocate(
  * result with `cluster: undefined` rather than thrown.
  */
 export async function setupDeclarativeCluster(plan: {
+  init?: { config: PieceData };
   config: CbdinoclusterDef;
   onClusterExists: ClusterExistsPolicy;
   deployer?: string;
@@ -226,12 +318,11 @@ export async function setupDeclarativeCluster(plan: {
     return FAILED();
   }
 
+  await prepareCbdinoclusterConfig(execution, plan.init?.config);
+
   // `cbdinocluster ps` doubles as a sanity check and the list of what's running.
-  let existing: CbdinoCluster[];
-  try {
-    existing = parseClusterIds(await execution.capture(cbdinocluster, ["ps"]));
-  } catch (err) {
-    console.error(`\n✗ setup-cluster: couldn't list clusters (cbdinocluster ps): ${(err as Error).message}`);
+  const existing = await listExistingClusters(cbdinocluster, execution);
+  if (!existing) {
     return FAILED({ cbdinocluster });
   }
 

@@ -91,7 +91,7 @@ test("formatFitFunctionalDefinition annotates shared cluster connection details"
   assert.doesNotMatch(rendered, /\$1fitConfig:/);
 });
 
-test("buildFitFunctionalDefinitionFrom emits a cbdinocluster block and pins the version and Gerrit ref", () => {
+test("buildFitFunctionalDefinitionFrom emits a cbdinocluster block and top-level repo Gerrit ref", () => {
   const definition = buildFitFunctionalDefinitionFrom({
     cluster: {
       kind: "cbdinocluster",
@@ -109,9 +109,71 @@ test("buildFitFunctionalDefinitionFrom emits a cbdinocluster block and pins the 
     setup: {
       cluster: {
         cbdinocluster: {
+          init: {
+            config: {
+              version: 6,
+              docker: {
+                enabled: "true",
+                host: "",
+                network: "fit",
+                "forward-only": "false",
+              },
+              k8s: {
+                enabled: "false",
+                "cao-tools": "",
+                kubeconfig: "",
+                context: "",
+              },
+              github: {
+                enabled: "false",
+                token: "",
+                user: "",
+              },
+              aws: {
+                enabled: "false",
+                region: "",
+              },
+              gcp: {
+                enabled: "false",
+                region: "",
+                "project-id": "",
+              },
+              azure: {
+                enabled: "false",
+                region: "",
+                "sub-id": "",
+                "rg-name": "",
+              },
+              capella: {
+                enabled: "false",
+                endpoint: "",
+                username: "",
+                password: "",
+                "organization-id": "",
+                "override-token": "",
+                "Internal-support-token": "",
+                "default-cloud": "",
+                "default-aws-region": "",
+                "default-azure-region": "",
+                "default-gcp-region": "",
+                "upload-server-logs-host-name": "",
+              },
+              dns: {
+                enabled: "false",
+                hostname: "",
+              },
+              "default-deployer": "docker",
+              "default-expiry": "0s",
+            },
+          },
           config: {
             nodes: [{ count: 2, version: "8.1.0-2188", services: ["kv", "n1ql", "index"] }],
           },
+        },
+      },
+      repos: {
+        "transactions-fit-performer": {
+          gerritRef: "refs/changes/29/246329/1",
         },
       },
     },
@@ -122,7 +184,6 @@ test("buildFitFunctionalDefinitionFrom emits a cbdinocluster block and pins the 
           performer: {
             sdk: "java",
             version: "1.2.3",
-            gerritRef: "refs/changes/29/246329/1",
           },
         },
         runtime: { tests: "all" },
@@ -145,9 +206,84 @@ test("buildFitFunctionalDefinitionFrom adds a cao block for CNG clusters", () =>
   });
 
   assert.deepEqual(definition.setup?.cluster?.cbdinocluster, {
+    init: {
+      config: {
+        version: 6,
+        docker: {
+          enabled: "true",
+          host: "",
+          network: "fit",
+          "forward-only": "false",
+        },
+        k8s: {
+          enabled: "false",
+          "cao-tools": "",
+          kubeconfig: "",
+          context: "",
+        },
+        github: {
+          enabled: "false",
+          token: "",
+          user: "",
+        },
+        aws: {
+          enabled: "false",
+          region: "",
+        },
+        gcp: {
+          enabled: "false",
+          region: "",
+          "project-id": "",
+        },
+        azure: {
+          enabled: "false",
+          region: "",
+          "sub-id": "",
+          "rg-name": "",
+        },
+        capella: {
+          enabled: "false",
+          endpoint: "",
+          username: "",
+          password: "",
+          "organization-id": "",
+          "override-token": "",
+          "Internal-support-token": "",
+          "default-cloud": "",
+          "default-aws-region": "",
+          "default-azure-region": "",
+          "default-gcp-region": "",
+          "upload-server-logs-host-name": "",
+        },
+        dns: {
+          enabled: "false",
+          hostname: "",
+        },
+        "default-deployer": "docker",
+        "default-expiry": "0s",
+      },
+    },
     config: {
       nodes: [{ count: 1, version: "8.1.0-2188", services: ["kv"] }],
       cao: { "operator-version": "2.8.0", "gateway-version": "1.1.0-135" },
     },
   });
+});
+
+test("formatFitFunctionalDefinition annotates cbdinocluster init config uploads", () => {
+  const rendered = formatFitFunctionalDefinition(
+    buildFitFunctionalDefinitionFrom({
+      cluster: {
+        kind: "cbdinocluster",
+        def: { nodeCount: 1, version: "8.1.0-2188", services: ["kv"], cng: false },
+      },
+      sdk,
+      selection: buildDefaultFitTestSelection(),
+    }),
+  );
+
+  assert.match(
+    rendered,
+    /# This file will be uploaded verbatim into clean environments as ~\/\.cbdinocluster\n\s+config:/,
+  );
 });

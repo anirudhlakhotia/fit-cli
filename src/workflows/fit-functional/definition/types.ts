@@ -40,12 +40,24 @@ export interface ConnectionClusterSetup {
 /** Marker that this definition should use a cluster already running elsewhere. */
 export type UseExistingClusterSetup = Record<string, never>;
 
+/** A full cbdinocluster config file to upload before cluster setup runs. */
+export interface CbdinoclusterInitSetup {
+  /** Uploaded verbatim as ~/.cbdinocluster in clean environments. */
+  config: PieceData;
+}
+
 /**
  * A cbdinocluster to allocate for the run. The setup-cluster step writes
  * `config` out as a cbdinocluster def file and allocates it (see
  * setup-declarative-cluster.ts), then tests against the resulting cluster.
  */
 export interface CbdinoclusterSetup {
+  /**
+   * Optional bootstrap settings for clean environments. When present, this
+   * config file is uploaded verbatim as `~/.cbdinocluster` before fit-cli runs
+   * any cbdinocluster commands remotely.
+   */
+  init?: CbdinoclusterInitSetup;
   /**
    * The cbdinocluster definition to allocate — what goes under
    * `cbdinocluster.config` (the `nodes`, and optional `cao` for CNG). Built by
@@ -78,8 +90,19 @@ export interface ClusterSetup {
 }
 
 /** The shared, top-level setup applied once for the whole run. */
+export interface RepoSetup {
+  gerritRef?: string;
+}
+
+/** Top-level repo overrides applied before iterations run. */
+export interface ReposSetup {
+  "transactions-fit-performer"?: RepoSetup;
+}
+
+/** The shared, top-level setup applied once for the whole run. */
 export interface SharedSetup {
   cluster?: ClusterSetup;
+  repos?: ReposSetup;
 }
 
 /** Which performer to build and run for an iteration. */
@@ -93,8 +116,6 @@ export interface PerformerSetup {
   port?: number;
   /** Optional performer image version/tag; omit to use the build's default. */
   version?: string;
-  /** Optional Gerrit patch-set ref to fetch and checkout in transactions-fit-performer before build/run. */
-  gerritRef?: string;
   /**
    * What to do if the performer port is already in use when the iteration's
    * setup-performer step runs: `fail`, `restart` (stop what's there and bring up
