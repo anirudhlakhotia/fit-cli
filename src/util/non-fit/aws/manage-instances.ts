@@ -72,9 +72,9 @@ function reportInstances(instances: InstanceInfo[]): void {
 }
 
 /** Ask which instance (or top-level action) the user wants to act on. */
-async function chooseInstance(instances: InstanceInfo[]): Promise<string> {
+async function chooseInstance(instances: InstanceInfo[], round: number): Promise<string> {
   return select<string>({
-    promptId: "aws.manage-instances.choose",
+    promptId: `aws.manage-instances.choose-${round}`,
     message: "Pick an instance to act on",
     choices: [
       ...instances.map((instance) => ({
@@ -88,9 +88,9 @@ async function chooseInstance(instances: InstanceInfo[]): Promise<string> {
 }
 
 /** Ask what to do with the chosen instance. */
-async function chooseAction(instance: InstanceInfo): Promise<InstanceAction> {
+async function chooseAction(instance: InstanceInfo, round: number): Promise<InstanceAction> {
   return select<InstanceAction>({
-    promptId: "aws.manage-instances.action",
+    promptId: `aws.manage-instances.action-${round}`,
     message: `What would you like to do with ${describeInstanceLine(instance)}?`,
     choices: [
       { name: "Show details", value: "details" },
@@ -104,9 +104,13 @@ async function chooseAction(instance: InstanceInfo): Promise<InstanceAction> {
  * Terminate the instance after an explicit confirmation. Returns true if it was
  * terminated, false if the user backed out.
  */
-async function terminateWithConfirm(instance: InstanceInfo, options: AwsOptions): Promise<boolean> {
+async function terminateWithConfirm(
+  instance: InstanceInfo,
+  round: number,
+  options: AwsOptions,
+): Promise<boolean> {
   const confirmed = await confirm({
-    promptId: "aws.manage-instances.confirm-terminate",
+    promptId: `aws.manage-instances.confirm-terminate-${round}`,
     message: `Terminate ${describeInstanceLine(instance)}? This cannot be undone.`,
     default: false,
   });
@@ -125,11 +129,13 @@ async function terminateWithConfirm(instance: InstanceInfo, options: AwsOptions)
  * a termination.
  */
 export async function manageInstances(query: InstanceQuery, options: AwsOptions = {}): Promise<void> {
-  for (;;) {
+  // Prompt ids must be unique within a run, so each pass of the loop carries its
+  // own round number to keep its prompts distinct from the previous pass's.
+  for (let round = 0; ; round++) {
     const instances = await findInstances(query, options);
     reportInstances(instances);
 
-    const choice = await chooseInstance(instances);
+    const choice = await chooseInstance(instances, round);
     if (choice === QUIT) {
       return;
     }
@@ -143,12 +149,12 @@ export async function manageInstances(query: InstanceQuery, options: AwsOptions 
       continue;
     }
 
-    const action = await chooseAction(instance);
+    const action = await chooseAction(instance, round);
     if (action === "details") {
       const details = await describeInstance(instance.instanceId, options);
       console.log(JSON.stringify(details ?? instance, null, 2));
     } else if (action === "terminate") {
-      await terminateWithConfirm(instance, options);
+      await terminateWithConfirm(instance, round, options);
     }
   }
 }

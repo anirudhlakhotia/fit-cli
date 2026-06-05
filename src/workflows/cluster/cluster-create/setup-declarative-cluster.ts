@@ -33,6 +33,7 @@ import {
   type ClusterCommandExecutor,
 } from "./allocate-cluster.js";
 import { CBDINOCLUSTER_URL } from "./ensure-cbdinocluster.js";
+import { installCbdinoclusterRemote } from "./install-cbdinocluster.js";
 import { type ClusterExistsPolicy } from "./cluster-exists-policy.js";
 import { type CbdinoclusterDef } from "./build-cluster-def.js";
 
@@ -47,20 +48,16 @@ async function resolveCbdinoclusterCommand(execution: ClusterCommandExecutor): P
     return CBDINOCLUSTER;
   }
 
-  const localBinary = findOnPath(CBDINOCLUSTER);
-  if (!localBinary) {
-    return undefined;
-  }
-
+  // On this machine we don't auto-install — the caller points the operator at
+  // where to get it. On a remote box we install the matching binary straight
+  // from the cbdinocluster releases instead of staging up whatever (if anything)
+  // is on this machine.
   if (execution.description === "this machine") {
-    return localBinary;
+    return findOnPath(CBDINOCLUSTER) ?? undefined;
   }
 
-  const remoteBinary = execution.targetFilePath(localBinary);
-  console.log(`→ setup-cluster: staging local cbdinocluster to ${execution.description} at ${remoteBinary}`);
-  await execution.stageFile(localBinary, remoteBinary);
-  await execution.run("chmod", ["755", remoteBinary]);
-  return remoteBinary;
+  console.log(`→ setup-cluster: cbdinocluster isn't on ${execution.description} — installing the latest release.`);
+  return installCbdinoclusterRemote(execution);
 }
 
 export function cbdinoclusterNeedsInit(message: string): boolean {
