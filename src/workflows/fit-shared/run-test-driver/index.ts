@@ -103,26 +103,30 @@ export function didFitTestDriverPass(summary: FitTestDriverSummary): boolean {
   return summary.failures === 0 && summary.errors === 0;
 }
 
-export function fitTestDriverSummaryDetails(summary: FitTestDriverSummary): Detail[] {
+function iterationDetailLabel(iteration: number, label: string): string {
+  return `it${iteration} ${label}`;
+}
+
+export function fitTestDriverSummaryDetails(summary: FitTestDriverSummary, iteration: number = 0): Detail[] {
   return [
     {
-      label: "Result",
+      label: iterationDetailLabel(iteration, "Result"),
       value: didFitTestDriverPass(summary) ? "PASS" : "FAIL",
     },
     {
-      label: "Tests run",
+      label: iterationDetailLabel(iteration, "Tests run"),
       value: String(summary.testsRun),
     },
     {
-      label: "Failures",
+      label: iterationDetailLabel(iteration, "Failures"),
       value: String(summary.failures),
     },
     {
-      label: "Errors",
+      label: iterationDetailLabel(iteration, "Errors"),
       value: String(summary.errors),
     },
     {
-      label: "Skipped",
+      label: iterationDetailLabel(iteration, "Skipped"),
       value: String(summary.skipped),
     },
   ];
@@ -194,7 +198,7 @@ export async function runTestDriver(
   );
   const summary = extractFitTestDriverSummaryFromJunitReports(join(dirname(logFile), "surefire-reports"));
   const ok = commandOk && (summary ? didFitTestDriverPass(summary) : true);
-  return { ok, logFile, artifacts, details: summary ? fitTestDriverSummaryDetails(summary) : [] };
+  return { ok, logFile, artifacts, details: summary ? fitTestDriverSummaryDetails(summary, iteration) : [] };
 }
 
 if (isMain(import.meta.url)) {

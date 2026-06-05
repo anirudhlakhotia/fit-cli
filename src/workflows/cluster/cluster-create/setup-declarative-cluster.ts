@@ -16,6 +16,7 @@
 import YAML from "yaml";
 import { type RunOutput } from "../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
+import { findOnPath } from "../../../util/non-fit/which.js";
 import { DEFAULT_CREDENTIALS } from "../cluster-select/ask-credentials.js";
 import { classifyConnectionString } from "../cluster-select/classify-connection-string.js";
 import type { SelectedCluster } from "../cluster-select/index.js";
@@ -32,6 +33,27 @@ import { type CbdinoclusterDef } from "./build-cluster-def.js";
 
 /** The bare command name we look for on the PATH. */
 const CBDINOCLUSTER = "cbdinocluster";
+
+async function resolveCbdinoclusterCommand(execution: ClusterCommandExecutor): Promise<string | undefined> {
+  if (await execution.commandAvailable(CBDINOCLUSTER)) {
+    return CBDINOCLUSTER;
+  }
+
+  const localBinary = findOnPath(CBDINOCLUSTER);
+  if (!localBinary) {
+    return undefined;
+  }
+
+  if (execution.description === "this machine") {
+    return localBinary;
+  }
+
+  const remoteBinary = execution.targetFilePath(localBinary);
+  console.log(`→ setup-cluster: staging local cbdinocluster to ${execution.description} at ${remoteBinary}`);
+  await execution.stageFile(localBinary, remoteBinary);
+  await execution.run("chmod", ["755", remoteBinary]);
+  return remoteBinary;
+}
 
 /** What setup-declarative-cluster decided to do about existing clusters (pure). */
 export type ClusterExistsDecision =
@@ -195,14 +217,14 @@ export async function setupDeclarativeCluster(plan: {
   onClusterExists: ClusterExistsPolicy;
   deployer?: string;
 }, execution: ClusterCommandExecutor = localClusterCommandExecutor()): Promise<SetupDeclarativeClusterResult> {
-  if (!(await execution.commandAvailable(CBDINOCLUSTER))) {
+  const cbdinocluster = await resolveCbdinoclusterCommand(execution);
+  if (!cbdinocluster) {
     console.error(
       `\n✗ setup-cluster: cbdinocluster isn't on the PATH for ${execution.description}. ` +
         `Get it from ${CBDINOCLUSTER_URL}.`,
     );
     return FAILED();
   }
-  const cbdinocluster = CBDINOCLUSTER;
 
   // `cbdinocluster ps` doubles as a sanity check and the list of what's running.
   let existing: CbdinoCluster[];

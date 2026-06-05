@@ -10,7 +10,7 @@
  *   npx tsx src/workflows/cluster-create/allocate-cluster.ts
  */
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { artifactFromPath, type RunOutput, type Artifact } from "../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { input } from "../../../util/non-fit/prompts.js";
@@ -49,11 +49,14 @@ export function localClusterCommandExecutor(): ClusterCommandExecutor {
     description: "this machine",
     run,
     capture,
-    runToFile: (command, args, targetPath, cwd) =>
-      run("sh", ["-lc", `${[command, ...args].map(posixQuote).join(" ")} > ${posixQuote(targetPath)}`], cwd),
+    runToFile: (command, args, targetPath, cwd) => {
+      mkdirSync(dirname(targetPath), { recursive: true, mode: 0o700 });
+      return run("sh", ["-lc", `${[command, ...args].map(posixQuote).join(" ")} > ${posixQuote(targetPath)} 2>&1`], cwd);
+    },
     targetFilePath: (localPath) => localPath,
     stageFile: (localPath) => Promise.resolve(localPath),
     collectFile: (targetPath, localPath) => {
+      mkdirSync(dirname(localPath), { recursive: true, mode: 0o700 });
       if (targetPath !== localPath) {
         copyFileSync(targetPath, localPath);
       }

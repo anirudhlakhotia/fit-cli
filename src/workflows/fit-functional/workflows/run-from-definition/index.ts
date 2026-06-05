@@ -34,6 +34,7 @@ import {
   localClusterCommandExecutor,
   type ClusterCommandExecutor,
 } from "../../../cluster/cluster-create/allocate-cluster.js";
+import { runClusterDiag } from "../../../cluster/cluster-diag/index.js";
 import { setupDeclarativeCluster } from "../../../cluster/cluster-create/setup-declarative-cluster.js";
 import {
   checkBuildAndRunPerformer,
@@ -183,22 +184,40 @@ async function setupPerformer(
 }
 
 /** The run step: generate a FITConfiguration, sanity-check, and run the test driver. */
-async function runTests(
+interface RunTestsDependencies {
+  runClusterDiagFn?: typeof runClusterDiag;
+  generateFitConfigurationFn?: typeof generateFitConfiguration;
+  runPerformerClusterSanityCheckFn?: typeof runPerformerClusterSanityCheck;
+  runTestDriverFn?: typeof runTestDriver;
+}
+
+export async function runTests(
   execution: FitExecutionContext,
   clusterMode: ResolvedDefinition["clusterMode"],
   iteration: ResolvedIteration,
   performer: RunningPerformer | undefined,
   iterationIndex: number,
+  dependencies: RunTestsDependencies = {},
 ): Promise<RunOutput> {
   if (!iteration.cluster) {
     fitCliWarn(missingClusterMessage(clusterMode));
     return { artifacts: [], details: [] };
   }
 
+  const runClusterDiagFn = dependencies.runClusterDiagFn ?? runClusterDiag;
+  const generateFitConfigurationFn = dependencies.generateFitConfigurationFn ?? generateFitConfiguration;
+  const runPerformerClusterSanityCheckFn =
+    dependencies.runPerformerClusterSanityCheckFn ?? runPerformerClusterSanityCheck;
+  const runTestDriverFn = dependencies.runTestDriverFn ?? runTestDriver;
+
   const artifacts: Artifact[] = [];
   const details: Detail[] = [];
 
-  const fitConfig = generateFitConfiguration(
+  if (!(await runClusterDiagFn(iteration.cluster))) {
+    return { artifacts, details };
+  }
+
+  const fitConfig = generateFitConfigurationFn(
     iteration.cluster,
     execution.rootDir,
     iteration.performerPort,
@@ -208,7 +227,7 @@ async function runTests(
   artifacts.push(...fitConfig.artifacts);
   details.push(...fitConfig.details);
 
-  const performerSanity = await runPerformerClusterSanityCheck(iteration.cluster, performer?.containerId, {
+  const performerSanity = await runPerformerClusterSanityCheckFn(iteration.cluster, performer?.containerId, {
     captureCommand: (command, args) => execution.capture(command, args),
     dockerCommand: execution.dockerCommand,
   });
@@ -217,7 +236,7 @@ async function runTests(
     return { artifacts, details };
   }
 
-  const testRun = await runTestDriver(
+  const testRun = await runTestDriverFn(
     execution,
     iteration.testSelection,
     fitConfig.path,

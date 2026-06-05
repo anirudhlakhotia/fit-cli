@@ -96,26 +96,26 @@ test("didFitTestDriverPass returns true only when there are no failures or error
 
 test("fitTestDriverSummaryDetails formats the parsed summary for the CLI table", () => {
   assert.deepEqual(
-    fitTestDriverSummaryDetails({ testsRun: 13, failures: 7, errors: 0, skipped: 2 }),
+    fitTestDriverSummaryDetails({ testsRun: 13, failures: 7, errors: 0, skipped: 2 }, 0),
     [
       {
-        label: "Result",
+        label: "it0 Result",
         value: "FAIL",
       },
       {
-        label: "Tests run",
+        label: "it0 Tests run",
         value: "13",
       },
       {
-        label: "Failures",
+        label: "it0 Failures",
         value: "7",
       },
       {
-        label: "Errors",
+        label: "it0 Errors",
         value: "0",
       },
       {
-        label: "Skipped",
+        label: "it0 Skipped",
         value: "2",
       },
     ],

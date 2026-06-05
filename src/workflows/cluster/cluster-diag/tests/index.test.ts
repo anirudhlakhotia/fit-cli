@@ -50,7 +50,7 @@ test("only the first host from a multi-host connection string is used", () => {
   );
 });
 
-test("successful sanity tests only print the success line", () => {
+test("successful sanity tests print the command and success line", () => {
   const dir = mkdtempSync(join(tmpdir(), "fit-cli-curl-"));
   const curl = join(dir, "curl");
   const modulePath = new URL("../index.ts", import.meta.url).href;
@@ -69,7 +69,8 @@ test("successful sanity tests only print the success line", () => {
   });
 
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /Cluster sanity test succeeded/);
+  assert.match(result.stdout, /Cluster sanity test succeeded with/);
+  assert.match(result.stdout, /curl -k -u <username>:<password> -X GET http:\/\/172\.18\.0\.2:8091\/pools\/default/);
   assert.doesNotMatch(result.stdout, /Sanity-testing the cluster with/);
   assert.doesNotMatch(result.stdout, /"name":"default"/);
 });

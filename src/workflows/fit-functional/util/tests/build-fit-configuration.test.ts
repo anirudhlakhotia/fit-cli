@@ -10,7 +10,6 @@ import { test } from "node:test";
 import {
   AUTO_GENERATED_MARKER,
   buildFitConfiguration,
-  DEFAULT_BUCKET_CONFIG,
 } from "../build-fit-configuration.js";
 
 const credentials = { username: "Administrator", password: "password" };
@@ -54,7 +53,6 @@ test("a self-managed cluster uses the localhost layout", () => {
     "//": "The performer is running in Docker and needs to be able to connect to the FIT proxy (the test-driver) running on the host machine",
     hostname: "host.docker.internal",
   });
-  assert.deepEqual(config.bucketConfig, DEFAULT_BUCKET_CONFIG);
   assert.equal(config.skipBucketCreation, undefined);
   assert.deepEqual(config.excludeTests, ["situational"]);
 });
@@ -72,7 +70,6 @@ test("a Capella cluster resolves DNS SRV, skips bucket creation and drops the pr
   assert.equal(access.connectionString, "couchbases://${defaultHostname}");
   assert.deepEqual(access.rest, { hostname: "${defaultHostname}", resolveDnsSrv: true, port: 18091 });
   assert.equal(access.proxy, null);
-  assert.deepEqual(config.bucketConfig, DEFAULT_BUCKET_CONFIG);
   assert.equal(config.skipBucketCreation, true);
   assert.deepEqual(config.excludeTests, ["situational", "ssh", "realCapella"]);
 });

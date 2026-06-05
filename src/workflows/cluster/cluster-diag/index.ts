@@ -33,12 +33,12 @@ function managementHost(defaultHostname: string): string {
 /** Run a quick curl-based sanity check against the cluster's management endpoint. */
 export async function runClusterDiag(cluster: SelectedCluster): Promise<boolean> {
   const url = clusterDiagUrl(cluster);
-  const command = `curl -u <username>:<password> -X GET ${url}`;
+  const command = `curl -k -u <username>:<password> -X GET ${url}`;
 
   try {
     // For convenience in testing e.g. Capella, always use -k (insecure)
     await capture("curl", ["-k", "-u", `${cluster.credentials.username}:${cluster.credentials.password}`, "-X", "GET", url]);
-    console.log("\n✓ Cluster sanity test succeeded");
+    console.log(`\n✓ Cluster sanity test succeeded with:\n  ${command}`);
     return true;
   } catch (err) {
     console.error(`\nSanity-testing the cluster with:\n  ${command}\n`);
