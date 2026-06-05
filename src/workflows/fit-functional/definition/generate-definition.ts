@@ -11,6 +11,8 @@ import type { Sdk } from "../../../util/sdk/sdks.js";
 import type { PieceData } from "../../../util/non-fit/config-pieces.js";
 import { buildClusterDefObject, type ClusterDef } from "../../cluster/cluster-create/build-cluster-def.js";
 import { defaultCbdinoclusterInitConfig } from "../../cluster/cluster-create/default-cbdinocluster-init-config.js";
+import type { ClusterExistsPolicy } from "../../cluster/cluster-create/cluster-exists-policy.js";
+import type { PortInUsePolicy } from "../../performers/performer-port.js";
 import type { SelectedCluster } from "../../cluster/cluster-select/index.js";
 import type { FitTestSelection } from "../../fit-shared/select-fit-tests/index.js";
 import {
@@ -46,6 +48,13 @@ export interface DefinitionInputs {
   version?: string;
   /** Optional FIT Gerrit patch-set ref to fetch before building/running. */
   gerritRef?: string;
+  /**
+   * What to do if cbdinocluster already has a cluster running. Only meaningful
+   * for the `cbdinocluster` cluster kind; omit for the build's default.
+   */
+  onClusterExists?: ClusterExistsPolicy;
+  /** What to do if the performer port is in use; omit for the build's default. */
+  onPortInUse?: PortInUsePolicy;
   selection: FitTestSelection;
 }
 
@@ -61,8 +70,16 @@ function buildClusterAccessFitConfig(cluster: SelectedCluster): FitConfigPiece {
   return fitConfig;
 }
 
-/** Build the top-level shared setup from the chosen cluster description. */
-function buildSharedSetup(cluster: DefinitionCluster, gerritRef?: string): FitDefinition["setup"] {
+/**
+ * Build the top-level shared setup from the chosen cluster description.
+ * `onClusterExists`, when given, is recorded on the cbdinocluster block; it has
+ * no place in the `useExisting` shape, so it is ignored for the connection kind.
+ */
+function buildSharedSetup(
+  cluster: DefinitionCluster,
+  gerritRef?: string,
+  onClusterExists?: ClusterExistsPolicy,
+): FitDefinition["setup"] {
   const setup: NonNullable<FitDefinition["setup"]> = cluster.kind === "connection"
     ? { cluster: { useExisting: {} } }
     : {
@@ -70,6 +87,7 @@ function buildSharedSetup(cluster: DefinitionCluster, gerritRef?: string): FitDe
           cbdinocluster: {
             init: { config: defaultCbdinoclusterInitConfig() },
             config: buildClusterDefObject(cluster.def),
+            ...(onClusterExists ? { onClusterExists } : {}),
           },
         },
       };
@@ -88,6 +106,7 @@ export function buildFitFunctionalDefinitionFrom(inputs: DefinitionInputs): FitD
   const performer: PerformerSetup = {
     sdk: inputs.sdk.value,
     ...(inputs.version ? { version: inputs.version } : {}),
+    ...(inputs.onPortInUse ? { onPortInUse: inputs.onPortInUse } : {}),
   };
   const fitConfig = inputs.cluster.kind === "connection"
     ? buildClusterAccessFitConfig(inputs.cluster.cluster)
@@ -95,7 +114,7 @@ export function buildFitFunctionalDefinitionFrom(inputs: DefinitionInputs): FitD
   return {
     version: CURRENT_FIT_DEFINITION_VERSION,
     type: FIT_DEFINITION_TYPE,
-    setup: buildSharedSetup(inputs.cluster, inputs.gerritRef),
+    setup: buildSharedSetup(inputs.cluster, inputs.gerritRef, inputs.onClusterExists),
     iterations: [
       {
         type: "functional",
@@ -128,13 +147,33 @@ export function buildFitFunctionalDefinition(
 export function formatFitFunctionalDefinition(definition: FitDefinition): string {
   let text = YAML.stringify(definition);
   text = text.replace(/(^\s*init:\n)(\s*)config:$/gm, (_match, initLine: string, indent: string) =>
-    `${initLine}${indent}# This file will be uploaded verbatim into clean environments as ~/.cbdinocluster$\n${indent}It comes from defaultCbdinoclusterInitConfig()\n${indent}config:`
+    `${initLine}${indent}# This file will be uploaded verbatim into clean environments as ~/.cbdinocluster\n${indent}config:`
   );
   text = text.replace(
     /^(\s*)fitConfig:$/gm,
     [
       "$1# This will be used as a base when generating FITConfiguration.json.  Anything here will be copied into the config (unless overwritten by fit-cli)",
       "$1fitConfig:",
+    ].join("\n"),
+  );
+  text = text.replace(
+    /^(\s*)onClusterExists:/gm,
+    [
+      "$1# If cbdinocluster already has a cluster running when this runs:",
+      "$1#   fail               - stop the run rather than touch an existing cluster.",
+      "$1#   useExisting        - trust the running cluster is the right one and test against it.",
+      "$1#   destroyAndRecreate - remove any existing cluster(s) and allocate a fresh one (default).",
+      "$1onClusterExists:",
+    ].join("\n"),
+  );
+  text = text.replace(
+    /^(\s*)onPortInUse:/gm,
+    [
+      "$1# If the performer port is already in use when this runs:",
+      "$1#   fail    - stop the run.",
+      "$1#   restart - stop what's there and bring up a fresh performer (default).",
+      "$1#   reuse   - assume a performer is already running and test against it.",
+      "$1onPortInUse:",
     ].join("\n"),
   );
   return text;

@@ -21,8 +21,10 @@ import { confirm, input } from "../../../../util/non-fit/prompts.js";
 import { rootDirFromArgv } from "../../../../util/fit/root.js";
 import { chooseSdk } from "../../../../util/sdk/choose-sdk.js";
 import { askClusterDef } from "../../../cluster/cluster-create/ask-cluster-def.js";
+import { askClusterExistsPolicy } from "../../../cluster/cluster-create/ask-cluster-exists-policy.js";
 import { selectCluster } from "../../../cluster/cluster-select/index.js";
 import { askVersion } from "../../../performers/build-performer/ask-version.js";
+import { askPortInUsePolicy } from "../../../performers/ask-port-in-use-policy.js";
 import { createLocalFitExecutionContext } from "../../../fit-shared/remote-fit-run.js";
 import { selectFitTests } from "../../../fit-shared/select-fit-tests/index.js";
 import {
@@ -76,8 +78,13 @@ export async function createFitFunctionalDefinition(rootDir: string): Promise<Ru
   );
 
   const cluster = await chooseDefinitionCluster();
+  // The cluster-exists policy only has a place in a cbdinocluster block; for an
+  // existing-cluster (useExisting) definition there's nothing to recreate.
+  const onClusterExists =
+    cluster.kind === "cbdinocluster" ? await askClusterExistsPolicy() : undefined;
   const sdk = await chooseSdk();
   const version = await askVersion();
+  const onPortInUse = await askPortInUsePolicy();
   const gerritRef = await askFitGerritRef();
 
   // Listing tests needs the test-driver checkout; selectFitTests falls back to
@@ -90,6 +97,8 @@ export async function createFitFunctionalDefinition(rootDir: string): Promise<Ru
     sdk,
     ...(version ? { version } : {}),
     ...(gerritRef ? { gerritRef } : {}),
+    ...(onClusterExists ? { onClusterExists } : {}),
+    onPortInUse,
     selection,
   });
 

@@ -195,6 +195,40 @@ test("buildFitFunctionalDefinitionFrom emits a cbdinocluster block and top-level
   assert.deepEqual(parseDefinition(formatFitFunctionalDefinition(definition)), definition);
 });
 
+test("buildFitFunctionalDefinitionFrom records the cluster- and port-exists policies when given", () => {
+  const definition = buildFitFunctionalDefinitionFrom({
+    cluster: {
+      kind: "cbdinocluster",
+      def: { nodeCount: 1, version: "8.1.0-2188", services: ["kv"], cng: false },
+    },
+    sdk,
+    onClusterExists: "useExisting",
+    onPortInUse: "reuse",
+    selection: buildDefaultFitTestSelection(),
+  });
+
+  assert.equal(definition.setup?.cluster?.cbdinocluster?.onClusterExists, "useExisting");
+  assert.equal(definition.iterations[0]?.setup.performer.onPortInUse, "reuse");
+
+  const rendered = formatFitFunctionalDefinition(definition);
+  assert.match(rendered, /onClusterExists: useExisting/);
+  assert.match(rendered, /onPortInUse: reuse/);
+  // The policies survive a round-trip through the parser.
+  assert.deepEqual(parseDefinition(rendered), definition);
+});
+
+test("buildFitFunctionalDefinitionFrom omits onClusterExists for a useExisting (connection) cluster", () => {
+  const definition = buildFitFunctionalDefinitionFrom({
+    cluster: { kind: "connection", cluster },
+    sdk,
+    onClusterExists: "destroyAndRecreate",
+    selection: buildDefaultFitTestSelection(),
+  });
+
+  assert.equal(definition.setup?.cluster?.cbdinocluster, undefined);
+  assert.equal(definition.setup?.cluster?.useExisting !== undefined, true);
+});
+
 test("buildFitFunctionalDefinitionFrom adds a cao block for CNG clusters", () => {
   const definition = buildFitFunctionalDefinitionFrom({
     cluster: {
