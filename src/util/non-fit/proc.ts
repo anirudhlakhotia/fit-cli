@@ -4,16 +4,26 @@ import { dirname } from "node:path";
 import { formatTimestampedChunk } from "./fit-cli-log.js";
 import { createRunFilePath } from "./replay.js";
 
+function teeChildOutput(stream: NodeJS.ReadableStream | null, target: NodeJS.WriteStream, onChunk?: (chunk: Buffer) => void): void {
+  stream?.on("data", (chunk: Buffer) => {
+    target.write(chunk);
+    onChunk?.(chunk);
+  });
+}
+
 /**
- * Run a command, streaming its output straight to the console, and resolve when
- * it finishes. Rejects if the command can't start or exits non-zero. Used for
- * the long-running external tools FIT shells out to (git, mvn, cbdinocluster).
- * `cwd` defaults to the current working directory for commands that don't care
- * where they run (e.g. cbdinocluster, which takes absolute paths).
+ * Run a command, streaming its output through the current stdout/stderr, and
+ * resolve when it finishes. Rejects if the command can't start or exits
+ * non-zero. This means session logging sees subprocess output by default, while
+ * the user still gets live terminal feedback. `cwd` defaults to the current
+ * working directory for commands that don't care where they run (e.g.
+ * cbdinocluster, which takes absolute paths).
  */
 export function run(command: string, args: string[], cwd: string = process.cwd()): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd, stdio: "inherit" });
+    const child = spawn(command, args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
+    teeChildOutput(child.stdout, process.stdout);
+    teeChildOutput(child.stderr, process.stderr);
     child.on("error", reject);
     child.on("close", (code) => {
       if (code === 0) {
@@ -64,12 +74,10 @@ export function runAndCapture(
   cwd: string = process.cwd(),
 ): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd, stdio: ["inherit", "pipe", "inherit"] });
+    const child = spawn(command, args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";
-    child.stdout.on("data", (chunk: Buffer) => {
-      process.stdout.write(chunk);
-      stdout += chunk.toString();
-    });
+    teeChildOutput(child.stdout, process.stdout, (chunk) => (stdout += chunk.toString()));
+    teeChildOutput(child.stderr, process.stderr);
     child.on("error", reject);
     child.on("close", (code) => {
       if (code === 0) {
@@ -93,9 +101,10 @@ type StreamWrite = typeof process.stdout.write;
  * directory holds a full transcript of the session alongside the per-step logs.
  * Output still appears on the terminal as normal. Returns the log file path.
  *
- * This captures fit-cli's own output; child processes we run with stdio
- * "inherit" (and the FIT test-driver, which streams to its own log) write
- * straight to their fds and aren't mirrored here.
+ * The default foreground subprocess helpers in this file write back through
+ * process.stdout/process.stderr too, so their output is mirrored here as well.
+ * Dedicated file-log helpers such as streamToFile intentionally bypass this and
+ * write to their own artifact log instead.
  *
  * Returns a handle with the log path and a flush() to call before exiting.
  */

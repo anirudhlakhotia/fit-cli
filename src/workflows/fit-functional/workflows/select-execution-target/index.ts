@@ -26,6 +26,11 @@ import { listInstances } from "../../../../util/non-fit/aws/list-instances.js";
 import { type InstanceInfo } from "../../../../util/non-fit/aws/parse-instance.js";
 import { type ExecutionTarget } from "../../../../util/non-fit/target.js";
 import { FIT_INSTANCE_USER, provisionFitInstance } from "../../../../util/fit/aws/fit-instance.js";
+import {
+  formatEc2CleanupPromptBanner,
+  formatEc2DeletionResponsibilityBanner,
+  terminateInstanceCommand,
+} from "../../../../util/fit/aws/lifecycle-warning.js";
 import { RemoteTarget } from "../../../../util/non-fit/remote-target.js";
 import { waitForSsh, type RemoteHost } from "../../../../util/non-fit/ssh.js";
 
@@ -94,16 +99,18 @@ export async function selectExecutionTarget(): Promise<ExecutionTargetOutcome> {
     try {
       const instance = await provisionFitInstance();
       const cleanup = async (): Promise<void> => {
+        const region = resolveRegion();
+        const terminateCommand = terminateInstanceCommand(instance.instanceId, region);
+        fitCliWarn(`\n${formatEc2CleanupPromptBanner(instance.instanceId, region, instance.address)}\n`);
         const keep = await confirm({
           promptId: "execution-target.teardown.keep",
           message: `Keep EC2 instance ${instance.instanceId} running for debugging?`,
           default: false,
         });
         if (keep) {
+          fitCliWarn(`\n${formatEc2DeletionResponsibilityBanner(instance.instanceId, region, instance.address)}\n`);
           console.log(`\nLeaving ${instance.instanceId} running at ${instance.address}.`);
-          console.log(
-            `Terminate later: npx tsx src/util/non-fit/aws/terminate-instance.ts --id ${instance.instanceId} --region ${resolveRegion()}`,
-          );
+          console.log(`Terminate later: ${terminateCommand}`);
           return;
         }
         console.log(`\nTerminating ${instance.instanceId}...`);

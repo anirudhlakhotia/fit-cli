@@ -1,0 +1,33 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import {
+  formatEc2CleanupPromptBanner,
+  formatEc2DeletionResponsibilityBanner,
+  terminateInstanceCommand,
+} from "../lifecycle-warning.js";
+
+test("terminateInstanceCommand includes the instance id and region", () => {
+  assert.equal(
+    terminateInstanceCommand("i-123", "eu-west-1"),
+    "npx tsx src/util/non-fit/aws/terminate-instance.ts --id i-123 --region eu-west-1",
+  );
+});
+
+test("formatEc2DeletionResponsibilityBanner explains ongoing ownership clearly", () => {
+  const banner = formatEc2DeletionResponsibilityBanner("i-123", "eu-west-1", "ec2-1-2-3-4.compute.amazonaws.com");
+
+  assert.match(banner, /EC2 LIFECYCLE WARNING/);
+  assert.match(banner, /This instance keeps incurring AWS charges until it is terminated\./);
+  assert.match(banner, /fit-cli will offer to delete it at the end of the run\./);
+  assert.match(banner, /you must delete it yourself\./);
+  assert.match(banner, /terminate-instance\.ts --id i-123 --region eu-west-1/);
+});
+
+test("formatEc2CleanupPromptBanner explains the default cleanup choice", () => {
+  const banner = formatEc2CleanupPromptBanner("i-123", "eu-west-1");
+
+  assert.match(banner, /EC2 CLEANUP DECISION/);
+  assert.match(banner, /This instance is still running and still billable\./);
+  assert.match(banner, /Choose No to terminate it now \(recommended, and the default\)\./);
+  assert.match(banner, /Choose Yes only if you want to keep debugging and will delete it yourself\./);
+});

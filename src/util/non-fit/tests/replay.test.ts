@@ -3,7 +3,18 @@ import { mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { PromptSession, REPO_ROOT, extractInteractiveFlag, extractReplayFlag } from "../replay.js";
+import {
+  PromptSession,
+  REPO_ROOT,
+  defaultsToNonInteractive,
+  extractInteractiveFlag,
+  extractReplayFlag,
+} from "../replay.js";
+
+const DEFINITION_ENTRYPOINT = join(
+  REPO_ROOT,
+  "src/workflows/fit-functional/workflows/run-from-definition/index.ts",
+);
 
 async function captureLogs(run: () => Promise<void>): Promise<string[]> {
   const logs: string[] = [];
@@ -83,6 +94,11 @@ test("extractInteractiveFlag removes --interactive from argv", () => {
   });
 });
 
+test("definition runs default to non-interactive prompts", () => {
+  assert.equal(defaultsToNonInteractive(DEFINITION_ENTRYPOINT), true);
+  assert.equal(defaultsToNonInteractive(join(REPO_ROOT, "src/index.ts")), false);
+});
+
 test("interactive mode writes prompt responses to a log file", async () => {
   const session = PromptSession.fromArgv(["--interactive"]);
 
@@ -99,8 +115,22 @@ test("interactive mode writes prompt responses to a log file", async () => {
   ]);
 });
 
-test("non-interactive mode is the default and records synthesized answers", async () => {
+test("interactive mode is the default outside definition runs", async () => {
   const session = PromptSession.fromArgv([]);
+
+  const response = await session.resolvePrompt(
+    "fit.grpc.build-now",
+    "confirm",
+    "Build FIT now?",
+    () => Promise.resolve(false),
+    { nonInteractiveDefault: () => true },
+  );
+
+  assert.equal(response, false);
+});
+
+test("definition runs default to non-interactive mode and record synthesized answers", async () => {
+  const session = PromptSession.fromArgv([], {}, { entrypoint: DEFINITION_ENTRYPOINT });
 
   const logs = await captureLogs(async () => {
     const response = await session.resolvePrompt(
@@ -122,8 +152,8 @@ test("non-interactive mode is the default and records synthesized answers", asyn
   assert.equal(logs.at(-1), "[non-interactive] Build FIT now?\n  -> true");
 });
 
-test("non-interactive mode rejects prompts without a synthesized default", async () => {
-  const session = PromptSession.fromArgv([]);
+test("definition runs reject prompts without a synthesized default", async () => {
+  const session = PromptSession.fromArgv([], {}, { entrypoint: DEFINITION_ENTRYPOINT });
 
   await assert.rejects(
     () => session.resolvePrompt("fit.tests.single", "search", "Search for a test:", () => Promise.resolve("x")),
@@ -131,7 +161,7 @@ test("non-interactive mode rejects prompts without a synthesized default", async
   );
 });
 
-test("default non-interactive mode creates a per-run directory under /tmp/fit-cli", () => {
+test("prompt sessions create a per-run directory under /tmp/fit-cli", () => {
   const session = PromptSession.fromArgv([]);
 
   assert.match(session.runDir, /^\/tmp\/fit-cli\/\d{8}-\d{6}(?:-\d+)?$/);
@@ -205,7 +235,7 @@ test("interactive mode can serialize a prompt response before saving it", async 
   ]);
 });
 
-test("default non-interactive mode formats a replay reminder with the logfile", () => {
+test("interactive sessions format a replay reminder with the logfile", () => {
   const session = PromptSession.fromArgv([]);
 
   assert.equal(
@@ -214,13 +244,13 @@ test("default non-interactive mode formats a replay reminder with the logfile", 
   );
 });
 
-test("default non-interactive mode formats a run directory reminder", () => {
+test("prompt sessions format a run directory reminder", () => {
   const session = PromptSession.fromArgv([]);
 
   assert.equal(session.formatRunReminder(), `Run files:\n  ARTIFACT_DIR: ${session.runDir}`);
 });
 
-test("default non-interactive mode persists the chosen workflow", () => {
+test("interactive sessions persist the chosen workflow", () => {
   const session = PromptSession.fromArgv([]);
   session.setWorkflow("functional-tests");
 

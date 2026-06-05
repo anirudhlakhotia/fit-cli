@@ -50,6 +50,11 @@ export interface PromptSessionHooks {
   onUnusedReplayPrompts?: (entries: readonly PromptLogEntry[]) => Promise<"continue" | "exit">;
 }
 
+export interface PromptSessionConfig {
+  entrypoint?: string;
+  env?: NodeJS.ProcessEnv;
+}
+
 export interface PromptLogFile {
   version: 1;
   createdAt: string;
@@ -61,6 +66,7 @@ export interface PromptLogFile {
 type PromptSessionMode = "record" | "replay" | "defaults" | "non-interactive";
 
 const RUN_ROOT_DIR = "/tmp/fit-cli";
+const RUN_FROM_DEFINITION_ENTRYPOINT = "src/workflows/fit-functional/workflows/run-from-definition/index.ts";
 
 export function extractReplayFlag(
   argv: string[],
@@ -133,6 +139,21 @@ export function extractInteractiveFlag(argv: string[]): {
   }
 
   return { interactive, positionals };
+}
+
+export function defaultsToNonInteractive(
+  entrypoint: string | undefined = process.argv[1],
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  if (env.npm_lifecycle_event === "definition") {
+    return true;
+  }
+  if (!entrypoint) {
+    return false;
+  }
+
+  const normalizedEntrypoint = entrypoint.replaceAll("\\", "/");
+  return normalizedEntrypoint.endsWith(RUN_FROM_DEFINITION_ENTRYPOINT);
 }
 
 function captureReplayInvocation(
@@ -264,9 +285,11 @@ export class PromptSession {
     private readonly hooks: PromptSessionHooks,
   ) {}
 
-  static fromArgv(argv: string[], hooks: PromptSessionHooks = {}): PromptSession {
+  static fromArgv(argv: string[], hooks: PromptSessionHooks = {}, config: PromptSessionConfig = {}): PromptSession {
+    const env = config.env ?? process.env;
+    const entrypoint = config.entrypoint ?? process.argv[1];
     const { interactive, positionals } = extractInteractiveFlag(argv);
-    const { replayRequested, replayDefaults, replayFile } = extractReplayFlag(positionals);
+    const { replayRequested, replayDefaults, replayFile } = extractReplayFlag(positionals, env);
     const runDir = createRunDir();
     if (replayRequested && !replayFile) {
       throw new Error(
@@ -294,19 +317,21 @@ export class PromptSession {
 
     const logFile = createLogFile(runDir);
     const createdAt = new Date().toISOString();
+    const mode: PromptSessionMode =
+      interactive || !defaultsToNonInteractive(entrypoint, env) ? "record" : "non-interactive";
     const session = new PromptSession(
-      interactive ? "record" : "non-interactive",
+      mode,
       runDir,
       logFile,
       createdAt,
       undefined,
-      captureReplayInvocation(argv),
+      captureReplayInvocation(argv, entrypoint),
       [],
       hooks,
     );
     session.persist();
     console.log(`Artifacts from this run will be written to: ${runDir}`);
-    if (!interactive) {
+    if (mode === "non-interactive") {
       console.log("Running non-interactively with default answers.\n");
     }
     return session;

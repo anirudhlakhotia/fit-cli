@@ -177,4 +177,5 @@ Nb the need for later removal does mean it can't be stored internally purely as 
 
 ### Remote instances
 - Automatically use new temporary keys (`aws ec2 create-key-pair`).
-- Lifetime: give the user the option on whether to delete the instance at the end, or leave it running for debugging.
+- Lifetime: we give the user the option on whether to delete the instance at the end, or leave it running for debugging.
+  There is no built-in TTL system for EC2 so we make it very clear the user has to delete instances if they choose to leave them running.

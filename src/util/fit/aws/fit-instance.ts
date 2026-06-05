@@ -27,6 +27,8 @@ import { ensureSecurityGroup } from "../../non-fit/aws/security-group.js";
 import { createRunFilePath } from "../../non-fit/replay.js";
 import { waitForSsh, type RemoteHost } from "../../non-fit/ssh.js";
 import { RemoteTarget } from "../../non-fit/remote-target.js";
+import { fitCliWarn } from "../../non-fit/fit-cli-log.js";
+import { formatEc2DeletionResponsibilityBanner, terminateInstanceCommand } from "./lifecycle-warning.js";
 
 /** Security group fit-cli reuses across runs (port 22 open). */
 export const FIT_SECURITY_GROUP = "fit-cli";
@@ -152,11 +154,12 @@ export async function provisionFitInstance(options: ProvisionOptions = {}): Prom
       },
       {
         label: "Terminate instance command",
-        value: `npx tsx src/util/non-fit/aws/terminate-instance.ts --id ${id} --region ${region}`,
+        value: terminateInstanceCommand(id, region),
       },
     ];
 
     console.log(`\n✓ EC2 instance ${id} is ready at ${address}`);
+    fitCliWarn(`\n${formatEc2DeletionResponsibilityBanner(id, region, address)}\n`);
     console.log("Debug it directly with:");
     console.log(`  ssh -i ${keyPath} ${FIT_INSTANCE_USER}@${address}`);
     return { instanceId: id, address, keyPath, host, target: new RemoteTarget(host), artifacts, details, terminate };
@@ -181,7 +184,7 @@ if (isMain(import.meta.url)) {
   runCli(async () => {
     const provisioned = await provisionFitInstance();
     console.log(`\nLeaving it running. Terminate when done with:`);
-    console.log(`  npx tsx src/util/non-fit/aws/terminate-instance.ts --id ${provisioned.instanceId} --region ${resolveRegion()}`);
+    console.log(`  ${terminateInstanceCommand(provisioned.instanceId, resolveRegion())}`);
     return { artifacts: provisioned.artifacts, details: provisioned.details };
   });
 }

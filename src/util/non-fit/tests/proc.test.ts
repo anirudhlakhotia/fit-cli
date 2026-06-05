@@ -73,3 +73,45 @@ test("streamToFile does not echo the command's output to the terminal", async ()
   assert.doesNotMatch(terminal, /fit stdout/);
   assert.match(readFileSync(logFile, "utf8"), /fit stdout/);
 });
+
+test("run tees child output into the session log by default", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "fit-cli-proc-"));
+  const logFile = join(dir, "session.log");
+  const procModule = new URL("../proc.ts", import.meta.url).href;
+
+  const driver = [
+    `import { run, startSessionLog } from ${JSON.stringify(procModule)};`,
+    `const sessionLog = startSessionLog(${JSON.stringify(logFile)});`,
+    `await run(${JSON.stringify(process.execPath)}, ["-e", "console.log('child stdout'); console.error('child stderr');"]);`,
+    "await sessionLog.flush();",
+  ].join("\n");
+
+  const terminal = await capture(process.execPath, ["--import", "tsx", "--input-type=module", "-e", driver]);
+  const sessionOutput = readFileSync(logFile, "utf8");
+
+  assert.match(terminal, /child stdout/);
+  assert.match(sessionOutput, /child stdout/);
+  assert.match(sessionOutput, /child stderr/);
+});
+
+test("runAndCapture returns stdout while teeing stderr into the session log", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "fit-cli-proc-"));
+  const logFile = join(dir, "session.log");
+  const procModule = new URL("../proc.ts", import.meta.url).href;
+
+  const driver = [
+    `import { runAndCapture, startSessionLog } from ${JSON.stringify(procModule)};`,
+    `const sessionLog = startSessionLog(${JSON.stringify(logFile)});`,
+    `const stdout = await runAndCapture(${JSON.stringify(process.execPath)}, ["-e", "console.log('captured stdout'); console.error('captured stderr');"]);`,
+    "console.log(`result:${stdout.trim()}`);",
+    "await sessionLog.flush();",
+  ].join("\n");
+
+  const terminal = await capture(process.execPath, ["--import", "tsx", "--input-type=module", "-e", driver]);
+  const sessionOutput = readFileSync(logFile, "utf8");
+
+  assert.match(terminal, /captured stdout/);
+  assert.match(terminal, /result:captured stdout/);
+  assert.match(sessionOutput, /captured stdout/);
+  assert.match(sessionOutput, /captured stderr/);
+});
