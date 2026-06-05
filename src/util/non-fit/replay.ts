@@ -385,18 +385,6 @@ export class PromptSession {
     this.replayIndex = this.prompts.length;
   }
 
-  formatReplayReminder(): string | undefined {
-    if (this.mode === "replay" || this.mode === "defaults") {
-      return undefined;
-    }
-    return [
-      "Prompt replay:",
-      `  Log file: ${this.logFile}`,
-      `  Replay: npm run replay ${this.logFile}`,
-      `  Replay with default answers: npm run replay --defaults ${this.logFile}`,
-    ].join("\n");
-  }
-
   formatRunReminder(): string {
     return ["Run files:", `  ARTIFACT_DIR: ${this.runDir}`].join("\n");
   }

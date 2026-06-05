@@ -1,5 +1,5 @@
-import { copyFileSync, rmSync, writeFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { copyFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import { type Artifact, type Detail } from "../../util/non-fit/artifacts.js";
 import { LocalTarget } from "../../util/non-fit/local-target.js";
 import { streamToFile } from "../../util/non-fit/proc.js";
@@ -41,7 +41,7 @@ export interface FitExecutionContext {
   stageFile(localPath: string, targetPath?: string): Promise<string>;
   collectFile(targetPath: string, localPath: string): Promise<void>;
   removeTree(path: string): Promise<void>;
-  collectJunitArtifacts(sourceDir: string): Promise<Artifact[]>;
+  collectJunitArtifacts(sourceDir: string, iteration?: number): Promise<Artifact[]>;
   pathExists(path: string): Promise<boolean>;
   commandAvailable(command: string): Promise<boolean>;
   performerRunArgs(imageName: string, hostPort?: number, dockerNetwork?: string): string[];
@@ -201,6 +201,7 @@ export function createLocalFitExecutionContext(rootDir: string): FitExecutionCon
     targetFilePath: (localPath) => localPath,
     stageFile: (localPath) => Promise.resolve(localPath),
     collectFile: (targetPath, localPath) => {
+      mkdirSync(dirname(localPath), { recursive: true, mode: 0o700 });
       if (targetPath !== localPath) {
         copyFileSync(targetPath, localPath);
       }
@@ -210,7 +211,7 @@ export function createLocalFitExecutionContext(rootDir: string): FitExecutionCon
       rmSync(path, { recursive: true, force: true });
       return Promise.resolve();
     },
-    collectJunitArtifacts: async () => await collectJunitArtifacts(rootDir),
+    collectJunitArtifacts: async (_sourceDir, iteration) => await collectJunitArtifacts(rootDir, iteration),
     pathExists: async (path) => target.capture("test", ["-e", path]).then(() => true).catch(() => false),
     commandAvailable: async (command) =>
       target
@@ -294,9 +295,13 @@ async function createRemoteFitExecutionContext(target: ExecutionTarget, sdk: Sdk
       const destination = targetPath ?? join(rootDir, basename(localPath));
       return target.putFile(localPath, destination).then(() => destination);
     },
-    collectFile: (targetPath, localPath) => target.getFile(targetPath, localPath),
+    collectFile: (targetPath, localPath) => {
+      mkdirSync(dirname(localPath), { recursive: true, mode: 0o700 });
+      return target.getFile(targetPath, localPath);
+    },
     removeTree: (path) => target.run("rm", ["-rf", path]),
-    collectJunitArtifacts: async (sourceDir) => await collectJunitArtifactsFromTarget(target, sourceDir),
+    collectJunitArtifacts: async (sourceDir, iteration) =>
+      await collectJunitArtifactsFromTarget(target, sourceDir, iteration),
     pathExists: (path) => target.run("test", ["-e", path]).then(() => true).catch(() => false),
     commandAvailable: (command) =>
       target

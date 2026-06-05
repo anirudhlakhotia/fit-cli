@@ -5,6 +5,7 @@
  * point at another workspace):
  *   npx tsx src/workflows/performers/check-build-and-run-performer/index.ts
  */
+import { join } from "node:path";
 import { artifactFromPath, type RunOutput } from "../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { createLogFile } from "../../../util/non-fit/proc.js";
@@ -33,7 +34,7 @@ export interface RunningPerformer extends RunOutput {
 }
 
 export function performerLogStem(iteration: number, sdk: Sdk, version?: string): string {
-  return `${iteration}-${sdk.value}-${dockerImageComponent(version ?? "main")}-performer`;
+  return join(`it${iteration}`, `${sdk.value}-${dockerImageComponent(version ?? "main")}-performer`);
 }
 
 function performerLogFile(iteration: number, sdk: Sdk, version?: string): string {

@@ -48,8 +48,8 @@ test("checkBuildAndRunPerformerArgs can attach the performer to a Docker network
   ]);
 });
 
-test("performerLogStem includes the iteration, sdk, and normalized version", () => {
+test("performerLogStem puts the normalized version under the iteration directory", () => {
   const sdk = sdkByValue("java");
   assert.ok(sdk);
-  assert.equal(performerLogStem(0, sdk, "Release Candidate #1"), "0-java-release-candidate-1-performer");
+  assert.equal(performerLogStem(0, sdk, "Release Candidate #1"), "it0/java-release-candidate-1-performer");
 });

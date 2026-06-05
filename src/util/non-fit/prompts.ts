@@ -1,4 +1,5 @@
 import * as prompts from "@inquirer/prompts";
+import { withRawTerminalWrites } from "./fit-cli-log.js";
 import { ensurePromptSession, type PromptKind, type PromptResolveOptions } from "./replay.js";
 
 type PromptContext = Parameters<typeof prompts.input>[1];
@@ -81,7 +82,13 @@ function runPrompt<T>(
   prompt: (replayDefault?: T) => Promise<T>,
   options?: PromptResolveOptions<T>,
 ): Promise<T> {
-  return ensurePromptSession().resolvePrompt(promptId, kind, message, prompt, options);
+  return ensurePromptSession().resolvePrompt(
+    promptId,
+    kind,
+    message,
+    (replayDefault) => withRawTerminalWrites(() => prompt(replayDefault)),
+    options,
+  );
 }
 
 export function input(config: InputConfig & PromptConfigWithId, context?: PromptContext): Promise<string> {

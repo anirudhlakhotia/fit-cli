@@ -5,6 +5,7 @@
  * point at another workspace):
  *   npx tsx src/workflows/performers/check-and-build-performer/index.ts
  */
+import { join } from "node:path";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { artifactFromPath, type RunOutput } from "../../../util/non-fit/artifacts.js";
 import { fitCliError } from "../../../util/non-fit/fit-cli-log.js";
@@ -18,7 +19,7 @@ import { buildPerformerArgs, dockerImageComponent } from "../build-performer/bui
 import { performerStatus } from "../check-performer/check-performer.js";
 
 export function performerBuildLogStem(iteration: number, sdk: Sdk, version?: string): string {
-  return `${iteration}-${sdk.value}-${dockerImageComponent(version ?? "main")}-performer-build`;
+  return join(`it${iteration}`, `${sdk.value}-${dockerImageComponent(version ?? "main")}-performer-build`);
 }
 
 function performerBuildLogFile(iteration: number, sdk: Sdk, version?: string): string {

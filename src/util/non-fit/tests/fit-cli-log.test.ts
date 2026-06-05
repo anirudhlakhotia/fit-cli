@@ -53,3 +53,22 @@ test("installFitCliConsoleFormatting timestamps console output and direct stdout
 
   assert.equal(output, "[12:34:56] hello\n[12:34:56] Checking SSH... ready\n");
 });
+
+test("withRawTerminalWrites bypasses timestamp prefixes while preserving later line state", async () => {
+  const fitCliLogModule = new URL("../fit-cli-log.ts", import.meta.url).href;
+  const driver = [
+    `import { installFitCliConsoleFormatting, setFitCliTimestampProvider, withRawTerminalWrites } from ${JSON.stringify(fitCliLogModule)};`,
+    `setFitCliTimestampProvider(() => "12:34:56");`,
+    "installFitCliConsoleFormatting();",
+    `console.log("before");`,
+    `await withRawTerminalWrites(async () => { process.stdout.write("? "); console.log("(Y/n)"); });`,
+    `console.log("after");`,
+  ].join("\n");
+
+  const output = await capture(
+    process.execPath,
+    ["--import", "tsx", "--input-type=module", "-e", driver],
+  );
+
+  assert.equal(output, "[12:34:56] before\n? (Y/n)\n[12:34:56] after\n");
+});

@@ -3,7 +3,7 @@
  * endpoint with curl.
  *
  * Run on its own:
- *   npx tsx src/workflows/cluster-diag/index.ts couchbase://127.0.0.1 Administrator password
+ *   npx tsx src/workflows/cluster/cluster-diag/index.ts couchbase://127.0.0.1 Administrator password
  */
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { capture } from "../../../util/non-fit/proc.js";
@@ -36,7 +36,8 @@ export async function runClusterDiag(cluster: SelectedCluster): Promise<boolean>
   const command = `curl -u <username>:<password> -X GET ${url}`;
 
   try {
-    await capture("curl", ["-u", `${cluster.credentials.username}:${cluster.credentials.password}`, "-X", "GET", url]);
+    // For convenience in testing e.g. Capella, always use -k (insecure)
+    await capture("curl", ["-k", "-u", `${cluster.credentials.username}:${cluster.credentials.password}`, "-X", "GET", url]);
     console.log("\n✓ Cluster sanity test succeeded");
     return true;
   } catch (err) {

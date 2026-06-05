@@ -122,8 +122,8 @@ test("fitTestDriverSummaryDetails formats the parsed summary for the CLI table",
   );
 });
 
-test("fitTestLogStem prefixes the iteration number", () => {
-  assert.equal(fitTestLogStem(0), "0-driver");
+test("fitTestLogStem places the driver log under the iteration directory", () => {
+  assert.equal(fitTestLogStem(0), "it0/driver");
 });
 
 test("runTestDriverArgs omits -Dtest when all tests are selected", () => {

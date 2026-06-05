@@ -34,6 +34,7 @@ export function generateFitConfiguration(
   rootDir: string,
   performerPort: number = DEFAULT_PERFORMER_PORT,
   fitConfigPiece?: PieceData,
+  iteration: number = 0,
 ): RunOutput & {
   path: string;
 } {
@@ -43,7 +44,7 @@ export function generateFitConfiguration(
     `\nGenerating a FITConfiguration.json for you. You can also produce this by hand by ` +
       `following ${fitConfigDocPath(rootDir)}.`,
   );
-  const result = writeFitConfiguration(config);
+  const result = writeFitConfiguration(config, undefined, iteration);
 
   console.log(`\nWriting ${result.path}:\n`);
   console.log(JSON.stringify(config, null, 2));

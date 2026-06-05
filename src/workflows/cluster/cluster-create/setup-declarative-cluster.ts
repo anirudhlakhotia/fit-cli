@@ -16,14 +16,16 @@
 import YAML from "yaml";
 import { type RunOutput } from "../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
-import { capture, run } from "../../../util/non-fit/proc.js";
-import { findOnPath } from "../../../util/non-fit/which.js";
 import { DEFAULT_CREDENTIALS } from "../cluster-select/ask-credentials.js";
 import { classifyConnectionString } from "../cluster-select/classify-connection-string.js";
 import type { SelectedCluster } from "../cluster-select/index.js";
 import { parseClusterIds, type CbdinoCluster } from "../cluster-select/parse-cluster-ids.js";
 import { parseConnstr } from "../cluster-select/parse-connstr.js";
-import { allocateCluster } from "./allocate-cluster.js";
+import {
+  allocateCluster,
+  localClusterCommandExecutor,
+  type ClusterCommandExecutor,
+} from "./allocate-cluster.js";
 import { CBDINOCLUSTER_URL } from "./ensure-cbdinocluster.js";
 import { type ClusterExistsPolicy } from "./cluster-exists-policy.js";
 import { type CbdinoclusterDef } from "./build-cluster-def.js";
@@ -113,10 +115,14 @@ export function buildSelectedClusterFromConnstr(connectionString: string): Selec
 }
 
 /** Resolve a cluster id's connection string into a {@link SelectedCluster}. */
-async function selectedClusterFor(cbdinocluster: string, id: string): Promise<SelectedCluster | undefined> {
+async function selectedClusterFor(
+  cbdinocluster: string,
+  id: string,
+  execution: ClusterCommandExecutor,
+): Promise<SelectedCluster | undefined> {
   let connectionString: string | null;
   try {
-    connectionString = parseConnstr(await capture(cbdinocluster, ["connstr", id]));
+    connectionString = parseConnstr(await execution.capture(cbdinocluster, ["connstr", id]));
   } catch (err) {
     console.error(`✗ setup-cluster: couldn't get the connection string for ${id}: ${(err as Error).message}`);
     return undefined;
@@ -135,10 +141,14 @@ export function removeClusterArgs(id: string): string[] {
 }
 
 /** Remove a cbdinocluster cluster, streaming progress. Resolves whether it worked. */
-export async function removeCluster(cbdinocluster: string, id: string): Promise<boolean> {
+export async function removeCluster(
+  cbdinocluster: string,
+  id: string,
+  execution: ClusterCommandExecutor,
+): Promise<boolean> {
   console.log(`\nRemoving cluster ${id} with:\n  cbdinocluster ${removeClusterArgs(id).join(" ")}\n`);
   try {
-    await run(cbdinocluster, removeClusterArgs(id));
+    await execution.run(cbdinocluster, removeClusterArgs(id));
     console.log(`\n✓ Removed cluster ${id}`);
     return true;
   } catch (err) {
@@ -152,17 +162,18 @@ async function allocate(
   cbdinocluster: string,
   config: CbdinoclusterDef,
   deployer: string | undefined,
+  execution: ClusterCommandExecutor,
 ): Promise<SetupDeclarativeClusterResult> {
   let allocated;
   try {
-    allocated = await allocateCluster(cbdinocluster, YAML.stringify(config), deployer);
+    allocated = await allocateCluster(cbdinocluster, YAML.stringify(config), deployer, execution);
     console.log("\n✓ setup-cluster: cbdinocluster allocated the cluster");
   } catch (err) {
     console.error(`\n✗ setup-cluster: cbdinocluster failed to allocate the cluster: ${(err as Error).message}`);
     return FAILED({ cbdinocluster });
   }
 
-  const cluster = await selectedClusterFor(cbdinocluster, allocated.clusterId);
+  const cluster = await selectedClusterFor(cbdinocluster, allocated.clusterId, execution);
   return {
     ...(cluster ? { cluster } : {}),
     allocated: true,
@@ -183,17 +194,20 @@ export async function setupDeclarativeCluster(plan: {
   config: CbdinoclusterDef;
   onClusterExists: ClusterExistsPolicy;
   deployer?: string;
-}): Promise<SetupDeclarativeClusterResult> {
-  const cbdinocluster = findOnPath(CBDINOCLUSTER);
-  if (!cbdinocluster) {
-    console.error(`\n✗ setup-cluster: cbdinocluster isn't on your PATH. Get it from ${CBDINOCLUSTER_URL}.`);
+}, execution: ClusterCommandExecutor = localClusterCommandExecutor()): Promise<SetupDeclarativeClusterResult> {
+  if (!(await execution.commandAvailable(CBDINOCLUSTER))) {
+    console.error(
+      `\n✗ setup-cluster: cbdinocluster isn't on the PATH for ${execution.description}. ` +
+        `Get it from ${CBDINOCLUSTER_URL}.`,
+    );
     return FAILED();
   }
+  const cbdinocluster = CBDINOCLUSTER;
 
   // `cbdinocluster ps` doubles as a sanity check and the list of what's running.
   let existing: CbdinoCluster[];
   try {
-    existing = parseClusterIds(await capture(cbdinocluster, ["ps"]));
+    existing = parseClusterIds(await execution.capture(cbdinocluster, ["ps"]));
   } catch (err) {
     console.error(`\n✗ setup-cluster: couldn't list clusters (cbdinocluster ps): ${(err as Error).message}`);
     return FAILED({ cbdinocluster });
@@ -211,7 +225,7 @@ export async function setupDeclarativeCluster(plan: {
       `→ setup-cluster: onClusterExists is "useExisting" — trusting the running cluster ` +
         `${decision.cluster.id} [${decision.cluster.details}].`,
     );
-    const cluster = await selectedClusterFor(cbdinocluster, decision.cluster.id);
+    const cluster = await selectedClusterFor(cbdinocluster, decision.cluster.id, execution);
     return { ...(cluster ? { cluster } : {}), allocated: false, cbdinocluster, artifacts: [], details: [] };
   }
 
@@ -221,11 +235,11 @@ export async function setupDeclarativeCluster(plan: {
         `${decision.remove.length} existing cluster(s) before allocating.`,
     );
     for (const cluster of decision.remove) {
-      await removeCluster(cbdinocluster, cluster.id);
+      await removeCluster(cbdinocluster, cluster.id, execution);
     }
   }
 
-  return allocate(cbdinocluster, plan.config, plan.deployer);
+  return allocate(cbdinocluster, plan.config, plan.deployer, execution);
 }
 
 if (isMain(import.meta.url)) {
@@ -237,7 +251,7 @@ if (isMain(import.meta.url)) {
     console.log(JSON.stringify({ ...result, artifacts: result.artifacts.length }, null, 2));
     if (result.allocated && result.clusterId && result.cbdinocluster) {
       console.log("\n(standalone run) removing the cluster it just allocated…");
-      await removeCluster(result.cbdinocluster, result.clusterId);
+      await removeCluster(result.cbdinocluster, result.clusterId, localClusterCommandExecutor());
     }
     process.exit(result.cluster ? 0 : 1);
   });

@@ -235,15 +235,6 @@ test("interactive mode can serialize a prompt response before saving it", async 
   ]);
 });
 
-test("interactive sessions format a replay reminder with the logfile", () => {
-  const session = PromptSession.fromArgv([]);
-
-  assert.equal(
-    session.formatReplayReminder(),
-    `Prompt replay:\n  Log file: ${session.logFile}\n  Replay: npm run replay ${session.logFile}\n  Replay with default answers: npm run replay --defaults ${session.logFile}`,
-  );
-});
-
 test("prompt sessions format a run directory reminder", () => {
   const session = PromptSession.fromArgv([]);
 
@@ -289,7 +280,7 @@ test("replay mode reuses saved prompt responses", async () => {
     response = await session.resolvePrompt("fit.grpc.build-now", "confirm", "Build FIT now?", () =>
       Promise.resolve(false),
     );
-    assert.equal(session.formatReplayReminder(), undefined);
+    assert.equal(session.formatRunReminder(), `Run files:\n  ARTIFACT_DIR: ${session.runDir}`);
   });
 
   assert.equal(response, true);

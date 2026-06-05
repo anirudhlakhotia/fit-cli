@@ -110,7 +110,7 @@ async function renderJunitReport(reportsDir: string, runDir: string): Promise<Ar
  * empty list when no reports were produced, and still returns the XML artifact
  * if the HTML render fails.
  */
-export async function collectJunitArtifacts(rootDir: string): Promise<Artifact[]> {
+export async function collectJunitArtifacts(rootDir: string, iteration: number = 0): Promise<Artifact[]> {
   const sourceDir = surefireReportsDir(rootDir);
   const xmlFiles = junitXmlFiles(sourceDir);
   if (xmlFiles.length === 0) {
@@ -119,7 +119,8 @@ export async function collectJunitArtifacts(rootDir: string): Promise<Artifact[]
   }
 
   const runDir = ensureRunDir();
-  const destDir = join(runDir, "surefire-reports");
+  const iterationDir = join(runDir, `it${iteration}`);
+  const destDir = join(iterationDir, "surefire-reports");
   mkdirSync(destDir, { recursive: true, mode: 0o700 });
   for (const file of xmlFiles) {
     cpSync(join(sourceDir, file), join(destDir, file));
@@ -129,7 +130,7 @@ export async function collectJunitArtifacts(rootDir: string): Promise<Artifact[]
     artifactFromPath(destDir, `JUnit XML reports from the FIT test-driver (${xmlFiles.length} file(s))`),
   ];
 
-  const reportArtifact = await renderJunitReport(destDir, runDir);
+  const reportArtifact = await renderJunitReport(destDir, iterationDir);
   if (reportArtifact) {
     artifacts.push(reportArtifact);
   }
@@ -143,6 +144,7 @@ export async function collectJunitArtifacts(rootDir: string): Promise<Artifact[]
 export async function collectJunitArtifactsFromTarget(
   target: ExecutionTarget,
   sourceDir: string,
+  iteration: number = 0,
 ): Promise<Artifact[]> {
   const xmlFiles = parseJunitXmlFiles(
     await target.capture("find", [sourceDir, "-maxdepth", "1", "-type", "f", "-name", "TEST-*.xml", "-printf", "%f\n"]),
@@ -153,7 +155,8 @@ export async function collectJunitArtifactsFromTarget(
   }
 
   const runDir = ensureRunDir();
-  const destDir = join(runDir, "surefire-reports");
+  const iterationDir = join(runDir, `it${iteration}`);
+  const destDir = join(iterationDir, "surefire-reports");
   mkdirSync(destDir, { recursive: true, mode: 0o700 });
   for (const file of xmlFiles) {
     await target.getFile(join(sourceDir, file), join(destDir, file));
@@ -163,7 +166,7 @@ export async function collectJunitArtifactsFromTarget(
     artifactFromPath(destDir, `JUnit XML reports from the FIT test-driver (${xmlFiles.length} file(s))`, runDir),
   ];
 
-  const reportArtifact = await renderJunitReport(destDir, runDir);
+  const reportArtifact = await renderJunitReport(destDir, iterationDir);
   if (reportArtifact) {
     artifacts.push(reportArtifact);
   }

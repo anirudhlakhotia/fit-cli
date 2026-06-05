@@ -9,13 +9,15 @@
  * create a cluster, so only run it if you mean to):
  *   npx tsx src/workflows/cluster-create/allocate-cluster.ts
  */
-import { mkdirSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { artifactFromPath, type RunOutput, type Artifact } from "../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { input } from "../../../util/non-fit/prompts.js";
-import { runAndCapture } from "../../../util/non-fit/proc.js";
-import { ensureRunDir } from "../../../util/non-fit/replay.js";
+import { capture, run } from "../../../util/non-fit/proc.js";
+import { createRunFilePath, ensureRunDir } from "../../../util/non-fit/replay.js";
+import { posixQuote } from "../../../util/non-fit/remote-target.js";
+import { findOnPath } from "../../../util/non-fit/which.js";
 import { buildClusterDef } from "./build-cluster-def.js";
 import { ensureCbdinocluster } from "./ensure-cbdinocluster.js";
 import { parseAllocatedId } from "./parse-allocated-id.js";
@@ -29,6 +31,36 @@ export type AllocatedCluster = RunOutput & {
 export interface WriteClusterDefResult {
   path: string;
   artifact: Artifact;
+}
+
+export interface ClusterCommandExecutor {
+  readonly description: string;
+  run(command: string, args: string[], cwd?: string): Promise<void>;
+  capture(command: string, args: string[], cwd?: string): Promise<string>;
+  runToFile(command: string, args: string[], targetPath: string, cwd?: string): Promise<void>;
+  targetFilePath(localPath: string): string;
+  stageFile(localPath: string, targetPath?: string): Promise<string>;
+  collectFile(targetPath: string, localPath: string): Promise<void>;
+  commandAvailable(command: string): Promise<boolean>;
+}
+
+export function localClusterCommandExecutor(): ClusterCommandExecutor {
+  return {
+    description: "this machine",
+    run,
+    capture,
+    runToFile: (command, args, targetPath, cwd) =>
+      run("sh", ["-lc", `${[command, ...args].map(posixQuote).join(" ")} > ${posixQuote(targetPath)}`], cwd),
+    targetFilePath: (localPath) => localPath,
+    stageFile: (localPath) => Promise.resolve(localPath),
+    collectFile: (targetPath, localPath) => {
+      if (targetPath !== localPath) {
+        copyFileSync(targetPath, localPath);
+      }
+      return Promise.resolve();
+    },
+    commandAvailable: (command) => Promise.resolve(findOnPath(command) !== undefined),
+  };
 }
 
 /**
@@ -70,9 +102,11 @@ export async function allocateCluster(
   cbdinocluster: string,
   def: string,
   deployer?: string,
+  execution: ClusterCommandExecutor = localClusterCommandExecutor(),
 ): Promise<AllocatedCluster> {
-  const { path: defFile, artifact } = writeClusterDef(def);
-  console.log(`Wrote cbdinocluster def to ${defFile}:\n\n${def}`);
+  const { path: localDefFile, artifact } = writeClusterDef(def);
+  console.log(`Wrote cbdinocluster def to ${localDefFile}:\n\n${def}`);
+  const defFile = await execution.stageFile(localDefFile, execution.targetFilePath(localDefFile));
 
   const args = ["--verbose", "allocate"];
   if (deployer) {
@@ -80,8 +114,12 @@ export async function allocateCluster(
   }
   args.push(`--def-file=${defFile}`);
 
-  console.log(`Running: ${cbdinocluster} ${args.join(" ")}\n`);
-  const clusterId = parseAllocatedId(await runAndCapture(cbdinocluster, args));
+  const localOutputFile = createRunFilePath("cbdinocluster-allocate.stdout");
+  const targetOutputFile = execution.targetFilePath(localOutputFile);
+  console.log(`Running on ${execution.description}: ${cbdinocluster} ${args.join(" ")}\n`);
+  await execution.runToFile(cbdinocluster, args, targetOutputFile);
+  await execution.collectFile(targetOutputFile, localOutputFile);
+  const clusterId = parseAllocatedId(readFileSync(localOutputFile, "utf8"));
   if (!clusterId) {
     throw new Error("cbdinocluster allocate didn't print a cluster id");
   }

@@ -9,12 +9,25 @@ const baseStderrWrite = process.stderr.write.bind(process.stderr);
 
 let consoleFormattingInstalled = false;
 let timestampProvider = (): string => new Date().toTimeString().slice(0, 8);
+let rawTerminalWriteDepth = 0;
 
 type StreamWrite = typeof process.stdout.write;
 
 export interface TimestampedChunk {
   text: string;
   atLineStart: boolean;
+}
+
+function advanceLineStart(text: string, atLineStart: boolean): boolean {
+  let nextLineStart = atLineStart;
+  for (const char of text) {
+    if (char !== "\n") {
+      nextLineStart = false;
+      continue;
+    }
+    nextLineStart = true;
+  }
+  return nextLineStart;
 }
 
 function stringify(arg: unknown): string {
@@ -72,6 +85,19 @@ function installTimestampedStreamWrite(stream: NodeJS.WriteStream, original: Str
     const text = typeof chunk === "string"
       ? chunk
       : Buffer.from(chunk).toString(typeof encoding === "string" ? encoding : undefined);
+    if (rawTerminalWriteDepth > 0) {
+      atLineStart = advanceLineStart(text, atLineStart);
+      if (typeof encoding === "function") {
+        return original(chunk, encoding);
+      }
+      if (callback) {
+        return original(chunk, encoding, callback);
+      }
+      if (encoding) {
+        return original(chunk, encoding);
+      }
+      return original(chunk);
+    }
     const formatted = formatTimestampedChunk(text, atLineStart);
     atLineStart = formatted.atLineStart;
 
@@ -86,6 +112,15 @@ function installTimestampedStreamWrite(stream: NodeJS.WriteStream, original: Str
     }
     return original(formatted.text);
   } as StreamWrite;
+}
+
+export async function withRawTerminalWrites<T>(operation: () => Promise<T>): Promise<T> {
+  rawTerminalWriteDepth++;
+  try {
+    return await operation();
+  } finally {
+    rawTerminalWriteDepth--;
+  }
 }
 
 export function setFitCliTimestampProvider(provider: (() => string) | undefined): void {

@@ -56,12 +56,6 @@ export function runCli(main: () => Promise<void | Partial<RunOutput>>): void {
         console.log(`\n${summaryOutput}`);
       }
     })
-    .finally(() => {
-      const replayReminder = promptSession.formatReplayReminder();
-      if (replayReminder) {
-        console.log(`\n${replayReminder}`);
-      }
-    })
     .catch(async (err) => {
       if (err instanceof Error && err.name === "ExitPromptError") {
         console.log("\nCancelled.");

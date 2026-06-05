@@ -30,6 +30,10 @@ import {
 import { isMain, runCli } from "../../../../util/non-fit/cli.js";
 import { fitCliError, fitCliWarn } from "../../../../util/non-fit/fit-cli-log.js";
 import { rootDirFromArgv } from "../../../../util/fit/root.js";
+import {
+  localClusterCommandExecutor,
+  type ClusterCommandExecutor,
+} from "../../../cluster/cluster-create/allocate-cluster.js";
 import { setupDeclarativeCluster } from "../../../cluster/cluster-create/setup-declarative-cluster.js";
 import {
   checkBuildAndRunPerformer,
@@ -46,6 +50,7 @@ import {
   detectClusterDockerEnvironment,
   runPerformerClusterSanityCheck,
 } from "../../../fit-shared/performer-cluster-sanity.js";
+import { writeAgentsGuide } from "../../../fit-shared/write-agents-guide.js";
 import { selectExecutionTarget } from "../select-execution-target/index.js";
 
 /** Describe the shared cluster for the run header / setup-cluster step. */
@@ -89,6 +94,20 @@ function missingClusterMessage(clusterMode: ResolvedDefinition["clusterMode"]): 
   );
 }
 
+/**
+ * Combine the run's artifacts, drop an AGENTS.md guide describing them into the
+ * run directory, and return the combined list including that guide.
+ */
+export function finalizeRunFromDefinition(
+  artifacts: readonly Artifact[],
+  details: readonly Detail[],
+  runDir?: string,
+): RunOutput {
+  const combined = combineArtifacts(artifacts);
+  const guide = writeAgentsGuide(combined, runDir);
+  return { artifacts: combineArtifacts(combined, [guide.artifact]), details: combineDetails(details) };
+}
+
 /** Print what an iteration resolved to, so a CI log shows the run's inputs. */
 function announce(index: number, total: number, iteration: ResolvedIteration, steps: readonly DefinitionStep[]): void {
   const { testSelection } = iteration;
@@ -111,6 +130,7 @@ function announce(index: number, total: number, iteration: ResolvedIteration, st
  */
 export async function setupCluster(
   resolved: ResolvedDefinition,
+  execution: ClusterCommandExecutor = localClusterCommandExecutor(),
   setupDeclarativeClusterFn: typeof setupDeclarativeCluster = setupDeclarativeCluster,
 ): Promise<RunOutput & { resolved: ResolvedDefinition }> {
   if (resolved.clusterMode === "connection") {
@@ -122,7 +142,7 @@ export async function setupCluster(
     return { resolved, artifacts: [], details: [] };
   }
   if (resolved.cbdinocluster) {
-    const outcome = await setupDeclarativeClusterFn(resolved.cbdinocluster);
+    const outcome = await setupDeclarativeClusterFn(resolved.cbdinocluster, execution);
     return {
       resolved: outcome.cluster ? applySharedCluster(resolved, outcome.cluster) : resolved,
       artifacts: outcome.artifacts,
@@ -140,7 +160,10 @@ async function setupPerformer(
   iterationIndex: number,
 ): Promise<RunningPerformer | undefined> {
   const clusterDockerEnvironment = iteration.cluster
-    ? await detectClusterDockerEnvironment(iteration.cluster)
+    ? await detectClusterDockerEnvironment(iteration.cluster, {
+        captureCommand: (command, args) => execution.capture(command, args),
+        dockerCommand: execution.dockerCommand,
+      })
     : undefined;
   if (clusterDockerEnvironment) {
     console.log(
@@ -180,6 +203,7 @@ async function runTests(
     execution.rootDir,
     iteration.performerPort,
     iteration.fitConfig,
+    iterationIndex,
   );
   artifacts.push(...fitConfig.artifacts);
   details.push(...fitConfig.details);
@@ -272,7 +296,7 @@ export async function runFromDefinition(
 
     // The cluster is shared across iterations, so set it up once up front.
     if (steps.includes("setup-cluster")) {
-      const setup = await setupCluster(resolved);
+      const setup = await setupCluster(resolved, execution);
       resolved = setup.resolved;
       artifacts.push(...setup.artifacts);
       details.push(...setup.details);
@@ -289,7 +313,7 @@ export async function runFromDefinition(
       details.push(...output.details);
     }
 
-    return { artifacts: combineArtifacts(artifacts), details: combineDetails(details) };
+    return finalizeRunFromDefinition(artifacts, details);
   } finally {
     await executionTarget.cleanup();
   }

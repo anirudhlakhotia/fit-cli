@@ -38,7 +38,7 @@ export interface FitTestDriverSummary {
 const JUNIT_ATTRIBUTE_RE = (name: string): RegExp => new RegExp(`\\b${name}="(\\d+)"`);
 
 export function fitTestLogStem(iteration: number): string {
-  return `${iteration}-driver`;
+  return join(`it${iteration}`, "driver");
 }
 
 function fitTestLogFile(iteration: number): string {
@@ -188,7 +188,10 @@ export async function runTestDriver(
   }
 
   await execution.collectFile(targetLogFile, logFile);
-  const artifacts = combineArtifacts([logArtifact], await execution.collectJunitArtifacts(surefireReportsDir(execution.rootDir)));
+  const artifacts = combineArtifacts(
+    [logArtifact],
+    await execution.collectJunitArtifacts(surefireReportsDir(execution.rootDir), iteration),
+  );
   const summary = extractFitTestDriverSummaryFromJunitReports(join(dirname(logFile), "surefire-reports"));
   const ok = commandOk && (summary ? didFitTestDriverPass(summary) : true);
   return { ok, logFile, artifacts, details: summary ? fitTestDriverSummaryDetails(summary) : [] };
