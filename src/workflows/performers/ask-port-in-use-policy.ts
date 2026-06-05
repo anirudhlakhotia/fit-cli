@@ -21,12 +21,12 @@ export async function askPortInUsePolicy(): Promise<PortInUsePolicy> {
       "If the performer port is already in use when this definition runs, what should happen?",
     choices: [
       {
-        name: "restart — stop what's there and bring up a fresh performer (default)",
-        value: "restart",
+        name: "reuse — assume a performer is already running and test against it (default - convenient for local development, lets you run the performer yourself)",
+        value: "reuse",
       },
       {
-        name: "reuse — assume a performer is already running and test against it",
-        value: "reuse",
+        name: "restart — stop what's there and bring up a fresh performer (good for clean testing)",
+        value: "restart",
       },
       {
         name: "fail — stop the run rather than touch whatever is there",

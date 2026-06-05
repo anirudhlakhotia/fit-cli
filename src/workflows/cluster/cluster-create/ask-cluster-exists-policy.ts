@@ -28,7 +28,7 @@ export async function askClusterExistsPolicy(): Promise<ClusterExistsPolicy> {
         value: "destroyAndRecreate",
       },
       {
-        name: "useExisting — trust the running cluster is the right one and test against it (handy for efficient local test iteration)",
+        name: "useExisting — trust the running cluster is the right one and test against it (convenient for efficient local test iteration)",
         value: "useExisting",
       },
       {

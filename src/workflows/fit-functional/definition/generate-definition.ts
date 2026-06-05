@@ -156,26 +156,27 @@ export function formatFitFunctionalDefinition(definition: FitDefinition): string
       "$1fitConfig:",
     ].join("\n"),
   );
-  text = text.replace(
-    /^(\s*)onClusterExists:/gm,
-    [
-      "$1# If cbdinocluster already has a cluster running when this runs:",
-      "$1#   fail               - stop the run rather than touch an existing cluster.",
-      "$1#   useExisting        - trust the running cluster is the right one and test against it.",
-      "$1#   destroyAndRecreate - remove any existing cluster(s) and allocate a fresh one (default).",
-      "$1onClusterExists:",
-    ].join("\n"),
-  );
-  text = text.replace(
-    /^(\s*)onPortInUse:/gm,
-    [
-      "$1# If the performer port is already in use when this runs:",
-      "$1#   fail    - stop the run.",
-      "$1#   restart - stop what's there and bring up a fresh performer (default).",
-      "$1#   reuse   - assume a performer is already running and test against it.",
-      "$1onPortInUse:",
-    ].join("\n"),
-  );
+  // These are maybe too heavy?  Trying to find a balance.
+  // text = text.replace(
+  //   /^(\s*)onClusterExists:/gm,
+  //   [
+  //     "$1# If cbdinocluster already has a cluster running when this runs:",
+  //     "$1#   fail               - stop the run rather than touch an existing cluster.",
+  //     "$1#   useExisting        - trust the running cluster is the right one and test against it.",
+  //     "$1#   destroyAndRecreate - remove any existing cluster(s) and allocate a fresh one.",
+  //     "$1onClusterExists:",
+  //   ].join("\n"),
+  // );
+  // text = text.replace(
+  //   /^(\s*)onPortInUse:/gm,
+  //   [
+  //     "$1# If the performer port is already in use when this runs:",
+  //     "$1#   fail    - stop the run.",
+  //     "$1#   restart - stop what's there and bring up a fresh performer.",
+  //     "$1#   reuse   - assume a performer is already running and test against .",
+  //     "$1onPortInUse:",
+  //   ].join("\n"),
+  // );
   return text;
 }
 
