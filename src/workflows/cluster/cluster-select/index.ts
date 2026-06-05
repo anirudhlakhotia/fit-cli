@@ -67,7 +67,7 @@ async function resolveConnection(): Promise<SupportedCluster> {
  * allocated cluster is finished off exactly like one the user picked.
  */
 export async function buildSelectedCluster(connection: SupportedCluster): Promise<SelectedCluster> {
-  const credentials = await askCredentials();
+  const credentials = await askCredentials(connection.flavour);
   // couchbase:// is non-TLS; only couchbases:// needs a TLS decision.
   const tls: TlsConfig =
     connection.scheme === "couchbases" ? await askTls(connection.flavour) : null;

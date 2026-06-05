@@ -1,5 +1,5 @@
 /**
- * Unit tests for the fit-mix definition parser/validator.
+ * Unit tests for the fit definition parser/validator.
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -12,7 +12,7 @@ import { CURRENT_FIT_DEFINITION_VERSION } from "../types.js";
 
 const MINIMAL = `
 version: 1
-type: fit-mix
+type: fit
 setup:
   cluster:
     connection:
@@ -32,7 +32,7 @@ iterations:
 test("parses a minimal valid definition", () => {
   const def = parseDefinition(MINIMAL);
   assert.equal(def.version, CURRENT_FIT_DEFINITION_VERSION);
-  assert.equal(def.type, "fit-mix");
+  assert.equal(def.type, "fit");
   assert.deepEqual(def.setup?.cluster?.connection, {
     connectionString: "couchbase://localhost",
     username: "Administrator",
@@ -50,7 +50,7 @@ test("parses a minimal valid definition", () => {
 test("supports multiple iterations sharing the top-level cluster", () => {
   const def = parseDefinition(`
 version: 1
-type: fit-mix
+type: fit
 setup:
   cluster:
     connection:
@@ -82,7 +82,7 @@ iterations:
 test("matches the sample file shape: shared cbdinocluster + performer port", () => {
   const def = parseDefinition(`
 version: 1
-type: fit-mix
+type: fit
 setup:
   cluster:
     cbdinocluster:
@@ -110,7 +110,7 @@ iterations:
 test("an omitted shared setup is allowed", () => {
   const def = parseDefinition(`
 version: 1
-type: fit-mix
+type: fit
 iterations:
   - type: functional
     setup:
@@ -125,7 +125,7 @@ iterations:
 test("a missing runtime.tests defaults to all", () => {
   const def = parseDefinition(`
 version: 1
-type: fit-mix
+type: fit
 iterations:
   - type: functional
     setup:
@@ -147,7 +147,7 @@ test("tls insecure and certPath are accepted", () => {
 test("performer version and excludedGroups round-trip when present", () => {
   const def = parseDefinition(`
 version: 1
-type: fit-mix
+type: fit
 iterations:
   - type: functional
     setup:
@@ -187,7 +187,7 @@ test("legacy useExisting remains accepted", () => {
 
 test("rejects the wrong type", () => {
   assert.throws(
-    () => parseDefinition(MINIMAL.replace("fit-mix", "something-else")),
+    () => parseDefinition(MINIMAL.replace("fit", "something-else")),
     InvalidDefinitionError,
   );
 });
@@ -222,14 +222,14 @@ test("rejects an older version", () => {
 
 test("rejects a missing iterations list", () => {
   assert.throws(
-    () => parseDefinition("version: 1\ntype: fit-mix\n"),
+    () => parseDefinition("version: 1\ntype: fit\n"),
     (err: unknown) => err instanceof InvalidDefinitionError && /iterations/.test(err.message),
   );
 });
 
 test("rejects an empty iterations list", () => {
   assert.throws(
-    () => parseDefinition("version: 1\ntype: fit-mix\niterations: []\n"),
+    () => parseDefinition("version: 1\ntype: fit\niterations: []\n"),
     (err: unknown) => err instanceof InvalidDefinitionError && /at least one/.test(err.message),
   );
 });

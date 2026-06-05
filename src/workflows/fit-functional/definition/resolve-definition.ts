@@ -1,5 +1,5 @@
 /**
- * Turn a validated `fit-mix` definition into concrete functional run inputs.
+ * Turn a validated `fit` definition into concrete functional run inputs.
  */
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import type { PieceData } from "../../../util/non-fit/config-pieces.js";

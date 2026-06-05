@@ -29,20 +29,23 @@ test("buildFitFunctionalDefinition maps an all-tests guided run to one iteration
     buildFitFunctionalDefinition(sdk, cluster, buildDefaultFitTestSelection()),
     {
       version: 1,
-      type: "fit-mix",
+      type: "fit",
       setup: {
         cluster: {
-          connection: {
-            connectionString: "couchbase://localhost",
-            username: "Administrator",
-            password: "password",
-            tls: null,
-          },
+          useExisting: {},
         },
       },
       iterations: [
         {
           type: "functional",
+          fitConfig: {
+            clusterAccess: {
+              connectionString: "couchbase://localhost",
+              username: "Administrator",
+              password: "password",
+              tls: null,
+            },
+          },
           setup: {
             performer: { sdk: "java" },
           },
@@ -76,10 +79,12 @@ test("formatFitFunctionalDefinition annotates shared cluster connection details"
   const rendered = formatFitFunctionalDefinition(
     buildFitFunctionalDefinition(sdk, cluster, buildDefaultFitTestSelection()),
   );
-  assert.match(rendered, /type: fit-mix/);
+  assert.match(rendered, /type: fit/);
   assert.match(rendered, /- type: functional/);
-  assert.match(rendered, /connection:/);
+  assert.match(rendered, /useExisting: \{\}/);
+  assert.match(rendered, /clusterAccess:/);
   assert.match(rendered, /already-running cluster/i);
+  assert.match(rendered, /FITConfiguration\.md/i);
 });
 
 test("buildFitFunctionalDefinitionFrom emits a cbdinocluster block and pins the version", () => {
@@ -95,7 +100,7 @@ test("buildFitFunctionalDefinitionFrom emits a cbdinocluster block and pins the 
 
   assert.deepEqual(definition, {
     version: 1,
-    type: "fit-mix",
+    type: "fit",
     setup: {
       cluster: {
         cbdinocluster: {

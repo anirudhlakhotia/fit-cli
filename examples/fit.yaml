@@ -1,14 +1,14 @@
-# Example fit-mix definition file.
+# Example fit definition file.
 #
 # A definition file is a repeatable, hand-editable description of one or more FIT
 # functional test runs. Run it with:
 #
-#   npm run definition examples/fit-mix.yaml
+#   npm run definition examples/fit.yaml
 #
 # Run only some steps (CSV of: setup, setup-cluster, setup-performer, run):
 #
-#   npm run definition examples/fit-mix.yaml setup-performer
-#   npm run definition examples/fit-mix.yaml run
+#   npm run definition examples/fit.yaml setup-performer
+#   npm run definition examples/fit.yaml run
 #
 # (add --root <dir> to point at a workspace other than the parent of the cwd).
 #
@@ -16,7 +16,7 @@
 #   npx tsx src/workflows/fit-functional/definition/parse-definition.ts <file.yaml>
 
 version: 1
-type: fit-mix
+type: fit
 
 # Shared setup, stood up once for the whole run. The cluster lives here so every
 # iteration tests against the same one.

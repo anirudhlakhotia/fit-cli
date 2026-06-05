@@ -8,6 +8,7 @@
  */
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { input, password } from "../../../util/non-fit/prompts.js";
+import type { ClusterFlavour } from "./classify-connection-string.js";
 
 export interface Credentials {
   username: string;
@@ -20,28 +21,59 @@ export const DEFAULT_CREDENTIALS: Credentials = {
   password: "password",
 };
 
+export interface CredentialPromptPolicy {
+  usernameDefault?: string;
+  passwordDefault?: string;
+  guidance?: string[];
+}
+
+/** Self-managed clusters have local defaults; Capella needs explicit user input. */
+export function credentialPromptPolicy(flavour: ClusterFlavour): CredentialPromptPolicy {
+  if (flavour === "self-managed") {
+    return {
+      usernameDefault: DEFAULT_CREDENTIALS.username,
+      passwordDefault: DEFAULT_CREDENTIALS.password,
+    };
+  }
+
+  return {
+    guidance: [
+      "→ Capella reminder: create a database user in the Capella UI for FIT to use.",
+      "→ Also whitelist this machine's IP address there (or allow all IPs while testing).",
+    ],
+  };
+}
+
 /**
- * Prompt for the test username and (masked) password, defaulting to
- * {@link DEFAULT_CREDENTIALS}. The username prompt shows the default inline;
- * the password prompt can't carry a default, so a blank entry falls back to it.
+ * Prompt for the test username and (masked) password. Self-managed clusters
+ * default to {@link DEFAULT_CREDENTIALS}; Capella clusters require the user to
+ * enter explicit credentials.
  */
-export async function askCredentials(): Promise<Credentials> {
+export async function askCredentials(flavour: ClusterFlavour): Promise<Credentials> {
+  const policy = credentialPromptPolicy(flavour);
+  for (const line of policy.guidance ?? []) {
+    console.log(line);
+  }
+
   const username = await input({
     promptId: "cluster.credentials.username",
     message: "Username to test with:",
-    default: DEFAULT_CREDENTIALS.username,
+    ...(policy.usernameDefault ? { default: policy.usernameDefault } : {}),
+    validate: (value) => (value.trim() ? true : "Please enter a username."),
   });
   const pw = await password({
     promptId: "cluster.credentials.password",
     message: "Password to test with:",
     mask: true,
+    validate: (value) =>
+      value.length > 0 || policy.passwordDefault ? true : "Please enter a password.",
   });
-  return { username, password: pw || DEFAULT_CREDENTIALS.password };
+  return { username, password: pw || policy.passwordDefault || "" };
 }
 
 if (isMain(import.meta.url)) {
   runCli(async () => {
-    const { username } = await askCredentials();
+    const { username } = await askCredentials("self-managed");
     console.log(`username: ${username} (password captured)`);
   });
 }

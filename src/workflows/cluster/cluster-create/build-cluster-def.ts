@@ -49,7 +49,7 @@ export interface CbdinoclusterDef {
 /**
  * Build the cbdinocluster definition as a structured object, rather than the YAML
  * string {@link buildClusterDef} produces. Used when the def is embedded in a
- * larger document (e.g. a fit-mix definition file's
+ * larger document (e.g. a fit definition file's
  * `setup.cluster.cbdinocluster.config`) rather than written out on its own.
  */
 export function buildClusterDefObject(def: ClusterDef): CbdinoclusterDef {

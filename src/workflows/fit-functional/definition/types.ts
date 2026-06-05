@@ -1,5 +1,5 @@
 /**
- * The shape of a `fit-mix` YAML definition file — a repeatable, checked-in
+ * The shape of a `fit` YAML definition file — a repeatable, checked-in
  * description of one or more FIT runs. Today only `functional` iterations are
  * supported.
  */
@@ -9,8 +9,8 @@ import type { CbdinoclusterDef } from "../../cluster/cluster-create/build-cluste
 import type { ClusterExistsPolicy } from "../../cluster/cluster-create/cluster-exists-policy.js";
 import type { PieceData } from "../../../util/non-fit/config-pieces.js";
 
-/** The `type:` discriminator every fit-mix definition file carries. */
-export const FIT_DEFINITION_TYPE = "fit-mix";
+/** The `type:` discriminator every fit definition file carries. */
+export const FIT_DEFINITION_TYPE = "fit";
 
 /**
  * The current major version of the definition format. Bump this only on a
@@ -18,7 +18,7 @@ export const FIT_DEFINITION_TYPE = "fit-mix";
  */
 export const CURRENT_FIT_DEFINITION_VERSION = 1;
 
-/** The currently supported iteration kinds within a fit-mix definition. */
+/** The currently supported iteration kinds within a fit definition. */
 export const FIT_ITERATION_TYPES = ["functional"] as const;
 
 export type FitIterationType = (typeof FIT_ITERATION_TYPES)[number];
@@ -132,7 +132,7 @@ export interface FunctionalIteration {
   runtime: RuntimeSection;
 }
 
-/** A fully-parsed, validated fit-mix definition file. */
+/** A fully-parsed, validated fit definition file. */
 export interface FitDefinition {
   version: number;
   type: typeof FIT_DEFINITION_TYPE;

@@ -3,13 +3,13 @@
  * of questions as the guided functional flow — which cluster, which performer
  * and version, which tests — but stands *nothing* up: no cluster is allocated, no
  * performer is built, no tests are run. It just captures the answers and writes a
- * reusable `fit-mix.yaml` you can run later with
+ * reusable `fit.yaml` you can run later with
  * `npm run definition <file.yaml>` or hand-edit into a matrix of runs.
  *
  * Because it sets nothing up, the cluster question has two outcomes that mirror
- * the definition format directly: an existing cluster becomes a `connection`
- * block, and "create one with cbdinocluster" becomes a `cbdinocluster` block
- * (parsed and kept for when definition-driven cluster setup lands).
+ * the definition format directly: an existing cluster becomes `useExisting`
+ * plus an iteration `fitConfig.clusterAccess` block, and "create one with
+ * cbdinocluster" becomes a `cbdinocluster` block.
  *
  * Run this flow on its own (skipping the top-level menu; add --root <dir> to
  * point at another workspace):
@@ -47,12 +47,12 @@ export async function chooseDefinitionCluster(): Promise<DefinitionCluster> {
 }
 
 /**
- * Walk through the definition questions and write the resulting fit-mix.yaml.
+ * Walk through the definition questions and write the resulting fit.yaml.
  * Nothing is built, allocated, or run.
  */
 export async function createFitFunctionalDefinition(rootDir: string): Promise<RunOutput> {
   console.log(
-    "\nThis builds a reusable fit-mix definition file. Nothing is set up — " +
+    "\nThis builds a reusable fit definition file. Nothing is set up — " +
       "no cluster is allocated, no performer built, no tests run.\n",
   );
 

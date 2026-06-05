@@ -57,7 +57,7 @@ function iteration(overrides: {
 function definition(overrides: Partial<FitDefinition> = {}): FitDefinition {
   return {
     version: 1,
-    type: "fit-mix",
+    type: "fit",
     setup: {
       cluster: {
         connection: {

@@ -1,5 +1,5 @@
 /**
- * Workflow: run FIT functional tests from a `fit-mix` definition
+ * Workflow: run FIT functional tests from a `fit` definition
  * file. This is the repeatable counterpart to the guided flow
  * (../guided/index.ts) — same steps, but the cluster, SDK and test selection
  * all come from the file instead of being asked for. The only prompt is where
@@ -16,9 +16,9 @@
  * Run on its own (add --root <dir> to point at another workspace):
  *   npx tsx src/workflows/fit-functional/workflows/run-from-definition/index.ts <file.yaml> [steps]
  *
- * Note: cluster setup (allocating a cbdinocluster) isn't wired up yet — the
- * setup-cluster step is a placeholder. Use setup.cluster.connection to run
- * against an already-running cluster.
+ * Note: a cbdinocluster-backed run needs the setup-cluster step to execute
+ * before the run step. Existing-cluster modes (`setup.cluster.connection` and
+ * `setup.cluster.useExisting`) are resolved directly from the file.
  */
 import {
   combineArtifacts,
@@ -30,6 +30,7 @@ import {
 import { isMain, runCli } from "../../../../util/non-fit/cli.js";
 import { fitCliError, fitCliWarn } from "../../../../util/non-fit/fit-cli-log.js";
 import { rootDirFromArgv } from "../../../../util/fit/root.js";
+import { setupDeclarativeCluster } from "../../../cluster/cluster-create/setup-declarative-cluster.js";
 import {
   checkBuildAndRunPerformer,
   stopManagedPerformer,
@@ -59,7 +60,33 @@ function clusterLabel(resolved: ResolvedDefinition): string {
   if (resolved.clusterMode === "useExisting") {
     return "existing cluster from iteration fitConfig.clusterAccess";
   }
-  return "none configured (cluster setup not wired up yet)";
+  if (resolved.clusterMode === "cbdinocluster") {
+    return "cbdinocluster plan (allocated during setup-cluster)";
+  }
+  return "none configured";
+}
+
+function applySharedCluster(
+  resolved: ResolvedDefinition,
+  cluster: NonNullable<ResolvedIteration["cluster"]>,
+): ResolvedDefinition {
+  return {
+    ...resolved,
+    iterations: resolved.iterations.map((iteration) => ({ ...iteration, cluster })),
+  };
+}
+
+function missingClusterMessage(clusterMode: ResolvedDefinition["clusterMode"]): string {
+  if (clusterMode === "cbdinocluster") {
+    return (
+      "\nrun: no cluster available yet, so a FITConfiguration can't be generated. " +
+      "Run the setup-cluster step first so fit-cli can allocate the cbdinocluster."
+    );
+  }
+  return (
+    "\nrun: no cluster available, so a FITConfiguration can't be generated. " +
+    "Add setup.cluster.connection or setup.cluster.useExisting to run the tests. Skipping."
+  );
 }
 
 /** Print what an iteration resolved to, so a CI log shows the run's inputs. */
@@ -78,26 +105,32 @@ function announce(index: number, total: number, iteration: ResolvedIteration, st
 }
 
 /**
- * The setup-cluster step. Allocating a cbdinocluster isn't implemented yet, so
- * this only reports what the file asked for and how the run will proceed.
+ * The setup-cluster step. Existing-cluster modes only report what the file
+ * resolved to; a cbdinocluster plan is allocated here and then shared across
+ * every iteration in the run.
  */
-function setupCluster(resolved: ResolvedDefinition): void {
+export async function setupCluster(
+  resolved: ResolvedDefinition,
+  setupDeclarativeClusterFn: typeof setupDeclarativeCluster = setupDeclarativeCluster,
+): Promise<RunOutput & { resolved: ResolvedDefinition }> {
   if (resolved.clusterMode === "connection") {
     fitCliWarn("\nsetup-cluster: using the existing cluster from setup.cluster.connection; nothing to allocate.");
-    return;
+    return { resolved, artifacts: [], details: [] };
   }
   if (resolved.clusterMode === "useExisting") {
     fitCliWarn("\nsetup-cluster: using the existing cluster described by iteration fitConfig.clusterAccess; nothing to allocate.");
-    return;
+    return { resolved, artifacts: [], details: [] };
   }
   if (resolved.cbdinocluster) {
-    fitCliWarn(
-      "\nsetup-cluster: allocating a cbdinocluster isn't wired up yet — skipping. " +
-        "Add setup.cluster.connection to run against an already-running cluster.",
-    );
-    return;
+    const outcome = await setupDeclarativeClusterFn(resolved.cbdinocluster);
+    return {
+      resolved: outcome.cluster ? applySharedCluster(resolved, outcome.cluster) : resolved,
+      artifacts: outcome.artifacts,
+      details: outcome.details,
+    };
   }
   fitCliWarn("\nsetup-cluster: no cluster configured.");
+  return { resolved, artifacts: [], details: [] };
 }
 
 /** The setup-performer step: build the performer image and start it in Docker. */
@@ -127,14 +160,12 @@ async function setupPerformer(
 /** The run step: generate a FITConfiguration, sanity-check, and run the test driver. */
 async function runTests(
   execution: FitExecutionContext,
+  clusterMode: ResolvedDefinition["clusterMode"],
   iteration: ResolvedIteration,
   performer: RunningPerformer | undefined,
 ): Promise<RunOutput> {
   if (!iteration.cluster) {
-    fitCliWarn(
-      "\nrun: no cluster available (cluster setup isn't wired up yet), so a FITConfiguration can't be " +
-        "generated. Add setup.cluster.connection to run the tests. Skipping.",
-    );
+    fitCliWarn(missingClusterMessage(clusterMode));
     return { artifacts: [], details: [] };
   }
 
@@ -173,6 +204,7 @@ async function runTests(
 /** Run the per-iteration steps (setup-performer, run) for one iteration. */
 async function runIteration(
   execution: FitExecutionContext,
+  resolved: ResolvedDefinition,
   iteration: ResolvedIteration,
   steps: readonly DefinitionStep[],
 ): Promise<RunOutput> {
@@ -194,7 +226,7 @@ async function runIteration(
         }
         artifacts.push(...performer.artifacts);
       } else if (step === "run") {
-        const output = await runTests(execution, iteration, performer);
+        const output = await runTests(execution, resolved.clusterMode, iteration, performer);
         artifacts.push(...output.artifacts);
         details.push(...output.details);
       }
@@ -215,7 +247,7 @@ export async function runFromDefinition(
   rootDir: string,
   steps: DefinitionStep[] = parseSteps(),
 ): Promise<RunOutput> {
-  const resolved = resolveDefinition(loadDefinition(definitionPath));
+  let resolved = resolveDefinition(loadDefinition(definitionPath));
   console.log(`\nRunning FIT functional tests from definition:\n  ${definitionPath}`);
   console.log(`  Cluster: ${clusterLabel(resolved)}`);
 
@@ -235,7 +267,10 @@ export async function runFromDefinition(
 
     // The cluster is shared across iterations, so set it up once up front.
     if (steps.includes("setup-cluster")) {
-      setupCluster(resolved);
+      const setup = await setupCluster(resolved);
+      resolved = setup.resolved;
+      artifacts.push(...setup.artifacts);
+      details.push(...setup.details);
     }
 
     const iterationSteps = steps.filter((step) => step !== "setup-cluster");
@@ -244,7 +279,7 @@ export async function runFromDefinition(
       if (iterationSteps.length === 0) {
         continue;
       }
-      const output = await runIteration(execution, iteration, iterationSteps);
+      const output = await runIteration(execution, resolved, iteration, iterationSteps);
       artifacts.push(...output.artifacts);
       details.push(...output.details);
     }

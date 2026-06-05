@@ -1,5 +1,5 @@
 /**
- * Parse and validate a `fit-mix` definition file.
+ * Parse and validate a `fit` definition file.
  */
 import { readFileSync } from "node:fs";
 import YAML from "yaml";
@@ -384,7 +384,7 @@ export function loadDefinition(path: string): FitDefinition {
   return parseDefinition(readFileSync(path, "utf8"));
 }
 
-const HELP = `Validate a fit-mix definition file and print the parsed result.
+const HELP = `Validate a fit definition file and print the parsed result.
 
 Usage:
   npx tsx src/workflows/fit-functional/definition/parse-definition.ts <file.yaml>
