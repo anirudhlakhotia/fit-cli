@@ -87,3 +87,23 @@ test("init answers can skip AWS entirely", () => {
     version: FIT_CLI_CONFIG_VERSION,
   });
 });
+
+test("init answers store a GitHub token alongside (or without) AWS", () => {
+  assert.deepEqual(initAnswersToConfig({ configureAws: false, githubToken: "ghp_example" }), {
+    version: FIT_CLI_CONFIG_VERSION,
+    github: { token: "ghp_example" },
+  });
+
+  assert.deepEqual(
+    initAnswersToConfig({
+      configureAws: true,
+      githubToken: "  ghp_trimmed  ",
+      aws: { region: "us-east-1", profile: "", instanceType: "c5.xlarge" },
+    }),
+    {
+      version: FIT_CLI_CONFIG_VERSION,
+      aws: { region: "us-east-1", instanceType: "c5.xlarge" },
+      github: { token: "ghp_trimmed" },
+    },
+  );
+});

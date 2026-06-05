@@ -10,6 +10,7 @@ import {
   ensureFitCliConfigEnv,
   loadFitCliConfig,
   parseFitCliConfig,
+  resolveGithubToken,
   saveFitCliConfig,
 } from "../config.js";
 
@@ -49,6 +50,39 @@ aws:
       profile: "dev",
     },
   });
+});
+
+test("parses a stored GitHub token", () => {
+  const parsed = parseFitCliConfig(`
+version: 1
+github:
+  token: ghp_example
+`);
+
+  assert.deepEqual(parsed, {
+    version: FIT_CLI_CONFIG_VERSION,
+    github: { token: "ghp_example" },
+  });
+});
+
+test("resolveGithubToken prefers the config token over the environment", () => {
+  const token = resolveGithubToken({
+    config: { version: FIT_CLI_CONFIG_VERSION, github: { token: "from-config" } },
+    env: { GITHUB_TOKEN: "from-env" },
+  });
+  assert.equal(token, "from-config");
+});
+
+test("resolveGithubToken falls back to GITHUB_TOKEN then GH_TOKEN", () => {
+  assert.equal(
+    resolveGithubToken({ config: { version: FIT_CLI_CONFIG_VERSION }, env: { GITHUB_TOKEN: "gh-token" } }),
+    "gh-token",
+  );
+  assert.equal(
+    resolveGithubToken({ config: { version: FIT_CLI_CONFIG_VERSION }, env: { GH_TOKEN: "fallback" } }),
+    "fallback",
+  );
+  assert.equal(resolveGithubToken({ config: { version: FIT_CLI_CONFIG_VERSION }, env: {} }), undefined);
 });
 
 test("rejects unsupported newer config versions", () => {

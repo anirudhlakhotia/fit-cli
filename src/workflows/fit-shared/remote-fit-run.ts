@@ -7,6 +7,7 @@ import { createRunFilePath } from "../../util/non-fit/replay.js";
 import { posixQuote } from "../../util/non-fit/remote-target.js";
 import type { ExecutionTarget } from "../../util/non-fit/target.js";
 import { FIT_INSTANCE_USER } from "../../util/fit/aws/fit-instance.js";
+import { resolveGithubToken } from "../../util/fit/config.js";
 import { FIT_PERFORMER, JENKINS_SDK, repoPath, type Repo } from "../../util/fit/repos.js";
 import { ensureRepo } from "../../util/fit/ensure-repo.js";
 import { collectJunitArtifacts } from "./run-test-driver/collect-junit.js";
@@ -64,6 +65,42 @@ export function remoteFitRepos(sdk: Sdk): Repo[] {
 
 export function remoteDockerWrapperScript(): string {
   return "#!/bin/sh\nexec sudo -n /usr/bin/docker \"$@\"\n";
+}
+
+/** Where the remote git credentials file lives, under the FIT workspace root. */
+export function remoteGitCredentialsPath(rootDir: string): string {
+  return join(rootDir, ".git-credentials");
+}
+
+/**
+ * A line for git's `store` credential helper, granting HTTPS access to all of
+ * github.com with the given token. `x-access-token` is GitHub's conventional
+ * username for token auth (works for both classic and fine-grained PATs).
+ */
+export function gitCredentialsLine(token: string): string {
+  return `https://x-access-token:${token}@github.com\n`;
+}
+
+/**
+ * Put a git credentials file on the remote and point git's `store` helper at it,
+ * so the private FIT repos clone over HTTPS without prompting. The token is
+ * written via scp (not passed on a command line or baked into a clone URL), so
+ * it never lands in process listings or the local session log; it does sit in
+ * the credentials file on the box, which is fine — the instance is throwaway and
+ * only reachable with the per-run SSH key.
+ */
+export async function configureRemoteGitCredentials(
+  target: ExecutionTarget,
+  rootDir: string,
+  token: string,
+): Promise<void> {
+  const credentialsPath = remoteGitCredentialsPath(rootDir);
+  const localCredentials = createRunFilePath("git-credentials");
+  writeFileSync(localCredentials, gitCredentialsLine(token), { mode: 0o600 });
+  await target.putFile(localCredentials, credentialsPath);
+  await target.run("chmod", ["600", credentialsPath]);
+  await target.run("git", ["config", "--global", "credential.helper", `store --file=${credentialsPath}`]);
+  rmSync(localCredentials, { force: true });
 }
 
 function shellCommand(command: string, args: readonly string[] = []): string {
@@ -172,9 +209,15 @@ async function createRemoteFitExecutionContext(target: ExecutionTarget, sdk: Sdk
   console.log(`\nPreparing a remote FIT workspace on ${target.description}...`);
   await target.run("mkdir", ["-p", rootDir]);
 
-  console.log("\nInstalling the remote FIT dependencies...\n");
-  await target.run("sudo", ["-n", "apt-get", "update"]);
-  await target.run("sudo", ["-n", "apt-get", "install", "-y", "git", "docker.io", "default-jdk-headless", "lsof"]);
+  console.log("\nInstalling the remote FIT dependencies...");
+  // apt-get is noisy; run it quietly (-qq) and drop stdout, keeping stderr so
+  // genuine failures still surface. DEBIAN_FRONTEND avoids interactive prompts.
+  const aptEnv = "DEBIAN_FRONTEND=noninteractive";
+  await target.run("sh", ["-lc", `sudo -n ${aptEnv} apt-get -qq update >/dev/null`]);
+  await target.run("sh", [
+    "-lc",
+    `sudo -n ${aptEnv} apt-get -qq install -y git docker.io default-jdk-headless lsof >/dev/null`,
+  ]);
   await target.run("sudo", ["-n", "systemctl", "enable", "--now", "docker"]);
 
   await target.run("mkdir", ["-p", binDir]);
@@ -182,6 +225,16 @@ async function createRemoteFitExecutionContext(target: ExecutionTarget, sdk: Sdk
   writeFileSync(localDockerWrapper, remoteDockerWrapperScript(), { mode: 0o700 });
   await target.putFile(localDockerWrapper, wrapperPath);
   await target.run("chmod", ["755", wrapperPath]);
+
+  const githubToken = resolveGithubToken();
+  if (githubToken) {
+    await configureRemoteGitCredentials(target, rootDir, githubToken);
+  } else {
+    console.log(
+      "\n⚠ No GitHub token found — the private FIT repos will fail to clone.\n" +
+        "  Add one with `npm run init`, or set GITHUB_TOKEN / GH_TOKEN, then try again.",
+    );
+  }
 
   for (const repo of remoteFitRepos(sdk)) {
     console.log(`\nCloning ${repo.name} onto ${target.description}...\n`);

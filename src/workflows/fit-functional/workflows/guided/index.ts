@@ -51,7 +51,7 @@ export async function runFunctionalTests(rootDir: string): Promise<RunOutput> {
   const artifacts: Artifact[] = [];
   const details: Detail[] = [];
 
-  // First: where should this run execute — locally, or on a clean EC2 instance?
+  // First: where should this run execute — locally, on a clean EC2 instance, or on an existing one?
   const executionTarget = await selectExecutionTarget();
   artifacts.push(...executionTarget.artifacts);
   details.push(...executionTarget.details);

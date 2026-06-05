@@ -7,7 +7,7 @@ import {
   type FitCliConfig,
 } from "./util/fit/config.js";
 import { isMain, runCli } from "./util/non-fit/cli.js";
-import { confirm, input } from "./util/non-fit/prompts.js";
+import { confirm, input, password } from "./util/non-fit/prompts.js";
 
 const DEFAULT_AWS_REGION = "us-east-1";
 const DEFAULT_EC2_INSTANCE_TYPE = "c5.xlarge";
@@ -21,6 +21,8 @@ export interface AwsInitAnswers {
 export interface InitAnswers {
   configureAws: boolean;
   aws?: AwsInitAnswers;
+  /** GitHub token for cloning the private FIT repos; empty/undefined to skip. */
+  githubToken?: string;
 }
 
 function trimOptional(value: string | undefined): string | undefined {
@@ -44,26 +46,29 @@ export function initDefaultsFromEnv(env: NodeJS.ProcessEnv): AwsInitAnswers {
   };
 }
 
-export function initAnswersToConfig(answers: InitAnswers): FitCliConfig {
-  if (!answers.configureAws || !answers.aws) {
-    return { version: FIT_CLI_CONFIG_VERSION };
-  }
+function awsAnswersToConfig(answers: AwsInitAnswers): FitCliConfig["aws"] {
+  const region = trimOptional(answers.region) ?? DEFAULT_AWS_REGION;
+  const profile = trimOptional(answers.profile);
+  const instanceType = trimOptional(answers.instanceType) ?? DEFAULT_EC2_INSTANCE_TYPE;
 
-  const region = trimOptional(answers.aws.region) ?? DEFAULT_AWS_REGION;
-  const profile = trimOptional(answers.aws.profile);
-  const instanceType = trimOptional(answers.aws.instanceType) ?? DEFAULT_EC2_INSTANCE_TYPE;
+  if (!region && !profile && !instanceType) {
+    return undefined;
+  }
+  return {
+    ...(region ? { region } : {}),
+    ...(profile ? { profile } : {}),
+    ...(instanceType ? { instanceType } : {}),
+  };
+}
+
+export function initAnswersToConfig(answers: InitAnswers): FitCliConfig {
+  const aws = answers.configureAws && answers.aws ? awsAnswersToConfig(answers.aws) : undefined;
+  const token = trimOptional(answers.githubToken);
 
   return {
     version: FIT_CLI_CONFIG_VERSION,
-    ...(region || profile || instanceType
-      ? {
-          aws: {
-            ...(region ? { region } : {}),
-            ...(profile ? { profile } : {}),
-            ...(instanceType ? { instanceType } : {}),
-          },
-        }
-      : {}),
+    ...(aws ? { aws } : {}),
+    ...(token ? { github: { token } } : {}),
   };
 }
 
@@ -71,7 +76,22 @@ function buildInitialDefaults(existing?: FitCliConfig): AwsInitAnswers {
   return existing ? initDefaultsFromConfig(existing) : initDefaultsFromEnv(process.env);
 }
 
+async function promptForGithubToken(existing?: FitCliConfig): Promise<string | undefined> {
+  const existingToken = existing?.github?.token ?? process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN;
+  const entered = await password({
+    promptId: "init.github.token",
+    message: existingToken
+      ? "GitHub token for cloning the private FIT repos (leave blank to keep the current one):"
+      : "GitHub token for cloning the private FIT repos (leave blank to skip):",
+    mask: "*",
+  });
+  // A blank entry keeps whatever is already configured, so re-running init
+  // doesn't force the user to retype the token.
+  return trimOptional(entered) ?? existingToken;
+}
+
 async function promptForConfig(existing?: FitCliConfig): Promise<InitAnswers> {
+  const githubToken = await promptForGithubToken(existing);
   const defaults = buildInitialDefaults(existing);
   const configureAws = await confirm({
     promptId: "init.aws.configure",
@@ -80,11 +100,12 @@ async function promptForConfig(existing?: FitCliConfig): Promise<InitAnswers> {
   });
 
   if (!configureAws) {
-    return { configureAws: false };
+    return { configureAws: false, githubToken };
   }
 
   return {
     configureAws: true,
+    githubToken,
     aws: {
       region: await input({
         promptId: "init.aws.region",

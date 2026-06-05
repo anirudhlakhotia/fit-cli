@@ -3,6 +3,7 @@ import test from "node:test";
 import { sdkByValue } from "../../../util/sdk/sdks.js";
 import {
   createLocalFitExecutionContext,
+  gitCredentialsLine,
   pathPrefixedCommand,
   redirectShellCommand,
   redirectToFileCommand,
@@ -36,6 +37,10 @@ test("remoteFitRepos skips couchbase-jvm-clients for non-JVM SDKs", () => {
 
 test("remoteDockerWrapperScript routes docker through passwordless sudo", () => {
   assert.equal(remoteDockerWrapperScript(), "#!/bin/sh\nexec sudo -n /usr/bin/docker \"$@\"\n");
+});
+
+test("gitCredentialsLine grants github.com access via the x-access-token user", () => {
+  assert.equal(gitCredentialsLine("ghp_secret"), "https://x-access-token:ghp_secret@github.com\n");
 });
 
 test("createLocalFitExecutionContext keeps local file paths unchanged", () => {

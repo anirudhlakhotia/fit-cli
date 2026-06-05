@@ -14,9 +14,15 @@ export interface FitCliAwsConfig {
   instanceType?: string;
 }
 
+export interface FitCliGithubConfig {
+  /** Personal access token used to clone the private FIT repos. */
+  token?: string;
+}
+
 export interface FitCliConfig {
   version: 1;
   aws?: FitCliAwsConfig;
+  github?: FitCliGithubConfig;
 }
 
 export interface FitCliConfigResult {
@@ -125,9 +131,21 @@ export function validateFitCliConfig(raw: unknown): FitCliConfig {
       })
     : undefined;
 
+  const githubValue = raw.github;
+  if (githubValue !== undefined && !isRecord(githubValue)) {
+    throw new InvalidFitCliConfigError(`Field "github" must be a mapping; got ${JSON.stringify(githubValue)}`);
+  }
+
+  const github = githubValue
+    ? compactRecord({
+        token: readOptionalString(githubValue, "token", "github.token"),
+      })
+    : undefined;
+
   return {
     version: FIT_CLI_CONFIG_VERSION,
     ...(aws && Object.keys(aws).length > 0 ? { aws } : {}),
+    ...(github && Object.keys(github).length > 0 ? { github } : {}),
   };
 }
 
@@ -151,6 +169,20 @@ export function loadFitCliConfig(path: string = defaultFitCliConfigPath()): FitC
     path: absolute,
     config: parseFitCliConfig(readFileSync(absolute, "utf8")),
   };
+}
+
+/**
+ * The GitHub token used to clone the private FIT repos. We prefer the value
+ * saved in config.yaml, then fall back to the usual environment variables, so
+ * that someone who already exports GITHUB_TOKEN/GH_TOKEN doesn't have to run
+ * `npm run init`. Loads config.yaml itself when a parsed config isn't supplied.
+ */
+export function resolveGithubToken(
+  options: { config?: FitCliConfig; path?: string; env?: NodeJS.ProcessEnv } = {},
+): string | undefined {
+  const env = options.env ?? process.env;
+  const config = options.config ?? loadFitCliConfig(options.path).config;
+  return config?.github?.token ?? env.GITHUB_TOKEN ?? env.GH_TOKEN;
 }
 
 export function applyFitCliConfigToEnv(config: FitCliConfig, env: NodeJS.ProcessEnv = process.env): string[] {
