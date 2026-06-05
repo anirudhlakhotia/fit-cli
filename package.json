@@ -7,11 +7,11 @@
     "fit": "./dist/index.js"
   },
   "scripts": {
-    "start": "tsx src/index.ts",
+    "start": "tsx src/main.ts",
     "init": "tsx src/init.ts",
     "replay": "tsx src/util/non-fit/replay-entry.ts --replay",
-    "definition": "tsx src/workflows/fit-functional/workflows/run-from-definition/index.ts",
-    "dev": "tsx watch src/index.ts",
+    "definition": "tsx src/workflows/fit-functional/run-from-definition/run-from-definition.ts",
+    "dev": "tsx watch src/main.ts",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",

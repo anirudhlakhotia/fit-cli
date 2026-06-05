@@ -38,7 +38,7 @@ export function buildReplayDispatch(
       ? isAbsolute(recordedEntrypoint)
         ? recordedEntrypoint
         : resolve(REPO_ROOT, recordedEntrypoint)
-      : resolve(REPO_ROOT, "src/index.ts"),
+      : resolve(REPO_ROOT, "src/main.ts"),
   );
   const forwardedArgs = positionals.length > 0 ? positionals : (log.invocation?.args ?? []);
 

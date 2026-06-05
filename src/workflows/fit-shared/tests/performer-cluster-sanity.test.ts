@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { SelectedCluster } from "../../cluster/cluster-select/index.js";
+import type { SelectedCluster } from "../../cluster/cluster-select/cluster-select.js";
 import {
   assessPerformerClusterSanity,
   buildSanityCluster,
@@ -13,7 +13,7 @@ import {
   parseDockerInspect,
   parseDockerPsIds,
   type DockerContainerInspection,
-} from "../performer-cluster-sanity.js";
+} from "../util/performer-cluster-sanity.js";
 
 function selfManagedCluster(defaultHostname: string): SelectedCluster {
   return {

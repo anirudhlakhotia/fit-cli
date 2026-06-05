@@ -13,7 +13,7 @@ import {
   remoteFitRootDir,
   remoteWorkspaceRepos,
   remotePerformerArgs,
-} from "../remote-fit-run.js";
+} from "../util/remote-fit-run.js";
 
 test("remoteFitRootDir defaults to the ubuntu home directory", () => {
   assert.equal(remoteFitRootDir(), "/home/ubuntu/fit-workspace");

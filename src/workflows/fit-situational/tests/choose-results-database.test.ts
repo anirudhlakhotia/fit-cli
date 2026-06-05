@@ -10,7 +10,7 @@ import {
   hostedDatabaseFromEnv,
   HOSTED_RESULTS_DB_JDBC,
   RESULTS_DB_PASSWORD_ENV,
-} from "../choose-results-database/index.js";
+} from "../choose-results-database/choose-results-database.js";
 
 test("returns undefined when the password is missing or blank", () => {
   assert.equal(hostedDatabaseFromEnv({}), undefined);

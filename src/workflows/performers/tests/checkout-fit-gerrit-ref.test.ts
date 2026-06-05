@@ -6,7 +6,7 @@ import {
   fitPerformerGerritFetchArgs,
   gitStatusIsClean,
   resolveFitGerritUser,
-} from "../checkout-fit-gerrit-ref/index.js";
+} from "../checkout-fit-gerrit-ref/checkout-fit-gerrit-ref.js";
 
 test("resolveFitGerritUser prefers FIT_GERRIT_USER then GERRIT_USER", () => {
   assert.equal(resolveFitGerritUser({ FIT_GERRIT_USER: " programmatix " }), "programmatix");

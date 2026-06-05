@@ -24,7 +24,7 @@ import { posixQuote } from "../../../util/non-fit/remote-target.js";
 import { findOnPath } from "../../../util/non-fit/which.js";
 import { DEFAULT_CREDENTIALS } from "../cluster-select/ask-credentials.js";
 import { classifyConnectionString } from "../cluster-select/classify-connection-string.js";
-import type { SelectedCluster } from "../cluster-select/index.js";
+import type { SelectedCluster } from "../cluster-select/cluster-select.js";
 import { parseClusterIds, type CbdinoCluster } from "../cluster-select/parse-cluster-ids.js";
 import { parseConnstr } from "../cluster-select/parse-connstr.js";
 import {

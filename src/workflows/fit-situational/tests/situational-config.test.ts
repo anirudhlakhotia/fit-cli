@@ -9,7 +9,7 @@ import { test } from "node:test";
 import {
   buildSituationalConfiguration,
   DEFAULT_CBDINO_SETTINGS,
-} from "../situational-config.js";
+} from "../util/situational-config.js";
 
 const database = {
   jdbc: "jdbc:postgresql://faas.couchbase.com:5432/perf",

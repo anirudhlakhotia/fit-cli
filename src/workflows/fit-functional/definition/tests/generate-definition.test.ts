@@ -6,8 +6,8 @@ import {
   formatFitFunctionalDefinition,
 } from "../generate-definition.js";
 import { parseDefinition } from "../parse-definition.js";
-import { buildDefaultFitTestSelection, buildFitTestSelectionFromClassNames } from "../../../fit-shared/select-fit-tests/index.js";
-import type { SelectedCluster } from "../../../cluster/cluster-select/index.js";
+import { buildDefaultFitTestSelection, buildFitTestSelectionFromClassNames } from "../../../fit-shared/select-fit-tests/select-fit-tests.js";
+import type { SelectedCluster } from "../../../cluster/cluster-select/cluster-select.js";
 import { sdkByValue } from "../../../../util/sdk/sdks.js";
 
 const sdk = sdkByValue("java");

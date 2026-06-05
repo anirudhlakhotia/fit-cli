@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import YAML from "yaml";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { SDKS } from "../../../util/sdk/sdks.js";
-import { PORT_IN_USE_POLICIES, type PortInUsePolicy } from "../../performers/performer-port.js";
+import { PORT_IN_USE_POLICIES, type PortInUsePolicy } from "../../performers/util/performer-port.js";
 import {
   CLUSTER_EXISTS_POLICIES,
   type ClusterExistsPolicy,

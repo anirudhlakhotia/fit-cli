@@ -4,19 +4,19 @@
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import type { PieceData } from "../../../util/non-fit/config-pieces.js";
 import { classifyConnectionString } from "../../cluster/cluster-select/classify-connection-string.js";
-import type { SelectedCluster } from "../../cluster/cluster-select/index.js";
+import type { SelectedCluster } from "../../cluster/cluster-select/cluster-select.js";
 import {
   DEFAULT_PERFORMER_PORT,
   DEFAULT_PORT_IN_USE_POLICY,
   type PortInUsePolicy,
-} from "../../performers/performer-port.js";
+} from "../../performers/util/performer-port.js";
 import { SDKS, sdkByValue, type Sdk } from "../../../util/sdk/sdks.js";
-import { DEFAULT_MAVEN_TEST_ARGS } from "../../fit-shared/run-test-driver/index.js";
+import { DEFAULT_MAVEN_TEST_ARGS } from "../../fit-shared/run-test-driver/run-test-driver.js";
 import {
   buildDefaultFitTestSelection,
   buildFitTestSelectionFromClassNames,
   type FitTestSelection,
-} from "../../fit-shared/select-fit-tests/index.js";
+} from "../../fit-shared/select-fit-tests/select-fit-tests.js";
 import {
   DEFAULT_CLUSTER_EXISTS_POLICY,
   type ClusterExistsPolicy,

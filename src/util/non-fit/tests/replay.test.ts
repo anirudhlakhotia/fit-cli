@@ -13,7 +13,7 @@ import {
 
 const DEFINITION_ENTRYPOINT = join(
   REPO_ROOT,
-  "src/workflows/fit-functional/workflows/run-from-definition/index.ts",
+  "src/workflows/fit-functional/run-from-definition/run-from-definition.ts",
 );
 
 async function captureLogs(run: () => Promise<void>): Promise<string[]> {
@@ -96,7 +96,7 @@ test("extractInteractiveFlag removes --interactive from argv", () => {
 
 test("definition runs default to non-interactive prompts", () => {
   assert.equal(defaultsToNonInteractive(DEFINITION_ENTRYPOINT), true);
-  assert.equal(defaultsToNonInteractive(join(REPO_ROOT, "src/index.ts")), false);
+  assert.equal(defaultsToNonInteractive(join(REPO_ROOT, "src/main.ts")), false);
 });
 
 test("interactive mode writes prompt responses to a log file", async () => {
@@ -192,7 +192,7 @@ test("default non-interactive mode persists the original invocation metadata", (
 
 test("default non-interactive mode records an in-repo entrypoint relative to the repo root", () => {
   const originalArgv = process.argv;
-  const entrypoint = join(REPO_ROOT, "src/index.ts");
+  const entrypoint = join(REPO_ROOT, "src/main.ts");
   process.argv = [originalArgv[0] ?? "node", entrypoint, "status"];
 
   try {
@@ -202,7 +202,7 @@ test("default non-interactive mode records an in-repo entrypoint relative to the
     };
 
     assert.deepEqual(log.invocation, {
-      entrypoint: "src/index.ts",
+      entrypoint: "src/main.ts",
       args: ["status"],
     });
   } finally {
@@ -584,7 +584,7 @@ test("replay mode loads stored invocation metadata", () => {
         version: 1,
         createdAt: "2026-06-03T00:00:00.000Z",
         invocation: {
-          entrypoint: "src/workflows/fit-functional/workflows/select-fit-tests/index.ts",
+          entrypoint: "src/workflows/fit-functional/select-fit-tests/index.ts",
           args: ["--root", "/workspace"],
         },
         prompts: [],
@@ -596,7 +596,7 @@ test("replay mode loads stored invocation metadata", () => {
 
   const session = PromptSession.fromArgv(["--replay", logFile]);
   assert.deepEqual(session.getInvocation(), {
-    entrypoint: "src/workflows/fit-functional/workflows/select-fit-tests/index.ts",
+    entrypoint: "src/workflows/fit-functional/select-fit-tests/index.ts",
     args: ["--root", "/workspace"],
   });
 });

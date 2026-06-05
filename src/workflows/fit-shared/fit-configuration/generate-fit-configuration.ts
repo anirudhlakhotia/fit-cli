@@ -12,9 +12,9 @@
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { type RunOutput } from "../../../util/non-fit/artifacts.js";
 import { rootDirFromArgv } from "../../../util/fit/root.js";
-import { selectOrCreateCluster } from "../../cluster/cluster-select-or-create/index.js";
-import { type SelectedCluster } from "../../cluster/cluster-select/index.js";
-import { DEFAULT_PERFORMER_PORT } from "../../performers/performer-port.js";
+import { selectOrCreateCluster } from "../../cluster/cluster-select-or-create/cluster-select-or-create.js";
+import { type SelectedCluster } from "../../cluster/cluster-select/cluster-select.js";
+import { DEFAULT_PERFORMER_PORT } from "../../performers/util/performer-port.js";
 import { buildFitConfiguration } from "../../fit-functional/util/build-fit-configuration.js";
 import type { PieceData } from "../../../util/non-fit/config-pieces.js";
 import {

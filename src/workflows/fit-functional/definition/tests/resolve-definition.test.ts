@@ -14,8 +14,8 @@ import {
   resolveIteration,
   resolveMavenArgs,
 } from "../resolve-definition.js";
-import { DEFAULT_MAVEN_TEST_ARGS } from "../../../fit-shared/run-test-driver/index.js";
-import { DEFAULT_PERFORMER_PORT } from "../../../performers/performer-port.js";
+import { DEFAULT_MAVEN_TEST_ARGS } from "../../../fit-shared/run-test-driver/run-test-driver.js";
+import { DEFAULT_PERFORMER_PORT } from "../../../performers/util/performer-port.js";
 import type { FitDefinition, FunctionalIteration } from "../types.js";
 
 const LOCAL_FIT_CONFIG = {

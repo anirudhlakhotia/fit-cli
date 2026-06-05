@@ -6,7 +6,7 @@ import {
   performerImageName,
   performerPackageUrl,
   validatePerformerVersion,
-} from "../performer-image.js";
+} from "../util/performer-image.js";
 
 test("JVM performerPackageUrl points at the couchbase-jvm-clients GHCR package", () => {
   const sdk = sdkByValue("java");

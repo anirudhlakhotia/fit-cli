@@ -59,7 +59,7 @@ export async function askClusterDef(): Promise<ClusterDef> {
 
   const cng = await confirm({
     promptId: "cluster.create.cng",
-    message: "Do you want CNG/Protostellar (Cloud Native Gateway) support?",
+    message: "Do you want CNG/Protostellar (Cloud Native Gateway) support? (this just enables it in the cluster, it doesn't make CNG testing happen - yet!)",
     default: false,
   });
 

@@ -13,9 +13,9 @@ import type { PieceData } from "../../../util/non-fit/config-pieces.js";
 import { buildClusterDefObject, type ClusterDef } from "../../cluster/cluster-create/build-cluster-def.js";
 import { defaultCbdinoclusterInitConfig } from "../../cluster/cluster-create/default-cbdinocluster-init-config.js";
 import type { ClusterExistsPolicy } from "../../cluster/cluster-create/cluster-exists-policy.js";
-import type { PortInUsePolicy } from "../../performers/performer-port.js";
-import type { SelectedCluster } from "../../cluster/cluster-select/index.js";
-import type { FitTestSelection } from "../../fit-shared/select-fit-tests/index.js";
+import type { PortInUsePolicy } from "../../performers/util/performer-port.js";
+import type { SelectedCluster } from "../../cluster/cluster-select/cluster-select.js";
+import type { FitTestSelection } from "../../fit-shared/select-fit-tests/select-fit-tests.js";
 import {
   CURRENT_FIT_DEFINITION_VERSION,
   FIT_DEFINITION_TYPE,

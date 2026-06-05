@@ -38,7 +38,7 @@ export interface PromptResolveOptions<T> {
 export interface ReplayInvocation {
   /**
    * The workflow script that was run, as a path relative to {@link REPO_ROOT}
-   * (e.g. "src/index.ts"). Kept relative so the log doesn't pin to a specific
+   * (e.g. "src/main.ts"). Kept relative so the log doesn't pin to a specific
    * checkout location. Falls back to an absolute path only if the entrypoint
    * lives outside the repo.
    */
@@ -66,7 +66,7 @@ export interface PromptLogFile {
 type PromptSessionMode = "record" | "replay" | "defaults" | "non-interactive";
 
 const RUN_ROOT_DIR = "/tmp/fit-cli";
-const RUN_FROM_DEFINITION_ENTRYPOINT = "src/workflows/fit-functional/workflows/run-from-definition/index.ts";
+const RUN_FROM_DEFINITION_ENTRYPOINT = "src/workflows/fit-functional/run-from-definition/run-from-definition.ts";
 
 export function extractReplayFlag(
   argv: string[],

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import type { Artifact } from "../../../util/non-fit/artifacts.js";
-import { formatAgentsGuide, writeAgentsGuide } from "../write-agents-guide.js";
+import { formatAgentsGuide, writeAgentsGuide } from "../util/write-agents-guide.js";
 
 const sampleArtifacts: Artifact[] = [
   { filename: "it0/FITConfiguration.json", explanation: "Generated FITConfiguration.json for the FIT test-driver" },
