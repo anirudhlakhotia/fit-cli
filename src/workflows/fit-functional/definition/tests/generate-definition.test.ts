@@ -82,9 +82,13 @@ test("formatFitFunctionalDefinition annotates shared cluster connection details"
   assert.match(rendered, /type: fit/);
   assert.match(rendered, /- type: functional/);
   assert.match(rendered, /useExisting: \{\}/);
+  assert.match(
+    rendered,
+    /# This will be used as a base when generating FITConfiguration\.json\. {2}Anything here will be copied into the config \(unless overwritten by fit-cli\)\n\s+fitConfig:/,
+  );
   assert.match(rendered, /clusterAccess:/);
-  assert.match(rendered, /already-running cluster/i);
-  assert.match(rendered, /FITConfiguration\.md/i);
+  assert.doesNotMatch(rendered, /\$1#/);
+  assert.doesNotMatch(rendered, /\$1fitConfig:/);
 });
 
 test("buildFitFunctionalDefinitionFrom emits a cbdinocluster block and pins the version", () => {

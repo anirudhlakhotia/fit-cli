@@ -63,8 +63,8 @@ export async function selectExecutionTarget(): Promise<ExecutionTargetOutcome> {
       promptId: promptId(attempt, "choose"),
       message: "Where should this FIT run execute?",
       choices: [
-        { name: "This machine (local)", value: "local" },
         { name: "A clean AWS EC2 instance", value: "ec2" },
+        { name: "This machine (local)", value: "local" },
         { name: "An existing EC2 instance", value: "existing" },
       ],
     });

@@ -52,7 +52,7 @@ export async function checkAndBuildPerformer(
     return true;
   }
 
-  fitCliError(`Could not find the ${sdk.name} performer Docker image ${status.imageName}`);
+  console.log(`The ${sdk.name} performer Docker image ${status.imageName} is not present locally, so fit-cli will build it now.`);
   const args = buildPerformerArgs(execution.rootDir, sdk, version);
   const logFile = performerBuildLogFile(iteration, sdk, version);
   const targetLogFile = execution.targetFilePath(logFile);

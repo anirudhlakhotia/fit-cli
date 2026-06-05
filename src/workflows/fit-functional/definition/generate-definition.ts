@@ -115,19 +115,9 @@ export function buildFitFunctionalDefinition(
 export function formatFitFunctionalDefinition(definition: FitDefinition): string {
   let text = YAML.stringify(definition);
   text = text.replace(
-    /^(\s*)useExisting: \{\}$/m,
-    [
-      "$1# Use an already-running cluster; put the clusterAccess details under",
-      "$1# this iteration's fitConfig so they line up with FITConfiguration.md.",
-      "$1useExisting: {}",
-    ].join("\n"),
-  );
-  text = text.replace(
     /^(\s*)fitConfig:$/gm,
     [
-      "$1# FITConfiguration.md artifact piece for this iteration.",
-      "$1# fit-cli will merge this with generated runtime fields; some values,",
-      "$1# such as clusterAccess.defaultHostname, are filled in at runtime.",
+      "$1# This will be used as a base when generating FITConfiguration.json.  Anything here will be copied into the config (unless overwritten by fit-cli)",
       "$1fitConfig:",
     ].join("\n"),
   );

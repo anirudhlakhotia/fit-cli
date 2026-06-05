@@ -1,8 +1,11 @@
-This is a CLI tool to help make FIT easier to use.
+This is a CLI tool to help make FIT easier to use.  It lets you:
 
-See ../transactions-fit-performer/README.md for an intro to FIT.
+* Generate a YAML definition file that will let you run functional FIT tests against any SDK.  (And later: FIT/SIT and FIT/PERF)
+* Run a definition file locally.
+* Run a definition file on a clean AWS EC2 instance you can SSH onto.  This is the exactly same command CI will ultimately execute, so you can reproduce (and debug!) CI locally.
 
-While this project is generally very LLM-friendly - please keep project docs such as this README human-written, clear and concise.
+
+If you're new to FIT in general see https://github.com/couchbaselabs/transactions-fit-performer/blob/master/README.md for an intro.
 
 
 ## Getting started
@@ -31,12 +34,6 @@ If you hit any problems, either ask on #the-fit-stop or consider just giving it 
 
 ```
 Please read /tmp/fit-cli/<folder name>/AGENTS.md and investigate the failure.
-```
-
-Your responses will be saved to a file, which you can then rerun to save time in future with:
-
-```
-`npm run replay <logfile>`
 ```
 
 ## Running on a cloud instance (AWS EC2)
@@ -75,12 +72,15 @@ Everyone - AI and human - please follow these as best you can.
 
 - Run `npm run lint` and `npm run typecheck` and `npm test` after writing code.
 
-## Stability
+### Stability
 This project aims to strike a balance between actively encouraging collaboration, and the need for a stable and reliable tool - particularly as it is used from CLI.
 There are two tools here - stable definition files (covered elsewhere), and the `stable` Git tag.
 The `stable` tag is used from CI and by anyone preferring stability over latest features.  
 It is intended that the tag is only a few weeks at most behind main: the aim is to catch glaring problems from new code, rather than guarantee zero regressions.
 So please update the tag regularly - whenever you have been running the tool for a few days without issue, for instance.
+
+### Documentation
+While this project is generally very LLM-friendly - please keep project docs such as this README human-written, clear and concise.
 
 ### Workflows
 The basic idea is to break everything down into small workflows that compose into larger workflows.
