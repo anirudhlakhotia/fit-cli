@@ -46,9 +46,10 @@ export async function performerStatus(
   execution: FitExecutionContext,
   sdk: Sdk,
   version?: string,
+  gerritRef?: string,
 ): Promise<PerformerStatus> {
   const path = performerPath(sdk, execution.rootDir);
-  const imageName = buildPerformerImageName(sdk, version);
+  const imageName = buildPerformerImageName(sdk, version, gerritRef);
   const dockerAvailable = await execution.commandAvailable(execution.dockerCommand);
   let imageExists = false;
 
@@ -71,8 +72,13 @@ export async function performerStatus(
 }
 
 /** Report whether the SDK's performer exists on disk and as a Docker image. */
-export async function checkPerformer(execution: FitExecutionContext, sdk: Sdk, version?: string): Promise<boolean> {
-  const status = await performerStatus(execution, sdk, version);
+export async function checkPerformer(
+  execution: FitExecutionContext,
+  sdk: Sdk,
+  version?: string,
+  gerritRef?: string,
+): Promise<boolean> {
+  const status = await performerStatus(execution, sdk, version, gerritRef);
 
   if (status.pathExists) {
     console.log(`✓ Found the ${sdk.name} performer at ${status.path}`);

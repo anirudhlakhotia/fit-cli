@@ -250,6 +250,9 @@ function validatePerformer(value: unknown): PerformerSetup {
   if (record.version !== undefined) {
     performer.version = requireString(record, "version", "setup.performer.version");
   }
+  if (record.gerritRef !== undefined) {
+    performer.gerritRef = requireString(record, "gerritRef", "setup.performer.gerritRef");
+  }
   if (record.onPortInUse !== undefined) {
     if (!isPortInUsePolicy(record.onPortInUse)) {
       throw new InvalidDefinitionError(

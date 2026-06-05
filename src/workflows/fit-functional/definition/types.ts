@@ -93,6 +93,8 @@ export interface PerformerSetup {
   port?: number;
   /** Optional performer image version/tag; omit to use the build's default. */
   version?: string;
+  /** Optional Gerrit patch-set ref to fetch and checkout in transactions-fit-performer before build/run. */
+  gerritRef?: string;
   /**
    * What to do if the performer port is already in use when the iteration's
    * setup-performer step runs: `fail`, `restart` (stop what's there and bring up

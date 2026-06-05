@@ -17,6 +17,7 @@
  */
 import { type RunOutput } from "../../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../../util/non-fit/cli.js";
+import { confirm, input } from "../../../../util/non-fit/prompts.js";
 import { rootDirFromArgv } from "../../../../util/fit/root.js";
 import { chooseSdk } from "../../../../util/sdk/choose-sdk.js";
 import { askClusterDef } from "../../../cluster/cluster-create/ask-cluster-def.js";
@@ -46,6 +47,24 @@ export async function chooseDefinitionCluster(): Promise<DefinitionCluster> {
   return { kind: "cbdinocluster", def };
 }
 
+async function askFitGerritRef(): Promise<string | undefined> {
+  const shouldUseGerritRef = await confirm({
+    promptId: "fit.definition.performer.gerrit-ref.enabled",
+    message: "Do you want to fetch and checkout a specific transactions-fit-performer Gerrit ref before execution?",
+    default: false,
+  });
+  if (!shouldUseGerritRef) {
+    return undefined;
+  }
+
+  const gerritRef = await input({
+    promptId: "fit.definition.performer.gerrit-ref.value",
+    message: "Which transactions-fit-performer Gerrit ref should fit-cli fetch and checkout (e.g. refs/changes/29/246329/1)?",
+    validate: (value) => value.trim() ? true : "Enter a Gerrit ref like refs/changes/29/246329/1.",
+  });
+  return gerritRef.trim();
+}
+
 /**
  * Walk through the definition questions and write the resulting fit.yaml.
  * Nothing is built, allocated, or run.
@@ -59,6 +78,7 @@ export async function createFitFunctionalDefinition(rootDir: string): Promise<Ru
   const cluster = await chooseDefinitionCluster();
   const sdk = await chooseSdk();
   const version = await askVersion();
+  const gerritRef = await askFitGerritRef();
 
   // Listing tests needs the test-driver checkout; selectFitTests falls back to
   // "all" (with a warning) if it isn't present, which is fine here — we're only
@@ -69,6 +89,7 @@ export async function createFitFunctionalDefinition(rootDir: string): Promise<Ru
     cluster,
     sdk,
     ...(version ? { version } : {}),
+    ...(gerritRef ? { gerritRef } : {}),
     selection,
   });
 

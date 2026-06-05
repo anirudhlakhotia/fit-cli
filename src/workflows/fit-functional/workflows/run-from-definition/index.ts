@@ -122,6 +122,9 @@ function announce(index: number, total: number, iteration: ResolvedIteration, st
   if (iteration.performerVersion) {
     console.log(`  Performer version: ${iteration.performerVersion}`);
   }
+  if (iteration.performerGerritRef) {
+    console.log(`  Performer Gerrit ref: ${iteration.performerGerritRef}`);
+  }
 }
 
 /**
@@ -180,6 +183,7 @@ async function setupPerformer(
     iteration.onPortInUse,
     iteration.performerPort,
     iterationIndex,
+    iteration.performerGerritRef,
   );
 }
 

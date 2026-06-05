@@ -91,7 +91,7 @@ test("formatFitFunctionalDefinition annotates shared cluster connection details"
   assert.doesNotMatch(rendered, /\$1fitConfig:/);
 });
 
-test("buildFitFunctionalDefinitionFrom emits a cbdinocluster block and pins the version", () => {
+test("buildFitFunctionalDefinitionFrom emits a cbdinocluster block and pins the version and Gerrit ref", () => {
   const definition = buildFitFunctionalDefinitionFrom({
     cluster: {
       kind: "cbdinocluster",
@@ -99,6 +99,7 @@ test("buildFitFunctionalDefinitionFrom emits a cbdinocluster block and pins the 
     },
     sdk,
     version: "1.2.3",
+    gerritRef: "refs/changes/29/246329/1",
     selection: buildDefaultFitTestSelection(),
   });
 
@@ -117,7 +118,13 @@ test("buildFitFunctionalDefinitionFrom emits a cbdinocluster block and pins the 
     iterations: [
       {
         type: "functional",
-        setup: { performer: { sdk: "java", version: "1.2.3" } },
+        setup: {
+          performer: {
+            sdk: "java",
+            version: "1.2.3",
+            gerritRef: "refs/changes/29/246329/1",
+          },
+        },
         runtime: { tests: "all" },
       },
     ],

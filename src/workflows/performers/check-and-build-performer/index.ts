@@ -15,15 +15,22 @@ import { type Sdk } from "../../../util/sdk/sdks.js";
 import { chooseSdk } from "../../../util/sdk/choose-sdk.js";
 import { createLocalFitExecutionContext, type FitExecutionContext } from "../../fit-shared/remote-fit-run.js";
 import { askVersion } from "../build-performer/ask-version.js";
-import { buildPerformerArgs, dockerImageComponent } from "../build-performer/build-performer.js";
+import {
+  buildPerformerArgs,
+  dockerImageComponent,
+  performerBuildIdentity,
+} from "../build-performer/build-performer.js";
 import { performerStatus } from "../check-performer/check-performer.js";
 
-export function performerBuildLogStem(iteration: number, sdk: Sdk, version?: string): string {
-  return join(`it${iteration}`, `${sdk.value}-${dockerImageComponent(version ?? "main")}-performer-build`);
+export function performerBuildLogStem(iteration: number, sdk: Sdk, version?: string, gerritRef?: string): string {
+  return join(
+    `it${iteration}`,
+    `${sdk.value}-${dockerImageComponent(performerBuildIdentity(version, gerritRef))}-performer-build`,
+  );
 }
 
-function performerBuildLogFile(iteration: number, sdk: Sdk, version?: string): string {
-  return createLogFile(performerBuildLogStem(iteration, sdk, version));
+function performerBuildLogFile(iteration: number, sdk: Sdk, version?: string, gerritRef?: string): string {
+  return createLogFile(performerBuildLogStem(iteration, sdk, version, gerritRef));
 }
 
 /** Check for a performer image and offer to build it if it is missing. */
@@ -32,8 +39,9 @@ export async function checkAndBuildPerformer(
   sdk: Sdk,
   version?: string,
   iteration: number = 0,
+  gerritRef?: string,
 ): Promise<boolean> {
-  const status = await performerStatus(execution, sdk, version);
+  const status = await performerStatus(execution, sdk, version, gerritRef);
 
   if (status.pathExists) {
     console.log(`✓ Found the ${sdk.name} performer at ${status.path}`);
@@ -53,8 +61,8 @@ export async function checkAndBuildPerformer(
   }
 
   console.log(`The ${sdk.name} performer Docker image ${status.imageName} is not present locally, so fit-cli will build it now.`);
-  const args = buildPerformerArgs(execution.rootDir, sdk, version);
-  const logFile = performerBuildLogFile(iteration, sdk, version);
+  const args = buildPerformerArgs(execution.rootDir, sdk, version, gerritRef);
+  const logFile = performerBuildLogFile(iteration, sdk, version, gerritRef);
   const targetLogFile = execution.targetFilePath(logFile);
   console.log(`\nBuilding performer with:\n  cd ${execution.jenkinsDir} && ./gradlew ${args.join(" ")}\n`);
   console.log(`Streaming performer build output to:\n  ${targetLogFile}\n`);
@@ -82,7 +90,7 @@ export async function checkAndBuildPerformer(
     artifactFromPath(logFile, `${sdk.name} performer build stdout/stderr captured for this run`),
   );
 
-  const updatedStatus = await performerStatus(execution, sdk, version);
+  const updatedStatus = await performerStatus(execution, sdk, version, gerritRef);
   if (!updatedStatus.imageExists) {
     fitCliError(`\nBuilt the ${sdk.name} performer, but ${updatedStatus.imageName} is still missing`);
     return false;

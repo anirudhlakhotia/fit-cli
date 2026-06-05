@@ -44,6 +44,8 @@ export interface ResolvedIteration {
   testSelection: FitTestSelection;
   /** Performer image version, if the iteration pinned one. */
   performerVersion?: string;
+  /** FIT Gerrit patch-set ref to fetch before building/running, if pinned. */
+  performerGerritRef?: string;
   /** What to do if the performer port is already in use (defaults to {@link DEFAULT_PORT_IN_USE_POLICY}). */
   onPortInUse: PortInUsePolicy;
   /** Extra `./mvnw` args (the excludedGroups flag). */
@@ -202,6 +204,9 @@ export function resolveIteration(iteration: FunctionalIteration): ResolvedIterat
     testSelection: resolveTestSelection(iteration.runtime),
     ...(iteration.setup.performer.version !== undefined
       ? { performerVersion: iteration.setup.performer.version }
+      : {}),
+    ...(iteration.setup.performer.gerritRef !== undefined
+      ? { performerGerritRef: iteration.setup.performer.gerritRef }
       : {}),
     onPortInUse: iteration.setup.performer.onPortInUse ?? DEFAULT_PORT_IN_USE_POLICY,
     extraMavenArgs: resolveMavenArgs(iteration.runtime),

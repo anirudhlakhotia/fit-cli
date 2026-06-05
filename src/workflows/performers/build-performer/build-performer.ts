@@ -20,33 +20,42 @@ export function dockerImageComponent(value: string): string {
     .replace(/^[._-]+|[._-]+$/g, "") || "main";
 }
 
+/** Describe the build inputs that distinguish one local performer image from another. */
+export function performerBuildIdentity(version?: string, gerritRef?: string): string {
+  const parts = [
+    version?.trim(),
+    gerritRef?.trim() ? `gerrit-${gerritRef.trim()}` : undefined,
+  ].filter((part): part is string => Boolean(part));
+  return parts.join("-") || "main";
+}
+
 /** Build the Docker image name passed to jenkins-sdk. */
-export function buildPerformerImageName(sdk: Sdk, version?: string): string {
-  return `performer-${sdk.value}-${dockerImageComponent(version ?? "main")}`;
+export function buildPerformerImageName(sdk: Sdk, version?: string, gerritRef?: string): string {
+  return `performer-${sdk.value}-${dockerImageComponent(performerBuildIdentity(version, gerritRef))}`;
 }
 
 /** Build the Gradle args for jenkins-sdk's buildPerformer task. */
-export function buildPerformerArgs(rootDir: string, sdk: Sdk, version?: string): string[] {
+export function buildPerformerArgs(rootDir: string, sdk: Sdk, version?: string, gerritRef?: string): string[] {
   const commandArgs = ["-d", rootDir, "-s", sdk.value];
   if (version) {
     commandArgs.push("-v", version);
   }
-  commandArgs.push("-i", buildPerformerImageName(sdk, version));
+  commandArgs.push("-i", buildPerformerImageName(sdk, version, gerritRef));
   return ["buildPerformer", `--args=${commandArgs.join(" ")}`];
 }
 
 /** Describe the build command that will be run for this performer image. */
-export function describeBuildPerformerCommand(rootDir: string, sdk: Sdk, version?: string): string {
+export function describeBuildPerformerCommand(rootDir: string, sdk: Sdk, version?: string, gerritRef?: string): string {
   return (
     `cd ${repoPath(JENKINS_SDK, rootDir)} && ` +
     `./gradlew buildPerformer --args="-d ${rootDir} -s ${sdk.value}` +
-    `${version ? ` -v ${version}` : ""} -i ${buildPerformerImageName(sdk, version)}"`
+    `${version ? ` -v ${version}` : ""} -i ${buildPerformerImageName(sdk, version, gerritRef)}"`
   );
 }
 
 /** Build a FIT performer for `sdk`, optionally at a specific version. */
-export function buildPerformer(rootDir: string, sdk: Sdk, version?: string): Promise<void> {
-  return run("./gradlew", buildPerformerArgs(rootDir, sdk, version), repoPath(JENKINS_SDK, rootDir));
+export function buildPerformer(rootDir: string, sdk: Sdk, version?: string, gerritRef?: string): Promise<void> {
+  return run("./gradlew", buildPerformerArgs(rootDir, sdk, version, gerritRef), repoPath(JENKINS_SDK, rootDir));
 }
 
 if (isMain(import.meta.url)) {

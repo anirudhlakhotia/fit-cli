@@ -65,7 +65,8 @@ export async function selectExecutionTarget(): Promise<ExecutionTargetOutcome> {
       choices: [
         { name: "A clean AWS EC2 instance", value: "ec2" },
         { name: "This machine (local)", value: "local" },
-        { name: "An existing EC2 instance", value: "existing" },
+          // Temporarily hidden as not sure how well this works currently..  Also it's maybe better handled with resume.
+        // { name: "An existing EC2 instance", value: "existing" },
       ],
     });
 

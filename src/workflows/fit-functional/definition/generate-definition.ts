@@ -43,6 +43,8 @@ export interface DefinitionInputs {
   sdk: Sdk;
   /** Performer image version/tag; omit for the build's default (main). */
   version?: string;
+  /** Optional FIT Gerrit patch-set ref to fetch before building/running. */
+  gerritRef?: string;
   selection: FitTestSelection;
 }
 
@@ -75,6 +77,7 @@ export function buildFitFunctionalDefinitionFrom(inputs: DefinitionInputs): FitD
   const performer: PerformerSetup = {
     sdk: inputs.sdk.value,
     ...(inputs.version ? { version: inputs.version } : {}),
+    ...(inputs.gerritRef ? { gerritRef: inputs.gerritRef } : {}),
   };
   const fitConfig = inputs.cluster.kind === "connection"
     ? buildClusterAccessFitConfig(inputs.cluster.cluster)

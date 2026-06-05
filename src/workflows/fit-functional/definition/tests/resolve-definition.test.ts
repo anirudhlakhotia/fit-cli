@@ -31,6 +31,7 @@ function iteration(overrides: {
   sdk?: string;
   port?: number;
   performerVersion?: string;
+  performerGerritRef?: string;
   onPortInUse?: FunctionalIteration["setup"]["performer"]["onPortInUse"];
   tests?: FunctionalIteration["runtime"]["tests"];
   excludedGroups?: string[];
@@ -44,6 +45,7 @@ function iteration(overrides: {
         sdk: (overrides.sdk ?? "java") as FunctionalIteration["setup"]["performer"]["sdk"],
         ...(overrides.port !== undefined ? { port: overrides.port } : {}),
         ...(overrides.performerVersion !== undefined ? { version: overrides.performerVersion } : {}),
+        ...(overrides.performerGerritRef !== undefined ? { gerritRef: overrides.performerGerritRef } : {}),
         ...(overrides.onPortInUse !== undefined ? { onPortInUse: overrides.onPortInUse } : {}),
       },
     },
@@ -182,6 +184,14 @@ test("onPortInUse defaults to restart and is carried through when present", () =
 test("performerVersion is carried through when present", () => {
   assert.equal(resolveIteration(iteration({ performerVersion: "1.2.3" })).performerVersion, "1.2.3");
   assert.equal(resolveIteration(iteration()).performerVersion, undefined);
+});
+
+test("performerGerritRef is carried through when present", () => {
+  assert.equal(
+    resolveIteration(iteration({ performerGerritRef: "refs/changes/29/246329/1" })).performerGerritRef,
+    "refs/changes/29/246329/1",
+  );
+  assert.equal(resolveIteration(iteration()).performerGerritRef, undefined);
 });
 
 test("resolveDefinition resolves every iteration", () => {

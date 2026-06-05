@@ -17,7 +17,12 @@ import {
   type FitExecutionContext,
 } from "../../fit-shared/remote-fit-run.js";
 import { askVersion } from "../build-performer/ask-version.js";
-import { buildPerformerImageName, dockerImageComponent } from "../build-performer/build-performer.js";
+import {
+  buildPerformerImageName,
+  dockerImageComponent,
+  performerBuildIdentity,
+} from "../build-performer/build-performer.js";
+import { checkoutFitGerritRef } from "../checkout-fit-gerrit-ref/index.js";
 import { checkAndBuildPerformer } from "../check-and-build-performer/index.js";
 import { checkRunningPerformer, stopRunningPerformer } from "../check-running-performer/index.js";
 export { DEFAULT_PERFORMER_PORT } from "../performer-port.js";
@@ -33,12 +38,15 @@ export interface RunningPerformer extends RunOutput {
   reused?: boolean;
 }
 
-export function performerLogStem(iteration: number, sdk: Sdk, version?: string): string {
-  return join(`it${iteration}`, `${sdk.value}-${dockerImageComponent(version ?? "main")}-performer`);
+export function performerLogStem(iteration: number, sdk: Sdk, version?: string, gerritRef?: string): string {
+  return join(
+    `it${iteration}`,
+    `${sdk.value}-${dockerImageComponent(performerBuildIdentity(version, gerritRef))}-performer`,
+  );
 }
 
-function performerLogFile(iteration: number, sdk: Sdk, version?: string): string {
-  return createLogFile(performerLogStem(iteration, sdk, version));
+function performerLogFile(iteration: number, sdk: Sdk, version?: string, gerritRef?: string): string {
+  return createLogFile(performerLogStem(iteration, sdk, version, gerritRef));
 }
 
 /** Build the docker args needed to run a performer locally for FIT. */
@@ -47,6 +55,7 @@ export function checkBuildAndRunPerformerArgs(
   version?: string,
   hostPort: number = DEFAULT_PERFORMER_PORT,
   dockerNetwork?: string,
+  gerritRef?: string,
 ): string[] {
   return [
     "run",
@@ -55,7 +64,7 @@ export function checkBuildAndRunPerformerArgs(
     ...(dockerNetwork ? ["--network", dockerNetwork] : []),
     "--publish",
     `${hostPort}:${DEFAULT_PERFORMER_PORT}`,
-    buildPerformerImageName(sdk, version),
+    buildPerformerImageName(sdk, version, gerritRef),
   ];
 }
 
@@ -78,15 +87,20 @@ export async function checkBuildAndRunPerformer(
   onPortInUse?: PortInUsePolicy,
   hostPort: number = DEFAULT_PERFORMER_PORT,
   iteration: number = 0,
+  gerritRef?: string,
 ): Promise<RunningPerformer | undefined> {
   if (!(await execution.ensureWorkspace(sdk))) {
+    return undefined;
+  }
+
+  if (gerritRef && !(await checkoutFitGerritRef(execution, gerritRef))) {
     return undefined;
   }
 
   // Check what's already running first: if a performer is up (a recognised
   // container, or just something on the port), we can test against it and skip
   // locating and building the image entirely.
-  const runCheck = await checkRunningPerformer(execution, sdk, version, onPortInUse, hostPort);
+  const runCheck = await checkRunningPerformer(execution, sdk, version, onPortInUse, hostPort, gerritRef);
   if (runCheck.action === "abort") {
     return undefined;
   }
@@ -103,7 +117,7 @@ export async function checkBuildAndRunPerformer(
     if (!containerId) {
       return undefined;
     }
-    const logFile = performerLogFile(iteration, sdk, version);
+    const logFile = performerLogFile(iteration, sdk, version, gerritRef);
     return {
       containerId,
       logFile,
@@ -115,7 +129,7 @@ export async function checkBuildAndRunPerformer(
 
   // We're going to start (or restart) the performer ourselves, so the image
   // must be located and built first.
-  if (!(await checkAndBuildPerformer(execution, sdk, version, iteration))) {
+  if (!(await checkAndBuildPerformer(execution, sdk, version, iteration, gerritRef))) {
     return undefined;
   }
 
@@ -126,13 +140,13 @@ export async function checkBuildAndRunPerformer(
   if (dockerNetwork) {
     console.log(`\n→ Starting the performer on Docker network ${dockerNetwork} so it can reach the cluster container.`);
   }
-  const args = execution.performerRunArgs(buildPerformerImageName(sdk, version), hostPort, dockerNetwork);
+  const args = execution.performerRunArgs(buildPerformerImageName(sdk, version, gerritRef), hostPort, dockerNetwork);
   console.log(`\nStarting performer with:\n  docker ${args.join(" ")}\n`);
 
   try {
     const containerId = (await execution.capture(execution.dockerCommand, args)).trim();
     console.log(`\n✓ Started the ${sdk.name} performer in container ${containerId}`);
-    const logFile = performerLogFile(iteration, sdk, version);
+    const logFile = performerLogFile(iteration, sdk, version, gerritRef);
     return {
       containerId,
       logFile,

@@ -144,7 +144,7 @@ test("tls insecure and certPath are accepted", () => {
   assert.deepEqual((cert.setup?.cluster?.connection as { tls?: unknown }).tls, { certPath: "/tmp/cb.pem" });
 });
 
-test("performer version and excludedGroups round-trip when present", () => {
+test("performer version, Gerrit ref, and excludedGroups round-trip when present", () => {
   const def = parseDefinition(`
 version: 1
 type: fit
@@ -154,6 +154,7 @@ iterations:
       performer:
         sdk: java
         version: "1.2.3"
+        gerritRef: "refs/changes/29/246329/1"
     runtime:
       tests: all
       excludedGroups:
@@ -161,6 +162,7 @@ iterations:
         - openshift
 `);
   assert.equal(def.iterations[0].setup.performer.version, "1.2.3");
+  assert.equal(def.iterations[0].setup.performer.gerritRef, "refs/changes/29/246329/1");
   assert.deepEqual(def.iterations[0].runtime.excludedGroups, ["situational", "openshift"]);
 });
 

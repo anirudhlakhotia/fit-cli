@@ -48,6 +48,22 @@ test("checkBuildAndRunPerformerArgs can attach the performer to a Docker network
   ]);
 });
 
+test("checkBuildAndRunPerformerArgs uses a Gerrit-specific image name when requested", () => {
+  const sdk = sdkByValue("java");
+  assert.ok(sdk);
+  assert.deepEqual(
+    checkBuildAndRunPerformerArgs(sdk, undefined, DEFAULT_PERFORMER_PORT, undefined, "refs/changes/29/246329/1"),
+    [
+      "run",
+      "--detach",
+      "--rm",
+      "--publish",
+      "8060:8060",
+      "performer-java-gerrit-refs-changes-29-246329-1",
+    ],
+  );
+});
+
 test("performerLogStem puts the normalized version under the iteration directory", () => {
   const sdk = sdkByValue("java");
   assert.ok(sdk);

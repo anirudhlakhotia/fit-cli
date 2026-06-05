@@ -97,8 +97,9 @@ export async function checkRunningPerformer(
   version?: string,
   policy?: PortInUsePolicy,
   hostPort: number = DEFAULT_PERFORMER_PORT,
+  gerritRef?: string,
 ): Promise<PerformerRunCheckResult> {
-  const imageName = buildPerformerImageName(sdk, version);
+  const imageName = buildPerformerImageName(sdk, version, gerritRef);
   const runningContainers = await runningContainersForImage(execution, imageName);
 
   if (runningContainers && runningContainers.length > 0) {
