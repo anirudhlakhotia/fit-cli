@@ -123,6 +123,20 @@ export async function withRawTerminalWrites<T>(operation: () => Promise<T>): Pro
   }
 }
 
+/**
+ * Write text to stdout verbatim, without the per-line `[HH:MM:SS]` timestamp
+ * prefix — for dumping file contents (e.g. a generated definition) into the
+ * terminal, where the timestamps would just be noise in front of the file.
+ */
+export function printWithoutTimestamps(text: string): void {
+  rawTerminalWriteDepth++;
+  try {
+    process.stdout.write(text.endsWith("\n") ? text : `${text}\n`);
+  } finally {
+    rawTerminalWriteDepth--;
+  }
+}
+
 export function setFitCliTimestampProvider(provider: (() => string) | undefined): void {
   timestampProvider = provider ?? (() => new Date().toTimeString().slice(0, 8));
 }

@@ -6,6 +6,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import YAML from "yaml";
 import { artifactFromPath, type Artifact, type RunOutput } from "../../../util/non-fit/artifacts.js";
+import { printWithoutTimestamps } from "../../../util/non-fit/fit-cli-log.js";
 import { ensureRunDir } from "../../../util/non-fit/replay.js";
 import type { Sdk } from "../../../util/sdk/sdks.js";
 import type { PieceData } from "../../../util/non-fit/config-pieces.js";
@@ -213,7 +214,7 @@ export function generateFitFunctionalDefinition(
   const result = writeFitFunctionalDefinition(definition);
 
   console.log(`\nWriting ${result.path}:\n`);
-  console.log(formatFitFunctionalDefinition(definition));
+  printWithoutTimestamps(formatFitFunctionalDefinition(definition));
   console.log(`\n✓ Wrote ${result.path}`);
 
   return { path: result.path, definition, artifacts: [result.artifact], details: [] };

@@ -17,6 +17,7 @@
  */
 import { type RunOutput } from "../../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../../util/non-fit/cli.js";
+import { printWithoutTimestamps } from "../../../../util/non-fit/fit-cli-log.js";
 import { confirm, input } from "../../../../util/non-fit/prompts.js";
 import { rootDirFromArgv } from "../../../../util/fit/root.js";
 import { chooseSdk } from "../../../../util/sdk/choose-sdk.js";
@@ -104,7 +105,7 @@ export async function createFitFunctionalDefinition(rootDir: string): Promise<Ru
 
   const result = writeFitFunctionalDefinition(definition);
   console.log(`\nWriting ${result.path}:\n`);
-  console.log(formatFitFunctionalDefinition(definition));
+  printWithoutTimestamps(formatFitFunctionalDefinition(definition));
   console.log(`\n✓ Wrote ${result.path}`);
   console.log(`\nRun it later with:\n  
   npm run definition -- --interactive ${result.path}\n

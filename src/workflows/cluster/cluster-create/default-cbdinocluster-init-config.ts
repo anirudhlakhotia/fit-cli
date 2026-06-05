@@ -9,7 +9,7 @@ export function defaultCbdinoclusterInitConfig(): PieceData {
   return {
     version: 6,
     docker: {
-      enabled: "true",
+      enabled: true,
       network: "fit"
     }
   };
