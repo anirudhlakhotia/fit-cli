@@ -37,8 +37,12 @@ export interface FitTestDriverSummary {
 
 const JUNIT_ATTRIBUTE_RE = (name: string): RegExp => new RegExp(`\\b${name}="(\\d+)"`);
 
-function fitTestLogFile(): string {
-  return createLogFile("driver");
+export function fitTestLogStem(iteration: number): string {
+  return `${iteration}-driver`;
+}
+
+function fitTestLogFile(iteration: number): string {
+  return createLogFile(fitTestLogStem(iteration));
 }
 
 function extractJunitAttribute(xml: string, name: string): number | undefined {
@@ -152,6 +156,7 @@ export async function runTestDriver(
   selection: FitTestSelection,
   fitConfigPath?: string,
   extraMavenArgs: readonly string[] = DEFAULT_MAVEN_TEST_ARGS,
+  iteration: number = 0,
 ): Promise<TestRunResult> {
   const targetFitConfigPath = fitConfigPath ? await execution.stageFile(fitConfigPath) : undefined;
   const args = runTestDriverArgs(selection, targetFitConfigPath, extraMavenArgs);
@@ -164,7 +169,7 @@ export async function runTestDriver(
   // every iteration pay the recompile cost.
   await execution.removeTree(surefireReportsDir(execution.rootDir));
 
-  const logFile = fitTestLogFile();
+  const logFile = fitTestLogFile(iteration);
   const targetLogFile = execution.targetFilePath(logFile);
   const logArtifact = artifactFromPath(logFile, "FIT test-driver stdout/stderr captured for this run");
   console.log(`\nRunning FIT test-driver with:\n  cd ${execution.fitPerformerDir} && ./mvnw ${args.join(" ")}\n`);

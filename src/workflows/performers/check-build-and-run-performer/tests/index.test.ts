@@ -4,6 +4,7 @@ import { sdkByValue } from "../../../../util/sdk/sdks.js";
 import {
   checkBuildAndRunPerformerArgs,
   DEFAULT_PERFORMER_PORT,
+  performerLogStem,
 } from "../index.js";
 
 test("checkBuildAndRunPerformerArgs runs the main image on the default FIT port", () => {
@@ -45,4 +46,10 @@ test("checkBuildAndRunPerformerArgs can attach the performer to a Docker network
     "8060:8060",
     "performer-java-main",
   ]);
+});
+
+test("performerLogStem includes the iteration, sdk, and normalized version", () => {
+  const sdk = sdkByValue("java");
+  assert.ok(sdk);
+  assert.equal(performerLogStem(0, sdk, "Release Candidate #1"), "0-java-release-candidate-1-performer");
 });

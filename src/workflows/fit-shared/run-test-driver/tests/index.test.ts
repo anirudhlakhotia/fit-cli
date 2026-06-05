@@ -8,6 +8,7 @@ import {
   extractFitTestDriverSummaryFromJunit,
   extractFitTestDriverSummaryFromJunitReports,
   fitTestDriverSummaryDetails,
+  fitTestLogStem,
   runTestDriverArgs,
 } from "../index.js";
 import { collapseSuitesByDefault, stripJunitProperties, surefireReportsDir } from "../collect-junit.js";
@@ -119,6 +120,10 @@ test("fitTestDriverSummaryDetails formats the parsed summary for the CLI table",
       },
     ],
   );
+});
+
+test("fitTestLogStem prefixes the iteration number", () => {
+  assert.equal(fitTestLogStem(0), "0-driver");
 });
 
 test("runTestDriverArgs omits -Dtest when all tests are selected", () => {

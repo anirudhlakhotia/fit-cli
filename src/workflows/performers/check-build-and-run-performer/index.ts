@@ -16,7 +16,7 @@ import {
   type FitExecutionContext,
 } from "../../fit-shared/remote-fit-run.js";
 import { askVersion } from "../build-performer/ask-version.js";
-import { buildPerformerImageName } from "../build-performer/build-performer.js";
+import { buildPerformerImageName, dockerImageComponent } from "../build-performer/build-performer.js";
 import { checkAndBuildPerformer } from "../check-and-build-performer/index.js";
 import { checkRunningPerformer, stopRunningPerformer } from "../check-running-performer/index.js";
 export { DEFAULT_PERFORMER_PORT } from "../performer-port.js";
@@ -32,10 +32,12 @@ export interface RunningPerformer extends RunOutput {
   reused?: boolean;
 }
 
-function performerLogFile(sdk: Sdk, version?: string): string {
-  void sdk;
-  void version;
-  return createLogFile("performer");
+export function performerLogStem(iteration: number, sdk: Sdk, version?: string): string {
+  return `${iteration}-${sdk.value}-${dockerImageComponent(version ?? "main")}-performer`;
+}
+
+function performerLogFile(iteration: number, sdk: Sdk, version?: string): string {
+  return createLogFile(performerLogStem(iteration, sdk, version));
 }
 
 /** Build the docker args needed to run a performer locally for FIT. */
@@ -74,6 +76,7 @@ export async function checkBuildAndRunPerformer(
   dockerNetwork?: string,
   onPortInUse?: PortInUsePolicy,
   hostPort: number = DEFAULT_PERFORMER_PORT,
+  iteration: number = 0,
 ): Promise<RunningPerformer | undefined> {
   if (!(await execution.ensureWorkspace(sdk))) {
     return undefined;
@@ -99,7 +102,7 @@ export async function checkBuildAndRunPerformer(
     if (!containerId) {
       return undefined;
     }
-    const logFile = performerLogFile(sdk, version);
+    const logFile = performerLogFile(iteration, sdk, version);
     return {
       containerId,
       logFile,
@@ -111,7 +114,7 @@ export async function checkBuildAndRunPerformer(
 
   // We're going to start (or restart) the performer ourselves, so the image
   // must be located and built first.
-  if (!(await checkAndBuildPerformer(execution, sdk, version))) {
+  if (!(await checkAndBuildPerformer(execution, sdk, version, iteration))) {
     return undefined;
   }
 
@@ -128,7 +131,7 @@ export async function checkBuildAndRunPerformer(
   try {
     const containerId = (await execution.capture(execution.dockerCommand, args)).trim();
     console.log(`\n✓ Started the ${sdk.name} performer in container ${containerId}`);
-    const logFile = performerLogFile(sdk, version);
+    const logFile = performerLogFile(iteration, sdk, version);
     return {
       containerId,
       logFile,

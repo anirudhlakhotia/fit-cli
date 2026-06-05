@@ -137,6 +137,7 @@ export async function setupCluster(
 async function setupPerformer(
   execution: FitExecutionContext,
   iteration: ResolvedIteration,
+  iterationIndex: number,
 ): Promise<RunningPerformer | undefined> {
   const clusterDockerEnvironment = iteration.cluster
     ? await detectClusterDockerEnvironment(iteration.cluster)
@@ -154,6 +155,7 @@ async function setupPerformer(
     clusterDockerEnvironment?.networkNames[0],
     iteration.onPortInUse,
     iteration.performerPort,
+    iterationIndex,
   );
 }
 
@@ -163,6 +165,7 @@ async function runTests(
   clusterMode: ResolvedDefinition["clusterMode"],
   iteration: ResolvedIteration,
   performer: RunningPerformer | undefined,
+  iterationIndex: number,
 ): Promise<RunOutput> {
   if (!iteration.cluster) {
     fitCliWarn(missingClusterMessage(clusterMode));
@@ -195,6 +198,7 @@ async function runTests(
     iteration.testSelection,
     fitConfig.path,
     iteration.extraMavenArgs,
+    iterationIndex,
   );
   artifacts.push(...testRun.artifacts);
   details.push(...testRun.details);
@@ -207,6 +211,7 @@ async function runIteration(
   resolved: ResolvedDefinition,
   iteration: ResolvedIteration,
   steps: readonly DefinitionStep[],
+  iterationIndex: number,
 ): Promise<RunOutput> {
   const artifacts: Artifact[] = [];
   const details: Detail[] = [];
@@ -219,14 +224,14 @@ async function runIteration(
   try {
     for (const step of steps) {
       if (step === "setup-performer") {
-        performer = await setupPerformer(execution, iteration);
+        performer = await setupPerformer(execution, iteration, iterationIndex);
         if (!performer) {
           fitCliError("\nThe performer isn't ready to run; stopping this iteration.");
           break;
         }
         artifacts.push(...performer.artifacts);
       } else if (step === "run") {
-        const output = await runTests(execution, resolved.clusterMode, iteration, performer);
+        const output = await runTests(execution, resolved.clusterMode, iteration, performer, iterationIndex);
         artifacts.push(...output.artifacts);
         details.push(...output.details);
       }
@@ -279,7 +284,7 @@ export async function runFromDefinition(
       if (iterationSteps.length === 0) {
         continue;
       }
-      const output = await runIteration(execution, resolved, iteration, iterationSteps);
+      const output = await runIteration(execution, resolved, iteration, iterationSteps, index);
       artifacts.push(...output.artifacts);
       details.push(...output.details);
     }
