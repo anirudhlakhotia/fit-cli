@@ -93,7 +93,7 @@ async function ensureDockerNetwork(execution: ClusterCommandExecutor, network: s
   ], undefined, { display: `docker network create ${network} (if absent)` });
 }
 
-async function prepareCbdinoclusterConfig(
+export async function prepareCbdinoclusterConfig(
   execution: ClusterCommandExecutor,
   config: PieceData | undefined,
   githubCredentials?: { user: string; token: string },

@@ -163,13 +163,17 @@ test("resolves a cbdinocluster functional cycle", () => {
   assert.equal(resolved.iterations[0]?.cluster, undefined);
 });
 
-test("resolves a situational cycle without any cluster", () => {
+const CBDINOCLUSTER_INIT_CONFIG = { version: 6, docker: { enabled: true, network: "fit" } };
+
+test("resolves a situational cycle and exposes cbdinoclusterInit", () => {
   const resolved = resolveCycle({
     type: "situational",
+    cbdinocluster: { init: { config: CBDINOCLUSTER_INIT_CONFIG } },
     iterations: [situationalIteration({ mode: "local" })],
   } satisfies SituationalCycle);
   assert.equal(resolved.type, "situational");
   assert.equal(resolved.iterations[0]?.databaseMode, "local");
+  assert.deepEqual(resolved.cbdinoclusterInit, { config: CBDINOCLUSTER_INIT_CONFIG });
 });
 
 test("resolveDefinition preserves separate cycles", () => {
@@ -191,6 +195,7 @@ test("resolveDefinition preserves separate cycles", () => {
         }),
         {
           type: "situational",
+          cbdinocluster: { init: { config: CBDINOCLUSTER_INIT_CONFIG } },
           iterations: [situationalIteration({ sdk: "node" })],
         },
       ],

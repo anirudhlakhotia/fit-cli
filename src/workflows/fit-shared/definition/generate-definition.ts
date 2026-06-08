@@ -10,7 +10,7 @@ import { ensureRunDir } from "../../../util/non-fit/replay.js";
 import type { Sdk } from "../../../util/sdk/sdks.js";
 import type { PieceData } from "../../../util/non-fit/config-pieces.js";
 import { buildClusterDefObject, type ClusterDef } from "../../cluster/cluster-create/build-cluster-def.js";
-import { defaultCbdinoclusterInitConfig } from "../../cluster/cluster-create/default-cbdinocluster-init-config.js";
+import { defaultCbdinoclusterInitConfig, defaultSituationalCbdinoclusterInitConfig } from "../../cluster/cluster-create/default-cbdinocluster-init-config.js";
 import type { ClusterExistsPolicy } from "../../cluster/cluster-create/cluster-exists-policy.js";
 import type { PortInUsePolicy } from "../../performers/util/performer-port.js";
 import type { SelectedCluster } from "../../cluster/cluster-select/cluster-select.js";
@@ -135,6 +135,7 @@ export function buildFunctionalCycleFrom(inputs: DefinitionInputs & { iterations
 export function buildSituationalCycleFrom(inputs: SituationalDefinitionInputs & { iterations?: SituationalIteration[] }): SituationalCycle {
   return {
     type: "situational",
+    cbdinocluster: { init: { config: defaultSituationalCbdinoclusterInitConfig() } },
     iterations: inputs.iterations ?? [buildSituationalIterationFrom(inputs)],
   };
 }

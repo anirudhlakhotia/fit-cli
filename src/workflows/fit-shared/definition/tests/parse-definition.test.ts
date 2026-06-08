@@ -71,12 +71,22 @@ test("supports multiple functional iterations inside one cycle", () => {
   assert.equal(cycle?.iterations.length, 2);
 });
 
+const SITUATIONAL_CBDINOCLUSTER = `
+    cbdinocluster:
+      init:
+        config:
+          version: 6
+          docker:
+            enabled: true
+`;
+
 test("parses a situational cycle with a database mode", () => {
   const def = parseDefinition(`
 version: 1
 type: fit
 cycles:
   - type: situational
+${SITUATIONAL_CBDINOCLUSTER}
     iterations:
       - setup:
           performer:
@@ -90,6 +100,7 @@ cycles:
   const [cycle] = def.cycles;
   assert.equal(cycle.type, "situational");
   assert.equal(cycle.iterations[0]?.situational.database.mode, "hosted");
+  assert.deepEqual(cycle.cbdinocluster.init.config, { version: 6, docker: { enabled: true } });
 });
 
 test("supports mixed cycles", () => {
@@ -113,6 +124,7 @@ cycles:
         runtime:
           tests: all
   - type: situational
+${SITUATIONAL_CBDINOCLUSTER}
     iterations:
       - setup:
           performer:
@@ -156,6 +168,7 @@ setup:
     useExisting: {}
 cycles:
   - type: situational
+${SITUATIONAL_CBDINOCLUSTER}
     iterations:
       - setup:
           performer:
@@ -229,6 +242,7 @@ version: 1
 type: fit
 cycles:
   - type: situational
+${SITUATIONAL_CBDINOCLUSTER}
     iterations:
       - setup:
           performer:
@@ -242,6 +256,29 @@ cycles:
           tests: all
 `),
     (err: unknown) => err instanceof InvalidDefinitionError && /situational.*cbdino/.test(err.message),
+  );
+});
+
+test("rejects a situational cycle without cbdinocluster", () => {
+  assert.throws(
+    () =>
+      parseDefinition(`
+version: 1
+type: fit
+cycles:
+  - type: situational
+    iterations:
+      - setup:
+          performer:
+            sdk: java
+        situational:
+          database:
+            mode: hosted
+        runtime:
+          tests: all
+`),
+    (err: unknown) =>
+      err instanceof InvalidDefinitionError && /cycles\[0\]\.cbdinocluster/.test(err.message),
   );
 });
 

@@ -13,6 +13,32 @@ export function defaultCbdinoclusterInitConfig(): PieceData {
       network: "fit",
       host: "unix:///var/run/docker.sock"
     },
-    "default-deployer": "docker"
-};
+    "default-deployer": "docker",
+  };
+}
+
+/**
+ * A cbdinocluster config for situational FIT/SIT environments: docker +
+ * AWS cloud deployer, on a dedicated `fit` network.
+ *
+ * The FIT test-driver always allocates clusters using cbdinocluster with the
+ * cloud (AWS) deployer — it hard-codes `Deployer: cloud` in the definition it
+ * passes to `cbdinocluster allocate`. Enabling the aws section here makes that
+ * deployer available. AWS credentials are forwarded to the instance separately
+ * as environment variables.
+ */
+export function defaultSituationalCbdinoclusterInitConfig(): PieceData {
+  return {
+    version: 6,
+    docker: {
+      enabled: true,
+      network: "fit",
+      host: "unix:///var/run/docker.sock",
+    },
+    aws: {
+      enabled: "true",
+      region: "eu-west-1",
+    },
+    "default-deployer": "docker",
+  };
 }

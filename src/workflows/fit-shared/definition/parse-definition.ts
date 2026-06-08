@@ -437,11 +437,22 @@ function validateSituationalCycle(record: Record<string, unknown>, path: string)
   if (record.cluster !== undefined) {
     throw new InvalidDefinitionError(`"${path}.cluster" is not allowed on a situational cycle.`);
   }
+  if (record.cbdinocluster === undefined) {
+    throw new InvalidDefinitionError(
+      `Missing required field: ${path}.cbdinocluster — situational cycles require a cbdinocluster ` +
+        `init config so cbdinocluster can be configured on execution targets.`,
+    );
+  }
+  const cbdinoclusterRecord = requireRecord(record.cbdinocluster, `${path}.cbdinocluster`);
+  if (cbdinoclusterRecord.init === undefined) {
+    throw new InvalidDefinitionError(`Missing required field: ${path}.cbdinocluster.init`);
+  }
   if (!Array.isArray(record.iterations) || record.iterations.length === 0) {
     throw new InvalidDefinitionError(`"${path}.iterations" must contain at least one iteration.`);
   }
   return {
     type: "situational",
+    cbdinocluster: { init: validateCbdinoclusterInit(cbdinoclusterRecord.init, `${path}.cbdinocluster.init`) },
     iterations: record.iterations.map((iteration, index) =>
       validateSituationalIteration(iteration, `${path}.iterations[${index}]`),
     ),

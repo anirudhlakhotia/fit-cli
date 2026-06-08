@@ -66,6 +66,18 @@ export async function checkoutFitGerritRef(
   }
 
   console.log(
+    `\nAdding ${FIT_GERRIT_HOST} to known_hosts with:\n  ssh-keyscan -p ${FIT_GERRIT_PORT} ${FIT_GERRIT_HOST} >> ~/.ssh/known_hosts\n`,
+  );
+  try {
+    await execution.run("sh", [
+      "-c",
+      `mkdir -p ~/.ssh && chmod 700 ~/.ssh && ssh-keyscan -p ${FIT_GERRIT_PORT} ${FIT_GERRIT_HOST} >> ~/.ssh/known_hosts`,
+    ]);
+  } catch (err) {
+    console.warn(`Warning: could not pre-seed known_hosts for ${FIT_GERRIT_HOST}: ${(err as Error).message}`);
+  }
+
+  console.log(
     `\nFetching FIT Gerrit ref with:\n  git ${fitPerformerGerritFetchArgs(trimmedRef).join(" ")}\n`,
   );
 

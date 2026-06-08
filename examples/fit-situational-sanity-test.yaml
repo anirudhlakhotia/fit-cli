@@ -16,3 +16,14 @@ cycles:
         runtime:
           tests:
             - com.couchbase.situational.tests.VolumeTest#steadyStateKvGets
+    cbdinocluster:
+      init:
+        # This file will be uploaded verbatim into clean environments as ~/.cbdinocluster
+        config:
+          version: 6
+          docker:
+            enabled: true
+            network: fit
+            host: unix:///var/run/docker.sock
+          default-deployer: docker
+      # Note config: is not provided here as FIT/SIT creates its own clusters

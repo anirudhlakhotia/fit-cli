@@ -78,6 +78,8 @@ export interface ResolvedFunctionalCycle {
 
 export interface ResolvedSituationalCycle {
   type: "situational";
+  /** The cbdinocluster init config to upload to the execution target before the test-driver runs. */
+  cbdinoclusterInit: { config: PieceData };
   iterations: ResolvedSituationalIteration[];
 }
 
@@ -252,6 +254,7 @@ export function resolveCycle(cycle: FitCycle): ResolvedCycle {
   if (cycle.type === "situational") {
     return {
       type: "situational",
+      cbdinoclusterInit: { config: cycle.cbdinocluster.init.config },
       iterations: cycle.iterations.map(resolveSituationalIteration),
     };
   }

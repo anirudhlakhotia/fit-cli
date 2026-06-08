@@ -46,12 +46,13 @@ import { rootDirFromArgv } from "../../../util/fit/root.js";
 import { resolveGithubCredentials } from "../../../util/fit/config.js";
 import { terminateInstanceCommand } from "../../../util/fit/aws/lifecycle-warning.js";
 import { resolveRegion } from "../../../util/non-fit/aws/aws-cli.js";
+import { resolveAwsCredentials, type AwsCredentials } from "../../../util/non-fit/aws/identity.js";
 import {
   localClusterCommandExecutor,
   type ClusterCommandExecutor,
 } from "../../cluster/cluster-create/allocate-cluster.js";
 import { runClusterDiag } from "../../cluster/cluster-diag/cluster-diag.js";
-import { removeCluster, setupDeclarativeCluster } from "../../cluster/cluster-create/setup-declarative-cluster.js";
+import { prepareCbdinoclusterConfig, removeCluster, setupDeclarativeCluster } from "../../cluster/cluster-create/setup-declarative-cluster.js";
 import {
   checkBuildAndRunPerformer,
   performerLogStem,
@@ -60,7 +61,7 @@ import {
 } from "../../performers/check-build-and-run-performer/check-build-and-run-performer.js";
 import { generateFitConfiguration } from "../../fit-shared/fit-configuration/generate-fit-configuration.js";
 import { generateSituationalConfiguration } from "../../fit-shared/fit-configuration/generate-situational-configuration.js";
-import { createFitExecutionContext, type FitExecutionContext } from "../../fit-shared/util/remote-fit-run.js";
+import { createFitExecutionContext, uploadRemoteAwsCredentials, type FitExecutionContext } from "../../fit-shared/util/remote-fit-run.js";
 import { loadDefinition } from "../../fit-shared/definition/parse-definition.js";
 import {
   resolveDefinition,
@@ -85,6 +86,11 @@ import {
   selectExecutionTarget,
   type ExecutionTargetTeardown,
 } from "../select-execution-target/select-execution-target.js";
+import {
+  ClassifiedFailure,
+  throwFatalToCycle,
+  throwFatalToIteration,
+} from "../../fit-shared/failure-classification.js";
 import {
   extractResumeAt,
   parseResumePoint,
@@ -468,10 +474,7 @@ async function runIteration(
     ? await setupPerformer(execution, fitPerformerGerritRef, iteration, iterationIndex)
     : await resumePerformer(execution, iteration, savedState, iterationIndex);
   if (!performer) {
-    if (setupPerformerPhase) {
-      fitCliError("\nThe performer isn't ready to run; stopping this iteration.");
-    }
-    return { output: { artifacts, details } };
+    throwFatalToIteration("The performer isn't ready to run; stopping this iteration.");
   }
   artifacts.push(...performer.artifacts);
   if (setupPerformerPhase && performer.containerId) {
@@ -672,6 +675,18 @@ export async function runFromDefinition(
     githubCredentials = result;
   }
 
+  // Resolve AWS credentials upfront for situational cycles — the test-driver's
+  // cbdinocluster call uses the cloud (AWS) deployer.
+  let awsCredentials: AwsCredentials | undefined;
+  if (resolved.cycles.slice(startCycleIndex).some((cycle) => cycle.type === "situational")) {
+    const result = await resolveAwsCredentials();
+    if (typeof result === "string") {
+      fitCliError(`\n✗ ${result}`);
+      return { artifacts: [], details: [] };
+    }
+    awsCredentials = result;
+  }
+
   const artifacts: Artifact[] = [];
   const details: Detail[] = [];
   const executionTarget = savedState
@@ -724,59 +739,83 @@ export async function runFromDefinition(
       const cyclePerformers: RunningPerformer[] = [];
       const cyclePerformerStates: ResumePerformerState[] = [];
 
-      if (cycle.type === "functional") {
-        if (cycleIndex === startCycleIndex && !phases.setupCluster) {
-          const resumed = await resumeCluster(cycle, savedState);
-          activeCycle = resumed.cycle;
-          clusterState = resumed.clusterState;
+      try {
+        if (cycle.type === "functional") {
+          if (cycleIndex === startCycleIndex && !phases.setupCluster) {
+            const resumed = await resumeCluster(cycle, savedState);
+            activeCycle = resumed.cycle;
+            clusterState = resumed.clusterState;
+          } else {
+            const setup = await setupCluster(cycle, execution, setupDeclarativeCluster, githubCredentials);
+            activeCycle = setup.cycle;
+            clusterState = setup.clusterState;
+            artifacts.push(...setup.artifacts);
+            details.push(...setup.details);
+            if (cbdinoclusterSetupFailed(activeCycle, true)) {
+              throwFatalToCycle("setup-cluster didn't produce a cluster, so this cycle can't continue.");
+            }
+            if (clusterState) {
+              printResumeHint("after-cluster-creation", definitionPath);
+            }
+          }
         } else {
-          const setup = await setupCluster(cycle, execution, setupDeclarativeCluster, githubCredentials);
-          activeCycle = setup.cycle;
-          clusterState = setup.clusterState;
-          artifacts.push(...setup.artifacts);
-          details.push(...setup.details);
-          if (cbdinoclusterSetupFailed(activeCycle, true)) {
-            fitCliError("\nsetup-cluster didn't produce a cluster, so this cycle can't continue.");
-            throw new Error("setup-cluster failed");
+          await prepareCbdinoclusterConfig(execution, cycle.cbdinoclusterInit.config);
+          if (execution.kind === "remote" && awsCredentials) {
+            await uploadRemoteAwsCredentials(execution.target, execution.rootDir, awsCredentials);
           }
         }
-      }
 
-      for (const [cycleIterationIndex, iteration] of activeCycle.iterations.entries()) {
-        announce(
-          cycleIndex,
-          resolved.cycles.length,
-          cycleIterationIndex,
-          activeCycle.iterations.length,
-          resolved.fitPerformerGerritRef,
-          iteration,
-        );
-        const setupPerformerPhase = cycleIndex === startCycleIndex ? phases.setupPerformer : true;
-        const { output, performer } = await runIteration(
-          execution,
-          activeCycle.type === "functional" ? activeCycle.clusterMode : undefined,
-          resolved.fitPerformerGerritRef,
-          iteration,
-          setupPerformerPhase,
-          savedState,
-          globalIterationIndex,
-          definitionPath,
-        );
-        artifacts.push(...output.artifacts);
-        details.push(...output.details);
-        if (performer) {
-          cyclePerformers.push(performer);
-          if (performer.containerId) {
-            cyclePerformerStates.push({
-              iterationIndex: globalIterationIndex,
-              containerId: performer.containerId,
-              port: iteration.performerPort,
-              sdk: iteration.sdk.value,
-              ...(iteration.performerVersion ? { version: iteration.performerVersion } : {}),
-            });
+        for (const [cycleIterationIndex, iteration] of activeCycle.iterations.entries()) {
+          announce(
+            cycleIndex,
+            resolved.cycles.length,
+            cycleIterationIndex,
+            activeCycle.iterations.length,
+            resolved.fitPerformerGerritRef,
+            iteration,
+          );
+          const setupPerformerPhase = cycleIndex === startCycleIndex ? phases.setupPerformer : true;
+          try {
+            const { output, performer } = await runIteration(
+              execution,
+              activeCycle.type === "functional" ? activeCycle.clusterMode : undefined,
+              resolved.fitPerformerGerritRef,
+              iteration,
+              setupPerformerPhase,
+              savedState,
+              globalIterationIndex,
+              definitionPath,
+            );
+            artifacts.push(...output.artifacts);
+            details.push(...output.details);
+            if (performer) {
+              cyclePerformers.push(performer);
+              if (performer.containerId) {
+                cyclePerformerStates.push({
+                  iterationIndex: globalIterationIndex,
+                  containerId: performer.containerId,
+                  port: iteration.performerPort,
+                  sdk: iteration.sdk.value,
+                  ...(iteration.performerVersion ? { version: iteration.performerVersion } : {}),
+                });
+              }
+            }
+          } catch (err) {
+            if (err instanceof ClassifiedFailure && err.classification === "FatalToIteration") {
+              fitCliError(`\n✗ ${err.message} (FatalToIteration — moving to next iteration)`);
+            } else {
+              throw err;
+            }
           }
+          globalIterationIndex++;
         }
-        globalIterationIndex++;
+      } catch (err) {
+        if (err instanceof ClassifiedFailure && err.classification === "FatalToCycle") {
+          fitCliError(`\n✗ ${err.message} (FatalToCycle — moving to next cycle)`);
+          globalIterationIndex += activeCycle.iterations.length;
+          continue;
+        }
+        throw err;
       }
 
       const isLastCycle = cycleIndex === resolved.cycles.length - 1;

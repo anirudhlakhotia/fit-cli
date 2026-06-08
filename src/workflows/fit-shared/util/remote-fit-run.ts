@@ -1,5 +1,5 @@
 import { copyFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { type Artifact, type Detail } from "../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { LocalTarget } from "../../../util/non-fit/local-target.js";
@@ -15,6 +15,7 @@ import { collectJunitArtifacts } from "../run-test-driver/collect-junit.js";
 import { requiredReposForSdk } from "../../../util/sdk/ensure-sdk-workspace.js";
 import { ensureSdkWorkspace } from "../../../util/sdk/ensure-sdk-workspace.js";
 import type { Sdk } from "../../../util/sdk/sdks.js";
+import type { AwsCredentials } from "../../../util/non-fit/aws/identity.js";
 import { DEFAULT_PERFORMER_PORT } from "../../performers/util/performer-port.js";
 import { createRemoteFitExecutionContext } from "./remote-fit-execution-context.js";
 
@@ -130,6 +131,51 @@ export async function configureRemoteGitCredentials(
   await target.run("chmod", ["600", credentialsPath]);
   await target.run("git", ["config", "--global", "credential.helper", `store --file=${credentialsPath}`]);
   rmSync(localCredentials, { force: true });
+}
+
+const REMOTE_AWS_CREDENTIALS_FILENAME = "fit-aws-credentials.sh";
+
+function remoteAwsCredentialsPath(rootDir: string): string {
+  return join(rootDir, REMOTE_AWS_CREDENTIALS_FILENAME);
+}
+
+function awsCredentialsScript(creds: AwsCredentials): string {
+  return [
+    `export AWS_ACCESS_KEY_ID=${posixQuote(creds.accessKeyId)}`,
+    `export AWS_SECRET_ACCESS_KEY=${posixQuote(creds.secretAccessKey)}`,
+    ...(creds.sessionToken ? [`export AWS_SESSION_TOKEN=${posixQuote(creds.sessionToken)}`] : []),
+  ].join("\n") + "\n";
+}
+
+/**
+ * Write AWS credentials to the remote instance as a sourced env file so every
+ * login-shell command (including the Maven test-driver process) inherits the
+ * AWS env vars the cbdinocluster cloud deployer needs. The file is written via
+ * SCP (never on a command line) and sourced from `~/.profile` idempotently.
+ */
+export async function uploadRemoteAwsCredentials(
+  target: ExecutionTarget,
+  rootDir: string,
+  creds: AwsCredentials,
+): Promise<void> {
+  const remotePath = remoteAwsCredentialsPath(rootDir);
+  const localFile = createRunFilePath(REMOTE_AWS_CREDENTIALS_FILENAME);
+  writeFileSync(localFile, awsCredentialsScript(creds), { mode: 0o600 });
+  console.log(
+    `→ setup-aws-credentials: uploading AWS credentials to ${remotePath} on ${(target as { description?: string }).description ?? "remote"}`,
+  );
+  await target.putFile(localFile, remotePath);
+  rmSync(localFile, { force: true });
+  await target.run("chmod", ["600", remotePath]);
+  // Source from ~/.profile idempotently so every login shell inherits the vars.
+  await target.run(
+    "sh",
+    ["-lc",
+      `grep -qF ${posixQuote(basename(remotePath))} ~/.profile 2>/dev/null` +
+      ` || printf '\\n. ${posixQuote(remotePath)}\\n' >> ~/.profile`],
+    undefined,
+    { display: `add AWS credentials to ~/.profile (idempotent)` },
+  );
 }
 
 function shellCommand(command: string, args: readonly string[] = []): string {

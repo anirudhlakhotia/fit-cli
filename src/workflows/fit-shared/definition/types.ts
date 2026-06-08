@@ -145,6 +145,12 @@ export interface FunctionalCycle {
 /** A situational cycle owns no shared cluster and one or more iterations. */
 export interface SituationalCycle {
   type: "situational";
+  /**
+   * Configures cbdinocluster on the execution target before the test-driver
+   * runs. Required so the situational test-driver can call cbdinocluster without
+   * having a pre-existing `~/.cbdinocluster` on the target.
+   */
+  cbdinocluster: { init: CbdinoclusterInitSetup };
   iterations: SituationalIteration[];
 }
 

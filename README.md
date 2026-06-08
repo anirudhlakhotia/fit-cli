@@ -40,6 +40,19 @@ If you hit any problems, either ask on #the-fit-stop or consider just giving it 
 Please read /tmp/fit-cli/<folder name>/AGENTS.md and investigate the failure.
 ```
 
+## Resuming
+The output will guide you through how to resume where a failure happened, something like:
+
+```
+npm run definition -- --resume-at=after-cluster-creation examples/test.yaml
+```
+
+This can save valuable time when iterating a definition file.  It will try its best to resume, including checking that preceding steps such as cluster creation are resumable from.
+
+But note that this is somewhat temperamental and experimental.  You may hit issues and patches are welcome.
+
+You can also get very far by just rerunning the full definition file and using onPortInUse and useExisting to reuse existing performer and cluster.
+
 ## Running on a cloud instance (AWS EC2)
 
 At the start of a FIT functional run you can choose to run on your own machine, or on a clean, throwaway AWS EC2 instance.
@@ -47,8 +60,6 @@ At the start of a FIT functional run you can choose to run on your own machine, 
 To use EC2, copy `.env.example` to `.env` and fill in your AWS credentials (or just have working AWS config already — env vars or `~/.aws/credentials` are picked up automatically). If credentials are missing the tool tells you and lets you choose local instead.
 
 When you pick EC2, the tool launches a fresh Ubuntu instance, opens SSH, and tags it `fit-cli=owned`. A key is generated for you (saved into the run folder), and key-based SSH is the only login path the tool enables. At the end of the run you're asked whether to keep it (for debugging) or terminate it — the default is terminate, so you don't leave a paid instance running. The SSH command to reach the box is printed during the run.
-
-Security note: the instance's SSH port is open to the internet, so treat it as disposable — don't put anything sensitive on it.
 
 The AWS building blocks live under `src/util/non-fit/aws/` (generic, reusable) and `src/util/fit/aws/` (FIT-specific). Like everything else, each is runnable on its own — see the header of each file.
 
