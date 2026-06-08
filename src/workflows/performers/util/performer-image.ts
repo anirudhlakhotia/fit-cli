@@ -1,25 +1,12 @@
 import type { Sdk } from "../../../util/sdk/sdks.js";
 
 export const GHCR_REGISTRY = "ghcr.io";
-export const FIT_PERFORMER_IMAGE_OWNER = "couchbaselabs";
-export const FIT_PERFORMER_PACKAGES_REPOSITORY = "transactions-fit-performer";
+export const FIT_PERFORMER_IMAGE_OWNER = "couchbase";
 export const JVM_PERFORMER_IMAGE_OWNER = "couchbase";
 export const JVM_PERFORMER_PACKAGES_REPOSITORY = "couchbase-jvm-clients";
 export const DEFAULT_PERFORMER_IMAGE_TAG = "main";
 
 const JVM_SDK_VALUES = new Set(["java", "kotlin", "scala"]);
-
-interface PerformerPackageProject {
-  owner: string;
-  repository: string;
-}
-
-/** The GitHub project that publishes this SDK's performer image package. */
-export function performerPackageProject(sdk: Sdk): PerformerPackageProject {
-  return JVM_SDK_VALUES.has(sdk.value)
-    ? { owner: JVM_PERFORMER_IMAGE_OWNER, repository: JVM_PERFORMER_PACKAGES_REPOSITORY }
-    : { owner: FIT_PERFORMER_IMAGE_OWNER, repository: FIT_PERFORMER_PACKAGES_REPOSITORY };
-}
 
 /** The GHCR package name that holds the prebuilt performer image for this SDK. */
 export function performerPackageName(sdk: Sdk): string {
@@ -28,11 +15,11 @@ export function performerPackageName(sdk: Sdk): string {
 
 /** The GitHub Packages URL for this SDK's prebuilt performer image. */
 export function performerPackageUrl(sdk: Sdk): string {
-  const project = performerPackageProject(sdk);
-  return (
-    `https://github.com/${project.owner}/` +
-    `${project.repository}/pkgs/container/${performerPackageName(sdk)}`
-  );
+  const pkg = performerPackageName(sdk);
+  if (JVM_SDK_VALUES.has(sdk.value)) {
+    return `https://github.com/${JVM_PERFORMER_IMAGE_OWNER}/${JVM_PERFORMER_PACKAGES_REPOSITORY}/pkgs/container/${pkg}`;
+  }
+  return `https://github.com/orgs/${FIT_PERFORMER_IMAGE_OWNER}/packages/container/package/${pkg}`;
 }
 
 /** Normalize a user-supplied tag; blank or `main` means the default tag. */
@@ -48,8 +35,8 @@ export function performerImageTag(version?: string): string {
 
 /** The fully-qualified Docker image reference for this SDK's performer. */
 export function performerImageName(sdk: Sdk, version?: string): string {
-  const project = performerPackageProject(sdk);
-  return `${GHCR_REGISTRY}/${project.owner}/${performerPackageName(sdk)}:${performerImageTag(version)}`;
+  const owner = JVM_SDK_VALUES.has(sdk.value) ? JVM_PERFORMER_IMAGE_OWNER : FIT_PERFORMER_IMAGE_OWNER;
+  return `${GHCR_REGISTRY}/${owner}/${performerPackageName(sdk)}:${performerImageTag(version)}`;
 }
 
 /** Validate a manually-entered performer tag. */

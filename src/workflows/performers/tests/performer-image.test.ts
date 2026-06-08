@@ -17,19 +17,19 @@ test("JVM performerPackageUrl points at the couchbase-jvm-clients GHCR package",
   );
 });
 
-test("non-JVM performerPackageUrl still points at the transactions-fit-performer GHCR package", () => {
+test("non-JVM performerPackageUrl points at the couchbase org-level GHCR package", () => {
   const sdk = sdkByValue("node");
   assert.ok(sdk);
   assert.equal(
     performerPackageUrl(sdk),
-    "https://github.com/couchbaselabs/transactions-fit-performer/pkgs/container/node-fit-performer",
+    "https://github.com/orgs/couchbase/packages/container/package/node-fit-performer",
   );
 });
 
 test("non-JVM performerImageName builds a fully-qualified GHCR reference", () => {
   const sdk = sdkByValue("node");
   assert.ok(sdk);
-  assert.equal(performerImageName(sdk, "4.2.0"), "ghcr.io/couchbaselabs/node-fit-performer:4.2.0");
+  assert.equal(performerImageName(sdk, "4.2.0"), "ghcr.io/couchbase/node-fit-performer:4.2.0");
 });
 
 test("JVM performerImageName uses the couchbase GHCR namespace", () => {
@@ -45,6 +45,6 @@ test("normalizePerformerVersion collapses blank and main to the default tag", ()
 });
 
 test("validatePerformerVersion rejects full image references", () => {
-  assert.equal(validatePerformerVersion("ghcr.io/couchbaselabs/node-fit-performer:main"), "Enter only the image tag, not a full image reference.");
+  assert.equal(validatePerformerVersion("ghcr.io/couchbase/node-fit-performer:main"), "Enter only the image tag, not a full image reference.");
   assert.equal(validatePerformerVersion("4.2.0"), true);
 });

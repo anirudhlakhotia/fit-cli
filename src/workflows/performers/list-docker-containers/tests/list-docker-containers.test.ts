@@ -25,7 +25,7 @@ function version(id: number, tags: string[]): GhcrPackageVersion {
   };
 }
 
-test("parseGhcrPackageUrl accepts package URLs with query strings", () => {
+test("parseGhcrPackageUrl accepts repo-scoped package URLs with query strings", () => {
   assert.deepEqual(
     parseGhcrPackageUrl(
       "https://github.com/couchbase/couchbase-jvm-clients/pkgs/container/java-fit-performer?tab=tags",
@@ -34,6 +34,18 @@ test("parseGhcrPackageUrl accepts package URLs with query strings", () => {
       owner: "couchbase",
       repo: "couchbase-jvm-clients",
       packageName: "java-fit-performer",
+    },
+  );
+});
+
+test("parseGhcrPackageUrl accepts org-scoped package URLs", () => {
+  assert.deepEqual(
+    parseGhcrPackageUrl(
+      "https://github.com/orgs/couchbase/packages/container/package/node-fit-performer",
+    ),
+    {
+      owner: "couchbase",
+      packageName: "node-fit-performer",
     },
   );
 });

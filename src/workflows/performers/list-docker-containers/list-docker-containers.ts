@@ -37,7 +37,7 @@ export interface GhcrPackageVersion {
 
 export interface ParsedGhcrPackageUrl {
   owner: string;
-  repo: string;
+  repo?: string;
   packageName: string;
 }
 
@@ -84,22 +84,38 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** Parse a GitHub container package URL into owner/repo/package coordinates. */
+/** Parse a GitHub container package URL into owner/repo/package coordinates.
+ *
+ * Accepts two forms:
+ *   repo-scoped:  https://github.com/{owner}/{repo}/pkgs/container/{package}
+ *   org-scoped:   https://github.com/orgs/{org}/packages/container/package/{package}
+ */
 export function parseGhcrPackageUrl(rawUrl: string): ParsedGhcrPackageUrl {
   const url = new URL(rawUrl);
   const segments = url.pathname.split("/").filter(Boolean);
-  if (url.hostname !== "github.com" || segments.length !== 5 || segments[2] !== "pkgs" || segments[3] !== "container") {
+
+  if (url.hostname !== "github.com") {
     throw new Error(
       "Expected a GitHub package URL like https://github.com/{owner}/{repo}/pkgs/container/{package}: " +
         rawUrl,
     );
   }
 
-  return {
-    owner: segments[0],
-    repo: segments[1],
-    packageName: segments[4],
-  };
+  // org-scoped: /orgs/{org}/packages/container/package/{package}
+  if (segments[0] === "orgs" && segments[2] === "packages" && segments[3] === "container" && segments[4] === "package") {
+    return { owner: segments[1], packageName: segments[5] };
+  }
+
+  // repo-scoped: /{owner}/{repo}/pkgs/container/{package}
+  if (segments.length >= 5 && segments[2] === "pkgs" && segments[3] === "container") {
+    return { owner: segments[0], repo: segments[1], packageName: segments[4] };
+  }
+
+  throw new Error(
+    "Expected a GitHub package URL like https://github.com/{owner}/{repo}/pkgs/container/{package}" +
+      " or https://github.com/orgs/{org}/packages/container/package/{package}: " +
+      rawUrl,
+  );
 }
 
 function nextLink(linkHeader: string | null): string | undefined {
