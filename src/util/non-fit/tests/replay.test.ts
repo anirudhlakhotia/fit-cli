@@ -243,12 +243,12 @@ test("prompt sessions format a run directory reminder", () => {
 
 test("interactive sessions persist the chosen workflow", () => {
   const session = PromptSession.fromArgv([]);
-  session.setWorkflow("functional-tests");
+  session.setWorkflow("run-definition");
 
   const log = JSON.parse(readFileSync(session.logFile, "utf8")) as {
     workflow?: string;
   };
-  assert.equal(log.workflow, "functional-tests");
+  assert.equal(log.workflow, "run-definition");
 });
 
 test("replay mode reuses saved prompt responses", async () => {
@@ -562,7 +562,7 @@ test("replay mode loads stored workflow metadata", () => {
       {
         version: 1,
         createdAt: "2026-06-03T00:00:00.000Z",
-        workflow: "functional-tests",
+        workflow: "create-definition",
         prompts: [],
       },
       null,
@@ -571,7 +571,7 @@ test("replay mode loads stored workflow metadata", () => {
   );
 
   const session = PromptSession.fromArgv(["--replay", logFile]);
-  assert.equal(session.getWorkflow(), "functional-tests");
+  assert.equal(session.getWorkflow(), "create-definition");
 });
 
 test("replay mode loads stored invocation metadata", () => {

@@ -1,28 +1,29 @@
 #!/usr/bin/env node
 /**
  * The FIT CLI wizard. This file only presents the top-level menu and hands off
- * to a flow. Each flow lives in its own directory (e.g.
- * workflows/fit-functional/guided/) and can be run on its own for debugging —
- * see the header of its index.ts.
+ * to a definition-focused flow. Each flow lives in its own directory and can be
+ * run on its own for debugging — see the header of its entrypoint.
  */
+import { existsSync } from "node:fs";
 import { type RunOutput } from "./util/non-fit/artifacts.js";
 import { isMain, runCli } from "./util/non-fit/cli.js";
 import { loadDotenv } from "./util/non-fit/dotenv.js";
-import { select } from "./util/non-fit/prompts.js";
+import { input, select } from "./util/non-fit/prompts.js";
 import { ensurePromptSession, type PromptSession } from "./util/non-fit/replay.js";
-import { runFunctionalTests } from "./workflows/fit-functional/guided/guided.js";
 import { createFitDefinition } from "./workflows/fit-shared/create-definition/create-definition.js";
 import { rootDirFromArgv } from "./util/fit/root.js";
+import { runFromDefinition } from "./workflows/fit-functional/run-from-definition/run-from-definition.js";
 
 const WORKFLOW_PROMPT_MESSAGE = "What would you like to do?";
 
 const WORKFLOW_CHOICES = [
-  { name: "Run FIT functional tests", value: "functional-tests" },
-  { name: "Build a FIT definition file that can be used to run FIT tests", value: "functional-definition" },
+  { name: "Build a FIT definition file", value: "create-definition" },
+  { name: "Run a FIT definition file", value: "run-definition" },
 ] as const;
 
 export type WorkflowChoice = (typeof WORKFLOW_CHOICES)[number]["value"];
 const WORKFLOW_PROMPT_ID = "workflow.choose";
+const DEFINITION_PATH_PROMPT_ID = "workflow.definition.path";
 
 function isWorkflowChoice(value: string): value is WorkflowChoice {
   return WORKFLOW_CHOICES.some((choice) => choice.value === value);
@@ -40,6 +41,11 @@ export async function chooseWorkflow(
   const storedWorkflow = promptSession.getWorkflow();
   let replayWorkflow: WorkflowChoice | undefined;
   if (storedWorkflow) {
+    if (storedWorkflow === "functional-tests") {
+      throw new Error(
+        "Replay log references the removed top-level workflow 'functional-tests'. Recreate it as a FIT definition run instead.",
+      );
+    }
     if (!isWorkflowChoice(storedWorkflow)) {
       throw new Error(`Unknown workflow in replay log: ${storedWorkflow}`);
     }
@@ -62,12 +68,30 @@ export async function chooseWorkflow(
   return choice;
 }
 
-export async function runWorkflow(choice: WorkflowChoice, rootDir: string): Promise<RunOutput> {
+export async function askDefinitionPath(): Promise<string> {
+  const definitionPath = await input({
+    promptId: DEFINITION_PATH_PROMPT_ID,
+    message: "Path to the FIT definition file to run:",
+    validate: (value) => {
+      const trimmed = value.trim();
+      if (!trimmed) {
+        return "Enter a path to a FIT definition file.";
+      }
+      if (!existsSync(trimmed)) {
+        return `Definition file not found: ${trimmed}`;
+      }
+      return true;
+    },
+  });
+  return definitionPath.trim();
+}
+
+export async function runWorkflow(choice: WorkflowChoice, rootDir: string, definitionPath?: string): Promise<RunOutput> {
   switch (choice) {
-    case "functional-tests":
-      return runFunctionalTests(rootDir);
-    case "functional-definition":
+    case "create-definition":
       return createFitDefinition(rootDir);
+    case "run-definition":
+      return runFromDefinition(definitionPath ?? await askDefinitionPath(), rootDir);
   }
 }
 
@@ -78,9 +102,16 @@ export async function main(): Promise<RunOutput> {
   // without being passed on the command line. Real exported vars still win.
   loadDotenv();
 
-  const { rootDir } = rootDirFromArgv(process.argv.slice(2));
+  const { rootDir, positionals } = rootDirFromArgv(process.argv.slice(2));
+  if (positionals.length > 1) {
+    throw new Error("Usage: npm start [definition-file.yaml] [--root <dir>]");
+  }
+  if (positionals[0]) {
+    ensurePromptSession().setWorkflow("run-definition");
+    return runFromDefinition(positionals[0], rootDir);
+  }
   const choice = await chooseWorkflow();
-  return runWorkflow(choice, rootDir);
+  return runWorkflow(choice, rootDir, positionals[0]);
 }
 
 if (isMain(import.meta.url)) {

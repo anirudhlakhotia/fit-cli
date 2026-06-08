@@ -1,9 +1,9 @@
 /**
- * The "Create a FIT functional definition file" flow. This asks the same kinds
- * of questions as the guided functional flow — which cluster, which performer
- * and version, which tests — but stands *nothing* up: no cluster is allocated, no
- * performer is built, no tests are run. It just captures the answers and writes a
- * reusable `fit.yaml` you can run later with
+ * The "Create a FIT functional definition file" flow. This asks which cluster,
+ * which performer version, and which tests to capture in a reusable
+ * definition, but stands *nothing* up: no cluster is allocated, no performer is
+ * built, no tests are run. It just captures the answers and writes a reusable
+ * `fit.yaml` you can run later with
  * `npm run definition <file.yaml>` or hand-edit into a matrix of runs.
  *
  * Because it sets nothing up, the cluster question has two outcomes that mirror

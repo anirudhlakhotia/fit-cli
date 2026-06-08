@@ -1,10 +1,8 @@
 /**
- * Workflow: run FIT tests from a `fit` definition file. This is the repeatable
- * counterpart to the guided flow (../guided/guided.ts) — same work, but the
- * cluster, SDK and test selection all come from the file instead of being asked
- * for. The only prompt is where to execute the run (local or a clean EC2
- * instance) and, at the end, whether to leave everything up for debugging and
- * resuming.
+ * Workflow: run FIT tests from a `fit` definition file. The cluster, SDK and
+ * test selection all come from the file; the only prompts are where to execute
+ * the run (local or a clean EC2 instance) and, at the end, whether to leave
+ * everything up for debugging and resuming.
  *
  * Iterations come in two flavours. `functional` iterations test against the
  * shared cluster set up once for the run. `situational` iterations (FIT/SIT) let

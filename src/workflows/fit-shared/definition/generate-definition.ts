@@ -5,8 +5,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import YAML from "yaml";
-import { artifactFromPath, type Artifact, type RunOutput } from "../../../util/non-fit/artifacts.js";
-import { printWithoutTimestamps } from "../../../util/non-fit/fit-cli-log.js";
+import { artifactFromPath, type Artifact } from "../../../util/non-fit/artifacts.js";
 import { ensureRunDir } from "../../../util/non-fit/replay.js";
 import type { Sdk } from "../../../util/sdk/sdks.js";
 import type { PieceData } from "../../../util/non-fit/config-pieces.js";
@@ -41,7 +40,7 @@ export const fitFunctionalDefinitionPath = fitDefinitionPath;
  * running cluster (stored as `useExisting` plus iteration `fitConfig.clusterAccess`),
  * or describe a cbdinocluster to allocate later (a `cbdinocluster` block). The
  * create-definition flow lets the user pick either without standing anything up;
- * the guided flow always has a live cluster in hand and so always uses
+ * the direct generation helper always has a live cluster in hand and so always uses
  * `useExisting`.
  */
 export type DefinitionCluster =
@@ -191,7 +190,7 @@ export function buildFitFunctionalDefinitionFrom(inputs: DefinitionInputs): FitD
 }
 
 /**
- * Build a definition object from the inputs chosen in the guided flow, where a
+ * Build a definition object from interactively chosen inputs, where a
  * live cluster has already been selected. A thin wrapper over
  * {@link buildFitFunctionalDefinitionFrom} for the always-existing-cluster case.
  */
@@ -262,23 +261,3 @@ export function writeFitDefinition(
 }
 
 export const writeFitFunctionalDefinition = writeFitDefinition;
-
-/** Build, explain, and write a reusable fit definition file. */
-export function generateFitFunctionalDefinition(
-  sdk: Sdk,
-  cluster: SelectedCluster,
-  selection: FitTestSelection,
-): RunOutput & { path: string; definition: FitDefinition } {
-  const definition = buildFitFunctionalDefinition(sdk, cluster, selection);
-
-  console.log(
-    "\nGenerating a fit definition file so you can rerun this flow non-interactively or tweak it.",
-  );
-  const result = writeFitDefinition(definition);
-
-  console.log(`\nWriting ${result.path}:\n`);
-  printWithoutTimestamps(formatFitDefinition(definition));
-  console.log(`\n✓ Wrote ${result.path}`);
-
-  return { path: result.path, definition, artifacts: [result.artifact], details: [] };
-}

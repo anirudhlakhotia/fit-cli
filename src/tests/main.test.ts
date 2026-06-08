@@ -15,13 +15,13 @@ test("chooseWorkflow resumes the stored workflow and skips the legacy workflow p
       {
         version: 1,
         createdAt: "2026-06-03T00:00:00.000Z",
-        workflow: "functional-tests",
+        workflow: "run-definition",
         prompts: [
           {
             id: "workflow.choose",
             kind: "select",
             message: "What would you like to do?",
-            response: "functional-tests",
+            response: "run-definition",
           },
           {
             id: "fit.grpc.build-now",
@@ -38,7 +38,7 @@ test("chooseWorkflow resumes the stored workflow and skips the legacy workflow p
 
   const session = PromptSession.fromArgv(["--replay", logFile]);
   const choice = await chooseWorkflow(session);
-  assert.equal(choice, "functional-tests");
+  assert.equal(choice, "run-definition");
 
   const response = await session.resolvePrompt("fit.grpc.build-now", "confirm", "Build FIT now?", () =>
     Promise.resolve(false),
@@ -55,7 +55,7 @@ test("chooseWorkflow uses the stored workflow as the default in replay defaults 
       {
         version: 1,
         createdAt: "2026-06-03T00:00:00.000Z",
-        workflow: "functional-tests",
+        workflow: "create-definition",
         prompts: [],
       },
       null,
@@ -67,11 +67,32 @@ test("chooseWorkflow uses the stored workflow as the default in replay defaults 
   let receivedDefault: string | undefined;
   const choice = await chooseWorkflow(session, (config) => {
     receivedDefault = config.default;
-    return Promise.resolve("functional-tests");
+    return Promise.resolve("create-definition");
   });
 
-  assert.equal(receivedDefault, "functional-tests");
-  assert.equal(choice, "functional-tests");
+  assert.equal(receivedDefault, "create-definition");
+  assert.equal(choice, "create-definition");
+});
+
+test("chooseWorkflow rejects replay logs that target the removed functional-tests workflow", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "fit-cli-index-"));
+  const logFile = join(dir, "removed-workflow.json");
+  writeFileSync(
+    logFile,
+    JSON.stringify(
+      {
+        version: 1,
+        createdAt: "2026-06-03T00:00:00.000Z",
+        workflow: "functional-tests",
+        prompts: [],
+      },
+      null,
+      2,
+    ),
+  );
+
+  const session = PromptSession.fromArgv(["--replay", logFile]);
+  await assert.rejects(() => chooseWorkflow(session), /removed top-level workflow 'functional-tests'/);
 });
 
 test("chooseWorkflow rejects unknown workflows from replay metadata", async () => {

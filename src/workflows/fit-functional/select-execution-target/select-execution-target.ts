@@ -4,7 +4,8 @@
  * (e.g. one a previous run left up for debugging). Returns an ExecutionTarget the
  * rest of the flow can run commands against, plus a cleanup handle: a no-op for
  * local and for an existing instance (the user brought it, so we leave it alone);
- * for a freshly provisioned box, a prompt to keep it for debugging or tear it down.
+ * for a freshly provisioned box, enough information for the caller to decide
+ * whether to terminate it or keep it for debugging.
  *
  * The EC2 paths need AWS credentials. We read them from the normal environment
  * and the user's fit-cli config file; if they're missing or invalid we
@@ -18,12 +19,7 @@ import { type RunOutput } from "../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { ensureFitCliConfigEnv } from "../../../util/fit/config.js";
 import { fitCliError, fitCliWarn } from "../../../util/non-fit/fit-cli-log.js";
-import { confirm, input, select } from "../../../util/non-fit/prompts.js";
-import {
-  formatEc2CleanupPromptBanner,
-  formatEc2DeletionResponsibilityBanner,
-  terminateInstanceCommand,
-} from "../../../util/fit/aws/lifecycle-warning.js";
+import { input, select } from "../../../util/non-fit/prompts.js";
 import { LocalTarget } from "../../../util/non-fit/local-target.js";
 import { resolveRegion, type AwsOptions } from "../../../util/non-fit/aws/aws-cli.js";
 import { checkCredentials } from "../../../util/non-fit/aws/identity.js";
@@ -70,35 +66,6 @@ function promptId(attempt: number, suffix: string): string {
 }
 
 const LOCAL_TEARDOWN: ExecutionTargetTeardown = { kind: "local" };
-
-/**
- * Tear down (or, if the user wants to debug, keep) a provisioned instance after
- * a one-shot flow that has no resume concept (the guided flow). Prompts only when
- * fit-cli is responsible for terminating the box.
- */
-export async function teardownTargetInteractively(teardown: ExecutionTargetTeardown): Promise<void> {
-  if (!teardown.terminate || !teardown.instanceId) {
-    return;
-  }
-  const { instanceId, address } = teardown;
-  const region = teardown.region ?? resolveRegion();
-  const terminateCommand = terminateInstanceCommand(instanceId, region);
-  fitCliWarn(`\n${formatEc2CleanupPromptBanner(instanceId, region, address ?? "")}\n`);
-  const keep = await confirm({
-    promptId: "execution-target.teardown.keep",
-    message: `Keep EC2 instance ${instanceId} running for debugging?`,
-    default: false,
-  });
-  if (keep) {
-    fitCliWarn(`\n${formatEc2DeletionResponsibilityBanner(instanceId, region, address ?? "")}\n`);
-    console.log(`\nLeaving ${instanceId} running${address ? ` at ${address}` : ""}.`);
-    console.log(`Terminate later: ${terminateCommand}`);
-    return;
-  }
-  console.log(`\nTerminating ${instanceId}...`);
-  await teardown.terminate();
-  console.log("✓ Terminated.");
-}
 
 /**
  * Reconnect to the target a previous run used, without prompting — the resume
