@@ -5,9 +5,8 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { sdkByValue } from "../../../../util/sdk/sdks.js";
 import type { ClusterCommandExecutor } from "../../../cluster/cluster-create/allocate-cluster.js";
-import type { ResolvedDefinition } from "../../../fit-shared/definition/resolve-definition.js";
+import type { ResolvedFunctionalCycle, ResolvedSituationalIteration } from "../../../fit-shared/definition/resolve-definition.js";
 import type { FitExecutionContext } from "../../../fit-shared/util/remote-fit-run.js";
-import type { ResolvedSituationalIteration } from "../../../fit-shared/definition/resolve-definition.js";
 import {
   cbdinoclusterSetupFailed,
   finalizeRunFromDefinition,
@@ -16,10 +15,11 @@ import {
   setupCluster,
 } from "../run-from-definition.js";
 
-function definition(): ResolvedDefinition {
+function functionalCycle(): ResolvedFunctionalCycle {
   const sdk = sdkByValue("java");
   assert.ok(sdk);
   return {
+    type: "functional",
     clusterMode: "cbdinocluster",
     cbdinocluster: {
       config: { nodes: [{ count: 1, version: "8.1.0-2188", services: ["kv"] }] },
@@ -117,40 +117,29 @@ function fitExecutionContext(): FitExecutionContext {
   };
 }
 
-test("setupCluster applies the allocated cbdinocluster to every iteration", async () => {
-  const cluster = {
-    scheme: "couchbase" as const,
-    defaultHostname: "localhost",
-    flavour: "self-managed" as const,
-    credentials: { username: "Administrator", password: "password" },
-    tls: null,
-  };
+test("setupCluster applies the allocated cbdinocluster to every functional iteration in the cycle", async () => {
+  const cycle = functionalCycle();
   const execution = executor();
   let receivedExecution: ClusterCommandExecutor | undefined;
 
-  const result = await setupCluster(definition(), execution, (_plan, passedExecution) => {
+  const result = await setupCluster(cycle, execution, (_plan, passedExecution) => {
     receivedExecution = passedExecution;
     return Promise.resolve({
       allocated: true,
       clusterId: "cluster-id",
       cbdinocluster: "cbdinocluster",
-      cluster,
+      cluster: cluster(),
       artifacts: [],
       details: [],
     });
   });
 
   assert.equal(receivedExecution, execution);
-  assert.deepEqual(
-    result.resolved.iterations.map((iteration) =>
-      iteration.type === "functional" ? iteration.cluster : undefined,
-    ),
-    [cluster, cluster],
-  );
+  assert.deepEqual(result.cycle.iterations.map((iteration) => iteration.cluster), [cluster(), cluster()]);
 });
 
 test("setupCluster leaves the iterations unchanged when allocation fails", async () => {
-  const result = await setupCluster(definition(), executor(), () =>
+  const result = await setupCluster(functionalCycle(), executor(), () =>
     Promise.resolve({
       allocated: false,
       artifacts: [],
@@ -158,22 +147,16 @@ test("setupCluster leaves the iterations unchanged when allocation fails", async
     }),
   );
 
-  assert.deepEqual(
-    result.resolved.iterations.map((iteration) =>
-      iteration.type === "functional" ? iteration.cluster : undefined,
-    ),
-    [undefined, undefined],
-  );
+  assert.deepEqual(result.cycle.iterations.map((iteration) => iteration.cluster), [undefined, undefined]);
 });
 
-test("cbdinoclusterSetupFailed flags a missing shared cluster after the cluster phase ran", () => {
-  assert.equal(cbdinoclusterSetupFailed(definition(), true), true);
+test("cbdinoclusterSetupFailed flags a missing cycle cluster after the cluster phase ran", () => {
+  assert.equal(cbdinoclusterSetupFailed(functionalCycle(), true), true);
 
-  const resolved = definition();
+  const resolved = functionalCycle();
   resolved.iterations = resolved.iterations.map((iteration) => ({ ...iteration, cluster: cluster() }));
   assert.equal(cbdinoclusterSetupFailed(resolved, true), false);
-  // When the cluster phase was skipped (resumed), a missing cluster isn't a setup failure.
-  assert.equal(cbdinoclusterSetupFailed(definition(), false), false);
+  assert.equal(cbdinoclusterSetupFailed(functionalCycle(), false), false);
 });
 
 test("finalizeRunFromDefinition writes AGENTS.md and includes it in artifacts", () => {
@@ -224,7 +207,6 @@ function situationalIteration(): ResolvedSituationalIteration {
     testSelection: { allTests: [], selectedTests: [] },
     onPortInUse: "restart",
     extraMavenArgs: ["-Dgroups=situational,cbDino"],
-    cbdino: { version: "7.6", cbDinoClusterAppPath: "cbdinocluster", enablePrivateEndpoint: false },
     databaseMode: "hosted",
   };
 }
@@ -282,32 +264,5 @@ test("runSituationalTests generates the situational config then runs the driver"
   assert.deepEqual(calls, ["database", "config", "driver"]);
   assert.equal(configPerformerPort, 8060);
   assert.deepEqual(driverMavenArgs, ["-Dgroups=situational,cbDino"]);
-  // The results UI is surfaced as a detail so the run summary links to it.
   assert.ok(result.details.some((detail) => detail.label === "Results UI"));
-});
-
-test("runTests performs the cluster REST sanity check before the performer sanity check", async () => {
-  const calls: string[] = [];
-
-  const result = await runTests(fitExecutionContext(), "connection", iteration(), undefined, 0, {
-    runClusterDiagFn: () => {
-      calls.push("cluster");
-      return Promise.resolve(true);
-    },
-    generateFitConfigurationFn: () => {
-      calls.push("fit-config");
-      return { path: "/tmp/fit.json", artifacts: [], details: [] };
-    },
-    runPerformerClusterSanityCheckFn: () => {
-      calls.push("performer");
-      return Promise.resolve({ ok: true, artifacts: [], details: [] });
-    },
-    runTestDriverFn: () => {
-      calls.push("driver");
-      return Promise.resolve({ ok: true, logFile: "/tmp/driver.log", artifacts: [], details: [] });
-    },
-  });
-
-  assert.deepEqual(calls, ["cluster", "fit-config", "performer", "driver"]);
-  assert.deepEqual(result, { artifacts: [], details: [] });
 });

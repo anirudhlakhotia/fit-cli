@@ -8,6 +8,7 @@ import { readRunState, runStatePath, writeRunState, type RunState } from "../res
 function sampleState(): RunState {
   return {
     version: 1,
+    cycleIndex: 0,
     target: { kind: "remote", instanceId: "i-123", address: "ec2.example.com", region: "us-east-1", user: "ubuntu", identityFile: "/tmp/key.pem" },
     cluster: {
       cluster: {

@@ -1,6 +1,6 @@
 /**
- * Build a reusable `fit` definition file interactively, letting the user mix
- * functional and situational iterations into one YAML file.
+ * Build a reusable `fit` definition file interactively, letting the user build
+ * one or more cycles.
  *
  * Run this flow on its own (skipping the top-level menu; add --root <dir> to
  * point at another workspace):
@@ -12,7 +12,6 @@ import { printWithoutTimestamps } from "../../../util/non-fit/fit-cli-log.js";
 import { qualifyPromptId, select } from "../../../util/non-fit/prompts.js";
 import { rootDirFromArgv } from "../../../util/fit/root.js";
 import { chooseSdk } from "../../../util/sdk/choose-sdk.js";
-import type { ClusterExistsPolicy } from "../../cluster/cluster-create/cluster-exists-policy.js";
 import { askClusterExistsPolicy } from "../../cluster/cluster-create/ask-cluster-exists-policy.js";
 import { askVersion } from "../../performers/build-performer/ask-version.js";
 import { askPortInUsePolicy } from "../../performers/util/ask-port-in-use-policy.js";
@@ -23,13 +22,15 @@ import {
 } from "../choose-results-database/choose-results-database.js";
 import {
   buildFitDefinition,
+  buildFunctionalCycleFrom,
   buildFunctionalIterationFrom,
+  buildSituationalCycleFrom,
   buildSituationalIterationFrom,
   formatFitDefinition,
   type DefinitionCluster,
   writeFitDefinition,
 } from "../definition/generate-definition.js";
-import type { FitIteration } from "../definition/types.js";
+import type { FitCycle, FunctionalCycle } from "../definition/types.js";
 import {
   FUNCTIONAL_TEST_DOMAIN,
   SITUATIONAL_TEST_DOMAIN,
@@ -39,11 +40,10 @@ import { createLocalFitExecutionContext } from "../util/remote-fit-run.js";
 
 type DefinitionBuilderAction = "functional" | "situational" | "performance" | "done";
 
-interface SharedDefinitionState {
+interface DefinitionBuilderState {
   gerritRefAsked: boolean;
   gerritRef?: string;
-  functionalCluster?: DefinitionCluster;
-  onClusterExists?: ClusterExistsPolicy;
+  cycles: FitCycle[];
 }
 
 async function chooseDefinitionBuilderAction(index: number): Promise<DefinitionBuilderAction> {
@@ -59,7 +59,7 @@ async function chooseDefinitionBuilderAction(index: number): Promise<DefinitionB
   });
 }
 
-async function ensureSharedRepoSetup(state: SharedDefinitionState): Promise<void> {
+async function ensureSharedRepoSetup(state: DefinitionBuilderState): Promise<void> {
   if (state.gerritRefAsked) {
     return;
   }
@@ -67,26 +67,20 @@ async function ensureSharedRepoSetup(state: SharedDefinitionState): Promise<void
   state.gerritRefAsked = true;
 }
 
-async function ensureFunctionalSharedSetup(state: SharedDefinitionState): Promise<void> {
-  await ensureSharedRepoSetup(state);
-  if (state.functionalCluster) {
-    return;
-  }
-
-  console.log(
-    "\nFIT functional iterations share one top-level cluster setup in the definition, so fit-cli will ask for it once and reuse it.",
-  );
-  state.functionalCluster = await chooseDefinitionCluster();
-  state.onClusterExists =
-    state.functionalCluster.kind === "cbdinocluster" ? await askClusterExistsPolicy() : undefined;
+function currentCycleOfType<T extends FitCycle["type"]>(
+  state: DefinitionBuilderState,
+  type: T,
+): Extract<FitCycle, { type: T }> | undefined {
+  const last = state.cycles.at(-1);
+  return last?.type === type ? (last as Extract<FitCycle, { type: T }>) : undefined;
 }
 
 async function addFunctionalIteration(
   rootDir: string,
-  state: SharedDefinitionState,
+  state: DefinitionBuilderState,
   iterationIndex: number,
-) {
-  await ensureFunctionalSharedSetup(state);
+): Promise<void> {
+  await ensureSharedRepoSetup(state);
   const promptIdPrefix = `fit.definition.iteration.${iterationIndex + 1}.functional`;
   const execution = createLocalFitExecutionContext(rootDir);
   const sdk = await chooseSdk("Which SDK do you want to test with FIT functional?", promptIdPrefix);
@@ -94,20 +88,94 @@ async function addFunctionalIteration(
   const onPortInUse = await askPortInUsePolicy(promptIdPrefix);
   const selection = await selectFitTests(execution, FUNCTIONAL_TEST_DOMAIN, promptIdPrefix);
 
-  return buildFunctionalIterationFrom({
-    cluster: state.functionalCluster!,
-    sdk,
-    ...(version ? { version } : {}),
-    onPortInUse,
-    selection,
-  });
+  const currentCycle = currentCycleOfType(state, "functional");
+  if (currentCycle) {
+    currentCycle.iterations.push(
+      buildFunctionalIterationFrom({
+        cluster: functionalCycleCluster(currentCycle),
+        sdk,
+        ...(version ? { version } : {}),
+        onPortInUse,
+        selection,
+      }),
+    );
+    return;
+  }
+
+  console.log(
+    "\nStarting a new FIT functional cycle. This cycle owns one cluster lifetime, and every functional iteration you add now will share it.",
+  );
+  const cluster = await chooseDefinitionCluster();
+  const onClusterExists = cluster.kind === "cbdinocluster" ? await askClusterExistsPolicy() : undefined;
+  state.cycles.push(
+    buildFunctionalCycleFrom({
+      cluster,
+      ...(onClusterExists ? { onClusterExists } : {}),
+      sdk,
+      ...(version ? { version } : {}),
+      onPortInUse,
+      selection,
+    }),
+  );
+}
+
+function functionalCycleCluster(cycle: FunctionalCycle): DefinitionCluster {
+  if (cycle.cluster.cbdinocluster) {
+    const firstNode = cycle.cluster.cbdinocluster.config.nodes[0];
+    if (!firstNode) {
+      throw new Error("Functional cycle cbdinocluster config must contain at least one node.");
+    }
+    return {
+      kind: "cbdinocluster",
+      def: {
+        nodeCount: firstNode.count,
+        version: firstNode.version,
+        services: firstNode.services,
+        cng: cycle.cluster.cbdinocluster.config.cao !== undefined,
+      },
+    };
+  }
+  const access = cycleClusterAccess(cycle);
+  return {
+    kind: "connection",
+    cluster: {
+      ...access,
+      flavour: "self-managed",
+    },
+  };
+}
+
+function cycleClusterAccess(cycle: FunctionalCycle) {
+  const first = cycle.iterations.find((iteration) => iteration.fitConfig?.clusterAccess !== undefined);
+  const clusterAccess = first?.fitConfig?.clusterAccess;
+  if (!clusterAccess || typeof clusterAccess !== "object" || Array.isArray(clusterAccess)) {
+    throw new Error("Functional useExisting cycles need clusterAccess in at least one iteration.");
+  }
+  const record = clusterAccess as {
+    connectionString?: string;
+    username?: string;
+    password?: string;
+    tls?: unknown;
+  };
+  const connectionString = String(record.connectionString ?? "couchbase://localhost");
+  const [scheme, defaultHostname] = connectionString.split("://");
+  const resolvedScheme: "couchbase" | "couchbases" = scheme === "couchbases" ? "couchbases" : "couchbase";
+  return {
+    scheme: resolvedScheme,
+    defaultHostname: defaultHostname ?? "localhost",
+    credentials: {
+      username: String(record.username ?? "Administrator"),
+      password: String(record.password ?? "password"),
+    },
+    tls: record.tls === undefined ? null : (record.tls as null | { insecure: true } | { certPath: string }),
+  };
 }
 
 async function addSituationalIteration(
   rootDir: string,
-  state: SharedDefinitionState,
+  state: DefinitionBuilderState,
   iterationIndex: number,
-) {
+): Promise<void> {
   await ensureSharedRepoSetup(state);
   const promptIdPrefix = `fit.definition.iteration.${iterationIndex + 1}.situational`;
   const execution = createLocalFitExecutionContext(rootDir);
@@ -117,17 +185,36 @@ async function addSituationalIteration(
   const databaseMode: ResultsDatabaseMode = await chooseResultsDatabaseMode(promptIdPrefix);
   const selection = await selectFitTests(execution, SITUATIONAL_TEST_DOMAIN, promptIdPrefix);
 
-  console.log(
-    "\nUsing the default cbdino settings for this situational iteration. You can edit fit.yaml later if you need specific cbdino overrides.",
-  );
+  const currentCycle = currentCycleOfType(state, "situational");
+  if (currentCycle) {
+    currentCycle.iterations.push(
+      buildSituationalIterationFrom({
+        sdk,
+        ...(version ? { version } : {}),
+        onPortInUse,
+        databaseMode,
+        selection,
+      }),
+    );
+    return;
+  }
 
-  return buildSituationalIterationFrom({
-    sdk,
-    ...(version ? { version } : {}),
-    onPortInUse,
-    databaseMode,
-    selection,
-  });
+  console.log(
+    "\nStarting a new FIT situational cycle. Situational cycles do not carry a shared cluster because FIT/SIT creates its own.",
+  );
+  state.cycles.push(
+    buildSituationalCycleFrom({
+      sdk,
+      ...(version ? { version } : {}),
+      onPortInUse,
+      databaseMode,
+      selection,
+    }),
+  );
+}
+
+function iterationCount(state: DefinitionBuilderState): number {
+  return state.cycles.reduce((total, cycle) => total + cycle.iterations.length, 0);
 }
 
 export async function createFitDefinition(rootDir: string): Promise<RunOutput> {
@@ -136,8 +223,7 @@ export async function createFitDefinition(rootDir: string): Promise<RunOutput> {
       "no cluster is allocated, no performer built, no tests run.\n",
   );
 
-  const iterations: FitIteration[] = [];
-  const state: SharedDefinitionState = { gerritRefAsked: false };
+  const state: DefinitionBuilderState = { gerritRefAsked: false, cycles: [] };
   let actionIndex = 1;
 
   while (true) {
@@ -150,24 +236,22 @@ export async function createFitDefinition(rootDir: string): Promise<RunOutput> {
       continue;
     }
 
-    const iterationIndex = iterations.length;
-    const iteration =
-      action === "functional"
-        ? await addFunctionalIteration(rootDir, state, iterationIndex)
-        : await addSituationalIteration(rootDir, state, iterationIndex);
-    iterations.push(iteration);
+    const nextIterationIndex = iterationCount(state);
+    if (action === "functional") {
+      await addFunctionalIteration(rootDir, state, nextIterationIndex);
+    } else {
+      await addSituationalIteration(rootDir, state, nextIterationIndex);
+    }
   }
 
-  if (iterations.length === 0) {
+  if (state.cycles.length === 0) {
     console.log("\nNo FIT testing was added, so no definition file was written.");
     return { artifacts: [], details: [] };
   }
 
   const definition = buildFitDefinition({
-    ...(state.functionalCluster ? { cluster: state.functionalCluster } : {}),
     ...(state.gerritRef ? { gerritRef: state.gerritRef } : {}),
-    ...(state.onClusterExists ? { onClusterExists: state.onClusterExists } : {}),
-    iterations,
+    cycles: state.cycles,
   });
 
   const result = writeFitDefinition(definition);

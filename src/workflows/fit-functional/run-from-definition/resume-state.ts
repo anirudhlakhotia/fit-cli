@@ -59,6 +59,7 @@ export interface ResumePerformerState {
 /** Everything a `--resume-at` run needs to pick up where a previous run stopped. */
 export interface RunState {
   version: 1;
+  cycleIndex: number;
   target: ResumeTargetState;
   cluster?: ResumeClusterState;
   performers: ResumePerformerState[];

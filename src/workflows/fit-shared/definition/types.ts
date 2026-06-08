@@ -1,7 +1,6 @@
 /**
  * The shape of a `fit` YAML definition file — a repeatable, checked-in
- * description of one or more FIT runs. Today only `functional` iterations are
- * supported.
+ * description of one or more FIT cycles.
  */
 import type { SdkValue } from "../../../util/sdk/sdks.js";
 import type { PortInUsePolicy } from "../../performers/util/performer-port.js";
@@ -18,15 +17,15 @@ export const FIT_DEFINITION_TYPE = "fit";
  */
 export const CURRENT_FIT_DEFINITION_VERSION = 1;
 
-/** The currently supported iteration kinds within a fit definition. */
-export const FIT_ITERATION_TYPES = ["functional", "situational"] as const;
+/** The currently supported cycle kinds within a fit definition. */
+export const FIT_CYCLE_TYPES = ["functional", "situational"] as const;
 
-export type FitIterationType = (typeof FIT_ITERATION_TYPES)[number];
+export type FitCycleType = (typeof FIT_CYCLE_TYPES)[number];
 
 /** One fitConfig artifact-piece contributed by a definition iteration. */
 export type FitConfigPiece = PieceData;
 
-/** TLS config for a shared cluster connection. */
+/** TLS config for a cycle-level cluster connection. */
 export type ClusterTls = null | { insecure: true } | { certPath: string };
 
 /** Connection details for an already-running cluster. */
@@ -37,7 +36,7 @@ export interface ConnectionClusterSetup {
   tls?: ClusterTls;
 }
 
-/** Marker that this definition should use a cluster already running elsewhere. */
+/** Marker that this cycle should use a cluster already running elsewhere. */
 export type UseExistingClusterSetup = Record<string, never>;
 
 /** A full cbdinocluster config file to upload before cluster setup runs. */
@@ -46,129 +45,71 @@ export interface CbdinoclusterInitSetup {
   config: PieceData;
 }
 
-/**
- * A cbdinocluster to allocate for the run. The setup-cluster step writes
- * `config` out as a cbdinocluster def file and allocates it (see
- * setup-declarative-cluster.ts), then tests against the resulting cluster.
- */
+/** A cbdinocluster to allocate for a functional cycle. */
 export interface CbdinoclusterSetup {
-  /**
-   * Optional bootstrap settings for clean environments. When present, this
-   * config file is uploaded verbatim as `~/.cbdinocluster` before fit-cli runs
-   * any cbdinocluster commands remotely.
-   */
   init?: CbdinoclusterInitSetup;
-  /**
-   * The cbdinocluster definition to allocate — what goes under
-   * `cbdinocluster.config` (the `nodes`, and optional `cao` for CNG). Built by
-   * build-cluster-def.ts's buildClusterDefObject.
-   */
   config: CbdinoclusterDef;
-  /**
-   * What to do if cbdinocluster already has a cluster running when setup-cluster
-   * runs: `fail`, `useExisting`, or `destroyAndRecreate` (the default). Omitted
-   * means {@link DEFAULT_CLUSTER_EXISTS_POLICY}.
-   */
   onClusterExists?: ClusterExistsPolicy;
-  /** Optional cbdinocluster deployer override (passed as `--deployer`). */
   deployer?: string;
 }
 
 /**
- * The cluster the whole run tests against. Provide exactly one of:
+ * The cluster a functional cycle tests against. Provide exactly one of:
  * - `connection` — use these connection details for an already-running cluster,
  * - `useExisting` — test against an already-running cluster, or
- * - `cbdinocluster` — allocate a fresh cluster with cbdinocluster for the run.
+ * - `cbdinocluster` — allocate a fresh cluster with cbdinocluster for the cycle.
  */
 export interface ClusterSetup {
-  /** Run against an already-running cluster described here. */
   connection?: ConnectionClusterSetup;
-  /** Run against a cluster that already exists. */
   useExisting?: UseExistingClusterSetup;
-  /** Allocate this cbdinocluster for the run. */
   cbdinocluster?: CbdinoclusterSetup;
 }
 
-/** The shared, top-level setup applied once for the whole run. */
+/** Shared setup applied once for the whole definition. */
 export interface RepoSetup {
   gerritRef?: string;
 }
 
-/** Top-level repo overrides applied before iterations run. */
+/** Top-level repo overrides applied before cycles run. */
 export interface ReposSetup {
   "transactions-fit-performer"?: RepoSetup;
 }
 
-/** The shared, top-level setup applied once for the whole run. */
+/** The shared, top-level setup applied once for the whole definition. */
 export interface SharedSetup {
-  cluster?: ClusterSetup;
   repos?: ReposSetup;
 }
 
-/** Which performer to build and run for an iteration. */
+/** Which performer to build and run for one iteration. */
 export interface PerformerSetup {
-  /** Which SDK to test, e.g. "java" — one of the values in SDKS. */
   sdk: SdkValue;
-  /**
-   * Port the performer listens on. Defaults to 8060. Custom ports aren't plumbed
-   * through the performer/FITConfiguration machinery yet — see resolve-definition.
-   */
   port?: number;
-  /** Optional performer image version/tag; omit to use the build's default. */
   version?: string;
-  /**
-   * What to do if the performer port is already in use when the iteration's
-   * setup-performer step runs: `fail`, `restart` (stop what's there and bring up
-   * a fresh performer — the default), or `reuse` (assume a performer is already
-   * running and test against it). Omitted means {@link DEFAULT_PORT_IN_USE_POLICY}.
-   */
   onPortInUse?: PortInUsePolicy;
 }
 
-/** The per-iteration setup: what to stand up for this iteration. */
+/** The per-iteration setup. */
 export interface IterationSetup {
   performer: PerformerSetup;
 }
 
 /**
  * Which FIT test-driver tests to run: `"all"` (the default) or an explicit list
- * of fully-qualified test class names, e.g. com.couchbase.StandardTest.
+ * of fully-qualified test class names.
  */
 export type DefinitionTests = "all" | string[];
 
 /** The runtime section of an iteration: what to do once setup is up. */
 export interface RuntimeSection {
   tests: DefinitionTests;
-  /**
-   * Optional Maven test groups to exclude (mapped to -DexcludedGroups). When
-   * omitted the run uses the standard CI exclusions.
-   */
   excludedGroups?: string[];
 }
 
 /** One FIT functional performer + runtime pass. */
 export interface FunctionalIteration {
-  type: "functional";
-  /** FITConfiguration artifact-piece layered into this iteration's run config. */
   fitConfig?: FitConfigPiece;
   setup: IterationSetup;
   runtime: RuntimeSection;
-}
-
-/**
- * How cbdino should build the cluster a situational iteration runs against. The
- * situational test-driver creates and manages its own cluster via cbdino, so
- * these settings go into the FITConfiguration's `situational.cbdino` block
- * rather than the shared `setup.cluster`. Every field is optional and falls back
- * to the defaults in build-situational-configuration.ts.
- */
-export interface SituationalCbdinoSetup {
-  /** Couchbase Server version cbdino should deploy, e.g. "7.6". */
-  version?: string;
-  /** Name (or path) of the cbdinocluster binary the driver should invoke. */
-  cbDinoClusterAppPath?: string;
-  /** Whether cbdino should set up a private endpoint. Defaults to false. */
-  enablePrivateEndpoint?: boolean;
 }
 
 /** Where situational timeseries results are stored. */
@@ -176,46 +117,44 @@ export const SITUATIONAL_DATABASE_MODES = ["hosted", "local"] as const;
 
 export type SituationalDatabaseMode = (typeof SITUATIONAL_DATABASE_MODES)[number];
 
-/**
- * Where a situational iteration's results land. Only the mode is recorded: the
- * hosted database's readonly password is resolved from the fit-cli config at run
- * time (never stored in the checked-in definition file), and the local mode is
- * stood up in Docker.
- */
+/** Where a situational iteration's results land. */
 export interface SituationalDatabaseSetup {
   mode: SituationalDatabaseMode;
 }
 
-/** The situational-specific section of an iteration: cbdino + results database. */
+/** The situational-specific section of an iteration. */
 export interface SituationalSection {
-  /** How cbdino builds the cluster; omit to use the defaults. */
-  cbdino?: SituationalCbdinoSetup;
-  /** Where results land (required — situational runs always store timeseries data). */
   database: SituationalDatabaseSetup;
 }
 
-/**
- * One FIT situational performer + runtime pass. cbdino builds and manages the
- * cluster the tests drive, so there is no shared `setup.cluster` — the cluster
- * shape lives under `situational.cbdino` instead.
- */
+/** One FIT situational performer + runtime pass. */
 export interface SituationalIteration {
-  type: "situational";
-  /** FITConfiguration artifact-piece layered into this iteration's run config. */
   fitConfig?: FitConfigPiece;
   setup: IterationSetup;
   situational: SituationalSection;
   runtime: RuntimeSection;
 }
 
-/** One iteration within a fit definition — functional or situational. */
-export type FitIteration = FunctionalIteration | SituationalIteration;
+/** A functional cycle owns one cluster lifetime and one or more iterations. */
+export interface FunctionalCycle {
+  type: "functional";
+  cluster: ClusterSetup;
+  iterations: FunctionalIteration[];
+}
+
+/** A situational cycle owns no shared cluster and one or more iterations. */
+export interface SituationalCycle {
+  type: "situational";
+  iterations: SituationalIteration[];
+}
+
+/** One cycle within a fit definition. */
+export type FitCycle = FunctionalCycle | SituationalCycle;
 
 /** A fully-parsed, validated fit definition file. */
 export interface FitDefinition {
   version: number;
   type: typeof FIT_DEFINITION_TYPE;
-  iterations: FitIteration[];
-  /** Shared setup (the cluster). Optional while cluster setup is being designed. */
+  cycles: FitCycle[];
   setup?: SharedSetup;
 }

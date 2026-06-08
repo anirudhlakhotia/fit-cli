@@ -10,477 +10,251 @@ import {
 } from "../parse-definition.js";
 import { CURRENT_FIT_DEFINITION_VERSION } from "../types.js";
 
-const MINIMAL = `
-version: 1
-type: fit
-setup:
-  cluster:
-    connection:
-      connectionString: couchbase://localhost
-      username: Administrator
-      password: password
-      tls: null
-iterations:
-  - type: functional
-    setup:
-      performer:
-        sdk: java
-    runtime:
-      tests: all
-`;
-
-test("parses a minimal valid definition", () => {
-  const def = parseDefinition(MINIMAL);
-  assert.equal(def.version, CURRENT_FIT_DEFINITION_VERSION);
-  assert.equal(def.type, "fit");
-  assert.deepEqual(def.setup?.cluster?.connection, {
-    connectionString: "couchbase://localhost",
-    username: "Administrator",
-    password: "password",
-    tls: null,
-  });
-  assert.equal(def.iterations[0].fitConfig, undefined);
-  assert.equal(def.iterations.length, 1);
-  const [iteration] = def.iterations;
-  assert.equal(iteration.type, "functional");
-  assert.equal(iteration.setup.performer.sdk, "java");
-  assert.equal(iteration.runtime.tests, "all");
-});
-
-test("supports multiple iterations sharing the top-level cluster", () => {
-  const def = parseDefinition(`
-version: 1
-type: fit
-setup:
-  cluster:
-    connection:
-      connectionString: couchbases://cb.example.com
-      username: u
-      password: p
-      tls:
-        certPath: /tmp/cb.pem
-iterations:
-  - type: functional
-    setup:
-      performer:
-        sdk: java
-    runtime:
-      tests: all
-  - type: functional
-    setup:
-      performer:
-        sdk: python
-    runtime:
-      tests:
-        - com.couchbase.SanityTest
-`);
-  assert.equal(def.iterations.length, 2);
-  assert.equal(def.iterations[0].setup.performer.sdk, "java");
-  assert.deepEqual(def.iterations[1].runtime.tests, ["com.couchbase.SanityTest"]);
-});
-
-test("matches the sample file shape: shared cbdinocluster + performer port", () => {
-  const def = parseDefinition(`
-version: 1
-type: fit
-setup:
-  cluster:
-    cbdinocluster:
-      init:
-        config:
-          version: 6
-          docker:
-            enabled: "true"
-            network: fit
-      config:
-        nodes:
-          - count: 1
-            version: '8.1.0-2188'
-            services: [ kv, n1ql, index ]
-iterations:
-  - type: functional
-    setup:
-      performer:
-        sdk: java
-        port: 8060
-    runtime:
-      tests:
-        - com.couchbase.client.kv.SanityTest
-`);
-  assert.deepEqual(def.setup?.cluster?.cbdinocluster, {
-    init: {
-      config: {
-        version: 6,
-        docker: {
-          enabled: "true",
-          network: "fit",
-        },
-      },
-    },
-    config: { nodes: [{ count: 1, version: "8.1.0-2188", services: ["kv", "n1ql", "index"] }] },
-  });
-  assert.equal(def.iterations[0].setup.performer.port, 8060);
-});
-
-test("an omitted shared setup is allowed", () => {
-  const def = parseDefinition(`
-version: 1
-type: fit
-iterations:
-  - type: functional
-    setup:
-      performer:
-        sdk: java
-    runtime:
-      tests: all
-`);
-  assert.equal(def.setup, undefined);
-});
-
-test("a missing runtime.tests defaults to all", () => {
-  const def = parseDefinition(`
-version: 1
-type: fit
-iterations:
-  - type: functional
-    setup:
-      performer:
-        sdk: java
-    runtime: {}
-`);
-  assert.equal(def.iterations[0].runtime.tests, "all");
-});
-
-test("tls insecure and certPath are accepted", () => {
-  const insecure = parseDefinition(MINIMAL.replace("tls: null", "tls:\n        insecure: true"));
-  assert.deepEqual((insecure.setup?.cluster?.connection as { tls?: unknown }).tls, { insecure: true });
-
-  const cert = parseDefinition(MINIMAL.replace("tls: null", "tls:\n        certPath: /tmp/cb.pem"));
-  assert.deepEqual((cert.setup?.cluster?.connection as { tls?: unknown }).tls, { certPath: "/tmp/cb.pem" });
-});
-
-test("performer version, repo Gerrit ref, and excludedGroups round-trip when present", () => {
-  const def = parseDefinition(`
+const FUNCTIONAL = `
 version: 1
 type: fit
 setup:
   repos:
     transactions-fit-performer:
-      gerritRef: "refs/changes/29/246329/1"
-iterations:
+      gerritRef: refs/changes/29/246329/1
+cycles:
   - type: functional
-    setup:
-      performer:
-        sdk: java
-        version: "1.2.3"
-    runtime:
-      tests: all
-      excludedGroups:
-        - situational
-        - openshift
-`);
-  assert.equal(def.iterations[0].setup.performer.version, "1.2.3");
+    cluster:
+      connection:
+        connectionString: couchbase://localhost
+        username: Administrator
+        password: password
+        tls: null
+    iterations:
+      - setup:
+          performer:
+            sdk: java
+        runtime:
+          tests: all
+`;
+
+test("parses a minimal functional cycle", () => {
+  const def = parseDefinition(FUNCTIONAL);
+  assert.equal(def.version, CURRENT_FIT_DEFINITION_VERSION);
+  assert.equal(def.type, "fit");
   assert.equal(def.setup?.repos?.["transactions-fit-performer"]?.gerritRef, "refs/changes/29/246329/1");
-  assert.deepEqual(def.iterations[0].runtime.excludedGroups, ["situational", "openshift"]);
-});
-
-test("performer onPortInUse round-trips when valid", () => {
-  for (const policy of ["fail", "restart", "reuse"]) {
-    const def = parseDefinition(
-      MINIMAL.replace("        sdk: java\n", `        sdk: java\n        onPortInUse: ${policy}\n`),
-    );
-    assert.equal(def.iterations[0].setup.performer.onPortInUse, policy);
-  }
-});
-
-test("rejects a cbdinocluster init block without config", () => {
-  assert.throws(
-    () =>
-      parseDefinition(`
-version: 1
-type: fit
-setup:
-  cluster:
-    cbdinocluster:
-      init: {}
-      config:
-        nodes:
-          - count: 1
-            version: "8.1.0"
-            services: [kv]
-iterations:
-  - type: functional
-    setup:
-      performer:
-        sdk: java
-    runtime:
-      tests: all
-`),
-    (err: unknown) => err instanceof InvalidDefinitionError && /cbdinocluster\.init\.config/.test(err.message),
-  );
-});
-
-test("legacy useExisting remains accepted", () => {
-  const def = parseDefinition(MINIMAL.replace(
-    `    connection:
-      connectionString: couchbase://localhost
-      username: Administrator
-      password: password
-      tls: null`,
-    "    useExisting: {}",
-  ));
-  assert.deepEqual(def.setup?.cluster?.useExisting, {});
-});
-
-const SITUATIONAL = `
-version: 1
-type: fit
-iterations:
-  - type: situational
-    setup:
-      performer:
-        sdk: java
-    situational:
-      cbdino:
-        version: "7.2"
-        enablePrivateEndpoint: true
-      database:
-        mode: hosted
-    runtime:
-      tests: all
-`;
-
-test("parses a situational iteration", () => {
-  const def = parseDefinition(SITUATIONAL);
-  const [iteration] = def.iterations;
-  assert.equal(iteration.type, "situational");
-  assert.equal(iteration.setup.performer.sdk, "java");
-  assert.equal(iteration.runtime.tests, "all");
-  assert.ok(iteration.type === "situational");
-  assert.deepEqual(iteration.situational, {
-    cbdino: { version: "7.2", enablePrivateEndpoint: true },
-    database: { mode: "hosted" },
+  assert.equal(def.cycles.length, 1);
+  const [cycle] = def.cycles;
+  assert.equal(cycle.type, "functional");
+  assert.deepEqual(cycle.cluster.connection, {
+    connectionString: "couchbase://localhost",
+    username: "Administrator",
+    password: "password",
+    tls: null,
   });
+  assert.equal(cycle.iterations[0]?.setup.performer.sdk, "java");
 });
 
-const SITUATIONAL_NO_CBDINO = `
-version: 1
-type: fit
-iterations:
-  - type: situational
-    setup:
-      performer:
-        sdk: java
-    situational:
-      database:
-        mode: hosted
-    runtime:
-      tests: all
-`;
+test("supports multiple functional iterations inside one cycle", () => {
+  const def = parseDefinition(FUNCTIONAL.replace(
+    `        sdk: java
+        runtime:
+          tests: all`,
+    `        sdk: java
+        runtime:
+          tests: all
+      - setup:
+          performer:
+            sdk: python
+        runtime:
+          tests:
+            - com.couchbase.SanityTest`,
+  ));
 
-test("a situational iteration may omit the cbdino block", () => {
-  const def = parseDefinition(SITUATIONAL_NO_CBDINO);
-  const [iteration] = def.iterations;
-  assert.ok(iteration.type === "situational");
-  assert.equal(iteration.situational.cbdino, undefined);
-  assert.deepEqual(iteration.situational.database, { mode: "hosted" });
+  const cycle = def.cycles[0];
+  assert.equal(cycle?.type, "functional");
+  assert.equal(cycle?.iterations.length, 2);
 });
 
-test("the local database mode is accepted", () => {
-  const def = parseDefinition(SITUATIONAL.replace("mode: hosted", "mode: local"));
-  const [iteration] = def.iterations;
-  assert.ok(iteration.type === "situational");
-  assert.equal(iteration.situational.database.mode, "local");
-});
-
-test("functional and situational iterations can be mixed in one file", () => {
+test("parses a situational cycle with a database mode", () => {
   const def = parseDefinition(`
 version: 1
 type: fit
+cycles:
+  - type: situational
+    iterations:
+      - setup:
+          performer:
+            sdk: java
+        situational:
+          database:
+            mode: hosted
+        runtime:
+          tests: all
+`);
+  const [cycle] = def.cycles;
+  assert.equal(cycle.type, "situational");
+  assert.equal(cycle.iterations[0]?.situational.database.mode, "hosted");
+});
+
+test("supports mixed cycles", () => {
+  const def = parseDefinition(`
+version: 1
+type: fit
+cycles:
+  - type: functional
+    cluster:
+      useExisting: {}
+    iterations:
+      - fitConfig:
+          clusterAccess:
+            connectionString: couchbase://localhost
+            username: Administrator
+            password: password
+            tls: null
+        setup:
+          performer:
+            sdk: java
+        runtime:
+          tests: all
+  - type: situational
+    iterations:
+      - setup:
+          performer:
+            sdk: python
+        situational:
+          database:
+            mode: local
+        runtime:
+          tests: all
+`);
+  assert.deepEqual(def.cycles.map((cycle) => cycle.type), ["functional", "situational"]);
+});
+
+test("rejects missing cycles", () => {
+  assert.throws(
+    () => parseDefinition("version: 1\ntype: fit\n"),
+    (err: unknown) => err instanceof InvalidDefinitionError && /cycles/.test(err.message),
+  );
+});
+
+test("rejects top-level iterations", () => {
+  assert.throws(
+    () =>
+      parseDefinition(`
+version: 1
+type: fit
+iterations: []
+`),
+    (err: unknown) => err instanceof InvalidDefinitionError && /iterations.*cycles/i.test(err.message),
+  );
+});
+
+test("rejects setup.cluster at the top level", () => {
+  assert.throws(
+    () =>
+      parseDefinition(`
+version: 1
+type: fit
 setup:
   cluster:
-    connection:
-      connectionString: couchbase://localhost
-      username: Administrator
-      password: password
-      tls: null
-iterations:
+    useExisting: {}
+cycles:
+  - type: situational
+    iterations:
+      - setup:
+          performer:
+            sdk: java
+        situational:
+          database:
+            mode: hosted
+        runtime:
+          tests: all
+`),
+    (err: unknown) => err instanceof InvalidDefinitionError && /setup\.cluster/.test(err.message),
+  );
+});
+
+test("rejects a functional cycle without a cluster", () => {
+  assert.throws(
+    () =>
+      parseDefinition(`
+version: 1
+type: fit
+cycles:
   - type: functional
-    setup:
-      performer:
-        sdk: java
-    runtime:
-      tests: all
-  - type: situational
-    setup:
-      performer:
-        sdk: python
-    situational:
-      database:
-        mode: hosted
-    runtime:
-      tests: all
-`);
-  assert.deepEqual(def.iterations.map((iteration) => iteration.type), ["functional", "situational"]);
+    iterations:
+      - setup:
+          performer:
+            sdk: java
+        runtime:
+          tests: all
+`),
+    (err: unknown) => err instanceof InvalidDefinitionError && /cycles\[0\]\.cluster/.test(err.message),
+  );
 });
 
-test("rejects a situational iteration without a situational block", () => {
+test("rejects a situational cycle with a cluster", () => {
   assert.throws(
     () =>
       parseDefinition(`
 version: 1
 type: fit
-iterations:
+cycles:
   - type: situational
-    setup:
-      performer:
-        sdk: java
-    runtime:
-      tests: all
+    cluster:
+      useExisting: {}
+    iterations:
+      - setup:
+          performer:
+            sdk: java
+        situational:
+          database:
+            mode: hosted
+        runtime:
+          tests: all
 `),
-    (err: unknown) => err instanceof InvalidDefinitionError && /situational/.test(err.message),
+    (err: unknown) => err instanceof InvalidDefinitionError && /not allowed on a situational cycle/.test(err.message),
   );
 });
 
-test("rejects a situational iteration without a database", () => {
+test("rejects per-iteration type fields", () => {
+  assert.throws(
+    () =>
+      parseDefinition(FUNCTIONAL.replace("      - setup:", "      - type: functional\n        setup:")),
+    (err: unknown) => err instanceof InvalidDefinitionError && /no longer supported.*cycle/i.test(err.message),
+  );
+});
+
+test("rejects situational.cbdino", () => {
   assert.throws(
     () =>
       parseDefinition(`
 version: 1
 type: fit
-iterations:
+cycles:
   - type: situational
-    setup:
-      performer:
-        sdk: java
-    situational:
-      cbdino:
-        version: "7.2"
-    runtime:
-      tests: all
+    iterations:
+      - setup:
+          performer:
+            sdk: java
+        situational:
+          cbdino:
+            version: "7.2"
+          database:
+            mode: hosted
+        runtime:
+          tests: all
 `),
-    (err: unknown) =>
-      err instanceof InvalidDefinitionError && /situational\.database/.test(err.message),
+    (err: unknown) => err instanceof InvalidDefinitionError && /situational.*cbdino/.test(err.message),
   );
 });
 
-test("rejects an unknown situational database mode", () => {
+test("rejects a future version", () => {
   assert.throws(
-    () => parseDefinition(SITUATIONAL.replace("mode: hosted", "mode: nope")),
-    (err: unknown) =>
-      err instanceof InvalidDefinitionError && /situational\.database\.mode/.test(err.message),
-  );
-});
-
-test("rejects a non-boolean enablePrivateEndpoint", () => {
-  assert.throws(
-    () => parseDefinition(SITUATIONAL.replace("enablePrivateEndpoint: true", "enablePrivateEndpoint: yes-please")),
-    (err: unknown) =>
-      err instanceof InvalidDefinitionError && /enablePrivateEndpoint/.test(err.message),
-  );
-});
-
-test("rejects the wrong type", () => {
-  assert.throws(
-    () => parseDefinition(MINIMAL.replace("fit", "something-else")),
-    InvalidDefinitionError,
-  );
-});
-
-test("rejects a missing iteration type", () => {
-  assert.throws(
-    () => parseDefinition(MINIMAL.replace("  - type: functional\n", "  -\n")),
-    (err: unknown) => err instanceof InvalidDefinitionError && /iterations\[\]\.type/.test(err.message),
-  );
-});
-
-test("rejects an unsupported iteration type", () => {
-  assert.throws(
-    () => parseDefinition(MINIMAL.replace("type: functional", "type: perf")),
-    (err: unknown) => err instanceof InvalidDefinitionError && /iterations\[\]\.type/.test(err.message),
-  );
-});
-
-test("rejects a future version with an upgrade hint", () => {
-  assert.throws(
-    () => parseDefinition(MINIMAL.replace("version: 1", "version: 99")),
+    () => parseDefinition(FUNCTIONAL.replace("version: 1", "version: 99")),
     (err: unknown) => err instanceof UnsupportedDefinitionVersionError && /update fit-cli/i.test(err.message),
   );
 });
 
 test("rejects an older version", () => {
   assert.throws(
-    () => parseDefinition(MINIMAL.replace("version: 1", "version: 0")),
+    () => parseDefinition(FUNCTIONAL.replace("version: 1", "version: 0")),
     (err: unknown) => err instanceof UnsupportedDefinitionVersionError && /no longer supported/i.test(err.message),
   );
-});
-
-test("rejects a missing iterations list", () => {
-  assert.throws(
-    () => parseDefinition("version: 1\ntype: fit\n"),
-    (err: unknown) => err instanceof InvalidDefinitionError && /iterations/.test(err.message),
-  );
-});
-
-test("rejects an empty iterations list", () => {
-  assert.throws(
-    () => parseDefinition("version: 1\ntype: fit\niterations: []\n"),
-    (err: unknown) => err instanceof InvalidDefinitionError && /at least one/.test(err.message),
-  );
-});
-
-test("rejects a missing performer sdk", () => {
-  assert.throws(
-    () => parseDefinition(MINIMAL.replace("        sdk: java\n", '        version: "1.0"\n')),
-    (err: unknown) => err instanceof InvalidDefinitionError && /setup\.performer\.sdk/.test(err.message),
-  );
-});
-
-test("rejects a non-integer performer port", () => {
-  assert.throws(
-    () => parseDefinition(MINIMAL.replace("        sdk: java\n", "        sdk: java\n        port: nope\n")),
-    (err: unknown) => err instanceof InvalidDefinitionError && /setup\.performer\.port/.test(err.message),
-  );
-});
-
-test("rejects a non-empty useExisting block", () => {
-  assert.throws(
-    () =>
-      parseDefinition(
-        MINIMAL.replace(
-          `    connection:
-      connectionString: couchbase://localhost
-      username: Administrator
-      password: password
-      tls: null`,
-          "    useExisting:\n      foo: bar",
-        ),
-      ),
-    (err: unknown) => err instanceof InvalidDefinitionError && /useExisting/.test(err.message),
-  );
-});
-
-test("rejects multiple cluster setup modes", () => {
-  assert.throws(
-    () =>
-      parseDefinition(
-        `${MINIMAL.replace("tls: null", "tls: null\n    useExisting: {}")}`,
-      ),
-    (err: unknown) => err instanceof InvalidDefinitionError && /setup\.cluster/.test(err.message),
-  );
-});
-
-test("rejects an empty tests list", () => {
-  assert.throws(
-    () => parseDefinition(MINIMAL.replace("tests: all", "tests: []")),
-    InvalidDefinitionError,
-  );
-});
-
-test("rejects non-mapping top-level YAML", () => {
-  assert.throws(() => parseDefinition("- just\n- a\n- list\n"), InvalidDefinitionError);
-});
-
-test("wraps a YAML syntax error in InvalidDefinitionError", () => {
-  assert.throws(() => parseDefinition("version: 1\n  bad: : indent"), InvalidDefinitionError);
 });

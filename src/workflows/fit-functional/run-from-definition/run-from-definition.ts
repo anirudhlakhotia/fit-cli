@@ -64,7 +64,8 @@ import { createFitExecutionContext, type FitExecutionContext } from "../../fit-s
 import { loadDefinition } from "../../fit-shared/definition/parse-definition.js";
 import {
   resolveDefinition,
-  type ResolvedDefinition,
+  type ResolvedCycle,
+  type ResolvedFunctionalCycle,
   type ResolvedFunctionalIteration,
   type ResolvedIteration,
   type ResolvedSituationalIteration,
@@ -101,47 +102,43 @@ import {
 
 /** True for a functional iteration that has resolved to a concrete cluster. */
 function functionalWithCluster(
-  iteration: ResolvedIteration,
+  iteration: ResolvedFunctionalIteration,
 ): iteration is ResolvedFunctionalIteration & { cluster: NonNullable<ResolvedFunctionalIteration["cluster"]> } {
-  return iteration.type === "functional" && iteration.cluster !== undefined;
+  return iteration.cluster !== undefined;
 }
 
-/** Describe the shared cluster for the run header / setup-cluster step. */
-function clusterLabel(resolved: ResolvedDefinition): string {
-  const cluster = resolved.iterations.find(functionalWithCluster)?.cluster;
+/** Describe one cycle's cluster for the run header / setup-cluster step. */
+function clusterLabel(cycle: ResolvedCycle): string {
+  if (cycle.type === "situational") {
+    return "none — situational cycles build their own cluster via FIT/SIT";
+  }
+  const cluster = cycle.iterations.find(functionalWithCluster)?.cluster;
   if (cluster) {
     return `${cluster.scheme}://${cluster.defaultHostname} (${cluster.flavour})`;
   }
-  if (resolved.iterations.every((iteration) => iteration.type === "situational")) {
-    return "none — situational iterations build their own cluster via cbdino";
+  if (cycle.clusterMode === "connection") {
+    return "existing cluster from cycle.cluster.connection";
   }
-  if (resolved.clusterMode === "connection") {
-    return "existing cluster from setup.cluster.connection";
-  }
-  if (resolved.clusterMode === "useExisting") {
+  if (cycle.clusterMode === "useExisting") {
     return "existing cluster from iteration fitConfig.clusterAccess";
   }
-  if (resolved.clusterMode === "cbdinocluster") {
+  if (cycle.clusterMode === "cbdinocluster") {
     return "cbdinocluster plan (allocated during setup-cluster)";
   }
   return "none configured";
 }
 
-function applySharedCluster(
-  resolved: ResolvedDefinition,
+function applyCycleCluster(
+  cycle: ResolvedFunctionalCycle,
   cluster: NonNullable<ResolvedFunctionalIteration["cluster"]>,
-): ResolvedDefinition {
+): ResolvedFunctionalCycle {
   return {
-    ...resolved,
-    // Only functional iterations test against the shared cluster; situational
-    // iterations make their own via cbdino, so leave them untouched.
-    iterations: resolved.iterations.map((iteration) =>
-      iteration.type === "functional" ? { ...iteration, cluster } : iteration,
-    ),
+    ...cycle,
+    iterations: cycle.iterations.map((iteration) => ({ ...iteration, cluster })),
   };
 }
 
-function missingClusterMessage(clusterMode: ResolvedDefinition["clusterMode"]): string {
+function missingClusterMessage(clusterMode: ResolvedFunctionalCycle["clusterMode"]): string {
   if (clusterMode === "cbdinocluster") {
     return (
       "\nrun: no cluster available yet, so a FITConfiguration can't be generated. " +
@@ -155,13 +152,13 @@ function missingClusterMessage(clusterMode: ResolvedDefinition["clusterMode"]): 
 }
 
 export function cbdinoclusterSetupFailed(
-  resolved: ResolvedDefinition,
+  cycle: ResolvedFunctionalCycle,
   ranSetupCluster: boolean,
 ): boolean {
   return (
-    resolved.clusterMode === "cbdinocluster" &&
+    cycle.clusterMode === "cbdinocluster" &&
     ranSetupCluster &&
-    resolved.iterations.some((iteration) => iteration.type === "functional" && !iteration.cluster)
+    cycle.iterations.some((iteration) => !iteration.cluster)
   );
 }
 
@@ -181,28 +178,30 @@ export function finalizeRunFromDefinition(
 
 /** Print what an iteration resolved to, so a CI log shows the run's inputs. */
 function announce(
+  cycleIndex: number,
+  cycleCount: number,
   index: number,
   total: number,
-  resolved: ResolvedDefinition,
+  fitPerformerGerritRef: string | undefined,
   iteration: ResolvedIteration,
 ): void {
   const { testSelection } = iteration;
   const testsLabel = testSelection.mavenTestSelector
     ? `${testSelection.selectedTests.length} test(s): ${testSelection.mavenTestSelector}`
     : "all tests";
+  console.log(`\n=== Cycle ${cycleIndex + 1}/${cycleCount} (${iteration.type}) ===`);
   console.log(`\n=== Iteration ${index + 1}/${total} (${iteration.type}) ===`);
   console.log(`  SDK:     ${iteration.sdk.name}`);
   console.log(`  Tests:   ${testsLabel}`);
   if (iteration.type === "situational") {
-    console.log(`  cbdino cluster version: ${iteration.cbdino.version}`);
     console.log(`  Results database: ${iteration.databaseMode}`);
   }
   console.log(`  Performer port: ${iteration.performerPort}`);
   if (iteration.performerVersion) {
     console.log(`  Performer version: ${iteration.performerVersion}`);
   }
-  if (resolved.fitPerformerGerritRef) {
-    console.log(`  FIT Gerrit ref: ${resolved.fitPerformerGerritRef}`);
+  if (fitPerformerGerritRef) {
+    console.log(`  FIT Gerrit ref: ${fitPerformerGerritRef}`);
   }
 }
 
@@ -212,27 +211,21 @@ function announce(
  * every iteration in the run.
  */
 export async function setupCluster(
-  resolved: ResolvedDefinition,
+  cycle: ResolvedFunctionalCycle,
   execution: ClusterCommandExecutor = localClusterCommandExecutor(),
   setupDeclarativeClusterFn: typeof setupDeclarativeCluster = setupDeclarativeCluster,
   githubCredentials?: { user: string; token: string },
-): Promise<RunOutput & { resolved: ResolvedDefinition; clusterState?: ResumeClusterState }> {
-  if (!resolved.iterations.some((iteration) => iteration.type === "functional")) {
-    fitCliWarn(
-      "\nsetup-cluster: only situational iterations — cbdino builds their cluster, so there's nothing to allocate.",
-    );
-    return { resolved, artifacts: [], details: [] };
+): Promise<RunOutput & { cycle: ResolvedFunctionalCycle; clusterState?: ResumeClusterState }> {
+  if (cycle.clusterMode === "connection") {
+    fitCliWarn("\nsetup-cluster: using the existing cluster from cycle.cluster.connection; nothing to allocate.");
+    return { cycle, artifacts: [], details: [] };
   }
-  if (resolved.clusterMode === "connection") {
-    fitCliWarn("\nsetup-cluster: using the existing cluster from setup.cluster.connection; nothing to allocate.");
-    return { resolved, artifacts: [], details: [] };
-  }
-  if (resolved.clusterMode === "useExisting") {
+  if (cycle.clusterMode === "useExisting") {
     fitCliWarn("\nsetup-cluster: using the existing cluster described by iteration fitConfig.clusterAccess; nothing to allocate.");
-    return { resolved, artifacts: [], details: [] };
+    return { cycle, artifacts: [], details: [] };
   }
-  if (resolved.cbdinocluster) {
-    const outcome = await setupDeclarativeClusterFn({ ...resolved.cbdinocluster, githubCredentials }, execution);
+  if (cycle.cbdinocluster) {
+    const outcome = await setupDeclarativeClusterFn({ ...cycle.cbdinocluster, githubCredentials }, execution);
     const clusterState: ResumeClusterState | undefined = outcome.cluster
       ? {
           cluster: outcome.cluster,
@@ -242,20 +235,20 @@ export async function setupCluster(
         }
       : undefined;
     return {
-      resolved: outcome.cluster ? applySharedCluster(resolved, outcome.cluster) : resolved,
+      cycle: outcome.cluster ? applyCycleCluster(cycle, outcome.cluster) : cycle,
       ...(clusterState ? { clusterState } : {}),
       artifacts: outcome.artifacts,
       details: outcome.details,
     };
   }
   fitCliWarn("\nsetup-cluster: no cluster configured.");
-  return { resolved, artifacts: [], details: [] };
+  return { cycle, artifacts: [], details: [] };
 }
 
 /** The setup-performer step: build the performer image and start it in Docker. */
 async function setupPerformer(
   execution: FitExecutionContext,
-  resolved: ResolvedDefinition,
+  fitPerformerGerritRef: string | undefined,
   iteration: ResolvedIteration,
   iterationIndex: number,
 ): Promise<RunningPerformer | undefined> {
@@ -280,7 +273,7 @@ async function setupPerformer(
     iteration.onPortInUse,
     iteration.performerPort,
     iterationIndex,
-    resolved.fitPerformerGerritRef,
+    fitPerformerGerritRef,
   );
 }
 
@@ -294,7 +287,7 @@ interface RunTestsDependencies {
 
 export async function runTests(
   execution: FitExecutionContext,
-  clusterMode: ResolvedDefinition["clusterMode"],
+  clusterMode: ResolvedFunctionalCycle["clusterMode"],
   iteration: ResolvedFunctionalIteration,
   performer: RunningPerformer | undefined,
   iterationIndex: number,
@@ -386,7 +379,7 @@ export async function runSituationalTests(
 
   const fitConfig = generateSituationalConfigurationFn(
     database.database,
-    iteration.cbdino,
+    undefined,
     execution.rootDir,
     iteration.performerPort,
     iteration.fitConfig,
@@ -460,7 +453,8 @@ async function resumePerformer(
 /** Run one iteration: stand up (or reuse) its performer, then run the tests. */
 async function runIteration(
   execution: FitExecutionContext,
-  resolved: ResolvedDefinition,
+  functionalClusterMode: ResolvedFunctionalCycle["clusterMode"] | undefined,
+  fitPerformerGerritRef: string | undefined,
   iteration: ResolvedIteration,
   setupPerformerPhase: boolean,
   savedState: RunState | undefined,
@@ -471,7 +465,7 @@ async function runIteration(
   const details: Detail[] = [];
 
   const performer = setupPerformerPhase
-    ? await setupPerformer(execution, resolved, iteration, iterationIndex)
+    ? await setupPerformer(execution, fitPerformerGerritRef, iteration, iterationIndex)
     : await resumePerformer(execution, iteration, savedState, iterationIndex);
   if (!performer) {
     if (setupPerformerPhase) {
@@ -484,10 +478,13 @@ async function runIteration(
     printResumeHint("after-performer", definitionPath);
   }
 
-  const output =
-    iteration.type === "situational"
-      ? await runSituationalTests(execution, iteration, iterationIndex)
-      : await runTests(execution, resolved.clusterMode, iteration, performer, iterationIndex);
+  let output: RunOutput;
+  if (iteration.type === "situational") {
+    output = await runSituationalTests(execution, iteration, iterationIndex);
+  } else {
+    const clusterMode: ResolvedFunctionalCycle["clusterMode"] = functionalClusterMode ?? "useExisting";
+    output = await runTests(execution, clusterMode, iteration, performer, iterationIndex);
+  }
   artifacts.push(...output.artifacts);
   details.push(...output.details);
   return {
@@ -498,13 +495,13 @@ async function runIteration(
 
 /** Resolve the shared cluster when resuming: reuse the one in the run state. */
 async function resumeCluster(
-  resolved: ResolvedDefinition,
+  cycle: ResolvedFunctionalCycle,
   savedState: RunState | undefined,
-): Promise<{ resolved: ResolvedDefinition; clusterState?: ResumeClusterState }> {
+): Promise<{ cycle: ResolvedFunctionalCycle; clusterState?: ResumeClusterState }> {
   // Existing-cluster modes already carry the cluster from the file, so there's
   // nothing in the run state to reuse — the resolved iterations are ready.
-  if (resolved.clusterMode !== "cbdinocluster") {
-    return { resolved };
+  if (cycle.clusterMode !== "cbdinocluster") {
+    return { cycle };
   }
 
   const clusterState = savedState?.cluster;
@@ -521,7 +518,7 @@ async function resumeCluster(
       "resume: the saved cluster is no longer reachable. Re-run without --resume-at to allocate a fresh one.",
     );
   }
-  return { resolved: applySharedCluster(resolved, clusterState.cluster), clusterState };
+  return { cycle: applyCycleCluster(cycle, clusterState.cluster), clusterState };
 }
 
 function targetStateFrom(teardown: ExecutionTargetTeardown): ResumeTargetState {
@@ -537,6 +534,7 @@ function targetStateFrom(teardown: ExecutionTargetTeardown): ResumeTargetState {
 
 interface TeardownInputs {
   definitionPath: string;
+  cycleIndex: number;
   /** The remote/local context — absent if the run failed before it came up. */
   execution?: FitExecutionContext;
   teardown: ExecutionTargetTeardown;
@@ -578,7 +576,7 @@ function resumeSuggestions(inputs: TeardownInputs): ResumePoint[] {
  * failed before it came up); only the instance is then up to leave or terminate.
  */
 async function teardownRun(inputs: TeardownInputs): Promise<void> {
-  const { definitionPath, execution, teardown, clusterState, performers, performerStates } = inputs;
+  const { definitionPath, cycleIndex, execution, teardown, clusterState, performers, performerStates } = inputs;
 
   const leaveUp = await confirm({
     promptId: "run-from-definition.teardown.leave-up",
@@ -589,6 +587,7 @@ async function teardownRun(inputs: TeardownInputs): Promise<void> {
   if (leaveUp) {
     const state: RunState = {
       version: 1,
+      cycleIndex,
       target: targetStateFrom(teardown),
       ...(clusterState ? { cluster: clusterState } : {}),
       performers: [...performerStates],
@@ -641,9 +640,8 @@ export async function runFromDefinition(
 ): Promise<RunOutput> {
   const { resumeAt } = options;
   const phases = phasesForResumePoint(resumeAt);
-  let resolved = resolveDefinition(loadDefinition(definitionPath));
-  console.log(`\nRunning FIT functional tests from definition:\n  ${definitionPath}`);
-  console.log(`  Cluster: ${clusterLabel(resolved)}`);
+  const resolved = resolveDefinition(loadDefinition(definitionPath));
+  console.log(`\nRunning FIT tests from definition:\n  ${definitionPath}`);
 
   const savedState = resumeAt ? readRunState(definitionPath) : undefined;
   if (resumeAt) {
@@ -656,10 +654,16 @@ export async function runFromDefinition(
     }
     console.log(`  Resuming at: ${resumeAt}`);
   }
+  const startCycleIndex = savedState?.cycleIndex ?? 0;
 
   // Resolve GitHub credentials upfront so we fail before provisioning an instance.
   let githubCredentials: { user: string; token: string } | undefined;
-  if (resolved.cbdinocluster && phases.setupCluster && !resumeAt) {
+  if (
+    phases.setupCluster &&
+    resolved.cycles
+      .slice(startCycleIndex)
+      .some((cycle) => cycle.type === "functional" && cycle.clusterMode === "cbdinocluster")
+  ) {
     const result = resolveGithubCredentials();
     if (typeof result === "string") {
       fitCliError(`\n✗ ${result}`);
@@ -683,11 +687,17 @@ export async function runFromDefinition(
   }
 
   let execution: FitExecutionContext | undefined;
-  let clusterState: ResumeClusterState | undefined;
-  const performers: RunningPerformer[] = [];
-  const performerStates: ResumePerformerState[] = [];
+  let activeCycleIndex = startCycleIndex;
+  let activeClusterState: ResumeClusterState | undefined;
+  let activePerformers: RunningPerformer[] = [];
+  let activePerformerStates: ResumePerformerState[] = [];
   try {
-    execution = await createFitExecutionContext(executionTarget.target, rootDir, resolved.iterations[0].sdk, {
+    const firstCycle = resolved.cycles[startCycleIndex];
+    if (!firstCycle) {
+      return finalizeRunFromDefinition(artifacts, details);
+    }
+    const firstIteration = firstCycle.iterations[0];
+    execution = await createFitExecutionContext(executionTarget.target, rootDir, firstIteration.sdk, {
       skipRemotePreparation: !phases.prepareRemote,
     });
     artifacts.push(...execution.artifacts);
@@ -696,46 +706,90 @@ export async function runFromDefinition(
       printResumeHint("after-remote-preparation", definitionPath);
     }
 
-    // The cluster is shared across iterations, so set it up (or reuse it) once.
-    if (phases.setupCluster) {
-      const setup = await setupCluster(resolved, execution, setupDeclarativeCluster, githubCredentials);
-      resolved = setup.resolved;
-      clusterState = setup.clusterState;
-      artifacts.push(...setup.artifacts);
-      details.push(...setup.details);
-      if (cbdinoclusterSetupFailed(resolved, true)) {
-        fitCliError("\nsetup-cluster didn't produce a cluster, so this definition run can't continue.");
-        throw new Error("setup-cluster failed");
-      }
-    } else {
-      const resumed = await resumeCluster(resolved, savedState);
-      resolved = resumed.resolved;
-      clusterState = resumed.clusterState;
-    }
+    let globalIterationIndex = resolved.cycles
+      .slice(0, startCycleIndex)
+      .reduce((total, cycle) => total + cycle.iterations.length, 0);
 
-    for (const [index, iteration] of resolved.iterations.entries()) {
-      announce(index, resolved.iterations.length, resolved, iteration);
-      const { output, performer } = await runIteration(
-        execution,
-        resolved,
-        iteration,
-        phases.setupPerformer,
-        savedState,
-        index,
-        definitionPath,
-      );
-      artifacts.push(...output.artifacts);
-      details.push(...output.details);
-      if (performer) {
-        performers.push(performer);
-        if (performer.containerId) {
-          performerStates.push({
-            iterationIndex: index,
-            containerId: performer.containerId,
-            port: iteration.performerPort,
-            sdk: iteration.sdk.value,
-            ...(iteration.performerVersion ? { version: iteration.performerVersion } : {}),
-          });
+    for (let cycleIndex = startCycleIndex; cycleIndex < resolved.cycles.length; cycleIndex++) {
+      activeCycleIndex = cycleIndex;
+      const cycle = resolved.cycles[cycleIndex];
+      if (!cycle) {
+        break;
+      }
+      console.log(`\nCycle ${cycleIndex + 1}/${resolved.cycles.length}: ${cycle.type}`);
+      console.log(`  Cluster: ${clusterLabel(cycle)}`);
+
+      let activeCycle = cycle;
+      let clusterState: ResumeClusterState | undefined;
+      const cyclePerformers: RunningPerformer[] = [];
+      const cyclePerformerStates: ResumePerformerState[] = [];
+
+      if (cycle.type === "functional") {
+        if (cycleIndex === startCycleIndex && !phases.setupCluster) {
+          const resumed = await resumeCluster(cycle, savedState);
+          activeCycle = resumed.cycle;
+          clusterState = resumed.clusterState;
+        } else {
+          const setup = await setupCluster(cycle, execution, setupDeclarativeCluster, githubCredentials);
+          activeCycle = setup.cycle;
+          clusterState = setup.clusterState;
+          artifacts.push(...setup.artifacts);
+          details.push(...setup.details);
+          if (cbdinoclusterSetupFailed(activeCycle, true)) {
+            fitCliError("\nsetup-cluster didn't produce a cluster, so this cycle can't continue.");
+            throw new Error("setup-cluster failed");
+          }
+        }
+      }
+
+      for (const [cycleIterationIndex, iteration] of activeCycle.iterations.entries()) {
+        announce(
+          cycleIndex,
+          resolved.cycles.length,
+          cycleIterationIndex,
+          activeCycle.iterations.length,
+          resolved.fitPerformerGerritRef,
+          iteration,
+        );
+        const setupPerformerPhase = cycleIndex === startCycleIndex ? phases.setupPerformer : true;
+        const { output, performer } = await runIteration(
+          execution,
+          activeCycle.type === "functional" ? activeCycle.clusterMode : undefined,
+          resolved.fitPerformerGerritRef,
+          iteration,
+          setupPerformerPhase,
+          savedState,
+          globalIterationIndex,
+          definitionPath,
+        );
+        artifacts.push(...output.artifacts);
+        details.push(...output.details);
+        if (performer) {
+          cyclePerformers.push(performer);
+          if (performer.containerId) {
+            cyclePerformerStates.push({
+              iterationIndex: globalIterationIndex,
+              containerId: performer.containerId,
+              port: iteration.performerPort,
+              sdk: iteration.sdk.value,
+              ...(iteration.performerVersion ? { version: iteration.performerVersion } : {}),
+            });
+          }
+        }
+        globalIterationIndex++;
+      }
+
+      const isLastCycle = cycleIndex === resolved.cycles.length - 1;
+      if (isLastCycle) {
+        activeClusterState = clusterState;
+        activePerformers = cyclePerformers;
+        activePerformerStates = cyclePerformerStates;
+      } else {
+        for (const performer of cyclePerformers) {
+          await stopManagedPerformer(execution, performer);
+        }
+        if (clusterState?.allocated && clusterState.clusterId && clusterState.cbdinoclusterCommand) {
+          await removeCluster(clusterState.cbdinoclusterCommand, clusterState.clusterId, execution);
         }
       }
     }
@@ -746,11 +800,12 @@ export async function runFromDefinition(
     // instance is worth keeping so a fix can be tried with --resume-at.
     await teardownRun({
       definitionPath,
+      cycleIndex: activeCycleIndex,
       ...(execution ? { execution } : {}),
       teardown: executionTarget.teardown,
-      ...(clusterState ? { clusterState } : {}),
-      performers,
-      performerStates,
+      ...(activeClusterState ? { clusterState: activeClusterState } : {}),
+      performers: activePerformers,
+      performerStates: activePerformerStates,
     });
   }
 }
