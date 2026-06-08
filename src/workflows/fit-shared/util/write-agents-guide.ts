@@ -41,22 +41,20 @@ export function formatAgentsGuide(artifacts: readonly Artifact[]): string {
   const mainLog = mainRunLog(artifacts);
   const mainLogName = mainLog ? `\`${mainLog.filename}\`` : "the main run log";
 
-  return [
-    "# AGENTS.md",
-    "",
-    "This is a guide for agents.",
-    "",
-    "If you've been pointed at this folder, it might be to help debug a failure. " +
-      "Here are the various artifacts available to you:",
-    "",
-    "```",
-    table,
-    "```",
-    "",
-    `If you've been given no other instruction, consider looking through ${mainLogName} ` +
-      "for an obvious failure, and then debug that.",
-    "",
-  ].join("\n");
+  return `# AGENTS.md
+
+This is a guide for agents.
+
+If you've been pointed at this folder, it might be to help debug a failure.
+Here are the various artifacts available to you:
+
+\`\`\`
+${table}
+\`\`\`
+
+If you've been given no other instruction, consider looking through ${mainLogName}
+for an obvious failure, and then debug that.
+`;
 }
 
 export interface WriteAgentsGuideResult {

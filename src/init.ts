@@ -126,11 +126,12 @@ async function promptForGithubToken(existing?: FitCliConfig): Promise<string | u
 
 async function promptForResultsDbPassword(existing?: FitCliConfig): Promise<string | undefined> {
   const existingPassword = existing?.resultsDb?.password ?? process.env.FIT_RESULTS_DB_PASSWORD;
+  const shared = "faas.couchbase.com results database password, for storing dev FIT/SIT and FIT/PERF results"
   const entered = await password({
     promptId: "init.results-db.password",
     message: existingPassword
-      ? "Hosted results-database readonly password (leave blank to keep the current one):"
-      : "Hosted results-database readonly password (leave blank to skip — ask on #the-fit-stop):",
+      ? `${shared} (leave blank to keep the current one):`
+      : `${shared} (leave blank to skip — ask on #the-fit-stop):`,
     mask: "*",
   });
   // A blank entry keeps whatever is already configured, mirroring the token prompt.

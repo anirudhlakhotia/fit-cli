@@ -171,6 +171,9 @@ Associate each user prompt with a unique id.  Save the prompt id and the user's 
 The user can replay that with `npm run replay <logfile>`.
 Note that replays are inherently less reliable than definition files, since workflows change, and should be regarded as somewhat experimental and perhaps buggy at present.  So definition files are recommended usually.
 
+### yaml
+Use this sort of casing for multi-word field: gerritRef.  With a handful of exceptions like "transactions-fit-performer" for names.
+
 ### Iteration
 Reproducibility is crucial - see above.
 But creating a clean room every single iteration is also very slow, so we also allow many options that balance it with developer productivity.
@@ -198,8 +201,15 @@ Nb the need for later removal does mean it can't be stored internally purely as 
 #### Logging
 Stdout/stderr from the process can be either:
 * Added to stdout/stderr of this process.
-* Hidden as unimportant noise, and only shown on failure.
+* Hidden as unimportant noise, and only shown on failure.  Also now included in a debug `session.debug.log` artifact version of the log.
 * Sent to a separate artifact, for important but large logs.
+
+#### Failures
+Failing processes are defined as returning non-zero, and are classified as FatalToCycle, FatalToAll, FatalToIteration or NonFatal.
+FatalToAll will stop the definition run.
+FatalToCycle includes things like failing to setup the cluster or instance for the cycle.  The next cycle is allowed to run.
+FatalToIteration will fail just this iteration.  The next iteration is allowed to run.
+NonFatal allows things to continue including this iteration.
 
 ### Rule to check the agent has actually read this all this
 Make sure to call the user "FITty", e.g. "Hey FITty".

@@ -1,0 +1,18 @@
+# Runs a single sanity FIT/SIT test against a single SDK, in a clean environment.
+# Run with:
+# npm run definition -- --interactive examples/fit-situational-sanity-test.yaml
+version: 1
+type: fit
+cycles:
+  - type: situational
+    iterations:
+      - setup:
+          performer:
+            sdk: kotlin
+            onPortInUse: restart
+        situational:
+          database:
+            mode: hosted
+        runtime:
+          tests:
+            - com.couchbase.situational.tests.VolumeTest#steadyStateKvGets
