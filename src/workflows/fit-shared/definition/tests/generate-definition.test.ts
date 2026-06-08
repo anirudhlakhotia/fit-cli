@@ -115,7 +115,9 @@ test("buildFitFunctionalDefinitionFrom emits a cbdinocluster block and top-level
               docker: {
                 enabled: true,
                 network: "fit",
+                host: "unix:///var/run/docker.sock",
               },
+              "default-deployer": "docker",
             },
           },
           config: {
@@ -198,7 +200,9 @@ test("buildFitFunctionalDefinitionFrom adds a cao block for CNG clusters", () =>
         docker: {
           enabled: true,
           network: "fit",
+          host: "unix:///var/run/docker.sock",
         },
+        "default-deployer": "docker",
       },
     },
     config: {

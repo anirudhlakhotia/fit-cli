@@ -1,13 +1,14 @@
 import { copyFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { dirname, join } from "node:path";
 import { type Artifact, type Detail } from "../../../util/non-fit/artifacts.js";
+import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { LocalTarget } from "../../../util/non-fit/local-target.js";
-import { streamToFile } from "../../../util/non-fit/proc.js";
+import { streamToFile, type RunOptions } from "../../../util/non-fit/proc.js";
 import { createRunFilePath } from "../../../util/non-fit/replay.js";
 import { posixQuote } from "../../../util/non-fit/remote-target.js";
 import type { ExecutionTarget } from "../../../util/non-fit/target.js";
+import { rootDirFromArgv } from "../../../util/fit/root.js";
 import { FIT_INSTANCE_USER } from "../../../util/fit/aws/fit-instance.js";
-import { resolveGithubToken } from "../../../util/fit/config.js";
 import { FIT_PERFORMER, JENKINS_SDK, repoPath, type Repo } from "../../../util/fit/repos.js";
 import { ensureRepo } from "../../../util/fit/ensure-repo.js";
 import { collectJunitArtifacts } from "../run-test-driver/collect-junit.js";
@@ -15,7 +16,7 @@ import { requiredReposForSdk } from "../../../util/sdk/ensure-sdk-workspace.js";
 import { ensureSdkWorkspace } from "../../../util/sdk/ensure-sdk-workspace.js";
 import type { Sdk } from "../../../util/sdk/sdks.js";
 import { DEFAULT_PERFORMER_PORT } from "../../performers/util/performer-port.js";
-import { collectJunitArtifactsFromTarget } from "../run-test-driver/collect-junit.js";
+import { createRemoteFitExecutionContext } from "./remote-fit-execution-context.js";
 
 const REMOTE_FIT_WORKSPACE_DIR = "fit-workspace";
 const REMOTE_DOCKER_WRAPPER_FILE = "docker";
@@ -34,8 +35,8 @@ export interface FitExecutionContext {
 
   ensureWorkspace(sdk: Sdk): Promise<boolean>;
   ensureBuildWorkspace(sdk: Sdk): Promise<boolean>;
-  run(command: string, args: string[], cwd?: string): Promise<void>;
-  capture(command: string, args: string[], cwd?: string): Promise<string>;
+  run(command: string, args: string[], cwd?: string, opts?: RunOptions): Promise<void>;
+  capture(command: string, args: string[], cwd?: string, opts?: RunOptions): Promise<string>;
   runToFile(command: string, args: string[], targetPath: string, cwd?: string): Promise<void>;
   targetFilePath(localPath: string): string;
   stageFile(localPath: string, targetPath?: string): Promise<string>;
@@ -85,10 +86,10 @@ export function remoteGitCredentialsPath(rootDir: string): string {
 }
 
 async function remoteRepoExists(target: ExecutionTarget, rootDir: string, repo: Repo): Promise<boolean> {
-  return target.run("test", ["-d", repoPath(repo, rootDir)]).then(() => true).catch(() => false);
+  return target.run("test", ["-d", repoPath(repo, rootDir)], undefined, { quiet: true }).then(() => true).catch(() => false);
 }
 
-async function ensureRemoteRepos(target: ExecutionTarget, rootDir: string, repos: readonly Repo[]): Promise<void> {
+export async function ensureRemoteRepos(target: ExecutionTarget, rootDir: string, repos: readonly Repo[]): Promise<void> {
   await target.run("mkdir", ["-p", rootDir]);
   for (const repo of repos) {
     if (await remoteRepoExists(target, rootDir, repo)) {
@@ -195,8 +196,8 @@ export function createLocalFitExecutionContext(rootDir: string): FitExecutionCon
       }
       return await ensureSdkWorkspace(sdk, rootDir);
     },
-    run: (command, args, cwd) => target.run(command, args, cwd),
-    capture: (command, args, cwd) => target.capture(command, args, cwd),
+    run: (command, args, cwd, opts) => target.run(command, args, cwd, opts),
+    capture: (command, args, cwd, opts) => target.capture(command, args, cwd, opts),
     runToFile: (command, args, targetPath, cwd) => streamToFile(command, args, targetPath, cwd),
     targetFilePath: (localPath) => localPath,
     stageFile: (localPath) => Promise.resolve(localPath),
@@ -212,10 +213,10 @@ export function createLocalFitExecutionContext(rootDir: string): FitExecutionCon
       return Promise.resolve();
     },
     collectJunitArtifacts: async (_sourceDir, iteration) => await collectJunitArtifacts(rootDir, iteration),
-    pathExists: async (path) => target.capture("test", ["-e", path]).then(() => true).catch(() => false),
+    pathExists: async (path) => target.capture("test", ["-e", path], undefined, { quiet: true }).then(() => true).catch(() => false),
     commandAvailable: async (command) =>
       target
-        .capture("sh", ["-lc", `command -v ${posixQuote(command)} >/dev/null && printf yes || printf no`])
+        .capture("sh", ["-lc", `command -v ${posixQuote(command)} >/dev/null && printf yes || printf no`], undefined, { quiet: true })
         .then((output) => output.trim() === "yes")
         .catch(() => false),
     performerRunArgs: (imageName, hostPort = DEFAULT_PERFORMER_PORT, dockerNetwork) => [
@@ -230,102 +231,6 @@ export function createLocalFitExecutionContext(rootDir: string): FitExecutionCon
   };
 }
 
-async function createRemoteFitExecutionContext(
-  target: ExecutionTarget,
-  sdk: Sdk,
-  skipPreparation = false,
-): Promise<FitExecutionContext> {
-  const rootDir = remoteFitRootDir();
-  const binDir = remoteFitBinDir(rootDir);
-  const wrapperPath = remoteDockerWrapperPath(rootDir);
-
-  console.log(`\nPreparing a remote FIT workspace on ${target.description}...`);
-  await target.run("mkdir", ["-p", rootDir]);
-
-  // Resuming onto a box a previous run already prepared: the slow apt install and
-  // repo clones are done, so skip them. The cheap, idempotent bin/wrapper/creds
-  // setup below still runs so the context is consistent.
-  if (skipPreparation) {
-    console.log("→ resume: reusing the already-prepared remote workspace (skipping apt install and repo clones).");
-  } else {
-    console.log("\nInstalling the remote FIT dependencies...");
-    // apt-get is noisy; run it quietly (-qq) and drop stdout, keeping stderr so
-    // genuine failures still surface. DEBIAN_FRONTEND avoids interactive prompts.
-    const aptEnv = "DEBIAN_FRONTEND=noninteractive";
-    await target.run("sh", ["-lc", `sudo -n ${aptEnv} apt-get -qq update >/dev/null`]);
-    await target.run("sh", [
-      "-lc",
-      // JDK 17+ needed for jenkins-sdk ./gradlew
-      `sudo -n ${aptEnv} apt-get -qq install -y git docker.io openjdk-17-jdk-headless lsof >/dev/null`,
-    ]);
-    await target.run("sudo", ["-n", "systemctl", "enable", "--now", "docker"]);
-  }
-
-  await target.run("mkdir", ["-p", binDir]);
-  const localDockerWrapper = createRunFilePath("remote-docker-wrapper.sh");
-  writeFileSync(localDockerWrapper, remoteDockerWrapperScript(), { mode: 0o700 });
-  await target.putFile(localDockerWrapper, wrapperPath);
-  await target.run("chmod", ["755", wrapperPath]);
-
-  const githubToken = resolveGithubToken();
-  if (githubToken) {
-    await configureRemoteGitCredentials(target, rootDir, githubToken);
-  } else if (!skipPreparation) {
-    console.log(
-      "\n⚠ No GitHub token found — the private FIT repos will fail to clone.\n" +
-        "  Add one with `npm run init`, or set GITHUB_TOKEN / GH_TOKEN, then try again.",
-    );
-  }
-
-  if (!skipPreparation) {
-    await ensureRemoteRepos(target, rootDir, remoteFitRepos(sdk));
-  }
-
-  return {
-    kind: "remote",
-    description: target.description,
-    target,
-    rootDir,
-    fitPerformerDir: repoPath(FIT_PERFORMER, rootDir),
-    jenkinsDir: repoPath(JENKINS_SDK, rootDir),
-    dockerCommand: "docker",
-    artifacts: [],
-    details: [{ label: "Remote workspace", value: rootDir }],
-    ensureWorkspace: async (sdk) => {
-      await ensureRemoteRepos(target, rootDir, remoteWorkspaceRepos(sdk));
-      return true;
-    },
-    ensureBuildWorkspace: async (sdk) => {
-      await ensureRemoteRepos(target, rootDir, remoteBuildWorkspaceRepos(sdk));
-      return true;
-    },
-    run: (command, args, cwd) => target.run("sh", ["-lc", pathPrefixedCommand(binDir, command, args)], cwd),
-    capture: (command, args, cwd) => target.capture("sh", ["-lc", pathPrefixedCommand(binDir, command, args)], cwd),
-    runToFile: (command, args, targetPath, cwd) =>
-      target.run("sh", ["-lc", redirectShellCommand(pathPrefixedCommand(binDir, command, args), targetPath)], cwd),
-    targetFilePath: (localPath) => join(rootDir, basename(localPath)),
-    stageFile: (localPath, targetPath) => {
-      const destination = targetPath ?? join(rootDir, basename(localPath));
-      return target.putFile(localPath, destination).then(() => destination);
-    },
-    collectFile: (targetPath, localPath) => {
-      mkdirSync(dirname(localPath), { recursive: true, mode: 0o700 });
-      return target.getFile(targetPath, localPath);
-    },
-    removeTree: (path) => target.run("rm", ["-rf", path]),
-    collectJunitArtifacts: async (sourceDir, iteration) =>
-      await collectJunitArtifactsFromTarget(target, sourceDir, iteration),
-    pathExists: (path) => target.run("test", ["-e", path]).then(() => true).catch(() => false),
-    commandAvailable: (command) =>
-      target
-        .capture("sh", ["-lc", `command -v ${posixQuote(command)} >/dev/null && printf yes || printf no`])
-        .then((output) => output.trim() === "yes")
-        .catch(() => false),
-    performerRunArgs: (imageName, hostPort = DEFAULT_PERFORMER_PORT, dockerNetwork) =>
-      remotePerformerArgs(imageName, hostPort, dockerNetwork),
-  };
-}
-
 export async function createFitExecutionContext(
   target: ExecutionTarget,
   rootDir: string,
@@ -335,4 +240,82 @@ export async function createFitExecutionContext(
   return target.kind === "local"
     ? createLocalFitExecutionContext(rootDir)
     : await createRemoteFitExecutionContext(target, sdk, options.skipRemotePreparation);
+}
+
+/**
+ * Mini CLI: run a local FIT execution context on its own, to poke at its
+ * operations during development. Run with --help for the subcommands, or:
+ *
+ *   npx tsx src/workflows/fit-shared/util/remote-fit-run.ts --help
+ *   npx tsx src/workflows/fit-shared/util/remote-fit-run.ts run -- ls -la
+ *   npx tsx src/workflows/fit-shared/util/remote-fit-run.ts capture -- git status
+ *   npx tsx src/workflows/fit-shared/util/remote-fit-run.ts path-exists /tmp
+ *   npx tsx src/workflows/fit-shared/util/remote-fit-run.ts command-available docker
+ *
+ * The `--` separates the action from the command/args it should forward, so flags
+ * meant for the inner command aren't eaten by fit-cli's own argv parsing.
+ */
+const LOCAL_CLI_ACTIONS = ["run", "capture", "path-exists", "command-available", "remove-tree"] as const;
+type LocalCliAction = (typeof LOCAL_CLI_ACTIONS)[number];
+
+function isLocalCliAction(value: string | undefined): value is LocalCliAction {
+  return LOCAL_CLI_ACTIONS.includes(value as LocalCliAction);
+}
+
+const LOCAL_CLI_HELP = `Drive a local FIT execution context (createLocalFitExecutionContext) directly.
+
+Usage:
+  tsx src/workflows/fit-shared/util/remote-fit-run.ts <subcommand> [args] [--root <dir>]
+
+Subcommands:
+  run <command> [args...]          Run a command locally, streaming its output.
+  capture <command> [args...]      Run a command locally and print its captured stdout.
+  path-exists <path>               Print true/false for whether <path> exists.
+  command-available <command>      Print true/false for whether <command> is on PATH.
+  remove-tree <path>               Recursively remove <path> (rm -rf).
+
+Put a \`--\` before the forwarded command so its own flags aren't parsed by fit-cli, e.g.
+  ... run -- ls -la
+
+Options:
+  --root <dir>, -r <dir>           Workspace ROOT_DIR (default: parent of cwd; or FIT_ROOT).
+  --help, -h                       Show this help.`;
+
+if (isMain(import.meta.url)) {
+  runCli(async () => {
+    const rawArgs = process.argv.slice(2);
+    if (rawArgs.includes("--help") || rawArgs.includes("-h")) {
+      console.log(LOCAL_CLI_HELP);
+      return;
+    }
+
+    const { rootDir, positionals } = rootDirFromArgv(rawArgs);
+    const [action, ...rest] = positionals;
+    if (!isLocalCliAction(action)) {
+      console.error(`Unknown or missing subcommand.\n\n${LOCAL_CLI_HELP}`);
+      process.exit(2);
+    }
+
+    // Drop the optional `--` separator so its only job is shielding the inner
+    // command's flags from fit-cli's argv parsing, not becoming an argument.
+    const args = rest[0] === "--" ? rest.slice(1) : rest;
+    const execution = createLocalFitExecutionContext(rootDir);
+    switch (action) {
+      case "run":
+        await execution.run(args[0], args.slice(1));
+        return;
+      case "capture":
+        console.log(await execution.capture(args[0], args.slice(1)));
+        return;
+      case "path-exists":
+        console.log(await execution.pathExists(args[0]));
+        return;
+      case "command-available":
+        console.log(await execution.commandAvailable(args[0]));
+        return;
+      case "remove-tree":
+        await execution.removeTree(args[0]);
+        return;
+    }
+  });
 }

@@ -137,6 +137,38 @@ export function printWithoutTimestamps(text: string): void {
   }
 }
 
+/**
+ * Quote a single token for display so the echoed command line stays readable and
+ * unambiguous: bare tokens are left alone, anything with whitespace or quotes is
+ * wrapped in single quotes. This is for *display only* — use posixQuote when the
+ * string is actually going to a shell.
+ */
+function displayQuote(token: string): string {
+  if (token !== "" && !/[\s'"\\]/.test(token)) {
+    return token;
+  }
+  return `'${token.replace(/'/g, `'\\''`)}'`;
+}
+
+/** Render a command and its args as one readable, shell-ish line. */
+export function formatCommandLine(command: string, args: readonly string[] = []): string {
+  return [command, ...args].map(displayQuote).join(" ");
+}
+
+/** Tag a command line with where it runs, e.g. `cbdinocluster ps  (on ubuntu@1.2.3.4)`. */
+export function commandOn(line: string, where: string): string {
+  return `${line}  (on ${where})`;
+}
+
+/**
+ * Echo the command about to run, as `$ <line>`. The single place fit-cli prints
+ * "here's what I'm about to do" — every command-runner funnels through here so
+ * the behaviour (and the format) lives in exactly one spot.
+ */
+export function echoCommand(line: string): void {
+  console.log(`$ ${line}`);
+}
+
 export function setFitCliTimestampProvider(provider: (() => string) | undefined): void {
   timestampProvider = provider ?? (() => new Date().toTimeString().slice(0, 8));
 }

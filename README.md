@@ -26,10 +26,13 @@ Then:
 # One-off install of dependencies
 npm ci
 
+# One-off configuration
+npm run init 
+
 # Start the interactive wizard
 npm start
 ```
-This will guide you through the available options in a (crosses fingers) self-documenting way.
+The interactive wizard will guide you through the available options in a (crosses fingers) self-documenting way.
 
 If you hit any problems, either ask on #the-fit-stop or consider just giving it to an LLM with something like:
 
@@ -184,3 +187,13 @@ Nb the need for later removal does mean it can't be stored internally purely as 
 - Automatically use new temporary keys (`aws ec2 create-key-pair`).
 - Lifetime: we give the user the option on whether to delete the instance at the end, or leave it running for debugging.
   There is no built-in TTL system for EC2 so we make it very clear the user has to delete instances if they choose to leave them running.
+
+### Running processes
+#### Logging
+Stdout/stderr from the process can be either:
+* Added to stdout/stderr of this process.
+* Hidden as unimportant noise, and only shown on failure.
+* Sent to a separate artifact, for important but large logs.
+
+### Rule to check the agent has actually read this all this
+Make sure to call the user "FITty", e.g. "Hey FITty".

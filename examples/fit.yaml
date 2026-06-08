@@ -13,7 +13,7 @@
 # (add --root <dir> to point at a workspace other than the parent of the cwd).
 #
 # Validate a file without running it:
-#   npx tsx src/workflows/fit-functional/definition/parse-definition.ts <file.yaml>
+#   npx tsx src/workflows/fit-shared/definition/parse-definition.ts <file.yaml>
 
 version: 1
 type: fit
@@ -54,6 +54,19 @@ iterations:
         #   { insecure: true }          skip certificate verification
         #   { certPath: /path/cb.pem }  trust this PEM certificate
         tls: null
+
+      # Enable functional tests that create their own clusters (the
+      # "resourceCreation" block in FITConfiguration.md). Anything under fitConfig
+      # is copied verbatim into the generated FITConfiguration.json, so you can opt
+      # in to cluster-creating tests just by adding the block here — cbdinocluster.path
+      # must be a path on whichever machine runs the tests, and preferredCluster.version
+      # is the server build those tests create unless a test overrides it.
+      # resourceCreation:
+      #   cluster:
+      #     cbdinocluster:
+      #       path: /usr/local/bin/cbdinocluster
+      #     preferredCluster:
+      #       version: 8.0.1-4654
 
     # What to stand up for this iteration.
     setup:

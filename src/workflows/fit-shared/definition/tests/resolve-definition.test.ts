@@ -13,10 +13,40 @@ import {
   resolveFitConfigCluster,
   resolveIteration,
   resolveMavenArgs,
+  resolveSituationalCbdino,
+  resolveSituationalMavenArgs,
 } from "../resolve-definition.js";
-import { DEFAULT_MAVEN_TEST_ARGS } from "../../../fit-shared/run-test-driver/run-test-driver.js";
+import {
+  DEFAULT_MAVEN_TEST_ARGS,
+  SITUATIONAL_MAVEN_TEST_ARGS,
+} from "../../../fit-shared/run-test-driver/run-test-driver.js";
+import { DEFAULT_CBDINO_SETTINGS } from "../../../fit-shared/fit-configuration/build-situational-configuration.js";
 import { DEFAULT_PERFORMER_PORT } from "../../../performers/util/performer-port.js";
-import type { FitDefinition, FunctionalIteration } from "../types.js";
+import type { FitDefinition, FunctionalIteration, SituationalIteration } from "../types.js";
+
+function situationalIteration(overrides: {
+  sdk?: string;
+  mode?: "hosted" | "local";
+  cbdinoVersion?: string;
+  excludedGroups?: string[];
+} = {}): SituationalIteration {
+  return {
+    type: "situational",
+    setup: {
+      performer: {
+        sdk: (overrides.sdk ?? "java") as SituationalIteration["setup"]["performer"]["sdk"],
+      },
+    },
+    situational: {
+      ...(overrides.cbdinoVersion !== undefined ? { cbdino: { version: overrides.cbdinoVersion } } : {}),
+      database: { mode: overrides.mode ?? "hosted" },
+    },
+    runtime: {
+      tests: "all",
+      ...(overrides.excludedGroups !== undefined ? { excludedGroups: overrides.excludedGroups } : {}),
+    },
+  };
+}
 
 const LOCAL_FIT_CONFIG = {
   clusterAccess: {
@@ -144,7 +174,8 @@ test("a cbdinocluster-only setup keeps the allocation settings", () => {
     config: { nodes: [{ count: 1, version: "8.1.0-2188", services: ["kv"] }] },
     onClusterExists: "destroyAndRecreate",
   });
-  assert.equal(resolved.iterations[0].cluster, undefined);
+  const [first] = resolved.iterations;
+  assert.equal(first.type === "functional" ? first.cluster : undefined, undefined);
 });
 
 test("an omitted shared setup resolves to no cluster mode", () => {
@@ -239,7 +270,7 @@ test("resolveDefinition resolves every iteration", () => {
     ["java", "python"],
   );
   assert.deepEqual(
-    resolved.iterations.map((r) => r.cluster?.defaultHostname),
+    resolved.iterations.map((r) => (r.type === "functional" ? r.cluster?.defaultHostname : undefined)),
     ["localhost", "localhost"],
   );
 });
@@ -257,8 +288,64 @@ test("connection mode strips redundant fitConfig.clusterAccess but keeps other f
       ],
     }),
   );
-  assert.deepEqual(resolved.iterations[0].fitConfig, { excludeTests: ["openshift"] });
-  assert.equal(resolved.iterations[0].cluster?.defaultHostname, "localhost");
+  const [first] = resolved.iterations;
+  assert.deepEqual(first.fitConfig, { excludeTests: ["openshift"] });
+  assert.equal(first.type === "functional" ? first.cluster?.defaultHostname : undefined, "localhost");
+});
+
+test("resolves a situational iteration with cbdino defaults and the situational Maven args", () => {
+  const resolved = resolveIteration(situationalIteration());
+  assert.equal(resolved.type, "situational");
+  assert.ok(resolved.type === "situational");
+  assert.deepEqual(resolved.cbdino, DEFAULT_CBDINO_SETTINGS);
+  assert.equal(resolved.databaseMode, "hosted");
+  assert.deepEqual(resolved.extraMavenArgs, [...SITUATIONAL_MAVEN_TEST_ARGS]);
+});
+
+test("a situational iteration carries through its cbdino version and database mode", () => {
+  const resolved = resolveIteration(situationalIteration({ cbdinoVersion: "7.2", mode: "local" }));
+  assert.ok(resolved.type === "situational");
+  assert.equal(resolved.cbdino.version, "7.2");
+  assert.equal(resolved.databaseMode, "local");
+});
+
+test("resolveSituationalCbdino fills in the defaults for omitted fields", () => {
+  assert.deepEqual(resolveSituationalCbdino(undefined), DEFAULT_CBDINO_SETTINGS);
+  assert.deepEqual(resolveSituationalCbdino({ version: "8.0" }), {
+    ...DEFAULT_CBDINO_SETTINGS,
+    version: "8.0",
+  });
+});
+
+test("situational excludedGroups override the default exclusions but keep the groups filter", () => {
+  assert.deepEqual(resolveSituationalMavenArgs({ tests: "all", excludedGroups: ["openshift"] }), [
+    "-Dgroups=situational,cbDino",
+    "-DexcludedGroups=openshift",
+  ]);
+});
+
+test("a situational-only definition resolves to no cluster mode and attaches no cluster", () => {
+  const resolved = resolveDefinition({
+    version: 1,
+    type: "fit",
+    iterations: [situationalIteration()],
+  });
+  assert.equal(resolved.clusterMode, undefined);
+  const [first] = resolved.iterations;
+  assert.equal(first.type, "situational");
+  assert.equal("cluster" in first, false);
+});
+
+test("a shared connection cluster is not attached to situational iterations in a mixed file", () => {
+  const resolved = resolveDefinition(
+    definition({
+      iterations: [iteration({ fitConfig: LOCAL_FIT_CONFIG }), situationalIteration({ sdk: "python" })],
+    }),
+  );
+  assert.equal(resolved.clusterMode, "connection");
+  const [functional, situational] = resolved.iterations;
+  assert.equal(functional.type === "functional" ? functional.cluster?.defaultHostname : undefined, "localhost");
+  assert.equal("cluster" in situational, false);
 });
 
 test("rejects an unknown SDK", () => {

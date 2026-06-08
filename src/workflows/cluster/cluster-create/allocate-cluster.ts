@@ -14,7 +14,8 @@ import { dirname, join } from "node:path";
 import { artifactFromPath, type RunOutput, type Artifact } from "../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { input } from "../../../util/non-fit/prompts.js";
-import { capture, run } from "../../../util/non-fit/proc.js";
+import { formatCommandLine } from "../../../util/non-fit/fit-cli-log.js";
+import { capture, run, type RunOptions } from "../../../util/non-fit/proc.js";
 import { createRunFilePath, ensureRunDir } from "../../../util/non-fit/replay.js";
 import { posixQuote } from "../../../util/non-fit/remote-target.js";
 import { findOnPath } from "../../../util/non-fit/which.js";
@@ -35,8 +36,8 @@ export interface WriteClusterDefResult {
 
 export interface ClusterCommandExecutor {
   readonly description: string;
-  run(command: string, args: string[], cwd?: string): Promise<void>;
-  capture(command: string, args: string[], cwd?: string): Promise<string>;
+  run(command: string, args: string[], cwd?: string, opts?: RunOptions): Promise<void>;
+  capture(command: string, args: string[], cwd?: string, opts?: RunOptions): Promise<string>;
   runToFile(command: string, args: string[], targetPath: string, cwd?: string): Promise<void>;
   targetFilePath(localPath: string): string;
   stageFile(localPath: string, targetPath?: string): Promise<string>;
@@ -51,7 +52,9 @@ export function localClusterCommandExecutor(): ClusterCommandExecutor {
     capture,
     runToFile: (command, args, targetPath, cwd) => {
       mkdirSync(dirname(targetPath), { recursive: true, mode: 0o700 });
-      return run("sh", ["-lc", `${[command, ...args].map(posixQuote).join(" ")} > ${posixQuote(targetPath)} 2>&1`], cwd);
+      return run("sh", ["-lc", `${[command, ...args].map(posixQuote).join(" ")} > ${posixQuote(targetPath)} 2>&1`], cwd, {
+        display: formatCommandLine(command, args),
+      });
     },
     targetFilePath: (localPath) => localPath,
     stageFile: (localPath) => Promise.resolve(localPath),
@@ -119,7 +122,6 @@ export async function allocateCluster(
 
   const localOutputFile = createRunFilePath("cbdinocluster-allocate.stdout");
   const targetOutputFile = execution.targetFilePath(localOutputFile);
-  console.log(`Running on ${execution.description}: ${cbdinocluster} ${args.join(" ")}\n`);
   await execution.runToFile(cbdinocluster, args, targetOutputFile);
   await execution.collectFile(targetOutputFile, localOutputFile);
   const clusterId = parseAllocatedId(readFileSync(localOutputFile, "utf8"));

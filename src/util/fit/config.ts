@@ -15,7 +15,9 @@ export interface FitCliAwsConfig {
 }
 
 export interface FitCliGithubConfig {
-  /** Personal access token used to clone the private FIT repos. */
+  /** GitHub username (needed so cbdinocluster can pull from GHCR). */
+  user?: string;
+  /** Personal access token used to clone the private FIT repos and pull GHCR images. */
   token?: string;
 }
 
@@ -146,6 +148,7 @@ export function validateFitCliConfig(raw: unknown): FitCliConfig {
 
   const github = githubValue
     ? compactRecord({
+        user: readOptionalString(githubValue, "user", "github.user"),
         token: readOptionalString(githubValue, "token", "github.token"),
       })
     : undefined;
@@ -204,6 +207,26 @@ export function resolveGithubToken(
   const env = options.env ?? process.env;
   const config = options.config ?? loadFitCliConfig(options.path).config;
   return config?.github?.token ?? env.GITHUB_TOKEN ?? env.GH_TOKEN;
+}
+
+/**
+ * The GitHub credentials (user + token) needed for GHCR image pulls in remote
+ * cbdinocluster environments. Both fields must be present in config.yaml —
+ * environment-variable fallbacks are intentionally not supported here since GHCR
+ * pulls require an explicit username. Returns the credentials on success, or an
+ * error message string on failure.
+ */
+export function resolveGithubCredentials(
+  options: { config?: FitCliConfig; path?: string } = {},
+): { user: string; token: string } | string {
+  const config = options.config ?? loadFitCliConfig(options.path).config;
+  const user = config?.github?.user;
+  const token = config?.github?.token;
+  if (!user || !token) {
+    const missing = [!user && "github.user", !token && "github.token"].filter(Boolean).join(" and ");
+    return `${missing} must be set in ~/.fit-cli/config.yaml — run \`npm run init\` to configure it.`;
+  }
+  return { user, token };
 }
 
 /**

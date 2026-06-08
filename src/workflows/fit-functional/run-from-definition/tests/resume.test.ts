@@ -7,18 +7,40 @@ import {
 } from "../resume.js";
 
 test("no resume point runs every phase", () => {
-  assert.deepEqual(phasesForResumePoint(undefined), { setupCluster: true, setupPerformer: true });
+  assert.deepEqual(phasesForResumePoint(undefined), {
+    prepareRemote: true,
+    setupCluster: true,
+    setupPerformer: true,
+  });
 });
 
-test("after-cluster-creation skips only the cluster phase", () => {
+test("after-instance-creation reuses the instance but re-runs every phase", () => {
+  assert.deepEqual(phasesForResumePoint("after-instance-creation"), {
+    prepareRemote: true,
+    setupCluster: true,
+    setupPerformer: true,
+  });
+});
+
+test("after-remote-preparation skips only the remote preparation", () => {
+  assert.deepEqual(phasesForResumePoint("after-remote-preparation"), {
+    prepareRemote: false,
+    setupCluster: true,
+    setupPerformer: true,
+  });
+});
+
+test("after-cluster-creation skips remote preparation and the cluster phase", () => {
   assert.deepEqual(phasesForResumePoint("after-cluster-creation"), {
+    prepareRemote: false,
     setupCluster: false,
     setupPerformer: true,
   });
 });
 
-test("after-performer skips the cluster and performer phases", () => {
+test("after-performer skips remote preparation, cluster and performer phases", () => {
   assert.deepEqual(phasesForResumePoint("after-performer"), {
+    prepareRemote: false,
     setupCluster: false,
     setupPerformer: false,
   });
@@ -27,6 +49,8 @@ test("after-performer skips the cluster and performer phases", () => {
 test("parseResumePoint accepts the known points and rejects others", () => {
   assert.equal(parseResumePoint(undefined), undefined);
   assert.equal(parseResumePoint("after-performer"), "after-performer");
+  assert.equal(parseResumePoint("after-instance-creation"), "after-instance-creation");
+  assert.equal(parseResumePoint("after-remote-preparation"), "after-remote-preparation");
   assert.throws(() => parseResumePoint("after-lunch"), /Unknown --resume-at point "after-lunch"/);
 });
 

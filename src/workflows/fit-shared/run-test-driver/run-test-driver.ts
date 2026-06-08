@@ -3,8 +3,8 @@
  *
  * Shared by every FIT flavour (functional, situational, …). The only thing that
  * varies between them is `extraMavenArgs` — the JUnit group filter — which the
- * caller supplies (see e.g. FUNCTIONAL_MAVEN_TEST_ARGS in fit-functional and
- * SITUATIONAL_MAVEN_TEST_ARGS in fit-situational).
+ * caller supplies (see {@link DEFAULT_MAVEN_TEST_ARGS} for functional runs and
+ * {@link SITUATIONAL_MAVEN_TEST_ARGS} for situational ones).
  *
  * Run on its own (add --root <dir> to point elsewhere):
  *   npx tsx src/workflows/fit-shared/run-test-driver/run-test-driver.ts
@@ -21,6 +21,20 @@ import { selectFitTests, type FitTestSelection } from "../select-fit-tests/selec
 
 export const DEFAULT_MAVEN_TEST_ARGS = [
   "-DexcludedGroups=situational,openshift,syncgateway",
+] as const;
+
+/** The `-Dgroups` filter that selects the cbdino-managed situational tests. */
+export const SITUATIONAL_MAVEN_GROUPS_ARG = "-Dgroups=situational,cbDino";
+
+/**
+ * The default Maven group filter for situational runs: select the situational +
+ * cbDino tests and exclude the ones that don't fit a cbdino-managed cluster. A
+ * definition's `runtime.excludedGroups` overrides the exclusions (see
+ * resolve-definition.ts).
+ */
+export const SITUATIONAL_MAVEN_TEST_ARGS = [
+  SITUATIONAL_MAVEN_GROUPS_ARG,
+  "-DexcludedGroups=openshift,capella",
 ] as const;
 
 export interface TestRunResult extends RunOutput {

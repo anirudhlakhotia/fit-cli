@@ -21,6 +21,8 @@ export interface AwsInitAnswers {
 export interface InitAnswers {
   configureAws: boolean;
   aws?: AwsInitAnswers;
+  /** GitHub username for GHCR image pulls; empty/undefined to skip. */
+  githubUser?: string;
   /** GitHub token for cloning the private FIT repos; empty/undefined to skip. */
   githubToken?: string;
   /** Readonly password for the hosted results database; empty/undefined to skip. */
@@ -68,7 +70,11 @@ export function initAnswersToConfig(answers: InitAnswers, existing?: FitCliConfi
   // than wiping them, so re-running init to update the token is non-destructive.
   const aws =
     answers.configureAws && answers.aws ? awsAnswersToConfig(answers.aws) : existing?.aws;
+  const user = trimOptional(answers.githubUser) ?? existing?.github?.user;
   const token = trimOptional(answers.githubToken);
+  const github = user || token
+    ? { ...(user ? { user } : {}), ...(token ? { token } : {}) }
+    : undefined;
   // Preserve a hand-set username; init only prompts for the password.
   const resultsDbPassword = trimOptional(answers.resultsDbPassword);
   const resultsDbUsername = existing?.resultsDb?.username;
@@ -83,7 +89,7 @@ export function initAnswersToConfig(answers: InitAnswers, existing?: FitCliConfi
   return {
     version: FIT_CLI_CONFIG_VERSION,
     ...(aws ? { aws } : {}),
-    ...(token ? { github: { token } } : {}),
+    ...(github ? { github } : {}),
     ...(resultsDb ? { resultsDb } : {}),
   };
 }
@@ -92,13 +98,25 @@ function buildInitialDefaults(existing?: FitCliConfig): AwsInitAnswers {
   return existing ? initDefaultsFromConfig(existing) : initDefaultsFromEnv(process.env);
 }
 
+async function promptForGithubUser(existing?: FitCliConfig): Promise<string | undefined> {
+  const existingUser = existing?.github?.user;
+  const entered = await input({
+    promptId: "init.github.user",
+    message: existingUser
+      ? "GitHub username for GHCR image pulls (leave blank to keep the current one):"
+      : "GitHub username for GHCR image pulls:",
+    default: existingUser ?? "",
+  });
+  return trimOptional(entered) ?? existingUser;
+}
+
 async function promptForGithubToken(existing?: FitCliConfig): Promise<string | undefined> {
   const existingToken = existing?.github?.token ?? process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN;
   const entered = await password({
     promptId: "init.github.token",
     message: existingToken
-      ? "GitHub token for cloning the private FIT repos (leave blank to keep the current one):"
-      : "GitHub token for cloning the private FIT repos (leave blank to skip):",
+      ? "GitHub PAT (for cloning FIT repos and pulling GHCR images — leave blank to keep the current one):"
+      : "GitHub PAT (for cloning FIT repos and pulling GHCR images — leave blank to skip):",
     mask: "*",
   });
   // A blank entry keeps whatever is already configured, so re-running init
@@ -120,6 +138,7 @@ async function promptForResultsDbPassword(existing?: FitCliConfig): Promise<stri
 }
 
 async function promptForConfig(existing?: FitCliConfig): Promise<InitAnswers> {
+  const githubUser = await promptForGithubUser(existing);
   const githubToken = await promptForGithubToken(existing);
   const resultsDbPassword = await promptForResultsDbPassword(existing);
   const defaults = buildInitialDefaults(existing);
@@ -133,11 +152,12 @@ async function promptForConfig(existing?: FitCliConfig): Promise<InitAnswers> {
   });
 
   if (!configureAws) {
-    return { configureAws: false, githubToken, resultsDbPassword };
+    return { configureAws: false, githubUser, githubToken, resultsDbPassword };
   }
 
   return {
     configureAws: true,
+    githubUser,
     githubToken,
     resultsDbPassword,
     aws: {

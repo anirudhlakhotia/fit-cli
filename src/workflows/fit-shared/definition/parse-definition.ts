@@ -15,6 +15,7 @@ import {
   CURRENT_FIT_DEFINITION_VERSION,
   FIT_DEFINITION_TYPE,
   FIT_ITERATION_TYPES,
+  SITUATIONAL_DATABASE_MODES,
   type CbdinoclusterSetup,
   type CbdinoclusterInitSetup,
   type ConnectionClusterSetup,
@@ -23,11 +24,15 @@ import {
   type DefinitionTests,
   type FitConfigPiece,
   type FitDefinition,
-  type FunctionalIteration,
+  type FitIteration,
   type IterationSetup,
   type PerformerSetup,
   type RuntimeSection,
   type SharedSetup,
+  type SituationalCbdinoSetup,
+  type SituationalDatabaseMode,
+  type SituationalDatabaseSetup,
+  type SituationalSection,
   type UseExistingClusterSetup,
 } from "./types.js";
 
@@ -345,13 +350,80 @@ function validateRuntime(value: unknown): RuntimeSection {
   return runtime;
 }
 
-function validateFunctionalIteration(value: unknown): FunctionalIteration {
+function isSituationalDatabaseMode(value: unknown): value is SituationalDatabaseMode {
+  return isString(value) && (SITUATIONAL_DATABASE_MODES as readonly string[]).includes(value);
+}
+
+function validateSituationalCbdino(value: unknown): SituationalCbdinoSetup {
+  const record = requireRecord(value, "iterations[].situational.cbdino");
+  const cbdino: SituationalCbdinoSetup = {};
+  if (record.version !== undefined) {
+    cbdino.version = requireString(record, "version", "iterations[].situational.cbdino.version");
+  }
+  if (record.cbDinoClusterAppPath !== undefined) {
+    cbdino.cbDinoClusterAppPath = requireString(
+      record,
+      "cbDinoClusterAppPath",
+      "iterations[].situational.cbdino.cbDinoClusterAppPath",
+    );
+  }
+  if (record.enablePrivateEndpoint !== undefined) {
+    if (typeof record.enablePrivateEndpoint !== "boolean") {
+      throw new InvalidDefinitionError(
+        `"iterations[].situational.cbdino.enablePrivateEndpoint" must be a boolean when present; ` +
+          `got ${JSON.stringify(record.enablePrivateEndpoint)}`,
+      );
+    }
+    cbdino.enablePrivateEndpoint = record.enablePrivateEndpoint;
+  }
+  return cbdino;
+}
+
+function validateSituationalDatabase(value: unknown): SituationalDatabaseSetup {
+  const record = requireRecord(value, "iterations[].situational.database");
+  if (!isSituationalDatabaseMode(record.mode)) {
+    throw new InvalidDefinitionError(
+      `"iterations[].situational.database.mode" must be one of ${SITUATIONAL_DATABASE_MODES.join(", ")}; ` +
+        `got ${JSON.stringify(record.mode)}`,
+    );
+  }
+  return { mode: record.mode };
+}
+
+function validateSituationalSection(value: unknown): SituationalSection {
+  const record = requireRecord(value, "iterations[].situational");
+  if (record.database === undefined) {
+    throw new InvalidDefinitionError("Missing required field: iterations[].situational.database");
+  }
+  return {
+    ...(record.cbdino !== undefined ? { cbdino: validateSituationalCbdino(record.cbdino) } : {}),
+    database: validateSituationalDatabase(record.database),
+  };
+}
+
+function validateSituationalIteration(record: Record<string, unknown>): FitIteration {
+  if (record.situational === undefined) {
+    throw new InvalidDefinitionError("Missing required field: iterations[].situational");
+  }
+  return {
+    type: "situational",
+    ...(record.fitConfig !== undefined ? { fitConfig: validateFitConfig(record.fitConfig, "iterations[].fitConfig") } : {}),
+    setup: validateIterationSetup(record.setup),
+    situational: validateSituationalSection(record.situational),
+    runtime: validateRuntime(record.runtime),
+  };
+}
+
+function validateIteration(value: unknown): FitIteration {
   const record = requireRecord(value, "iterations[]");
   const type = requireString(record, "type", "iterations[].type");
   if (!FIT_ITERATION_TYPES.includes(type as (typeof FIT_ITERATION_TYPES)[number])) {
     throw new InvalidDefinitionError(
       `"iterations[].type" must be one of ${FIT_ITERATION_TYPES.join(", ")}; got ${JSON.stringify(type)}`,
     );
+  }
+  if (type === "situational") {
+    return validateSituationalIteration(record);
   }
   return {
     type: "functional",
@@ -406,7 +478,7 @@ export function validateDefinition(raw: unknown): FitDefinition {
     version: CURRENT_FIT_DEFINITION_VERSION,
     type: FIT_DEFINITION_TYPE,
     ...(raw.setup !== undefined ? { setup: validateSharedSetup(raw.setup) } : {}),
-    iterations: raw.iterations.map(validateFunctionalIteration),
+    iterations: raw.iterations.map(validateIteration),
   };
 }
 

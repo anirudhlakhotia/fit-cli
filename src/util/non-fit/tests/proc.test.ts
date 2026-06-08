@@ -61,17 +61,19 @@ test("streamToFile does not echo the command's output to the terminal", async ()
 
   // Run streamToFile in a child process so we can observe its real stdout
   // without monkeypatching this process's streams (which confuses the test
-  // runner's own reporter). The child prints nothing of its own, so anything on
-  // its stdout would be the grandchild's output leaking through.
+  // runner's own reporter). streamToFile echoes the command line it's about to
+  // run, so the grandchild assembles its output marker at runtime — that way the
+  // marker never appears in the echoed command, and anything matching it on
+  // stdout can only be the grandchild's output leaking through.
   const driver = [
     `import { streamToFile } from ${JSON.stringify(procModule)};`,
-    `await streamToFile(${JSON.stringify(process.execPath)}, ["-e", "console.log('fit stdout')"], ${JSON.stringify(logFile)});`,
+    `await streamToFile(${JSON.stringify(process.execPath)}, ["-e", "console.log(['fit','marker'].join('-'))"], ${JSON.stringify(logFile)});`,
   ].join("\n");
 
   const terminal = await capture(process.execPath, ["--import", "tsx", "--input-type=module", "-e", driver]);
 
-  assert.doesNotMatch(terminal, /fit stdout/);
-  assert.match(readFileSync(logFile, "utf8"), /fit stdout/);
+  assert.doesNotMatch(terminal, /fit-marker/);
+  assert.match(readFileSync(logFile, "utf8"), /fit-marker/);
 });
 
 test("run tees child output into the session log by default", async () => {

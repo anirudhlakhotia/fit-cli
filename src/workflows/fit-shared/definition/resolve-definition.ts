@@ -11,7 +11,15 @@ import {
   type PortInUsePolicy,
 } from "../../performers/util/performer-port.js";
 import { SDKS, sdkByValue, type Sdk } from "../../../util/sdk/sdks.js";
-import { DEFAULT_MAVEN_TEST_ARGS } from "../../fit-shared/run-test-driver/run-test-driver.js";
+import {
+  DEFAULT_MAVEN_TEST_ARGS,
+  SITUATIONAL_MAVEN_GROUPS_ARG,
+  SITUATIONAL_MAVEN_TEST_ARGS,
+} from "../../fit-shared/run-test-driver/run-test-driver.js";
+import {
+  DEFAULT_CBDINO_SETTINGS,
+  type CbdinoSettings,
+} from "../../fit-shared/fit-configuration/build-situational-configuration.js";
 import {
   buildDefaultFitTestSelection,
   buildFitTestSelectionFromClassNames,
@@ -27,18 +35,17 @@ import type {
   ClusterSetup,
   ConnectionClusterSetup,
   FitDefinition,
-  FunctionalIteration,
+  FitIteration,
   RuntimeSection,
+  SituationalCbdinoSetup,
+  SituationalDatabaseMode,
 } from "./types.js";
 
-/** One iteration's worth of concrete inputs, ready to drive the workflow. */
-export interface ResolvedIteration {
-  type: "functional";
+/** The inputs every resolved iteration carries, regardless of flavour. */
+export interface ResolvedIterationCommon {
   sdk: Sdk;
   /** FITConfiguration artifact-piece supplied by the definition for this iteration. */
   fitConfig?: PieceData;
-  /** The existing cluster resolved from shared setup.cluster.connection or fitConfig.clusterAccess. */
-  cluster?: SelectedCluster;
   /** Port the performer should listen on (defaults to {@link DEFAULT_PERFORMER_PORT}). */
   performerPort: number;
   testSelection: FitTestSelection;
@@ -46,9 +53,32 @@ export interface ResolvedIteration {
   performerVersion?: string;
   /** What to do if the performer port is already in use (defaults to {@link DEFAULT_PORT_IN_USE_POLICY}). */
   onPortInUse: PortInUsePolicy;
-  /** Extra `./mvnw` args (the excludedGroups flag). */
+  /** Extra `./mvnw` args (the group/excludedGroups filter). */
   extraMavenArgs: string[];
 }
+
+/** A resolved functional iteration: tests run against a shared, pre-built cluster. */
+export interface ResolvedFunctionalIteration extends ResolvedIterationCommon {
+  type: "functional";
+  /** The existing cluster resolved from shared setup.cluster.connection or fitConfig.clusterAccess. */
+  cluster?: SelectedCluster;
+}
+
+/**
+ * A resolved situational iteration: cbdino builds and manages the cluster, so
+ * there is no shared cluster — the cbdino settings and results-database mode are
+ * carried here and turned into the situational FITConfiguration at run time.
+ */
+export interface ResolvedSituationalIteration extends ResolvedIterationCommon {
+  type: "situational";
+  /** How cbdino should build the cluster, with defaults filled in. */
+  cbdino: CbdinoSettings;
+  /** Where results land; the credentials are resolved at run time. */
+  databaseMode: SituationalDatabaseMode;
+}
+
+/** One iteration's worth of concrete inputs, ready to drive the workflow. */
+export type ResolvedIteration = ResolvedFunctionalIteration | ResolvedSituationalIteration;
 
 /** A cbdinocluster to allocate at setup-cluster time, with its defaults filled in. */
 export interface ResolvedCbdinocluster {
@@ -66,7 +96,11 @@ export interface ResolvedCbdinocluster {
 
 /** A whole definition resolved: cluster setup mode plus the per-iteration inputs. */
 export interface ResolvedDefinition {
-  /** Which top-level cluster mode this definition selected, if any. */
+  /**
+   * Which top-level cluster mode this definition selected, if any. Situational
+   * iterations ignore it — cbdino builds their cluster — so a situational-only
+   * definition leaves this undefined.
+   */
   clusterMode?: "connection" | "useExisting" | "cbdinocluster";
   /** FIT Gerrit patch-set ref to fetch before building/running, if configured. */
   fitPerformerGerritRef?: string;
@@ -92,6 +126,27 @@ export function resolveMavenArgs(runtime: RuntimeSection): string[] {
     return [...DEFAULT_MAVEN_TEST_ARGS];
   }
   return [`-DexcludedGroups=${runtime.excludedGroups.join(",")}`];
+}
+
+/**
+ * The `./mvnw` args for a situational run: always select the situational + cbDino
+ * groups, and exclude the standard situational exclusions unless the definition
+ * overrides them with `runtime.excludedGroups`.
+ */
+export function resolveSituationalMavenArgs(runtime: RuntimeSection): string[] {
+  if (runtime.excludedGroups === undefined) {
+    return [...SITUATIONAL_MAVEN_TEST_ARGS];
+  }
+  return [SITUATIONAL_MAVEN_GROUPS_ARG, `-DexcludedGroups=${runtime.excludedGroups.join(",")}`];
+}
+
+/** Fill in cbdino defaults for a situational iteration's optional `cbdino` block. */
+export function resolveSituationalCbdino(cbdino: SituationalCbdinoSetup | undefined): CbdinoSettings {
+  return {
+    version: cbdino?.version ?? DEFAULT_CBDINO_SETTINGS.version,
+    cbDinoClusterAppPath: cbdino?.cbDinoClusterAppPath ?? DEFAULT_CBDINO_SETTINGS.cbDinoClusterAppPath,
+    enablePrivateEndpoint: cbdino?.enablePrivateEndpoint ?? DEFAULT_CBDINO_SETTINGS.enablePrivateEndpoint,
+  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -193,7 +248,7 @@ export function resolveCbdinocluster(
 }
 
 /** Resolve a single iteration into its concrete run inputs. */
-export function resolveIteration(iteration: FunctionalIteration): ResolvedIteration {
+export function resolveIteration(iteration: FitIteration): ResolvedIteration {
   const sdk = sdkByValue(iteration.setup.performer.sdk);
   if (!sdk) {
     throw new Error(
@@ -201,8 +256,7 @@ export function resolveIteration(iteration: FunctionalIteration): ResolvedIterat
     );
   }
 
-  return {
-    type: "functional",
+  const common: ResolvedIterationCommon = {
     sdk,
     ...(iteration.fitConfig !== undefined ? { fitConfig: iteration.fitConfig } : {}),
     performerPort: iteration.setup.performer.port ?? DEFAULT_PERFORMER_PORT,
@@ -213,6 +267,18 @@ export function resolveIteration(iteration: FunctionalIteration): ResolvedIterat
     onPortInUse: iteration.setup.performer.onPortInUse ?? DEFAULT_PORT_IN_USE_POLICY,
     extraMavenArgs: resolveMavenArgs(iteration.runtime),
   };
+
+  if (iteration.type === "situational") {
+    return {
+      ...common,
+      type: "situational",
+      extraMavenArgs: resolveSituationalMavenArgs(iteration.runtime),
+      cbdino: resolveSituationalCbdino(iteration.situational.cbdino),
+      databaseMode: iteration.situational.database.mode,
+    };
+  }
+
+  return { ...common, type: "functional" };
 }
 
 /** Resolve a whole definition: the shared cluster and every iteration. */
@@ -231,6 +297,11 @@ export function resolveDefinition(definition: FitDefinition): ResolvedDefinition
     ...(cbdinocluster ? { cbdinocluster } : {}),
     iterations: definition.iterations.map((iteration) => {
       const resolved = resolveIteration(iteration);
+      // Situational iterations build their own cluster via cbdino, so the shared
+      // setup.cluster never applies to them.
+      if (resolved.type === "situational") {
+        return resolved;
+      }
       if (connection) {
         const fitConfig = stripFitConfigClusterAccess(resolved.fitConfig);
         return {

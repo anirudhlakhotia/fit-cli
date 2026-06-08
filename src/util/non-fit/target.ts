@@ -9,6 +9,7 @@
  * shape of proc.ts (run / capture) plus file transfer, so a caller currently
  * using proc.ts directly can be moved onto a target with minimal change.
  */
+import type { RunOptions } from "./proc.js";
 
 /** Somewhere commands run and files can be put/fetched. */
 export interface ExecutionTarget {
@@ -18,10 +19,10 @@ export interface ExecutionTarget {
   readonly description: string;
 
   /** Run a command, streaming its output, resolving when it finishes (rejects non-zero). */
-  run(command: string, args: string[], cwd?: string): Promise<void>;
+  run(command: string, args: string[], cwd?: string, opts?: RunOptions): Promise<void>;
 
   /** Run a command and resolve with its captured stdout. */
-  capture(command: string, args: string[], cwd?: string): Promise<string>;
+  capture(command: string, args: string[], cwd?: string, opts?: RunOptions): Promise<string>;
 
   /** Copy a local file to `remotePath` on the target. */
   putFile(localPath: string, remotePath: string): Promise<void>;

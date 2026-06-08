@@ -12,7 +12,6 @@ import { select } from "./util/non-fit/prompts.js";
 import { ensurePromptSession, type PromptSession } from "./util/non-fit/replay.js";
 import { runFunctionalTests } from "./workflows/fit-functional/guided/guided.js";
 import { createFitFunctionalDefinition } from "./workflows/fit-functional/create-definition/create-definition.js";
-import { runSituationalTests } from "./workflows/fit-situational/guided/guided.js";
 import { rootDirFromArgv } from "./util/fit/root.js";
 
 const WORKFLOW_PROMPT_MESSAGE =
@@ -20,8 +19,7 @@ const WORKFLOW_PROMPT_MESSAGE =
 
 const WORKFLOW_CHOICES = [
   { name: "Run FIT functional tests", value: "functional-tests" },
-  { name: "Create a FIT functional definition file", value: "functional-definition" },
-  { name: "Run FIT situational tests (FIT/SIT)", value: "situational-tests" },
+  { name: "Run FIT tests", value: "functional-definition" },
 ] as const;
 
 export type WorkflowChoice = (typeof WORKFLOW_CHOICES)[number]["value"];
@@ -71,8 +69,6 @@ export async function runWorkflow(choice: WorkflowChoice, rootDir: string): Prom
       return runFunctionalTests(rootDir);
     case "functional-definition":
       return createFitFunctionalDefinition(rootDir);
-    case "situational-tests":
-      return runSituationalTests(rootDir);
   }
 }
 

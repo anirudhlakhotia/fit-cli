@@ -4,6 +4,8 @@
  * arguments intact across the extra shell hop that ssh introduces) the command
  * and its arguments are POSIX-quoted into a single remote command string.
  */
+import { commandOn, formatCommandLine } from "./fit-cli-log.js";
+import type { RunOptions } from "./proc.js";
 import type { RemoteHost } from "./ssh.js";
 import { DEFAULT_SSH_USER, scpDown, scpUp, sshCapture, sshRun } from "./ssh.js";
 import type { ExecutionTarget } from "./target.js";
@@ -34,12 +36,21 @@ export class RemoteTarget implements ExecutionTarget {
     this.description = `${host.user ?? DEFAULT_SSH_USER}@${host.host}`;
   }
 
-  run(command: string, args: string[], cwd?: string): Promise<void> {
-    return sshRun(this.host, buildRemoteCommand(command, args, cwd));
+  /**
+   * Echo the *logical* command and host, not the ssh transport. Callers that
+   * already wrapped a command (e.g. in `sh -lc`) pass their own clean `display`,
+   * which we leave untouched.
+   */
+  private displayFor(command: string, args: readonly string[], opts?: RunOptions): RunOptions {
+    return { ...opts, display: opts?.display ?? commandOn(formatCommandLine(command, args), this.description) };
   }
 
-  capture(command: string, args: string[], cwd?: string): Promise<string> {
-    return sshCapture(this.host, buildRemoteCommand(command, args, cwd));
+  run(command: string, args: string[], cwd?: string, opts?: RunOptions): Promise<void> {
+    return sshRun(this.host, buildRemoteCommand(command, args, cwd), [], this.displayFor(command, args, opts));
+  }
+
+  capture(command: string, args: string[], cwd?: string, opts?: RunOptions): Promise<string> {
+    return sshCapture(this.host, buildRemoteCommand(command, args, cwd), [], this.displayFor(command, args, opts));
   }
 
   putFile(localPath: string, remotePath: string): Promise<void> {

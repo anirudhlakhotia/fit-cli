@@ -10,7 +10,7 @@
  *   npx tsx src/util/non-fit/ssh.ts --host <ip> --user ec2-user --key k.pem -- uname -a
  */
 import { isMain, runCli } from "./cli.js";
-import { capture, run } from "./proc.js";
+import { capture, run, type RunOptions } from "./proc.js";
 
 /** A host reachable over SSH. */
 export interface RemoteHost {
@@ -80,23 +80,27 @@ export function buildScpArgs(
 }
 
 /** Run a command on `host`, streaming its output to the terminal. */
-export function sshRun(host: RemoteHost, command: string, args: readonly string[] = []): Promise<void> {
-  return run("ssh", buildSshArgs(host, command, [...args]));
+export function sshRun(host: RemoteHost, command: string, args: readonly string[] = [], opts?: RunOptions): Promise<void> {
+  return run("ssh", buildSshArgs(host, command, [...args]), undefined, opts);
 }
 
 /** Run a command on `host` and resolve with its captured stdout. */
-export function sshCapture(host: RemoteHost, command: string, args: readonly string[] = []): Promise<string> {
-  return capture("ssh", buildSshArgs(host, command, [...args]));
+export function sshCapture(host: RemoteHost, command: string, args: readonly string[] = [], opts?: RunOptions): Promise<string> {
+  return capture("ssh", buildSshArgs(host, command, [...args]), undefined, opts);
 }
 
 /** Copy a local file up to `remotePath` on `host`. */
 export function scpUp(host: RemoteHost, localPath: string, remotePath: string): Promise<void> {
-  return run("scp", buildScpArgs(host, localPath, remotePath, "up"));
+  return run("scp", buildScpArgs(host, localPath, remotePath, "up"), undefined, {
+    display: `scp ${localPath} -> ${loginTarget(host)}:${remotePath}`,
+  });
 }
 
 /** Copy `remotePath` on `host` down to a local file. */
 export function scpDown(host: RemoteHost, remotePath: string, localPath: string): Promise<void> {
-  return run("scp", buildScpArgs(host, localPath, remotePath, "down"));
+  return run("scp", buildScpArgs(host, localPath, remotePath, "down"), undefined, {
+    display: `scp ${loginTarget(host)}:${remotePath} -> ${localPath}`,
+  });
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -114,7 +118,8 @@ export async function waitForSsh(
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     try {
-      await sshCapture(host, "true");
+      // Polling for sshd to come up — don't echo every probe.
+      await sshCapture(host, "true", [], { quiet: true });
       return true;
     } catch {
       if (Date.now() >= deadline) {

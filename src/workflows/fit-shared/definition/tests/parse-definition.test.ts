@@ -232,6 +232,154 @@ test("legacy useExisting remains accepted", () => {
   assert.deepEqual(def.setup?.cluster?.useExisting, {});
 });
 
+const SITUATIONAL = `
+version: 1
+type: fit
+iterations:
+  - type: situational
+    setup:
+      performer:
+        sdk: java
+    situational:
+      cbdino:
+        version: "7.2"
+        enablePrivateEndpoint: true
+      database:
+        mode: hosted
+    runtime:
+      tests: all
+`;
+
+test("parses a situational iteration", () => {
+  const def = parseDefinition(SITUATIONAL);
+  const [iteration] = def.iterations;
+  assert.equal(iteration.type, "situational");
+  assert.equal(iteration.setup.performer.sdk, "java");
+  assert.equal(iteration.runtime.tests, "all");
+  assert.ok(iteration.type === "situational");
+  assert.deepEqual(iteration.situational, {
+    cbdino: { version: "7.2", enablePrivateEndpoint: true },
+    database: { mode: "hosted" },
+  });
+});
+
+const SITUATIONAL_NO_CBDINO = `
+version: 1
+type: fit
+iterations:
+  - type: situational
+    setup:
+      performer:
+        sdk: java
+    situational:
+      database:
+        mode: hosted
+    runtime:
+      tests: all
+`;
+
+test("a situational iteration may omit the cbdino block", () => {
+  const def = parseDefinition(SITUATIONAL_NO_CBDINO);
+  const [iteration] = def.iterations;
+  assert.ok(iteration.type === "situational");
+  assert.equal(iteration.situational.cbdino, undefined);
+  assert.deepEqual(iteration.situational.database, { mode: "hosted" });
+});
+
+test("the local database mode is accepted", () => {
+  const def = parseDefinition(SITUATIONAL.replace("mode: hosted", "mode: local"));
+  const [iteration] = def.iterations;
+  assert.ok(iteration.type === "situational");
+  assert.equal(iteration.situational.database.mode, "local");
+});
+
+test("functional and situational iterations can be mixed in one file", () => {
+  const def = parseDefinition(`
+version: 1
+type: fit
+setup:
+  cluster:
+    connection:
+      connectionString: couchbase://localhost
+      username: Administrator
+      password: password
+      tls: null
+iterations:
+  - type: functional
+    setup:
+      performer:
+        sdk: java
+    runtime:
+      tests: all
+  - type: situational
+    setup:
+      performer:
+        sdk: python
+    situational:
+      database:
+        mode: hosted
+    runtime:
+      tests: all
+`);
+  assert.deepEqual(def.iterations.map((iteration) => iteration.type), ["functional", "situational"]);
+});
+
+test("rejects a situational iteration without a situational block", () => {
+  assert.throws(
+    () =>
+      parseDefinition(`
+version: 1
+type: fit
+iterations:
+  - type: situational
+    setup:
+      performer:
+        sdk: java
+    runtime:
+      tests: all
+`),
+    (err: unknown) => err instanceof InvalidDefinitionError && /situational/.test(err.message),
+  );
+});
+
+test("rejects a situational iteration without a database", () => {
+  assert.throws(
+    () =>
+      parseDefinition(`
+version: 1
+type: fit
+iterations:
+  - type: situational
+    setup:
+      performer:
+        sdk: java
+    situational:
+      cbdino:
+        version: "7.2"
+    runtime:
+      tests: all
+`),
+    (err: unknown) =>
+      err instanceof InvalidDefinitionError && /situational\.database/.test(err.message),
+  );
+});
+
+test("rejects an unknown situational database mode", () => {
+  assert.throws(
+    () => parseDefinition(SITUATIONAL.replace("mode: hosted", "mode: nope")),
+    (err: unknown) =>
+      err instanceof InvalidDefinitionError && /situational\.database\.mode/.test(err.message),
+  );
+});
+
+test("rejects a non-boolean enablePrivateEndpoint", () => {
+  assert.throws(
+    () => parseDefinition(SITUATIONAL.replace("enablePrivateEndpoint: true", "enablePrivateEndpoint: yes-please")),
+    (err: unknown) =>
+      err instanceof InvalidDefinitionError && /enablePrivateEndpoint/.test(err.message),
+  );
+});
+
 test("rejects the wrong type", () => {
   assert.throws(
     () => parseDefinition(MINIMAL.replace("fit", "something-else")),

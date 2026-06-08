@@ -7,7 +7,14 @@ import { sdkByValue } from "../../../../util/sdk/sdks.js";
 import type { ClusterCommandExecutor } from "../../../cluster/cluster-create/allocate-cluster.js";
 import type { ResolvedDefinition } from "../../../fit-shared/definition/resolve-definition.js";
 import type { FitExecutionContext } from "../../../fit-shared/util/remote-fit-run.js";
-import { cbdinoclusterSetupFailed, finalizeRunFromDefinition, runTests, setupCluster } from "../run-from-definition.js";
+import type { ResolvedSituationalIteration } from "../../../fit-shared/definition/resolve-definition.js";
+import {
+  cbdinoclusterSetupFailed,
+  finalizeRunFromDefinition,
+  runSituationalTests,
+  runTests,
+  setupCluster,
+} from "../run-from-definition.js";
 
 function definition(): ResolvedDefinition {
   const sdk = sdkByValue("java");
@@ -135,7 +142,9 @@ test("setupCluster applies the allocated cbdinocluster to every iteration", asyn
 
   assert.equal(receivedExecution, execution);
   assert.deepEqual(
-    result.resolved.iterations.map((iteration) => iteration.cluster),
+    result.resolved.iterations.map((iteration) =>
+      iteration.type === "functional" ? iteration.cluster : undefined,
+    ),
     [cluster, cluster],
   );
 });
@@ -150,7 +159,9 @@ test("setupCluster leaves the iterations unchanged when allocation fails", async
   );
 
   assert.deepEqual(
-    result.resolved.iterations.map((iteration) => iteration.cluster),
+    result.resolved.iterations.map((iteration) =>
+      iteration.type === "functional" ? iteration.cluster : undefined,
+    ),
     [undefined, undefined],
   );
 });
@@ -201,6 +212,78 @@ test("runTests stops before later steps when the cluster REST sanity check fails
   assert.equal(generatedFitConfig, false);
   assert.equal(checkedPerformer, false);
   assert.equal(ranDriver, false);
+});
+
+function situationalIteration(): ResolvedSituationalIteration {
+  const sdk = sdkByValue("java");
+  assert.ok(sdk);
+  return {
+    type: "situational",
+    sdk,
+    performerPort: 8060,
+    testSelection: { allTests: [], selectedTests: [] },
+    onPortInUse: "restart",
+    extraMavenArgs: ["-Dgroups=situational,cbDino"],
+    cbdino: { version: "7.6", cbDinoClusterAppPath: "cbdinocluster", enablePrivateEndpoint: false },
+    databaseMode: "hosted",
+  };
+}
+
+const READY_DATABASE = {
+  ready: true as const,
+  database: { jdbc: "jdbc:postgresql://db:5432/perf", username: "postgres", password: "secret" },
+  artifacts: [],
+  details: [],
+};
+
+test("runSituationalTests stops before generating a config when the database isn't ready", async () => {
+  let generatedConfig = false;
+  let ranDriver = false;
+
+  const result = await runSituationalTests(fitExecutionContext(), situationalIteration(), 0, {
+    resolveResultsDatabaseFn: () => Promise.resolve({ ready: false, artifacts: [], details: [] }),
+    generateSituationalConfigurationFn: () => {
+      generatedConfig = true;
+      return { path: "/tmp/fit.json", artifacts: [], details: [] };
+    },
+    runTestDriverFn: () => {
+      ranDriver = true;
+      return Promise.resolve({ ok: true, logFile: "/tmp/driver.log", artifacts: [], details: [] });
+    },
+  });
+
+  assert.deepEqual(result, { artifacts: [], details: [] });
+  assert.equal(generatedConfig, false);
+  assert.equal(ranDriver, false);
+});
+
+test("runSituationalTests generates the situational config then runs the driver", async () => {
+  const calls: string[] = [];
+  let configPerformerPort: number | undefined;
+  let driverMavenArgs: readonly string[] | undefined;
+
+  const result = await runSituationalTests(fitExecutionContext(), situationalIteration(), 0, {
+    resolveResultsDatabaseFn: () => {
+      calls.push("database");
+      return Promise.resolve(READY_DATABASE);
+    },
+    generateSituationalConfigurationFn: (_db, _cbdino, _rootDir, performerPort) => {
+      calls.push("config");
+      configPerformerPort = performerPort;
+      return { path: "/tmp/fit.json", artifacts: [], details: [] };
+    },
+    runTestDriverFn: (_execution, _selection, _fitConfigPath, extraMavenArgs) => {
+      calls.push("driver");
+      driverMavenArgs = extraMavenArgs;
+      return Promise.resolve({ ok: true, logFile: "/tmp/driver.log", artifacts: [], details: [] });
+    },
+  });
+
+  assert.deepEqual(calls, ["database", "config", "driver"]);
+  assert.equal(configPerformerPort, 8060);
+  assert.deepEqual(driverMavenArgs, ["-Dgroups=situational,cbDino"]);
+  // The results UI is surfaced as a detail so the run summary links to it.
+  assert.ok(result.details.some((detail) => detail.label === "Results UI"));
 });
 
 test("runTests performs the cluster REST sanity check before the performer sanity check", async () => {

@@ -29,6 +29,9 @@ export const HOSTED_RESULTS_DB_USERNAME = "postgres";
 /** Environment variable used as a fallback for the hosted results-DB password. */
 export const RESULTS_DB_PASSWORD_ENV = "FIT_RESULTS_DB_PASSWORD";
 
+/** Where situational results show up once a run has produced data. */
+export const SITUATIONAL_RESULTS_URL = "https://performance-sdk.couchbase.com/results/situational";
+
 type ResultsDatabaseMode = "hosted" | "local";
 
 /** The outcome of choosing a results database. */
@@ -90,6 +93,50 @@ function resolveHostedDatabase(): ResultsDatabaseOutcome {
     artifacts: [],
     details: [{ label: "Results database", value: HOSTED_RESULTS_DB_HOST }],
   };
+}
+
+/**
+ * Resolve the hosted database from the fit-cli config only — no `.env` /
+ * environment-variable fallback. Used by the definition-driven situational run,
+ * where the password must come from the saved config rather than ambient env.
+ */
+function resolveHostedDatabaseFromConfig(): ResultsDatabaseOutcome {
+  const database = buildHostedDatabase(resolveResultsDbCredentials({ env: {} }));
+  if (!database) {
+    fitCliError(
+      `\n✗ The hosted results database needs a readonly password in your fit-cli config.\n` +
+        `  Ask on #the-fit-stop for it, then set it as resultsDb.password in your fit-cli config\n` +
+        `  (~/.fit-cli/config.yaml — run \`npm run init\`).\n` +
+        `  You must also be on the vpn-public VPN to reach ${HOSTED_RESULTS_DB_HOST}.`,
+    );
+    return { ready: false, artifacts: [], details: [] };
+  }
+  console.log(`\n✓ Using the hosted results database at ${HOSTED_RESULTS_DB_HOST}.`);
+  return {
+    ready: true,
+    database,
+    artifacts: [],
+    details: [{ label: "Results database", value: HOSTED_RESULTS_DB_HOST }],
+  };
+}
+
+/**
+ * Resolve a results database for a non-interactive (definition-driven) run from
+ * a mode named in the file: `hosted` (password from fit-cli config only) or
+ * `local` (stood up in Docker). Nothing is prompted for.
+ */
+export async function resolveResultsDatabase(
+  mode: "hosted" | "local",
+  rootDir: string,
+): Promise<ResultsDatabaseOutcome> {
+  if (mode === "local") {
+    const local = await setupLocalDatabase(rootDir);
+    if (!local.ready) {
+      return { ready: false, artifacts: local.artifacts, details: local.details };
+    }
+    return { ready: true, database: local.database, artifacts: local.artifacts, details: local.details };
+  }
+  return resolveHostedDatabaseFromConfig();
 }
 
 /** Choose a results database: the hosted one, or a freshly set-up local one. */

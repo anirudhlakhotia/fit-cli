@@ -19,7 +19,7 @@ export const FIT_DEFINITION_TYPE = "fit";
 export const CURRENT_FIT_DEFINITION_VERSION = 1;
 
 /** The currently supported iteration kinds within a fit definition. */
-export const FIT_ITERATION_TYPES = ["functional"] as const;
+export const FIT_ITERATION_TYPES = ["functional", "situational"] as const;
 
 export type FitIterationType = (typeof FIT_ITERATION_TYPES)[number];
 
@@ -155,11 +155,67 @@ export interface FunctionalIteration {
   runtime: RuntimeSection;
 }
 
+/**
+ * How cbdino should build the cluster a situational iteration runs against. The
+ * situational test-driver creates and manages its own cluster via cbdino, so
+ * these settings go into the FITConfiguration's `situational.cbdino` block
+ * rather than the shared `setup.cluster`. Every field is optional and falls back
+ * to the defaults in build-situational-configuration.ts.
+ */
+export interface SituationalCbdinoSetup {
+  /** Couchbase Server version cbdino should deploy, e.g. "7.6". */
+  version?: string;
+  /** Name (or path) of the cbdinocluster binary the driver should invoke. */
+  cbDinoClusterAppPath?: string;
+  /** Whether cbdino should set up a private endpoint. Defaults to false. */
+  enablePrivateEndpoint?: boolean;
+}
+
+/** Where situational timeseries results are stored. */
+export const SITUATIONAL_DATABASE_MODES = ["hosted", "local"] as const;
+
+export type SituationalDatabaseMode = (typeof SITUATIONAL_DATABASE_MODES)[number];
+
+/**
+ * Where a situational iteration's results land. Only the mode is recorded: the
+ * hosted database's readonly password is resolved from the fit-cli config at run
+ * time (never stored in the checked-in definition file), and the local mode is
+ * stood up in Docker.
+ */
+export interface SituationalDatabaseSetup {
+  mode: SituationalDatabaseMode;
+}
+
+/** The situational-specific section of an iteration: cbdino + results database. */
+export interface SituationalSection {
+  /** How cbdino builds the cluster; omit to use the defaults. */
+  cbdino?: SituationalCbdinoSetup;
+  /** Where results land (required — situational runs always store timeseries data). */
+  database: SituationalDatabaseSetup;
+}
+
+/**
+ * One FIT situational performer + runtime pass. cbdino builds and manages the
+ * cluster the tests drive, so there is no shared `setup.cluster` — the cluster
+ * shape lives under `situational.cbdino` instead.
+ */
+export interface SituationalIteration {
+  type: "situational";
+  /** FITConfiguration artifact-piece layered into this iteration's run config. */
+  fitConfig?: FitConfigPiece;
+  setup: IterationSetup;
+  situational: SituationalSection;
+  runtime: RuntimeSection;
+}
+
+/** One iteration within a fit definition — functional or situational. */
+export type FitIteration = FunctionalIteration | SituationalIteration;
+
 /** A fully-parsed, validated fit definition file. */
 export interface FitDefinition {
   version: number;
   type: typeof FIT_DEFINITION_TYPE;
+  iterations: FitIteration[];
   /** Shared setup (the cluster). Optional while cluster setup is being designed. */
   setup?: SharedSetup;
-  iterations: FunctionalIteration[];
 }

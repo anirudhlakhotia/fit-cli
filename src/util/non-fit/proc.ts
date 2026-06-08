@@ -1,8 +1,31 @@
 import { spawn } from "node:child_process";
 import { closeSync, createWriteStream, mkdirSync, openSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { formatTimestampedChunk } from "./fit-cli-log.js";
+import { echoCommand, formatCommandLine, formatTimestampedChunk } from "./fit-cli-log.js";
 import { createRunFilePath } from "./replay.js";
+
+/** Knobs shared by every command-runner for how the command is announced. */
+export interface RunOptions {
+  /**
+   * A clean line to echo instead of the literal command+args — used when the
+   * real command is wrapped (e.g. ssh/sh -lc), so the user sees the logical
+   * command rather than the transport noise.
+   */
+  display?: string;
+  /** Skip the pre-run echo entirely — for noisy probes/polls (e.g. ssh-wait, `command -v`). */
+  quiet?: boolean;
+}
+
+/**
+ * Echo what's about to run, once, before every spawn. This is the DRY point the
+ * whole codebase relies on: if a command goes through proc.ts, it gets shown.
+ */
+function announce(command: string, args: readonly string[], opts?: RunOptions): void {
+  if (opts?.quiet) {
+    return;
+  }
+  echoCommand(opts?.display ?? formatCommandLine(command, args));
+}
 
 function teeChildOutput(stream: NodeJS.ReadableStream | null, target: NodeJS.WriteStream, onChunk?: (chunk: Buffer) => void): void {
   stream?.on("data", (chunk: Buffer) => {
@@ -19,7 +42,8 @@ function teeChildOutput(stream: NodeJS.ReadableStream | null, target: NodeJS.Wri
  * working directory for commands that don't care where they run (e.g.
  * cbdinocluster, which takes absolute paths).
  */
-export function run(command: string, args: string[], cwd: string = process.cwd()): Promise<void> {
+export function run(command: string, args: string[], cwd: string = process.cwd(), opts?: RunOptions): Promise<void> {
+  announce(command, args, opts);
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
     teeChildOutput(child.stdout, process.stdout);
@@ -41,7 +65,8 @@ export function run(command: string, args: string[], cwd: string = process.cwd()
  * non-zero. Used when we need to parse a tool's output — e.g. reading the list
  * of clusters out of `cbdinocluster ps` — rather than just show it.
  */
-export function capture(command: string, args: string[], cwd: string = process.cwd()): Promise<string> {
+export function capture(command: string, args: string[], cwd: string = process.cwd(), opts?: RunOptions): Promise<string> {
+  announce(command, args, opts);
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { cwd });
     let stdout = "";
@@ -72,7 +97,9 @@ export function runAndCapture(
   command: string,
   args: string[],
   cwd: string = process.cwd(),
+  opts?: RunOptions,
 ): Promise<string> {
+  announce(command, args, opts);
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";
@@ -157,7 +184,9 @@ export function streamToFileInBackground(
   args: string[],
   logFile: string,
   cwd: string = process.cwd(),
+  opts?: RunOptions,
 ): Promise<void> {
+  announce(command, args, opts);
   mkdirSync(dirname(logFile), { recursive: true, mode: 0o700 });
 
   return new Promise((resolve, reject) => {
@@ -206,7 +235,9 @@ export function streamToFile(
   args: string[],
   logFile: string,
   cwd: string = process.cwd(),
+  opts?: RunOptions,
 ): Promise<void> {
+  announce(command, args, opts);
   mkdirSync(dirname(logFile), { recursive: true, mode: 0o700 });
 
   return new Promise((resolve, reject) => {

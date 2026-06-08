@@ -21,6 +21,7 @@ import { prepareAwsCli } from "../../../util/non-fit/aws/aws-cli.js";
 import { describeInstance } from "../../../util/non-fit/aws/describe-instance.js";
 import { RemoteTarget } from "../../../util/non-fit/remote-target.js";
 import { waitForSsh, type RemoteHost } from "../../../util/non-fit/ssh.js";
+import type { RunOptions } from "../../../util/non-fit/proc.js";
 import { fitCliError } from "../../../util/non-fit/fit-cli-log.js";
 import { CBDINOCLUSTER_URL } from "./ensure-cbdinocluster.js";
 
@@ -33,7 +34,7 @@ const DEFAULT_REMOTE_BIN_DIR = "$HOME/.local/bin";
 /** The minimum an executor must offer for {@link installCbdinoclusterRemote}. */
 export type CaptureExecutor = {
   readonly description: string;
-  capture(command: string, args: string[], cwd?: string): Promise<string>;
+  capture(command: string, args: string[], cwd?: string, opts?: RunOptions): Promise<string>;
 };
 
 /**
@@ -76,7 +77,9 @@ export async function installCbdinoclusterRemote(
   console.log(
     `→ Installing the latest cbdinocluster release on ${execution.description} from ${CBDINOCLUSTER_URL}...`,
   );
-  const output = await execution.capture("sh", ["-lc", remoteInstallScript(binDir)]);
+  const output = await execution.capture("sh", ["-lc", remoteInstallScript(binDir)], undefined, {
+    display: `install cbdinocluster from ${CBDINOCLUSTER_URL}`,
+  });
   const installedPath = output
     .split("\n")
     .map((line) => line.trim())

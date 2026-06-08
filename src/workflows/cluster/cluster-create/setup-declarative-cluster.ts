@@ -80,7 +80,7 @@ async function uploadCbdinoclusterConfig(execution: ClusterCommandExecutor, conf
   await execution.run("sh", [
     "-lc",
     `cp ${posixQuote(stagedConfigPath)} ${CBDINOCLUSTER_DEFAULT_REMOTE_CONFIG_PATH} && chmod 600 ${CBDINOCLUSTER_DEFAULT_REMOTE_CONFIG_PATH}`,
-  ]);
+  ], undefined, { display: `install cbdinocluster config to ${CBDINOCLUSTER_DEFAULT_REMOTE_CONFIG_PATH}` });
 }
 
 async function ensureDockerNetwork(execution: ClusterCommandExecutor, network: string): Promise<void> {
@@ -90,17 +90,24 @@ async function ensureDockerNetwork(execution: ClusterCommandExecutor, network: s
   await execution.run("sh", [
     "-lc",
     `docker network inspect ${posixQuote(network)} >/dev/null 2>&1 || docker network create ${posixQuote(network)} >/dev/null`,
-  ]);
+  ], undefined, { display: `docker network create ${network} (if absent)` });
 }
 
-async function prepareCbdinoclusterConfig(execution: ClusterCommandExecutor, config: PieceData | undefined): Promise<void> {
+async function prepareCbdinoclusterConfig(
+  execution: ClusterCommandExecutor,
+  config: PieceData | undefined,
+  githubCredentials?: { user: string; token: string },
+): Promise<void> {
   if (!config || !("kind" in execution) || execution.kind !== "remote") {
     return;
   }
+  const configToUpload: PieceData = githubCredentials
+    ? { ...config, github: { enabled: "true", user: githubCredentials.user, token: githubCredentials.token } }
+    : config;
   console.log(
     `→ setup-cluster: uploading cbdinocluster config to ${execution.description} as ${CBDINOCLUSTER_DEFAULT_REMOTE_CONFIG_PATH}`,
   );
-  await uploadCbdinoclusterConfig(execution, config);
+  await uploadCbdinoclusterConfig(execution, configToUpload);
   const network = dockerNetworkFromInitConfig(config);
   if (network) {
     console.log(`→ setup-cluster: ensuring Docker network ${network} exists on ${execution.description}`);
@@ -256,7 +263,7 @@ export async function removeCluster(
   id: string,
   execution: ClusterCommandExecutor,
 ): Promise<boolean> {
-  console.log(`\nRemoving cluster ${id} with:\n  cbdinocluster ${removeClusterArgs(id).join(" ")}\n`);
+  console.log(`\nRemoving cluster ${id}...`);
   try {
     await execution.run(cbdinocluster, removeClusterArgs(id));
     console.log(`\n✓ Removed cluster ${id}`);
@@ -305,6 +312,8 @@ export async function setupDeclarativeCluster(plan: {
   config: CbdinoclusterDef;
   onClusterExists: ClusterExistsPolicy;
   deployer?: string;
+  /** GitHub credentials to inject into the uploaded ~/.cbdinocluster (for GHCR image pulls). */
+  githubCredentials?: { user: string; token: string };
 }, execution: ClusterCommandExecutor = localClusterCommandExecutor()): Promise<SetupDeclarativeClusterResult> {
   const cbdinocluster = await resolveCbdinoclusterCommand(execution);
   if (!cbdinocluster) {
@@ -315,7 +324,7 @@ export async function setupDeclarativeCluster(plan: {
     return FAILED();
   }
 
-  await prepareCbdinoclusterConfig(execution, plan.init?.config);
+  await prepareCbdinoclusterConfig(execution, plan.init?.config, plan.githubCredentials);
 
   // `cbdinocluster ps` doubles as a sanity check and the list of what's running.
   const existing = await listExistingClusters(cbdinocluster, execution);

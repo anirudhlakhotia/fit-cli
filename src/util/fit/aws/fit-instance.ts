@@ -29,6 +29,7 @@ import { waitForSsh, type RemoteHost } from "../../non-fit/ssh.js";
 import { RemoteTarget } from "../../non-fit/remote-target.js";
 import { fitCliWarn } from "../../non-fit/fit-cli-log.js";
 import { formatEc2DeletionResponsibilityBanner, terminateInstanceCommand } from "./lifecycle-warning.js";
+import { warnAboutExistingInstances } from "./warn-existing-instances.js";
 
 /** Security group fit-cli reuses across runs (port 22 open). */
 export const FIT_SECURITY_GROUP = "fit-cli";
@@ -90,6 +91,11 @@ export async function provisionFitInstance(options: ProvisionOptions = {}): Prom
   if (!creds.ok) {
     throw new Error(`AWS credentials are not usable: ${creds.message}`);
   }
+
+  // Before launching anything, warn about fit-cli boxes already running in this
+  // region (same owner/account, owned-by-fit tag) so a forgotten, still-billing
+  // instance is noticed rather than stacked on top of.
+  await warnAboutExistingInstances(awsOptions);
 
   const instanceType = options.instanceType ?? defaultInstanceType();
   console.log(`Provisioning a ${instanceType} EC2 instance in ${region}...`);

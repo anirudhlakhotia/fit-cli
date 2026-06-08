@@ -1,18 +1,28 @@
 /**
- * Workflow: run FIT functional tests from a `fit` definition
- * file. This is the repeatable counterpart to the guided flow
- * (../guided/guided.ts) — same work, but the cluster, SDK and test selection all
- * come from the file instead of being asked for. The only prompt is where to
- * execute the run (local or a clean EC2 instance) and, at the end, whether to
- * leave everything up for debugging and resuming.
+ * Workflow: run FIT tests from a `fit` definition file. This is the repeatable
+ * counterpart to the guided flow (../guided/guided.ts) — same work, but the
+ * cluster, SDK and test selection all come from the file instead of being asked
+ * for. The only prompt is where to execute the run (local or a clean EC2
+ * instance) and, at the end, whether to leave everything up for debugging and
+ * resuming.
+ *
+ * Iterations come in two flavours. `functional` iterations test against the
+ * shared cluster set up once for the run. `situational` iterations (FIT/SIT) let
+ * the test-driver build and manage their own cluster via cbdino and stream
+ * timeseries results to a database, so they skip the shared cluster entirely —
+ * their cbdino + database settings live under each iteration's `situational`
+ * block (see resolve-definition.ts and build-situational-configuration.ts).
  *
  * The cluster is shared across the whole run; each iteration stands up its own
- * performer and runs its own tests. Standing up a cluster and building a
- * performer are slow, so a run can leave them up and a later invocation can
- * `--resume-at` a point to reuse them instead of redoing the work:
- *   npm run definition <file.yaml>                                  # everything
- *   npm run definition -- --resume-at=after-cluster-creation <file> # reuse cluster
- *   npm run definition -- --resume-at=after-performer <file>        # reuse cluster + performer
+ * performer and runs its own tests. Provisioning an instance, preparing its
+ * workspace, standing up a cluster and building a performer are all slow, so a
+ * run can leave them up and a later invocation can `--resume-at` a point to
+ * reuse everything up to it instead of redoing the work:
+ *   npm run definition <file.yaml>                                    # everything
+ *   npm run definition -- --resume-at=after-instance-creation <file>  # reuse instance
+ *   npm run definition -- --resume-at=after-remote-preparation <file> # reuse prepared box
+ *   npm run definition -- --resume-at=after-cluster-creation <file>   # reuse cluster
+ *   npm run definition -- --resume-at=after-performer <file>          # reuse cluster + performer
  *
  * Run on its own (add --root <dir> to point at another workspace):
  *   npx tsx src/workflows/fit-functional/run-from-definition/run-from-definition.ts <file.yaml>
@@ -35,6 +45,9 @@ import { fitCliError, fitCliWarn } from "../../../util/non-fit/fit-cli-log.js";
 import { createLogFile } from "../../../util/non-fit/proc.js";
 import { confirm } from "../../../util/non-fit/prompts.js";
 import { rootDirFromArgv } from "../../../util/fit/root.js";
+import { resolveGithubCredentials } from "../../../util/fit/config.js";
+import { terminateInstanceCommand } from "../../../util/fit/aws/lifecycle-warning.js";
+import { resolveRegion } from "../../../util/non-fit/aws/aws-cli.js";
 import {
   localClusterCommandExecutor,
   type ClusterCommandExecutor,
@@ -48,10 +61,21 @@ import {
   type RunningPerformer,
 } from "../../performers/check-build-and-run-performer/check-build-and-run-performer.js";
 import { generateFitConfiguration } from "../../fit-shared/fit-configuration/generate-fit-configuration.js";
+import { generateSituationalConfiguration } from "../../fit-shared/fit-configuration/generate-situational-configuration.js";
 import { createFitExecutionContext, type FitExecutionContext } from "../../fit-shared/util/remote-fit-run.js";
 import { loadDefinition } from "../../fit-shared/definition/parse-definition.js";
-import { resolveDefinition, type ResolvedDefinition, type ResolvedIteration } from "../../fit-shared/definition/resolve-definition.js";
+import {
+  resolveDefinition,
+  type ResolvedDefinition,
+  type ResolvedFunctionalIteration,
+  type ResolvedIteration,
+  type ResolvedSituationalIteration,
+} from "../../fit-shared/definition/resolve-definition.js";
 import { runTestDriver } from "../../fit-shared/run-test-driver/run-test-driver.js";
+import {
+  resolveResultsDatabase,
+  SITUATIONAL_RESULTS_URL,
+} from "../../fit-shared/choose-results-database/choose-results-database.js";
 import {
   detectClusterDockerEnvironment,
   runPerformerClusterSanityCheck,
@@ -77,11 +101,21 @@ import {
   type RunState,
 } from "./resume-state.js";
 
+/** True for a functional iteration that has resolved to a concrete cluster. */
+function functionalWithCluster(
+  iteration: ResolvedIteration,
+): iteration is ResolvedFunctionalIteration & { cluster: NonNullable<ResolvedFunctionalIteration["cluster"]> } {
+  return iteration.type === "functional" && iteration.cluster !== undefined;
+}
+
 /** Describe the shared cluster for the run header / setup-cluster step. */
 function clusterLabel(resolved: ResolvedDefinition): string {
-  const cluster = resolved.iterations.find((iteration) => iteration.cluster)?.cluster;
+  const cluster = resolved.iterations.find(functionalWithCluster)?.cluster;
   if (cluster) {
     return `${cluster.scheme}://${cluster.defaultHostname} (${cluster.flavour})`;
+  }
+  if (resolved.iterations.every((iteration) => iteration.type === "situational")) {
+    return "none — situational iterations build their own cluster via cbdino";
   }
   if (resolved.clusterMode === "connection") {
     return "existing cluster from setup.cluster.connection";
@@ -97,11 +131,15 @@ function clusterLabel(resolved: ResolvedDefinition): string {
 
 function applySharedCluster(
   resolved: ResolvedDefinition,
-  cluster: NonNullable<ResolvedIteration["cluster"]>,
+  cluster: NonNullable<ResolvedFunctionalIteration["cluster"]>,
 ): ResolvedDefinition {
   return {
     ...resolved,
-    iterations: resolved.iterations.map((iteration) => ({ ...iteration, cluster })),
+    // Only functional iterations test against the shared cluster; situational
+    // iterations make their own via cbdino, so leave them untouched.
+    iterations: resolved.iterations.map((iteration) =>
+      iteration.type === "functional" ? { ...iteration, cluster } : iteration,
+    ),
   };
 }
 
@@ -125,7 +163,7 @@ export function cbdinoclusterSetupFailed(
   return (
     resolved.clusterMode === "cbdinocluster" &&
     ranSetupCluster &&
-    resolved.iterations.some((iteration) => !iteration.cluster)
+    resolved.iterations.some((iteration) => iteration.type === "functional" && !iteration.cluster)
   );
 }
 
@@ -154,9 +192,13 @@ function announce(
   const testsLabel = testSelection.mavenTestSelector
     ? `${testSelection.selectedTests.length} test(s): ${testSelection.mavenTestSelector}`
     : "all tests";
-  console.log(`\n=== Iteration ${index + 1}/${total} ===`);
+  console.log(`\n=== Iteration ${index + 1}/${total} (${iteration.type}) ===`);
   console.log(`  SDK:     ${iteration.sdk.name}`);
   console.log(`  Tests:   ${testsLabel}`);
+  if (iteration.type === "situational") {
+    console.log(`  cbdino cluster version: ${iteration.cbdino.version}`);
+    console.log(`  Results database: ${iteration.databaseMode}`);
+  }
   console.log(`  Performer port: ${iteration.performerPort}`);
   if (iteration.performerVersion) {
     console.log(`  Performer version: ${iteration.performerVersion}`);
@@ -175,7 +217,14 @@ export async function setupCluster(
   resolved: ResolvedDefinition,
   execution: ClusterCommandExecutor = localClusterCommandExecutor(),
   setupDeclarativeClusterFn: typeof setupDeclarativeCluster = setupDeclarativeCluster,
+  githubCredentials?: { user: string; token: string },
 ): Promise<RunOutput & { resolved: ResolvedDefinition; clusterState?: ResumeClusterState }> {
+  if (!resolved.iterations.some((iteration) => iteration.type === "functional")) {
+    fitCliWarn(
+      "\nsetup-cluster: only situational iterations — cbdino builds their cluster, so there's nothing to allocate.",
+    );
+    return { resolved, artifacts: [], details: [] };
+  }
   if (resolved.clusterMode === "connection") {
     fitCliWarn("\nsetup-cluster: using the existing cluster from setup.cluster.connection; nothing to allocate.");
     return { resolved, artifacts: [], details: [] };
@@ -185,7 +234,7 @@ export async function setupCluster(
     return { resolved, artifacts: [], details: [] };
   }
   if (resolved.cbdinocluster) {
-    const outcome = await setupDeclarativeClusterFn(resolved.cbdinocluster, execution);
+    const outcome = await setupDeclarativeClusterFn({ ...resolved.cbdinocluster, githubCredentials }, execution);
     const clusterState: ResumeClusterState | undefined = outcome.cluster
       ? {
           cluster: outcome.cluster,
@@ -212,12 +261,13 @@ async function setupPerformer(
   iteration: ResolvedIteration,
   iterationIndex: number,
 ): Promise<RunningPerformer | undefined> {
-  const clusterDockerEnvironment = iteration.cluster
-    ? await detectClusterDockerEnvironment(iteration.cluster, {
-        captureCommand: (command, args) => execution.capture(command, args),
-        dockerCommand: execution.dockerCommand,
-      })
-    : undefined;
+  const clusterDockerEnvironment =
+    iteration.type === "functional" && iteration.cluster
+      ? await detectClusterDockerEnvironment(iteration.cluster, {
+          captureCommand: (command, args) => execution.capture(command, args),
+          dockerCommand: execution.dockerCommand,
+        })
+      : undefined;
   if (clusterDockerEnvironment) {
     console.log(
       `\n→ Cluster Docker networks: ${clusterDockerEnvironment.networkNames.join(", ")} ` +
@@ -247,7 +297,7 @@ interface RunTestsDependencies {
 export async function runTests(
   execution: FitExecutionContext,
   clusterMode: ResolvedDefinition["clusterMode"],
-  iteration: ResolvedIteration,
+  iteration: ResolvedFunctionalIteration,
   performer: RunningPerformer | undefined,
   iterationIndex: number,
   dependencies: RunTestsDependencies = {},
@@ -298,6 +348,67 @@ export async function runTests(
   );
   artifacts.push(...testRun.artifacts);
   details.push(...testRun.details);
+  return { artifacts, details };
+}
+
+/**
+ * The run step for a situational iteration. cbdino builds and manages the
+ * cluster from inside the test-driver, so there's no cluster to diagnose or
+ * sanity-check up front — instead we resolve the results database the file named,
+ * generate the situational FITConfiguration, and run the test-driver with the
+ * situational Maven groups.
+ */
+export async function runSituationalTests(
+  execution: FitExecutionContext,
+  iteration: ResolvedSituationalIteration,
+  iterationIndex: number,
+  dependencies: {
+    resolveResultsDatabaseFn?: typeof resolveResultsDatabase;
+    generateSituationalConfigurationFn?: typeof generateSituationalConfiguration;
+    runTestDriverFn?: typeof runTestDriver;
+  } = {},
+): Promise<RunOutput> {
+  const resolveResultsDatabaseFn = dependencies.resolveResultsDatabaseFn ?? resolveResultsDatabase;
+  const generateSituationalConfigurationFn =
+    dependencies.generateSituationalConfigurationFn ?? generateSituationalConfiguration;
+  const runTestDriverFn = dependencies.runTestDriverFn ?? runTestDriver;
+
+  console.log(
+    "\nNote: for a full cbdino run the performer must share cbdino's Docker network " +
+      "(usually `dinonet`) so it can reach the cluster cbdino creates.",
+  );
+
+  const database = await resolveResultsDatabaseFn(iteration.databaseMode, execution.rootDir);
+  if (!database.ready) {
+    return { artifacts: database.artifacts, details: database.details };
+  }
+
+  const artifacts: Artifact[] = [...database.artifacts];
+  const details: Detail[] = [...database.details];
+
+  const fitConfig = generateSituationalConfigurationFn(
+    database.database,
+    iteration.cbdino,
+    execution.rootDir,
+    iteration.performerPort,
+    iteration.fitConfig,
+    iterationIndex,
+  );
+  artifacts.push(...fitConfig.artifacts);
+  details.push(...fitConfig.details);
+
+  const testRun = await runTestDriverFn(
+    execution,
+    iteration.testSelection,
+    fitConfig.path,
+    iteration.extraMavenArgs,
+    iterationIndex,
+  );
+  artifacts.push(...testRun.artifacts);
+  details.push(...testRun.details);
+
+  console.log(`\nWhen this run produces data, view it at:\n  ${SITUATIONAL_RESULTS_URL}`);
+  details.push({ label: "Results UI", value: SITUATIONAL_RESULTS_URL });
   return { artifacts, details };
 }
 
@@ -367,7 +478,10 @@ async function runIteration(
   }
   artifacts.push(...performer.artifacts);
 
-  const output = await runTests(execution, resolved.clusterMode, iteration, performer, iterationIndex);
+  const output =
+    iteration.type === "situational"
+      ? await runSituationalTests(execution, iteration, iterationIndex)
+      : await runTests(execution, resolved.clusterMode, iteration, performer, iterationIndex);
   artifacts.push(...output.artifacts);
   details.push(...output.details);
   return {
@@ -417,7 +531,8 @@ function targetStateFrom(teardown: ExecutionTargetTeardown): ResumeTargetState {
 
 interface TeardownInputs {
   definitionPath: string;
-  execution: FitExecutionContext;
+  /** The remote/local context — absent if the run failed before it came up. */
+  execution?: FitExecutionContext;
   teardown: ExecutionTargetTeardown;
   clusterState?: ResumeClusterState;
   performers: readonly RunningPerformer[];
@@ -425,17 +540,43 @@ interface TeardownInputs {
 }
 
 /**
+ * Which resume points the saved state actually supports, in run order — so the
+ * leave-up message only suggests points that will work given how far the run got
+ * (e.g. no `after-cluster-creation` when no cluster was stood up).
+ */
+function resumeSuggestions(inputs: TeardownInputs): ResumePoint[] {
+  const { teardown, execution, clusterState, performerStates } = inputs;
+  const points: ResumePoint[] = [];
+  // A remote box we can reconnect to: reuse the instance, re-prepare the rest.
+  if (teardown.kind === "remote" && teardown.address) {
+    points.push("after-instance-creation");
+    // The workspace is only prepared once the execution context came up.
+    if (execution) {
+      points.push("after-remote-preparation");
+    }
+  }
+  if (clusterState) {
+    points.push("after-cluster-creation");
+  }
+  if (performerStates.length > 0) {
+    points.push("after-performer");
+  }
+  return points;
+}
+
+/**
  * Ask once whether to leave everything up for debugging and resuming. If so,
- * record the run state and leave the cluster, performers and instance running;
+ * record the run state and leave the instance, cluster and performers running;
  * otherwise stop the performers, remove an allocated cluster, and terminate an
- * instance fit-cli provisioned.
+ * instance fit-cli provisioned. The execution context may be absent (the run
+ * failed before it came up); only the instance is then up to leave or terminate.
  */
 async function teardownRun(inputs: TeardownInputs): Promise<void> {
   const { definitionPath, execution, teardown, clusterState, performers, performerStates } = inputs;
 
   const leaveUp = await confirm({
     promptId: "run-from-definition.teardown.leave-up",
-    message: "Leave everything up (cluster, performer, instance) for debugging and resuming?",
+    message: "Leave everything up (instance, cluster, performer) for debugging and resuming?",
     default: false,
   });
 
@@ -448,20 +589,32 @@ async function teardownRun(inputs: TeardownInputs): Promise<void> {
     };
     const path = writeRunState(definitionPath, state);
     console.log(`\n✓ Leaving everything up. Saved run state to:\n  ${path}`);
-    console.log("\nResume after a manual fix with, e.g.:");
-    console.log(`  npm run definition -- --resume-at=after-cluster-creation ${definitionPath}`);
-    console.log(`  npm run definition -- --resume-at=after-performer ${definitionPath}`);
+    const suggestions = resumeSuggestions(inputs);
+    if (suggestions.length > 0) {
+      console.log("\nResume after a manual fix with, e.g.:");
+      for (const point of suggestions) {
+        console.log(`  npm run definition -- --resume-at=${point} ${definitionPath}`);
+      }
+    }
     if (teardown.terminate && teardown.instanceId) {
+      const region = teardown.region ?? resolveRegion();
       fitCliWarn(`\nInstance ${teardown.instanceId} is still running — remember to terminate it when done.`);
+      if (teardown.identityFile && teardown.user && teardown.address) {
+        console.log(`\nSSH in with:\n  ssh -i ${teardown.identityFile} ${teardown.user}@${teardown.address}`);
+      }
+      console.log(`\nTerminate it with:\n  ${terminateInstanceCommand(teardown.instanceId, region)}`);
     }
     return;
   }
 
-  for (const performer of performers) {
-    await stopManagedPerformer(execution, performer);
-  }
-  if (clusterState?.allocated && clusterState.clusterId && clusterState.cbdinoclusterCommand) {
-    await removeCluster(clusterState.cbdinoclusterCommand, clusterState.clusterId, execution);
+  // Performer and cluster cleanup need the context; skipped if it never came up.
+  if (execution) {
+    for (const performer of performers) {
+      await stopManagedPerformer(execution, performer);
+    }
+    if (clusterState?.allocated && clusterState.clusterId && clusterState.cbdinoclusterCommand) {
+      await removeCluster(clusterState.cbdinoclusterCommand, clusterState.clusterId, execution);
+    }
   }
   if (teardown.terminate) {
     console.log(`\nTerminating instance ${teardown.instanceId ?? ""}...`);
@@ -498,6 +651,17 @@ export async function runFromDefinition(
     console.log(`  Resuming at: ${resumeAt}`);
   }
 
+  // Resolve GitHub credentials upfront so we fail before provisioning an instance.
+  let githubCredentials: { user: string; token: string } | undefined;
+  if (resolved.cbdinocluster && phases.setupCluster && !resumeAt) {
+    const result = resolveGithubCredentials();
+    if (typeof result === "string") {
+      fitCliError(`\n✗ ${result}`);
+      return { artifacts: [], details: [] };
+    }
+    githubCredentials = result;
+  }
+
   const artifacts: Artifact[] = [];
   const details: Detail[] = [];
   const executionTarget = savedState
@@ -515,14 +679,14 @@ export async function runFromDefinition(
   const performerStates: ResumePerformerState[] = [];
   try {
     execution = await createFitExecutionContext(executionTarget.target, rootDir, resolved.iterations[0].sdk, {
-      skipRemotePreparation: Boolean(resumeAt),
+      skipRemotePreparation: !phases.prepareRemote,
     });
     artifacts.push(...execution.artifacts);
     details.push(...execution.details);
 
     // The cluster is shared across iterations, so set it up (or reuse it) once.
     if (phases.setupCluster) {
-      const setup = await setupCluster(resolved, execution);
+      const setup = await setupCluster(resolved, execution, setupDeclarativeCluster, githubCredentials);
       resolved = setup.resolved;
       clusterState = setup.clusterState;
       artifacts.push(...setup.artifacts);
@@ -565,19 +729,16 @@ export async function runFromDefinition(
 
     return finalizeRunFromDefinition(artifacts, details);
   } finally {
-    if (execution) {
-      await teardownRun({
-        definitionPath,
-        execution,
-        teardown: executionTarget.teardown,
-        ...(clusterState ? { clusterState } : {}),
-        performers,
-        performerStates,
-      });
-    } else if (executionTarget.teardown.terminate) {
-      // The context never came up; just dispose of the box we provisioned.
-      await executionTarget.teardown.terminate().catch(() => {});
-    }
+    // Always offer to leave things up — even if the context never came up, the
+    // instance is worth keeping so a fix can be tried with --resume-at.
+    await teardownRun({
+      definitionPath,
+      ...(execution ? { execution } : {}),
+      teardown: executionTarget.teardown,
+      ...(clusterState ? { clusterState } : {}),
+      performers,
+      performerStates,
+    });
   }
 }
 
@@ -589,7 +750,7 @@ if (isMain(import.meta.url)) {
     if (!definitionPath || extra.length > 0) {
       console.error(
         "Usage: tsx src/workflows/fit-functional/run-from-definition/run-from-definition.ts <file.yaml> [--resume-at=<point>] [--root <dir>] [--interactive]\n" +
-          "  --resume-at: after-cluster-creation | after-performer (reuse what a previous run left up)",
+          "  --resume-at: after-instance-creation | after-remote-preparation | after-cluster-creation | after-performer (reuse what a previous run left up)",
       );
       process.exit(2);
     }

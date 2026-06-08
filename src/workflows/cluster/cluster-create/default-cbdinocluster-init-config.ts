@@ -10,7 +10,9 @@ export function defaultCbdinoclusterInitConfig(): PieceData {
     version: 6,
     docker: {
       enabled: true,
-      network: "fit"
-    }
-  };
+      network: "fit",
+      host: "unix:///var/run/docker.sock"
+    },
+    "default-deployer": "docker"
+};
 }
