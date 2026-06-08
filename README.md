@@ -145,8 +145,9 @@ See `examples/fit-functional-tests.yaml` for an annotated example; run one with 
 - LLMs: after making changes, if possible give me the mini CLI command to run that step/workflow.
 
 ### Top-level commands
-These are ones in package.json e.g. `npm run definition`.
-Unlike Mini CLI these _are_ meant to be stable.  We should try not to break. 
+These are ones in package.json e.g. `npm run definition [execute|validate]`.
+Unlike Mini CLI these _are_ meant to be stable.  We should try not to break.
+All top-level commands have at least one subcommand.  This gives room to expand in future.
 
 ### Testing
 - Anytime there's easy testable business logic, e.g. it doesn't require file access or similar, add unit tests.  Put these in a tests directory off the one being tested.

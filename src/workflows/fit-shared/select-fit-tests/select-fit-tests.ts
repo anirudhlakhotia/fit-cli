@@ -10,7 +10,7 @@
  */
 import { basename } from "node:path";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
-import { checkbox, search, select } from "../../../util/non-fit/prompts.js";
+import { checkbox, qualifyPromptId, search, select } from "../../../util/non-fit/prompts.js";
 import { rootDirFromArgv } from "../../../util/fit/root.js";
 import { createLocalFitExecutionContext, type FitExecutionContext } from "../util/remote-fit-run.js";
 
@@ -81,6 +81,12 @@ export interface FitTestDomain {
 export const FUNCTIONAL_TEST_DOMAIN: FitTestDomain = {
   excludePrefix: SITUATIONAL_TEST_PATH_PREFIX,
   sanitySelector: "com.couchbase.client.kv.SanityTest",
+};
+
+/** The situational flow: only the situational package and its cbdino sanity test. */
+export const SITUATIONAL_TEST_DOMAIN: FitTestDomain = {
+  includePrefix: SITUATIONAL_TEST_PATH_PREFIX,
+  sanitySelector: "com.couchbase.situational.tests.VolumeTest#steadyStateKvGets",
 };
 
 const TEST_LISTING_ARGS = [
@@ -304,9 +310,9 @@ export function deserializeSelectedFitTestsFromReplay(
 type FitTestRunMode = "all" | "single" | "multiple" | "sanity";
 
 /** Ask whether to run everything, a single searchable test, a sanity test, or a chosen subset. */
-async function askFitTestRunMode(domain: FitTestDomain): Promise<FitTestRunMode> {
+async function askFitTestRunMode(domain: FitTestDomain, promptIdPrefix?: string): Promise<FitTestRunMode> {
   return select<FitTestRunMode>({
-    promptId: "fit.tests.mode",
+    promptId: qualifyPromptId("fit.tests.mode", promptIdPrefix),
     message: "Which FIT test-driver tests do you want to run?",
     default: "all",
     choices: [
@@ -339,9 +345,9 @@ export function buildSanityFitTestSelection(
 }
 
 /** Single-test picker backed by a type-to-filter search box. */
-async function selectSingleFitTest(tests: FitTestCase[]): Promise<FitTestSelection> {
+async function selectSingleFitTest(tests: FitTestCase[], promptIdPrefix?: string): Promise<FitTestSelection> {
   const className = await search<string>({
-    promptId: "fit.tests.single",
+    promptId: qualifyPromptId("fit.tests.single", promptIdPrefix),
     message: "Search for the FIT test to run:",
     source: fitTestSearchSource(tests),
   });
@@ -349,9 +355,9 @@ async function selectSingleFitTest(tests: FitTestCase[]): Promise<FitTestSelecti
 }
 
 /** Multi-test picker: the checkbox list, all tests pre-selected. */
-async function selectMultipleFitTests(tests: FitTestCase[]): Promise<FitTestSelection> {
+async function selectMultipleFitTests(tests: FitTestCase[], promptIdPrefix?: string): Promise<FitTestSelection> {
   const selectedClassNames = await checkbox<string>({
-    promptId: "fit.tests.select",
+    promptId: qualifyPromptId("fit.tests.select", promptIdPrefix),
     message: "Which FIT test-driver tests do you want to run?  (Default is everything)",
     choices: buildFitTestChoices(tests),
     required: true,
@@ -374,15 +380,16 @@ async function selectMultipleFitTests(tests: FitTestCase[]): Promise<FitTestSele
 export async function promptForFitTestSelection(
   tests: FitTestCase[],
   domain: FitTestDomain = FUNCTIONAL_TEST_DOMAIN,
+  promptIdPrefix?: string,
 ): Promise<FitTestSelection> {
-  const mode = await askFitTestRunMode(domain);
+  const mode = await askFitTestRunMode(domain, promptIdPrefix);
   switch (mode) {
     case "single":
-      return await selectSingleFitTest(tests);
+      return await selectSingleFitTest(tests, promptIdPrefix);
     case "sanity":
       return buildSanityFitTestSelection(tests, domain);
     case "multiple":
-      return await selectMultipleFitTests(tests);
+      return await selectMultipleFitTests(tests, promptIdPrefix);
     default:
       return buildDefaultFitTestSelection();
   }
@@ -392,9 +399,10 @@ export async function promptForFitTestSelection(
 export async function selectFitTests(
   execution: FitExecutionContext,
   domain: FitTestDomain = FUNCTIONAL_TEST_DOMAIN,
+  promptIdPrefix?: string,
 ): Promise<FitTestSelection> {
   try {
-    return await promptForFitTestSelection(await listFitTests(execution, domain), domain);
+    return await promptForFitTestSelection(await listFitTests(execution, domain), domain, promptIdPrefix);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.warn(`\nCould not select specific FIT tests (${message}). Continuing with all tests.`);

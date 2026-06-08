@@ -20,7 +20,7 @@ test("chooseWorkflow resumes the stored workflow and skips the legacy workflow p
           {
             id: "workflow.choose",
             kind: "select",
-            message: "What would you like to do?  [More options to follow - PRs welcome ;) ]",
+            message: "What would you like to do?",
             response: "functional-tests",
           },
           {

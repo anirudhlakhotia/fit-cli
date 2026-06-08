@@ -11,15 +11,14 @@ import { loadDotenv } from "./util/non-fit/dotenv.js";
 import { select } from "./util/non-fit/prompts.js";
 import { ensurePromptSession, type PromptSession } from "./util/non-fit/replay.js";
 import { runFunctionalTests } from "./workflows/fit-functional/guided/guided.js";
-import { createFitFunctionalDefinition } from "./workflows/fit-functional/create-definition/create-definition.js";
+import { createFitDefinition } from "./workflows/fit-shared/create-definition/create-definition.js";
 import { rootDirFromArgv } from "./util/fit/root.js";
 
-const WORKFLOW_PROMPT_MESSAGE =
-  "What would you like to do?  [More options to follow - PRs welcome ;) ]";
+const WORKFLOW_PROMPT_MESSAGE = "What would you like to do?";
 
 const WORKFLOW_CHOICES = [
   { name: "Run FIT functional tests", value: "functional-tests" },
-  { name: "Run FIT tests", value: "functional-definition" },
+  { name: "Build a FIT definition file that can be used to run FIT tests", value: "functional-definition" },
 ] as const;
 
 export type WorkflowChoice = (typeof WORKFLOW_CHOICES)[number]["value"];
@@ -68,7 +67,7 @@ export async function runWorkflow(choice: WorkflowChoice, rootDir: string): Prom
     case "functional-tests":
       return runFunctionalTests(rootDir);
     case "functional-definition":
-      return createFitFunctionalDefinition(rootDir);
+      return createFitDefinition(rootDir);
   }
 }
 

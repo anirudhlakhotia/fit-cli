@@ -724,6 +724,7 @@ export async function runFromDefinition(
         phases.setupPerformer,
         savedState,
         index,
+        definitionPath,
       );
       artifacts.push(...output.artifacts);
       details.push(...output.details);

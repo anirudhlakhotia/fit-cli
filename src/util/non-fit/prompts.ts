@@ -8,6 +8,10 @@ type ConfirmConfig = Parameters<typeof prompts.confirm>[0];
 type PasswordConfig = Parameters<typeof prompts.password>[0];
 type PromptConfigWithId = { promptId: string; message: string };
 
+export function qualifyPromptId(promptId: string, prefix?: string): string {
+  return prefix ? `${prefix}.${promptId}` : promptId;
+}
+
 function firstChoiceValue<Value>(choices: readonly unknown[]): Value | undefined {
   for (const choice of choices) {
     if (!choice || typeof choice !== "object") {

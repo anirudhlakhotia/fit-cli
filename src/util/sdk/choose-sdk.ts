@@ -6,13 +6,16 @@
  *
  * Prints the chosen SDK as JSON.
  */
-import { select } from "../non-fit/prompts.js";
+import { qualifyPromptId, select } from "../non-fit/prompts.js";
 import { isMain, runCli } from "../non-fit/cli.js";
 import { SDKS, sdkByValue, type Sdk, type SdkValue } from "./sdks.js";
 
-export async function chooseSdk(message: string = "Which SDK do you want to test?"): Promise<Sdk> {
+export async function chooseSdk(
+  message: string = "Which SDK do you want to test?",
+  promptIdPrefix?: string,
+): Promise<Sdk> {
   const value = await select<SdkValue>({
-    promptId: "sdk.choose",
+    promptId: qualifyPromptId("sdk.choose", promptIdPrefix),
     message,
     choices: SDKS.map((sdk) => ({ name: sdk.name, value: sdk.value })),
   });

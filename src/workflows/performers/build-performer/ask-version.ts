@@ -7,12 +7,12 @@
  * Prints the chosen version, or an empty string for main.
  */
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
-import { input } from "../../../util/non-fit/prompts.js";
+import { input, qualifyPromptId } from "../../../util/non-fit/prompts.js";
 
 /** Ask which SDK version to build; blank means build main. */
-export async function askVersion(): Promise<string | undefined> {
+export async function askVersion(promptIdPrefix?: string): Promise<string | undefined> {
   const version = await input({
-    promptId: "performer.version",
+    promptId: qualifyPromptId("performer.version", promptIdPrefix),
     message: "Which version do you want to build? Leave blank for main.",
     default: "",
   });

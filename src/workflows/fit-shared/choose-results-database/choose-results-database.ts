@@ -18,7 +18,7 @@ import { type RunOutput } from "../../../util/non-fit/artifacts.js";
 import { loadDotenv } from "../../../util/non-fit/dotenv.js";
 import { resolveResultsDbCredentials } from "../../../util/fit/config.js";
 import { fitCliError } from "../../../util/non-fit/fit-cli-log.js";
-import { select } from "../../../util/non-fit/prompts.js";
+import { qualifyPromptId, select } from "../../../util/non-fit/prompts.js";
 import { rootDirFromArgv } from "../../../util/fit/root.js";
 import { type ResultsDatabase } from "../util/results-database.js";
 import { setupLocalDatabase } from "../setup-local-database/setup-local-database.js";
@@ -32,7 +32,7 @@ export const RESULTS_DB_PASSWORD_ENV = "FIT_RESULTS_DB_PASSWORD";
 /** Where situational results show up once a run has produced data. */
 export const SITUATIONAL_RESULTS_URL = "https://performance-sdk.couchbase.com/results/situational";
 
-type ResultsDatabaseMode = "hosted" | "local";
+export type ResultsDatabaseMode = "hosted" | "local";
 
 /** The outcome of choosing a results database. */
 export type ResultsDatabaseOutcome =
@@ -58,9 +58,9 @@ export function buildHostedDatabase(
   };
 }
 
-async function askResultsDatabaseMode(): Promise<ResultsDatabaseMode> {
+export async function chooseResultsDatabaseMode(promptIdPrefix?: string): Promise<ResultsDatabaseMode> {
   return select<ResultsDatabaseMode>({
-    promptId: "situational.database.mode",
+    promptId: qualifyPromptId("situational.database.mode", promptIdPrefix),
     message: "Where should situational test results be stored?",
     default: "hosted",
     choices: [
@@ -141,7 +141,7 @@ export async function resolveResultsDatabase(
 
 /** Choose a results database: the hosted one, or a freshly set-up local one. */
 export async function chooseResultsDatabase(rootDir: string): Promise<ResultsDatabaseOutcome> {
-  const mode = await askResultsDatabaseMode();
+  const mode = await chooseResultsDatabaseMode();
   if (mode === "hosted") {
     return resolveHostedDatabase();
   }

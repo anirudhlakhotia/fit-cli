@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  buildFitDefinition,
+  buildFunctionalIterationFrom,
   buildFitFunctionalDefinition,
   buildFitFunctionalDefinitionFrom,
+  buildSituationalIterationFrom,
+  formatFitDefinition,
   formatFitFunctionalDefinition,
 } from "../generate-definition.js";
 import { parseDefinition } from "../parse-definition.js";
@@ -228,4 +232,51 @@ test("formatFitFunctionalDefinition annotates cbdinocluster init config uploads"
     rendered,
     /# This file will be uploaded verbatim into clean environments as ~\/\.cbdinocluster\n\s+config:/,
   );
+});
+
+test("buildSituationalIterationFrom omits the cbdino block when using defaults", () => {
+  const iteration = buildSituationalIterationFrom({
+    sdk,
+    onPortInUse: "reuse",
+    databaseMode: "hosted",
+    selection: buildDefaultFitTestSelection(),
+  });
+
+  assert.deepEqual(iteration, {
+    type: "situational",
+    setup: {
+      performer: {
+        sdk: "java",
+        onPortInUse: "reuse",
+      },
+    },
+    situational: {
+      database: { mode: "hosted" },
+    },
+    runtime: { tests: "all" },
+  });
+});
+
+test("buildFitDefinition supports a mixed functional and situational file", () => {
+  const definition = buildFitDefinition({
+    cluster: { kind: "connection", cluster },
+    gerritRef: "refs/changes/29/246329/1",
+    iterations: [
+      buildFunctionalIterationFrom({
+        cluster: { kind: "connection", cluster },
+        sdk,
+        selection: buildDefaultFitTestSelection(),
+      }),
+      buildSituationalIterationFrom({
+        sdk,
+        version: "1.2.3",
+        databaseMode: "local",
+        selection: buildFitTestSelectionFromClassNames([
+          "com.couchbase.situational.tests.VolumeTest#steadyStateKvGets",
+        ]),
+      }),
+    ],
+  });
+
+  assert.deepEqual(parseDefinition(formatFitDefinition(definition)), definition);
 });

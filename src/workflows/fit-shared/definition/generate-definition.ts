@@ -20,14 +20,21 @@ import {
   CURRENT_FIT_DEFINITION_VERSION,
   FIT_DEFINITION_TYPE,
   type FitDefinition,
+  type FitIteration,
   type FitConfigPiece,
+  type FunctionalIteration,
   type PerformerSetup,
+  type SituationalCbdinoSetup,
+  type SituationalDatabaseMode,
+  type SituationalIteration,
 } from "./types.js";
 
 /** Absolute path to the generated definition file in the current run directory. */
-export function fitFunctionalDefinitionPath(runDir: string = ensureRunDir()): string {
+export function fitDefinitionPath(runDir: string = ensureRunDir()): string {
   return join(runDir, "fit.yaml");
 }
+
+export const fitFunctionalDefinitionPath = fitDefinitionPath;
 
 /**
  * How the definition's shared cluster is described: either point at an existing
@@ -59,6 +66,18 @@ export interface DefinitionInputs {
   selection: FitTestSelection;
 }
 
+export interface SituationalDefinitionInputs {
+  sdk: Sdk;
+  /** Performer image version/tag; omit for the build's default (main). */
+  version?: string;
+  /** What to do if the performer port is in use; omit for the build's default. */
+  onPortInUse?: PortInUsePolicy;
+  selection: FitTestSelection;
+  databaseMode: SituationalDatabaseMode;
+  /** Optional situational cbdino overrides; omit to use runtime defaults. */
+  cbdino?: SituationalCbdinoSetup;
+}
+
 function buildClusterAccessFitConfig(cluster: SelectedCluster): FitConfigPiece {
   const fitConfig: PieceData = {
     clusterAccess: {
@@ -77,33 +96,37 @@ function buildClusterAccessFitConfig(cluster: SelectedCluster): FitConfigPiece {
  * no place in the `useExisting` shape, so it is ignored for the connection kind.
  */
 function buildSharedSetup(
-  cluster: DefinitionCluster,
+  cluster: DefinitionCluster | undefined,
   gerritRef?: string,
   onClusterExists?: ClusterExistsPolicy,
 ): FitDefinition["setup"] {
-  const setup: NonNullable<FitDefinition["setup"]> = cluster.kind === "connection"
-    ? { cluster: { useExisting: {} } }
-    : {
-        cluster: {
+  const setup: NonNullable<FitDefinition["setup"]> = {};
+  if (cluster) {
+    setup.cluster = cluster.kind === "connection"
+      ? { useExisting: {} }
+      : {
           cbdinocluster: {
             init: { config: defaultCbdinoclusterInitConfig() },
             config: buildClusterDefObject(cluster.def),
             ...(onClusterExists ? { onClusterExists } : {}),
           },
-        },
-      };
+        };
+  }
   if (gerritRef) {
     setup.repos = { "transactions-fit-performer": { gerritRef } };
   }
-  return setup;
+  return Object.keys(setup).length > 0 ? setup : undefined;
 }
 
-/**
- * Build a definition object from a full set of chosen inputs. We emit a single
- * iteration; a file can carry several on input to describe a matrix of runs, but
- * the interactive flows only ever capture the one just walked through.
- */
-export function buildFitFunctionalDefinitionFrom(inputs: DefinitionInputs): FitDefinition {
+function buildRuntime(selection: FitTestSelection): FunctionalIteration["runtime"] {
+  return {
+    tests: selection.mavenTestSelector
+      ? selection.selectedTests.map((test) => test.className)
+      : "all",
+  };
+}
+
+export function buildFunctionalIterationFrom(inputs: DefinitionInputs): FunctionalIteration {
   const performer: PerformerSetup = {
     sdk: inputs.sdk.value,
     ...(inputs.version ? { version: inputs.version } : {}),
@@ -113,22 +136,58 @@ export function buildFitFunctionalDefinitionFrom(inputs: DefinitionInputs): FitD
     ? buildClusterAccessFitConfig(inputs.cluster.cluster)
     : undefined;
   return {
+    type: "functional",
+    ...(fitConfig !== undefined ? { fitConfig } : {}),
+    setup: { performer },
+    runtime: buildRuntime(inputs.selection),
+  };
+}
+
+export function buildSituationalIterationFrom(inputs: SituationalDefinitionInputs): SituationalIteration {
+  return {
+    type: "situational",
+    setup: {
+      performer: {
+        sdk: inputs.sdk.value,
+        ...(inputs.version ? { version: inputs.version } : {}),
+        ...(inputs.onPortInUse ? { onPortInUse: inputs.onPortInUse } : {}),
+      },
+    },
+    situational: {
+      ...(inputs.cbdino ? { cbdino: inputs.cbdino } : {}),
+      database: { mode: inputs.databaseMode },
+    },
+    runtime: buildRuntime(inputs.selection),
+  };
+}
+
+export function buildFitDefinition(inputs: {
+  cluster?: DefinitionCluster;
+  gerritRef?: string;
+  onClusterExists?: ClusterExistsPolicy;
+  iterations: FitIteration[];
+}): FitDefinition {
+  const setup = buildSharedSetup(inputs.cluster, inputs.gerritRef, inputs.onClusterExists);
+  return {
     version: CURRENT_FIT_DEFINITION_VERSION,
     type: FIT_DEFINITION_TYPE,
-    setup: buildSharedSetup(inputs.cluster, inputs.gerritRef, inputs.onClusterExists),
-    iterations: [
-      {
-        type: "functional",
-        ...(fitConfig !== undefined ? { fitConfig } : {}),
-        setup: { performer },
-        runtime: {
-          tests: inputs.selection.mavenTestSelector
-            ? inputs.selection.selectedTests.map((test) => test.className)
-            : "all",
-        },
-      },
-    ],
+    ...(setup ? { setup } : {}),
+    iterations: [...inputs.iterations],
   };
+}
+
+/**
+ * Build a definition object from a full set of chosen inputs. We emit a single
+ * iteration; a file can carry several on input to describe a matrix of runs, but
+ * the interactive flows only ever capture the one just walked through.
+ */
+export function buildFitFunctionalDefinitionFrom(inputs: DefinitionInputs): FitDefinition {
+  return buildFitDefinition({
+    cluster: inputs.cluster,
+    gerritRef: inputs.gerritRef,
+    onClusterExists: inputs.onClusterExists,
+    iterations: [buildFunctionalIterationFrom(inputs)],
+  });
 }
 
 /**
@@ -145,7 +204,7 @@ export function buildFitFunctionalDefinition(
 }
 
 /** Render a definition file as YAML text ready to save. */
-export function formatFitFunctionalDefinition(definition: FitDefinition): string {
+export function formatFitDefinition(definition: FitDefinition): string {
   let text = YAML.stringify(definition);
   text = text.replace(/(^\s*init:\n)(\s*)config:$/gm, (_match, initLine: string, indent: string) =>
     `${initLine}${indent}# This file will be uploaded verbatim into clean environments as ~/.cbdinocluster\n${indent}config:`
@@ -181,24 +240,28 @@ export function formatFitFunctionalDefinition(definition: FitDefinition): string
   return text;
 }
 
+export const formatFitFunctionalDefinition = formatFitDefinition;
+
 export interface WriteFitFunctionalDefinitionResult {
   path: string;
   artifact: Artifact;
 }
 
 /** Write a generated definition file into the current run directory. */
-export function writeFitFunctionalDefinition(
+export function writeFitDefinition(
   definition: FitDefinition,
   runDir: string = ensureRunDir(),
 ): WriteFitFunctionalDefinitionResult {
   mkdirSync(runDir, { recursive: true, mode: 0o700 });
-  const path = fitFunctionalDefinitionPath(runDir);
-  writeFileSync(path, formatFitFunctionalDefinition(definition));
+  const path = fitDefinitionPath(runDir);
+  writeFileSync(path, formatFitDefinition(definition));
   return {
     path,
     artifact: artifactFromPath(path, "Generated fit definition file for reruns", runDir),
   };
 }
+
+export const writeFitFunctionalDefinition = writeFitDefinition;
 
 /** Build, explain, and write a reusable fit definition file. */
 export function generateFitFunctionalDefinition(
@@ -211,10 +274,10 @@ export function generateFitFunctionalDefinition(
   console.log(
     "\nGenerating a fit definition file so you can rerun this flow non-interactively or tweak it.",
   );
-  const result = writeFitFunctionalDefinition(definition);
+  const result = writeFitDefinition(definition);
 
   console.log(`\nWriting ${result.path}:\n`);
-  printWithoutTimestamps(formatFitFunctionalDefinition(definition));
+  printWithoutTimestamps(formatFitDefinition(definition));
   console.log(`\n✓ Wrote ${result.path}`);
 
   return { path: result.path, definition, artifacts: [result.artifact], details: [] };

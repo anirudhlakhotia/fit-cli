@@ -18,7 +18,7 @@
 import { type RunOutput } from "../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { printWithoutTimestamps } from "../../../util/non-fit/fit-cli-log.js";
-import { confirm, input } from "../../../util/non-fit/prompts.js";
+import { confirm, input, qualifyPromptId } from "../../../util/non-fit/prompts.js";
 import { rootDirFromArgv } from "../../../util/fit/root.js";
 import { chooseSdk } from "../../../util/sdk/choose-sdk.js";
 import { askClusterDef } from "../../cluster/cluster-create/ask-cluster-def.js";
@@ -50,9 +50,9 @@ export async function chooseDefinitionCluster(): Promise<DefinitionCluster> {
   return { kind: "cbdinocluster", def };
 }
 
-async function askFitGerritRef(): Promise<string | undefined> {
+export async function askFitGerritRef(promptIdPrefix?: string): Promise<string | undefined> {
   const shouldUseGerritRef = await confirm({
-    promptId: "fit.definition.performer.gerrit-ref.enabled",
+    promptId: qualifyPromptId("fit.definition.performer.gerrit-ref.enabled", promptIdPrefix),
     message: "Do you want to fetch and checkout a specific transactions-fit-performer Gerrit ref before execution?",
     default: false,
   });
@@ -61,7 +61,7 @@ async function askFitGerritRef(): Promise<string | undefined> {
   }
 
   const gerritRef = await input({
-    promptId: "fit.definition.performer.gerrit-ref.value",
+    promptId: qualifyPromptId("fit.definition.performer.gerrit-ref.value", promptIdPrefix),
     message: "Which transactions-fit-performer Gerrit ref should fit-cli fetch and checkout (e.g. refs/changes/29/246329/1)?",
     validate: (value) => value.trim() ? true : "Enter a Gerrit ref like refs/changes/29/246329/1.",
   });
