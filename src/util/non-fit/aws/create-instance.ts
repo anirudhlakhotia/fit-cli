@@ -13,6 +13,14 @@ import { isMain, runCli } from "../cli.js";
 import { awsJson, awsText, logAwsAction, prepareAwsCli, type AwsOptions } from "./aws-cli.js";
 import { parseInstances, type DescribeInstancesResponse } from "./parse-instance.js";
 
+/** A single EBS block-device mapping. */
+export interface BlockDeviceMapping {
+  deviceName: string;
+  volumeSizeGB: number;
+  volumeType?: string;
+  deleteOnTermination?: boolean;
+}
+
 /** Everything needed to launch one instance. */
 export interface CreateInstanceSpec {
   amiId: string;
@@ -23,6 +31,8 @@ export interface CreateInstanceSpec {
   userData?: string;
   /** Tags applied to the instance, e.g. { "fit-cli": "owned" }. */
   tags?: Record<string, string>;
+  /** EBS block-device mappings (e.g. root volume size & type). */
+  blockDeviceMappings?: BlockDeviceMapping[];
 }
 
 function tagSpecification(tags: Record<string, string>): string {
@@ -30,6 +40,24 @@ function tagSpecification(tags: Record<string, string>): string {
     .map(([key, value]) => `{Key=${key},Value=${value}}`)
     .join(",");
   return `ResourceType=instance,Tags=[${entries}]`;
+}
+
+function blockDeviceMappingArgs(mappings: BlockDeviceMapping[]): string[] {
+  const args: string[] = [];
+  for (const m of mappings) {
+    const ebs: string[] = [`VolumeSize=${m.volumeSizeGB}`];
+    if (m.volumeType) {
+      ebs.push(`VolumeType=${m.volumeType}`);
+    }
+    if (m.deleteOnTermination !== undefined) {
+      ebs.push(`DeleteOnTermination=${m.deleteOnTermination}`);
+    }
+    args.push(
+      "--block-device-mappings",
+      `DeviceName=${m.deviceName},Ebs={${ebs.join(",")}}`,
+    );
+  }
+  return args;
 }
 
 /** Launch a single instance and return its id (it will still be "pending"). */
@@ -54,6 +82,9 @@ export async function createInstance(spec: CreateInstanceSpec, options: AwsOptio
   }
   if (spec.tags && Object.keys(spec.tags).length > 0) {
     args.push("--tag-specifications", tagSpecification(spec.tags));
+  }
+  if (spec.blockDeviceMappings && spec.blockDeviceMappings.length > 0) {
+    args.push(...blockDeviceMappingArgs(spec.blockDeviceMappings));
   }
   const response = await awsJson<DescribeInstancesResponse>(args, options);
   const launched = parseInstances(response);

@@ -17,7 +17,7 @@ import { resolveRegion, type AwsOptions } from "../../non-fit/aws/aws-cli.js";
 import { defaultAwsRegionMessage, resolveAwsRegion } from "../../non-fit/aws/region.js";
 import { checkCredentials } from "../../non-fit/aws/identity.js";
 import { findUbuntuAmi } from "../../non-fit/aws/image.js";
-import { createInstance, waitForInstanceRunning } from "../../non-fit/aws/create-instance.js";
+import { createInstance, waitForInstanceRunning, type BlockDeviceMapping } from "../../non-fit/aws/create-instance.js";
 import { describeInstance } from "../../non-fit/aws/describe-instance.js";
 import { findInstancesByKeyName } from "../../non-fit/aws/list-instances.js";
 import { terminateInstance } from "../../non-fit/aws/terminate-instance.js";
@@ -40,9 +40,34 @@ export const FIT_OWNER_TAG = { key: "fit-cli", value: "owned" } as const;
 /** Login user for manual SSH. */
 export const FIT_INSTANCE_USER = "ubuntu";
 
-/** Default instance type (override with FIT_EC2_INSTANCE_TYPE). */
+/**
+ * Default instance type for FIT EC2 instances.
+ *
+ * Used as it's what has historically been used for FIT/PERF.
+ * Should technically go into the database to allow apples-to-apples comparisons.
+ *
+ * Override with FIT_EC2_INSTANCE_TYPE.
+ */
 export function defaultInstanceType(): string {
-  return process.env.FIT_EC2_INSTANCE_TYPE ?? "c5.xlarge";
+  return process.env.FIT_EC2_INSTANCE_TYPE ?? "c5.4xlarge";
+}
+
+/**
+ * Root EBS volume configuration for FIT instances.
+ *
+ * CBD-5001 - seeing issues with the default 8GB.
+ * Bumping as also seeing issues with 50GB:
+ * https://couchbase.slack.com/archives/C08FV3X1CCA/p1773408987562519?thread_ts=1773392405.251509&cid=C08FV3X1CCA
+ */
+export function fitBlockDeviceMappings(): BlockDeviceMapping[] {
+  return [
+    {
+      deviceName: "/dev/sda1",
+      volumeSizeGB: 250,
+      volumeType: "gp3",
+      deleteOnTermination: true,
+    },
+  ];
 }
 
 /** A provisioned EC2 instance, ready to use, with a teardown handle. */
@@ -119,6 +144,7 @@ export async function provisionFitInstance(options: ProvisionOptions = {}): Prom
         keyName,
         securityGroupId,
         tags: { [FIT_OWNER_TAG.key]: FIT_OWNER_TAG.value },
+        blockDeviceMappings: fitBlockDeviceMappings(),
       },
       awsOptions,
     );

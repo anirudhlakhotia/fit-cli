@@ -5,13 +5,6 @@
 #
 #   npm run definition examples/fit.yaml
 #
-# Run only some steps (CSV of: setup, setup-cluster, setup-performer, run):
-#
-#   npm run definition examples/fit.yaml setup-performer
-#   npm run definition examples/fit.yaml run
-#
-# (add --root <dir> to point at a workspace other than the parent of the cwd).
-#
 # Validate a file without running it:
 #   npx tsx src/workflows/fit-shared/definition/parse-definition.ts <file.yaml>
 

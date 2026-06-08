@@ -144,6 +144,10 @@ See `examples/fit-functional-tests.yaml` for an annotated example; run one with 
 - The mini CLI tool should output any final artifacts in a table (see Artifacts section).
 - LLMs: after making changes, if possible give me the mini CLI command to run that step/workflow.
 
+### Top-level commands
+These are ones in package.json e.g. `npm run definition`.
+Unlike Mini CLI these _are_ meant to be stable.  We should try not to break. 
+
 ### Testing
 - Anytime there's easy testable business logic, e.g. it doesn't require file access or similar, add unit tests.  Put these in a tests directory off the one being tested.
 - But much of the code is hard and slow to test, depending on external repos, building Docker images etc.  Do not add tests for these. 

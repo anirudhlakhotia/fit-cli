@@ -455,6 +455,10 @@ async function resumePerformer(
   };
 }
 
+ function printResumeHint(point: ResumePoint, definitionPath: string): void {
+  console.log(`\n→ Resume from here: npm run definition -- --resume-at=${point} ${definitionPath}`);
+}
+
 /** Run one iteration: stand up (or reuse) its performer, then run the tests. */
 async function runIteration(
   execution: FitExecutionContext,
@@ -463,6 +467,7 @@ async function runIteration(
   setupPerformerPhase: boolean,
   savedState: RunState | undefined,
   iterationIndex: number,
+  definitionPath: string,
 ): Promise<{ output: RunOutput; performer?: RunningPerformer }> {
   const artifacts: Artifact[] = [];
   const details: Detail[] = [];
@@ -477,6 +482,9 @@ async function runIteration(
     return { output: { artifacts, details } };
   }
   artifacts.push(...performer.artifacts);
+  if (setupPerformerPhase && performer.containerId) {
+    printResumeHint("after-performer", definitionPath);
+  }
 
   const output =
     iteration.type === "situational"
@@ -672,6 +680,9 @@ export async function runFromDefinition(
   if (!executionTarget.ready) {
     return { artifacts: combineArtifacts(artifacts), details: combineDetails(details) };
   }
+  if (executionTarget.teardown.kind === "remote" && executionTarget.teardown.address) {
+    printResumeHint("after-instance-creation", definitionPath);
+  }
 
   let execution: FitExecutionContext | undefined;
   let clusterState: ResumeClusterState | undefined;
@@ -683,6 +694,9 @@ export async function runFromDefinition(
     });
     artifacts.push(...execution.artifacts);
     details.push(...execution.details);
+    if (phases.prepareRemote && executionTarget.teardown.kind === "remote" && executionTarget.teardown.address) {
+      printResumeHint("after-remote-preparation", definitionPath);
+    }
 
     // The cluster is shared across iterations, so set it up (or reuse it) once.
     if (phases.setupCluster) {
