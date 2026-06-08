@@ -427,8 +427,8 @@ export function loadDefinition(path: string): FitDefinition {
 const HELP = `Validate a fit definition file and print the parsed result.
 
 Usage:
-  npx tsx src/workflows/fit-functional/definition/parse-definition.ts <file.yaml>
-  npx tsx src/workflows/fit-functional/definition/parse-definition.ts --help
+  npx tsx src/workflows/fit-shared/definition/parse-definition.ts <file.yaml>
+  npx tsx src/workflows/fit-shared/definition/parse-definition.ts --help
 
 Exits 0 and prints the normalised definition as JSON if the file is valid;
 exits 1 with an explanation otherwise.`;

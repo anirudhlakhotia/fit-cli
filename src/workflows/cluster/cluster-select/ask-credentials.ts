@@ -2,7 +2,7 @@
  * Step: ask for the username and password FIT will use to test with.
  *
  * Run on its own:
- *   npx tsx src/workflows/cluster-select/ask-credentials.ts
+ *   npx tsx src/workflows/cluster/cluster-select/ask-credentials.ts
  *
  * Prints the username (and that a password was captured).
  */

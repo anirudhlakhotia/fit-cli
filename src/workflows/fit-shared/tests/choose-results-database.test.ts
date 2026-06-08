@@ -1,24 +1,23 @@
 /**
- * Unit tests for hostedDatabaseFromEnv.
+ * Unit tests for buildHostedDatabase.
  *
  * Run on their own:
- *   node --import tsx --test src/workflows/fit-situational/tests/choose-results-database.test.ts
+ *   node --import tsx --test src/workflows/fit-shared/tests/choose-results-database.test.ts
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  hostedDatabaseFromEnv,
+  buildHostedDatabase,
   HOSTED_RESULTS_DB_JDBC,
-  RESULTS_DB_PASSWORD_ENV,
 } from "../choose-results-database/choose-results-database.js";
 
 test("returns undefined when the password is missing or blank", () => {
-  assert.equal(hostedDatabaseFromEnv({}), undefined);
-  assert.equal(hostedDatabaseFromEnv({ [RESULTS_DB_PASSWORD_ENV]: "   " }), undefined);
+  assert.equal(buildHostedDatabase({}), undefined);
+  assert.equal(buildHostedDatabase({ password: "   " }), undefined);
 });
 
 test("builds the hosted connection from the password, defaulting the username", () => {
-  assert.deepEqual(hostedDatabaseFromEnv({ [RESULTS_DB_PASSWORD_ENV]: "secret" }), {
+  assert.deepEqual(buildHostedDatabase({ password: "secret" }), {
     jdbc: HOSTED_RESULTS_DB_JDBC,
     username: "postgres",
     password: "secret",
@@ -26,9 +25,6 @@ test("builds the hosted connection from the password, defaulting the username", 
 });
 
 test("an explicit username overrides the default", () => {
-  const database = hostedDatabaseFromEnv({
-    [RESULTS_DB_PASSWORD_ENV]: "secret",
-    FIT_RESULTS_DB_USERNAME: "readonly",
-  });
+  const database = buildHostedDatabase({ password: "secret", username: "readonly" });
   assert.equal(database?.username, "readonly");
 });

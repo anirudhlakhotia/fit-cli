@@ -36,7 +36,7 @@ import {
   type FitTestDomain,
 } from "../../fit-shared/select-fit-tests/select-fit-tests.js";
 import { writeAgentsGuide } from "../../fit-shared/util/write-agents-guide.js";
-import { chooseResultsDatabase } from "../choose-results-database/choose-results-database.js";
+import { chooseResultsDatabase } from "../../fit-shared/choose-results-database/choose-results-database.js";
 import { generateSituationalConfiguration } from "../util/situational-config.js";
 
 /** Maven groups that select the cbdino-managed situational tests. */

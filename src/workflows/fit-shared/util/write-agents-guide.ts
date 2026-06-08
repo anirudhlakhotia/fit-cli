@@ -5,7 +5,7 @@
  * them at the main run log as a starting point.
  *
  * Run on its own (writes a guide describing a couple of sample artifacts):
- *   npx tsx src/workflows/fit-functional/util/write-agents-guide.ts
+ *   npx tsx src/workflows/fit-shared/util/write-agents-guide.ts
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";

@@ -5,7 +5,7 @@
  * def lives in build-cluster-def.ts.
  *
  * Run on its own:
- *   npx tsx src/workflows/cluster-create/ask-cluster-def.ts
+ *   npx tsx src/workflows/cluster/cluster-create/ask-cluster-def.ts
  *
  * Prints the gathered answers as JSON.
  */

@@ -33,7 +33,7 @@ import {
   formatFitFunctionalDefinition,
   writeFitFunctionalDefinition,
   type DefinitionCluster,
-} from "../definition/generate-definition.js";
+} from "../../fit-shared/definition/generate-definition.js";
 
 /**
  * Ask which cluster the definition should target, without standing anything up.

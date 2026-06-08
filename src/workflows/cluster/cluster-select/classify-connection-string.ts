@@ -4,7 +4,7 @@
  * tests/classify-connection-string.test.ts).
  *
  * Run on its own:
- *   npx tsx src/workflows/cluster-select/classify-connection-string.ts couchbase://localhost
+ *   npx tsx src/workflows/cluster/cluster-select/classify-connection-string.ts couchbase://localhost
  *
  * Prints the classification as JSON.
  */
@@ -83,7 +83,7 @@ if (isMain(import.meta.url)) {
     const raw = process.argv[2];
     if (!raw) {
       console.error(
-        "Usage: tsx src/workflows/cluster-select/classify-connection-string.ts <connection-string>",
+        "Usage: tsx src/workflows/cluster/cluster-select/classify-connection-string.ts <connection-string>",
       );
       process.exit(2);
     }

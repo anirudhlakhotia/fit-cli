@@ -3,7 +3,7 @@
  *
  * Run on their own:
  *   npm test
- *   node --import tsx --test src/workflows/fit-functional/steps/tests/build-fit-configuration.test.ts
+ *   node --import tsx --test src/workflows/fit-functional/util/tests/build-fit-configuration.test.ts
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";

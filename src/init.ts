@@ -23,6 +23,8 @@ export interface InitAnswers {
   aws?: AwsInitAnswers;
   /** GitHub token for cloning the private FIT repos; empty/undefined to skip. */
   githubToken?: string;
+  /** Readonly password for the hosted results database; empty/undefined to skip. */
+  resultsDbPassword?: string;
 }
 
 function trimOptional(value: string | undefined): string | undefined {
@@ -67,11 +69,22 @@ export function initAnswersToConfig(answers: InitAnswers, existing?: FitCliConfi
   const aws =
     answers.configureAws && answers.aws ? awsAnswersToConfig(answers.aws) : existing?.aws;
   const token = trimOptional(answers.githubToken);
+  // Preserve a hand-set username; init only prompts for the password.
+  const resultsDbPassword = trimOptional(answers.resultsDbPassword);
+  const resultsDbUsername = existing?.resultsDb?.username;
+  const resultsDb =
+    resultsDbPassword || resultsDbUsername
+      ? {
+          ...(resultsDbPassword ? { password: resultsDbPassword } : {}),
+          ...(resultsDbUsername ? { username: resultsDbUsername } : {}),
+        }
+      : undefined;
 
   return {
     version: FIT_CLI_CONFIG_VERSION,
     ...(aws ? { aws } : {}),
     ...(token ? { github: { token } } : {}),
+    ...(resultsDb ? { resultsDb } : {}),
   };
 }
 
@@ -93,8 +106,22 @@ async function promptForGithubToken(existing?: FitCliConfig): Promise<string | u
   return trimOptional(entered) ?? existingToken;
 }
 
+async function promptForResultsDbPassword(existing?: FitCliConfig): Promise<string | undefined> {
+  const existingPassword = existing?.resultsDb?.password ?? process.env.FIT_RESULTS_DB_PASSWORD;
+  const entered = await password({
+    promptId: "init.results-db.password",
+    message: existingPassword
+      ? "Hosted results-database readonly password (leave blank to keep the current one):"
+      : "Hosted results-database readonly password (leave blank to skip — ask on #the-fit-stop):",
+    mask: "*",
+  });
+  // A blank entry keeps whatever is already configured, mirroring the token prompt.
+  return trimOptional(entered) ?? existingPassword;
+}
+
 async function promptForConfig(existing?: FitCliConfig): Promise<InitAnswers> {
   const githubToken = await promptForGithubToken(existing);
+  const resultsDbPassword = await promptForResultsDbPassword(existing);
   const defaults = buildInitialDefaults(existing);
   const hasExistingAws = existing?.aws !== undefined;
   const configureAws = await confirm({
@@ -106,12 +133,13 @@ async function promptForConfig(existing?: FitCliConfig): Promise<InitAnswers> {
   });
 
   if (!configureAws) {
-    return { configureAws: false, githubToken };
+    return { configureAws: false, githubToken, resultsDbPassword };
   }
 
   return {
     configureAws: true,
     githubToken,
+    resultsDbPassword,
     aws: {
       region: await input({
         promptId: "init.aws.region",

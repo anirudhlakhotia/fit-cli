@@ -6,7 +6,7 @@
  * broken or misconfigured rather than later inside `allocate`.
  *
  * Run on its own:
- *   npx tsx src/workflows/cluster-create/ensure-cbdinocluster.ts
+ *   npx tsx src/workflows/cluster/cluster-create/ensure-cbdinocluster.ts
  *
  * Prints the resolved cbdinocluster command, or exits 1 if it isn't usable.
  */

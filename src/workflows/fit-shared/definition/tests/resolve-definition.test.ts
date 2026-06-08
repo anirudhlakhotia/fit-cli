@@ -3,7 +3,7 @@
  *
  * Run on their own:
  *   npm test
- *   node --import tsx --test src/workflows/fit-functional/definition/tests/resolve-definition.test.ts
+ *   node --import tsx --test src/workflows/fit-shared/definition/tests/resolve-definition.test.ts
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";

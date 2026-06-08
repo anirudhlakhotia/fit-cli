@@ -11,25 +11,18 @@
  * with the situational-specific piece — the artifact-pieces idea from the README.
  *
  * Run on its own (prints a sample situational config as JSON):
- *   npx tsx src/workflows/fit-situational/situational-config.ts
+ *   npx tsx src/workflows/fit-situational/util/situational-config.ts
  */
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { type RunOutput } from "../../../util/non-fit/artifacts.js";
 import { mergeConfigPieces, type ConfigPiece } from "../../../util/non-fit/config-pieces.js";
 import { rootDirFromArgv } from "../../../util/fit/root.js";
+import { type ResultsDatabase } from "../../fit-shared/util/results-database.js";
 import {
   AUTO_GENERATED_MARKER,
   fitConfigDocPath,
   writeFitConfiguration,
 } from "../../fit-shared/fit-configuration/write-fit-configuration.js";
-
-/** Where situational test results are stored (a Postgres/Timescale database). */
-export interface ResultsDatabase {
-  /** JDBC URL, e.g. jdbc:postgresql://faas.couchbase.com:5432/perf. */
-  jdbc: string;
-  username: string;
-  password: string;
-}
 
 /** How cbdino should build the cluster the situational tests run against. */
 export interface CbdinoSettings {

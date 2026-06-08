@@ -24,7 +24,7 @@ import {
   stopManagedPerformer,
   type RunningPerformer,
 } from "../../performers/check-build-and-run-performer/check-build-and-run-performer.js";
-import { generateFitFunctionalDefinition } from "../definition/generate-definition.js";
+import { generateFitFunctionalDefinition } from "../../fit-shared/definition/generate-definition.js";
 import { generateFitConfiguration } from "../../fit-shared/fit-configuration/generate-fit-configuration.js";
 import { createFitExecutionContext } from "../../fit-shared/util/remote-fit-run.js";
 import { runTestDriver } from "../../fit-shared/run-test-driver/run-test-driver.js";
@@ -34,7 +34,10 @@ import {
   detectClusterDockerEnvironment,
   runPerformerClusterSanityCheck,
 } from "../../fit-shared/util/performer-cluster-sanity.js";
-import { selectExecutionTarget } from "../select-execution-target/select-execution-target.js";
+import {
+  selectExecutionTarget,
+  teardownTargetInteractively,
+} from "../select-execution-target/select-execution-target.js";
 
 /**
  * Combine the run's artifacts, drop an AGENTS.md guide describing them into the
@@ -58,7 +61,7 @@ export async function runFunctionalTests(rootDir: string): Promise<RunOutput> {
   if (!executionTarget.ready) {
     return { artifacts, details };
   }
-  const { target, cleanup } = executionTarget;
+  const { target, teardown } = executionTarget;
 
   try {
     const sdk = await chooseSdk();
@@ -124,7 +127,7 @@ export async function runFunctionalTests(rootDir: string): Promise<RunOutput> {
     }
   } finally {
     // Tear down (or keep, if the user wants to debug) the EC2 instance.
-    await cleanup();
+    await teardownTargetInteractively(teardown);
   }
 }
 

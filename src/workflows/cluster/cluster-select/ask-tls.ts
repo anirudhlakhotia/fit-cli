@@ -9,9 +9,9 @@
  * See transactions-fit-performer/test-driver/FITConfiguration.md for more.
  *
  * Run on its own:
- *   npx tsx src/workflows/cluster-select/ask-tls.ts internal-capella
- *   npx tsx src/workflows/cluster-select/ask-tls.ts production-capella
- *   npx tsx src/workflows/cluster-select/ask-tls.ts self-managed
+ *   npx tsx src/workflows/cluster/cluster-select/ask-tls.ts internal-capella
+ *   npx tsx src/workflows/cluster/cluster-select/ask-tls.ts production-capella
+ *   npx tsx src/workflows/cluster/cluster-select/ask-tls.ts self-managed
  *
  * Prints the resulting tls value as JSON.
  */
@@ -60,7 +60,7 @@ if (isMain(import.meta.url)) {
     const flavour = process.argv[2] as ClusterFlavour;
     if (!["internal-capella", "production-capella", "self-managed"].includes(flavour)) {
       console.error(
-        "Usage: tsx src/workflows/cluster-select/ask-tls.ts " +
+        "Usage: tsx src/workflows/cluster/cluster-select/ask-tls.ts " +
           "<internal-capella | production-capella | self-managed>",
       );
       process.exit(2);

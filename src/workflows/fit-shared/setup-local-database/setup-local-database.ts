@@ -8,7 +8,7 @@
  * lives on the same Docker network — here, `fit`.
  *
  * Run on its own (this really does start Docker containers; add --root <dir>):
- *   npx tsx src/workflows/fit-situational/setup-local-database/setup-local-database.ts
+ *   npx tsx src/workflows/fit-shared/setup-local-database/setup-local-database.ts
  */
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { type RunOutput } from "../../../util/non-fit/artifacts.js";
@@ -16,7 +16,7 @@ import { capture, run } from "../../../util/non-fit/proc.js";
 import { JENKINS_SDK, repoPath } from "../../../util/fit/repos.js";
 import { ensureRepo } from "../../../util/fit/ensure-repo.js";
 import { rootDirFromArgv } from "../../../util/fit/root.js";
-import { type ResultsDatabase } from "../util/situational-config.js";
+import { type ResultsDatabase } from "../util/results-database.js";
 
 /** The Docker network every situational container shares. */
 export const FIT_DOCKER_NETWORK = "fit";

@@ -259,7 +259,7 @@ if (isMain(import.meta.url)) {
   runCli(() => {
     const path = process.argv[2];
     if (!path) {
-      console.error("Usage: tsx src/workflows/fit-functional/definition/resolve-definition.ts <file.yaml>");
+      console.error("Usage: tsx src/workflows/fit-shared/definition/resolve-definition.ts <file.yaml>");
       process.exit(2);
     }
     console.log(JSON.stringify(resolveDefinition(loadDefinition(path)), null, 2));

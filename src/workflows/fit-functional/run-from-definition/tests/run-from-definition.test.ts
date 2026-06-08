@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { sdkByValue } from "../../../../util/sdk/sdks.js";
 import type { ClusterCommandExecutor } from "../../../cluster/cluster-create/allocate-cluster.js";
-import type { ResolvedDefinition } from "../../definition/resolve-definition.js";
+import type { ResolvedDefinition } from "../../../fit-shared/definition/resolve-definition.js";
 import type { FitExecutionContext } from "../../../fit-shared/util/remote-fit-run.js";
 import { cbdinoclusterSetupFailed, finalizeRunFromDefinition, runTests, setupCluster } from "../run-from-definition.js";
 
@@ -155,13 +155,14 @@ test("setupCluster leaves the iterations unchanged when allocation fails", async
   );
 });
 
-test("cbdinoclusterSetupFailed flags a missing shared cluster after setup-cluster", () => {
-  assert.equal(cbdinoclusterSetupFailed(definition(), ["setup-cluster", "run"]), true);
+test("cbdinoclusterSetupFailed flags a missing shared cluster after the cluster phase ran", () => {
+  assert.equal(cbdinoclusterSetupFailed(definition(), true), true);
 
   const resolved = definition();
   resolved.iterations = resolved.iterations.map((iteration) => ({ ...iteration, cluster: cluster() }));
-  assert.equal(cbdinoclusterSetupFailed(resolved, ["setup-cluster", "run"]), false);
-  assert.equal(cbdinoclusterSetupFailed(definition(), ["run"]), false);
+  assert.equal(cbdinoclusterSetupFailed(resolved, true), false);
+  // When the cluster phase was skipped (resumed), a missing cluster isn't a setup failure.
+  assert.equal(cbdinoclusterSetupFailed(definition(), false), false);
 });
 
 test("finalizeRunFromDefinition writes AGENTS.md and includes it in artifacts", () => {

@@ -3,7 +3,7 @@
  *
  * Run on their own:
  *   npm test
- *   node --import tsx --test src/workflows/cluster-select/tests/classify-connection-string.test.ts
+ *   node --import tsx --test src/workflows/cluster/cluster-select/tests/classify-connection-string.test.ts
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";

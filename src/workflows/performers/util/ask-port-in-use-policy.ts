@@ -5,7 +5,7 @@
  * performer-port.ts.
  *
  * Run on its own:
- *   npx tsx src/workflows/performers/ask-port-in-use-policy.ts
+ *   npx tsx src/workflows/performers/util/ask-port-in-use-policy.ts
  *
  * Prints the chosen policy.
  */

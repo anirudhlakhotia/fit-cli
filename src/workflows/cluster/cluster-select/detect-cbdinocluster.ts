@@ -9,7 +9,7 @@
  * <id>` for the one the user picks.
  *
  * Run on its own:
- *   npx tsx src/workflows/cluster-select/detect-cbdinocluster.ts
+ *   npx tsx src/workflows/cluster/cluster-select/detect-cbdinocluster.ts
  *
  * Prints the chosen cluster as JSON, or "(none)".
  */

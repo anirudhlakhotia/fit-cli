@@ -11,6 +11,7 @@ import {
   loadFitCliConfig,
   parseFitCliConfig,
   resolveGithubToken,
+  resolveResultsDbCredentials,
   saveFitCliConfig,
 } from "../config.js";
 
@@ -83,6 +84,38 @@ test("resolveGithubToken falls back to GITHUB_TOKEN then GH_TOKEN", () => {
     "fallback",
   );
   assert.equal(resolveGithubToken({ config: { version: FIT_CLI_CONFIG_VERSION }, env: {} }), undefined);
+});
+
+test("parses stored results-database credentials", () => {
+  const parsed = parseFitCliConfig(`
+version: 1
+resultsDb:
+  password: s3cret
+  username: readonly
+`);
+
+  assert.deepEqual(parsed, {
+    version: FIT_CLI_CONFIG_VERSION,
+    resultsDb: { password: "s3cret", username: "readonly" },
+  });
+});
+
+test("resolveResultsDbCredentials prefers config over the environment", () => {
+  const credentials = resolveResultsDbCredentials({
+    config: { version: FIT_CLI_CONFIG_VERSION, resultsDb: { password: "from-config" } },
+    env: { FIT_RESULTS_DB_PASSWORD: "from-env", FIT_RESULTS_DB_USERNAME: "env-user" },
+  });
+  assert.deepEqual(credentials, { password: "from-config", username: "env-user" });
+});
+
+test("resolveResultsDbCredentials falls back to FIT_RESULTS_DB_* env vars", () => {
+  assert.deepEqual(
+    resolveResultsDbCredentials({
+      config: { version: FIT_CLI_CONFIG_VERSION },
+      env: { FIT_RESULTS_DB_PASSWORD: "env-pass" },
+    }),
+    { password: "env-pass", username: undefined },
+  );
 });
 
 test("rejects unsupported newer config versions", () => {

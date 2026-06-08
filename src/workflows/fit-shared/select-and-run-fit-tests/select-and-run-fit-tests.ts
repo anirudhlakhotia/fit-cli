@@ -3,7 +3,7 @@
  *
  * Run on its own (optionally pass a FITConfiguration.json path first, then add
  * --root <dir> to point elsewhere):
- *   npx tsx src/workflows/fit-functional/select-and-run-fit-tests/select-and-run-fit-tests.ts [fitConfigPath]
+ *   npx tsx src/workflows/fit-shared/select-and-run-fit-tests/select-and-run-fit-tests.ts [fitConfigPath]
  */
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { rootDirFromArgv } from "../../../util/fit/root.js";
@@ -25,7 +25,7 @@ if (isMain(import.meta.url)) {
     const { rootDir, positionals } = rootDirFromArgv(process.argv.slice(2));
     if (positionals.length > 1) {
       console.error(
-        "Usage: tsx src/workflows/fit-functional/select-and-run-fit-tests/select-and-run-fit-tests.ts [fitConfigPath] [--root <dir>]",
+        "Usage: tsx src/workflows/fit-shared/select-and-run-fit-tests/select-and-run-fit-tests.ts [fitConfigPath] [--root <dir>]",
       );
       process.exit(2);
     }

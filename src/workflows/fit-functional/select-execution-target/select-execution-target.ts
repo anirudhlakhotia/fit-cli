@@ -19,25 +19,44 @@ import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { ensureFitCliConfigEnv } from "../../../util/fit/config.js";
 import { fitCliError, fitCliWarn } from "../../../util/non-fit/fit-cli-log.js";
 import { confirm, input, select } from "../../../util/non-fit/prompts.js";
-import { LocalTarget } from "../../../util/non-fit/local-target.js";
-import { resolveRegion, type AwsOptions } from "../../../util/non-fit/aws/aws-cli.js";
-import { checkCredentials } from "../../../util/non-fit/aws/identity.js";
-import { listInstances } from "../../../util/non-fit/aws/list-instances.js";
-import { type InstanceInfo } from "../../../util/non-fit/aws/parse-instance.js";
-import { type ExecutionTarget } from "../../../util/non-fit/target.js";
-import { FIT_INSTANCE_USER, provisionFitInstance } from "../../../util/fit/aws/fit-instance.js";
 import {
   formatEc2CleanupPromptBanner,
   formatEc2DeletionResponsibilityBanner,
   terminateInstanceCommand,
 } from "../../../util/fit/aws/lifecycle-warning.js";
+import { LocalTarget } from "../../../util/non-fit/local-target.js";
+import { resolveRegion, type AwsOptions } from "../../../util/non-fit/aws/aws-cli.js";
+import { checkCredentials } from "../../../util/non-fit/aws/identity.js";
+import { listInstances } from "../../../util/non-fit/aws/list-instances.js";
+import { terminateInstance } from "../../../util/non-fit/aws/terminate-instance.js";
+import { type InstanceInfo } from "../../../util/non-fit/aws/parse-instance.js";
+import { type ExecutionTarget } from "../../../util/non-fit/target.js";
+import { FIT_INSTANCE_USER, provisionFitInstance } from "../../../util/fit/aws/fit-instance.js";
 import { RemoteTarget } from "../../../util/non-fit/remote-target.js";
 import { waitForSsh, type RemoteHost } from "../../../util/non-fit/ssh.js";
+import type { ResumeTargetState } from "../run-from-definition/resume-state.js";
+
+/**
+ * How to tear down (or leave up) the chosen target. The run owns the decision —
+ * see the unified "leave everything up?" prompt in run-from-definition — so this
+ * carries the primitives rather than prompting itself. `terminate` is present
+ * only for an instance fit-cli is responsible for.
+ */
+export interface ExecutionTargetTeardown {
+  kind: "local" | "remote";
+  instanceId?: string;
+  address?: string;
+  region?: string;
+  user?: string;
+  identityFile?: string;
+  /** Terminate the instance (and delete its key when known). */
+  terminate?: () => Promise<void>;
+}
 
 /** The outcome of choosing where to run. */
 export type ExecutionTargetOutcome =
-  /** A target is ready; call `cleanup` when the run is done. */
-  | (RunOutput & { ready: true; target: ExecutionTarget; cleanup: () => Promise<void> })
+  /** A target is ready; `teardown` carries how to dispose of (or keep) it. */
+  | (RunOutput & { ready: true; target: ExecutionTarget; teardown: ExecutionTargetTeardown })
   /** No target is ready; the reason was already printed. */
   | (RunOutput & { ready: false });
 
@@ -48,6 +67,82 @@ const MANUAL_INSTANCE = "__manual__";
 
 function promptId(attempt: number, suffix: string): string {
   return `execution-target.attempt-${attempt}.${suffix}`;
+}
+
+const LOCAL_TEARDOWN: ExecutionTargetTeardown = { kind: "local" };
+
+/**
+ * Tear down (or, if the user wants to debug, keep) a provisioned instance after
+ * a one-shot flow that has no resume concept (the guided flow). Prompts only when
+ * fit-cli is responsible for terminating the box.
+ */
+export async function teardownTargetInteractively(teardown: ExecutionTargetTeardown): Promise<void> {
+  if (!teardown.terminate || !teardown.instanceId) {
+    return;
+  }
+  const { instanceId, address } = teardown;
+  const region = teardown.region ?? resolveRegion();
+  const terminateCommand = terminateInstanceCommand(instanceId, region);
+  fitCliWarn(`\n${formatEc2CleanupPromptBanner(instanceId, region, address ?? "")}\n`);
+  const keep = await confirm({
+    promptId: "execution-target.teardown.keep",
+    message: `Keep EC2 instance ${instanceId} running for debugging?`,
+    default: false,
+  });
+  if (keep) {
+    fitCliWarn(`\n${formatEc2DeletionResponsibilityBanner(instanceId, region, address ?? "")}\n`);
+    console.log(`\nLeaving ${instanceId} running${address ? ` at ${address}` : ""}.`);
+    console.log(`Terminate later: ${terminateCommand}`);
+    return;
+  }
+  console.log(`\nTerminating ${instanceId}...`);
+  await teardown.terminate();
+  console.log("✓ Terminated.");
+}
+
+/**
+ * Reconnect to the target a previous run used, without prompting — the resume
+ * path. Local is immediate; a remote target is reached over SSH using the saved
+ * address, user and key, and is verified reachable before returning.
+ */
+export async function reconnectExecutionTarget(target: ResumeTargetState): Promise<ExecutionTargetOutcome> {
+  if (target.kind === "local") {
+    return { ready: true, target: new LocalTarget(), teardown: LOCAL_TEARDOWN, artifacts: [], details: [] };
+  }
+
+  const { address, user, identityFile, instanceId, region } = target;
+  if (!address || !user || !identityFile) {
+    fitCliError("\nresume: the saved run state is missing the instance address, user or key.");
+    return { ready: false, artifacts: [], details: [] };
+  }
+
+  const remoteHost: RemoteHost = { host: address, user, identityFile };
+  process.stdout.write(`Reconnecting to ${user}@${address}...`);
+  if (!(await waitForSsh(remoteHost))) {
+    console.log(" unreachable");
+    fitCliError(`\nresume: couldn't reach ${user}@${address} over SSH. The instance may be stopped or gone.`);
+    return { ready: false, artifacts: [], details: [] };
+  }
+  console.log(" ready");
+
+  const teardown: ExecutionTargetTeardown = {
+    kind: "remote",
+    ...(instanceId ? { instanceId } : {}),
+    address,
+    ...(region ? { region } : {}),
+    user,
+    identityFile,
+    ...(instanceId
+      ? { terminate: () => terminateInstance(instanceId, region ? { region } : {}) }
+      : {}),
+  };
+  return {
+    ready: true,
+    target: new RemoteTarget(remoteHost),
+    teardown,
+    artifacts: [],
+    details: [{ label: "SSH debug command", value: `ssh -i ${identityFile} ${user}@${address}` }],
+  };
 }
 
 /**
@@ -71,7 +166,7 @@ export async function selectExecutionTarget(): Promise<ExecutionTargetOutcome> {
     });
 
     if (choice === "local") {
-      return { ready: true, target: new LocalTarget(), cleanup: async () => {}, artifacts: [], details: [] };
+      return { ready: true, target: new LocalTarget(), teardown: LOCAL_TEARDOWN, artifacts: [], details: [] };
     }
 
     // Both EC2 paths need credentials, from the environment or config.yaml.
@@ -99,26 +194,16 @@ export async function selectExecutionTarget(): Promise<ExecutionTargetOutcome> {
 
     try {
       const instance = await provisionFitInstance();
-      const cleanup = async (): Promise<void> => {
-        const region = resolveRegion();
-        const terminateCommand = terminateInstanceCommand(instance.instanceId, region);
-        fitCliWarn(`\n${formatEc2CleanupPromptBanner(instance.instanceId, region, instance.address)}\n`);
-        const keep = await confirm({
-          promptId: "execution-target.teardown.keep",
-          message: `Keep EC2 instance ${instance.instanceId} running for debugging?`,
-          default: false,
-        });
-        if (keep) {
-          fitCliWarn(`\n${formatEc2DeletionResponsibilityBanner(instance.instanceId, region, instance.address)}\n`);
-          console.log(`\nLeaving ${instance.instanceId} running at ${instance.address}.`);
-          console.log(`Terminate later: ${terminateCommand}`);
-          return;
-        }
-        console.log(`\nTerminating ${instance.instanceId}...`);
-        await instance.terminate();
-        console.log("✓ Terminated.");
+      const teardown: ExecutionTargetTeardown = {
+        kind: "remote",
+        instanceId: instance.instanceId,
+        address: instance.address,
+        region: resolveRegion(),
+        user: FIT_INSTANCE_USER,
+        identityFile: instance.keyPath,
+        terminate: instance.terminate,
       };
-      return { ready: true, target: instance.target, cleanup, artifacts: instance.artifacts, details: instance.details };
+      return { ready: true, target: instance.target, teardown, artifacts: instance.artifacts, details: instance.details };
     } catch (err) {
       console.error(`\n✗ Could not provision an EC2 instance: ${err instanceof Error ? err.message : String(err)}`);
       return { ready: false, artifacts: [], details: [] };
@@ -198,13 +283,11 @@ async function connectExistingInstance(attempt: number): Promise<ExecutionTarget
   console.log(" ready");
 
   console.log(`\n✓ Connected to existing instance ${user}@${host}`);
+  // The user brought this instance, so fit-cli won't terminate it — no `terminate`.
   return {
     ready: true,
     target: new RemoteTarget(remoteHost),
-    cleanup: () => {
-      console.log(`\nLeaving existing instance ${host} as we found it (you brought it; you tear it down).`);
-      return Promise.resolve();
-    },
+    teardown: { kind: "remote", address: host, user, identityFile },
     artifacts: [],
     details: [{ label: "SSH debug command", value: `ssh -i ${identityFile} ${user}@${host}` }],
   };
@@ -218,7 +301,9 @@ if (isMain(import.meta.url)) {
     }
     console.log(`\nTarget: ${outcome.target.description} (${outcome.target.kind})`);
     await outcome.target.run("uname", ["-a"]);
-    await outcome.cleanup();
+    if (outcome.teardown.terminate) {
+      await outcome.teardown.terminate();
+    }
     return { artifacts: outcome.artifacts, details: outcome.details };
   });
 }

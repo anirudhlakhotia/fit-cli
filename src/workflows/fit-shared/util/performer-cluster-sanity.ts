@@ -3,8 +3,8 @@
  * reach the selected cluster.
  *
  * Run on its own:
- *   npx tsx src/workflows/fit-shared/performer-cluster-sanity.ts <connection-string> <performer-container-id>
- *   npx tsx src/workflows/fit-shared/performer-cluster-sanity.ts --help
+ *   npx tsx src/workflows/fit-shared/util/performer-cluster-sanity.ts <connection-string> <performer-container-id>
+ *   npx tsx src/workflows/fit-shared/util/performer-cluster-sanity.ts --help
  */
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { fitCliError, fitCliWarn } from "../../../util/non-fit/fit-cli-log.js";
@@ -395,13 +395,13 @@ export async function runPerformerClusterSanityCheck(
 const HELP = `Check whether a running performer container can plausibly reach a Couchbase cluster.
 
 Usage:
-  npx tsx src/workflows/fit-shared/performer-cluster-sanity.ts <connection-string> <performer-container-id>
-  npx tsx src/workflows/fit-shared/performer-cluster-sanity.ts <connection-string> <performer-container-id> --docker <command>
-  npx tsx src/workflows/fit-shared/performer-cluster-sanity.ts --help
+  npx tsx src/workflows/fit-shared/util/performer-cluster-sanity.ts <connection-string> <performer-container-id>
+  npx tsx src/workflows/fit-shared/util/performer-cluster-sanity.ts <connection-string> <performer-container-id> --docker <command>
+  npx tsx src/workflows/fit-shared/util/performer-cluster-sanity.ts --help
 
 Examples:
-  npx tsx src/workflows/fit-shared/performer-cluster-sanity.ts couchbase://172.18.0.2 abc123
-  npx tsx src/workflows/fit-shared/performer-cluster-sanity.ts couchbase://localhost abc123 --docker /usr/bin/docker
+  npx tsx src/workflows/fit-shared/util/performer-cluster-sanity.ts couchbase://172.18.0.2 abc123
+  npx tsx src/workflows/fit-shared/util/performer-cluster-sanity.ts couchbase://localhost abc123 --docker /usr/bin/docker
 
 Exits 0 when the sanity check passes or is skipped, and 1 when it fails.`;
 

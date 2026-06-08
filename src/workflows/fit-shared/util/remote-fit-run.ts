@@ -230,7 +230,11 @@ export function createLocalFitExecutionContext(rootDir: string): FitExecutionCon
   };
 }
 
-async function createRemoteFitExecutionContext(target: ExecutionTarget, sdk: Sdk): Promise<FitExecutionContext> {
+async function createRemoteFitExecutionContext(
+  target: ExecutionTarget,
+  sdk: Sdk,
+  skipPreparation = false,
+): Promise<FitExecutionContext> {
   const rootDir = remoteFitRootDir();
   const binDir = remoteFitBinDir(rootDir);
   const wrapperPath = remoteDockerWrapperPath(rootDir);
@@ -238,17 +242,24 @@ async function createRemoteFitExecutionContext(target: ExecutionTarget, sdk: Sdk
   console.log(`\nPreparing a remote FIT workspace on ${target.description}...`);
   await target.run("mkdir", ["-p", rootDir]);
 
-  console.log("\nInstalling the remote FIT dependencies...");
-  // apt-get is noisy; run it quietly (-qq) and drop stdout, keeping stderr so
-  // genuine failures still surface. DEBIAN_FRONTEND avoids interactive prompts.
-  const aptEnv = "DEBIAN_FRONTEND=noninteractive";
-  await target.run("sh", ["-lc", `sudo -n ${aptEnv} apt-get -qq update >/dev/null`]);
-  await target.run("sh", [
-    "-lc",
-    // JDK 17+ needed for jenkins-sdk ./gradlew
-    `sudo -n ${aptEnv} apt-get -qq install -y git docker.io openjdk-17-jdk-headless lsof >/dev/null`,
-  ]);
-  await target.run("sudo", ["-n", "systemctl", "enable", "--now", "docker"]);
+  // Resuming onto a box a previous run already prepared: the slow apt install and
+  // repo clones are done, so skip them. The cheap, idempotent bin/wrapper/creds
+  // setup below still runs so the context is consistent.
+  if (skipPreparation) {
+    console.log("→ resume: reusing the already-prepared remote workspace (skipping apt install and repo clones).");
+  } else {
+    console.log("\nInstalling the remote FIT dependencies...");
+    // apt-get is noisy; run it quietly (-qq) and drop stdout, keeping stderr so
+    // genuine failures still surface. DEBIAN_FRONTEND avoids interactive prompts.
+    const aptEnv = "DEBIAN_FRONTEND=noninteractive";
+    await target.run("sh", ["-lc", `sudo -n ${aptEnv} apt-get -qq update >/dev/null`]);
+    await target.run("sh", [
+      "-lc",
+      // JDK 17+ needed for jenkins-sdk ./gradlew
+      `sudo -n ${aptEnv} apt-get -qq install -y git docker.io openjdk-17-jdk-headless lsof >/dev/null`,
+    ]);
+    await target.run("sudo", ["-n", "systemctl", "enable", "--now", "docker"]);
+  }
 
   await target.run("mkdir", ["-p", binDir]);
   const localDockerWrapper = createRunFilePath("remote-docker-wrapper.sh");
@@ -259,14 +270,16 @@ async function createRemoteFitExecutionContext(target: ExecutionTarget, sdk: Sdk
   const githubToken = resolveGithubToken();
   if (githubToken) {
     await configureRemoteGitCredentials(target, rootDir, githubToken);
-  } else {
+  } else if (!skipPreparation) {
     console.log(
       "\n⚠ No GitHub token found — the private FIT repos will fail to clone.\n" +
         "  Add one with `npm run init`, or set GITHUB_TOKEN / GH_TOKEN, then try again.",
     );
   }
 
-  await ensureRemoteRepos(target, rootDir, remoteFitRepos(sdk));
+  if (!skipPreparation) {
+    await ensureRemoteRepos(target, rootDir, remoteFitRepos(sdk));
+  }
 
   return {
     kind: "remote",
@@ -317,8 +330,9 @@ export async function createFitExecutionContext(
   target: ExecutionTarget,
   rootDir: string,
   sdk: Sdk,
+  options: { skipRemotePreparation?: boolean } = {},
 ): Promise<FitExecutionContext> {
   return target.kind === "local"
     ? createLocalFitExecutionContext(rootDir)
-    : await createRemoteFitExecutionContext(target, sdk);
+    : await createRemoteFitExecutionContext(target, sdk, options.skipRemotePreparation);
 }

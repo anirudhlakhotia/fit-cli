@@ -7,7 +7,7 @@
  *
  * Run on its own (this picks a cluster via the cluster-select workflow, then
  * generates its config; add --root <dir> to point elsewhere):
- *   npx tsx src/workflows/fit-functional/steps/generate-fit-configuration.ts
+ *   npx tsx src/workflows/fit-shared/fit-configuration/generate-fit-configuration.ts
  */
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { type RunOutput } from "../../../util/non-fit/artifacts.js";

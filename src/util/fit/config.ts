@@ -19,10 +19,18 @@ export interface FitCliGithubConfig {
   token?: string;
 }
 
+export interface FitCliResultsDbConfig {
+  /** Readonly password for the hosted results database (secret). */
+  password?: string;
+  /** Optional username override; defaults to the hosted database's default user. */
+  username?: string;
+}
+
 export interface FitCliConfig {
   version: 1;
   aws?: FitCliAwsConfig;
   github?: FitCliGithubConfig;
+  resultsDb?: FitCliResultsDbConfig;
 }
 
 export interface FitCliConfigResult {
@@ -142,10 +150,23 @@ export function validateFitCliConfig(raw: unknown): FitCliConfig {
       })
     : undefined;
 
+  const resultsDbValue = raw.resultsDb;
+  if (resultsDbValue !== undefined && !isRecord(resultsDbValue)) {
+    throw new InvalidFitCliConfigError(`Field "resultsDb" must be a mapping; got ${JSON.stringify(resultsDbValue)}`);
+  }
+
+  const resultsDb = resultsDbValue
+    ? compactRecord({
+        password: readOptionalString(resultsDbValue, "password", "resultsDb.password"),
+        username: readOptionalString(resultsDbValue, "username", "resultsDb.username"),
+      })
+    : undefined;
+
   return {
     version: FIT_CLI_CONFIG_VERSION,
     ...(aws && Object.keys(aws).length > 0 ? { aws } : {}),
     ...(github && Object.keys(github).length > 0 ? { github } : {}),
+    ...(resultsDb && Object.keys(resultsDb).length > 0 ? { resultsDb } : {}),
   };
 }
 
@@ -183,6 +204,25 @@ export function resolveGithubToken(
   const env = options.env ?? process.env;
   const config = options.config ?? loadFitCliConfig(options.path).config;
   return config?.github?.token ?? env.GITHUB_TOKEN ?? env.GH_TOKEN;
+}
+
+/**
+ * The hosted results-database readonly credentials. We prefer the values saved
+ * in config.yaml, then fall back to the FIT_RESULTS_DB_* environment variables
+ * (loaded from a `.env`), so existing setups keep working. The password is a
+ * secret, so it's resolved on demand (like the GitHub token) rather than pushed
+ * into the process env. Loads config.yaml itself when a parsed config isn't
+ * supplied.
+ */
+export function resolveResultsDbCredentials(
+  options: { config?: FitCliConfig; path?: string; env?: NodeJS.ProcessEnv } = {},
+): { password?: string; username?: string } {
+  const env = options.env ?? process.env;
+  const config = options.config ?? loadFitCliConfig(options.path).config;
+  return {
+    password: config?.resultsDb?.password ?? env.FIT_RESULTS_DB_PASSWORD,
+    username: config?.resultsDb?.username ?? env.FIT_RESULTS_DB_USERNAME,
+  };
 }
 
 export function applyFitCliConfigToEnv(config: FitCliConfig, env: NodeJS.ProcessEnv = process.env): string[] {

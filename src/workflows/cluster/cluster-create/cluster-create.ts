@@ -7,7 +7,7 @@
  * counterpart to the cluster-select workflow.
  *
  * Run this workflow on its own (this really does allocate a cluster):
- *   npx tsx src/workflows/cluster-create/cluster-create.ts
+ *   npx tsx src/workflows/cluster/cluster-create/cluster-create.ts
  */
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { type RunOutput } from "../../../util/non-fit/artifacts.js";

@@ -4,26 +4,29 @@
  * or results UI to run); the alternative is a local Docker database, which this
  * workflow can set up via ../setup-local-database.
  *
- * The hosted database's readonly password is secret, so it's read from the
- * environment (a `.env` file is loaded automatically) rather than prompted for
- * and logged. Ask on #the-fit-stop for the password — see .env.example.
+ * The hosted database's readonly password is secret, so it's taken from the
+ * fit-cli config (`resultsDb.password` in ~/.fit-cli/config.yaml), falling back
+ * to the FIT_RESULTS_DB_PASSWORD environment variable (a `.env` file is loaded
+ * automatically) rather than prompted for and logged. Ask on #the-fit-stop for
+ * the password — see .env.example.
  *
  * Run on its own (add --root <dir> to point elsewhere):
- *   npx tsx src/workflows/fit-situational/choose-results-database/choose-results-database.ts
+ *   npx tsx src/workflows/fit-shared/choose-results-database/choose-results-database.ts
  */
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { type RunOutput } from "../../../util/non-fit/artifacts.js";
 import { loadDotenv } from "../../../util/non-fit/dotenv.js";
+import { resolveResultsDbCredentials } from "../../../util/fit/config.js";
 import { fitCliError } from "../../../util/non-fit/fit-cli-log.js";
 import { select } from "../../../util/non-fit/prompts.js";
 import { rootDirFromArgv } from "../../../util/fit/root.js";
-import { type ResultsDatabase } from "../util/situational-config.js";
+import { type ResultsDatabase } from "../util/results-database.js";
 import { setupLocalDatabase } from "../setup-local-database/setup-local-database.js";
 
 export const HOSTED_RESULTS_DB_HOST = "faas.couchbase.com";
 export const HOSTED_RESULTS_DB_JDBC = `jdbc:postgresql://${HOSTED_RESULTS_DB_HOST}:5432/perf`;
 export const HOSTED_RESULTS_DB_USERNAME = "postgres";
-/** Environment variable holding the hosted results-DB readonly password. */
+/** Environment variable used as a fallback for the hosted results-DB password. */
 export const RESULTS_DB_PASSWORD_ENV = "FIT_RESULTS_DB_PASSWORD";
 
 type ResultsDatabaseMode = "hosted" | "local";
@@ -34,17 +37,20 @@ export type ResultsDatabaseOutcome =
   | (RunOutput & { ready: false });
 
 /**
- * Build the hosted database connection from the environment, or `undefined` if
- * the password isn't set. Pure (takes the env in) so it's easy to unit test.
+ * Build the hosted database connection from resolved credentials, or `undefined`
+ * if no password is available. Pure (takes the credentials in) so it's easy to
+ * unit test; see {@link resolveResultsDbCredentials} for where they come from.
  */
-export function hostedDatabaseFromEnv(env: NodeJS.ProcessEnv = process.env): ResultsDatabase | undefined {
-  const password = env[RESULTS_DB_PASSWORD_ENV]?.trim();
+export function buildHostedDatabase(
+  credentials: { password?: string; username?: string } = {},
+): ResultsDatabase | undefined {
+  const password = credentials.password?.trim();
   if (!password) {
     return undefined;
   }
   return {
     jdbc: HOSTED_RESULTS_DB_JDBC,
-    username: env.FIT_RESULTS_DB_USERNAME?.trim() || HOSTED_RESULTS_DB_USERNAME,
+    username: credentials.username?.trim() || HOSTED_RESULTS_DB_USERNAME,
     password,
   };
 }
@@ -67,11 +73,12 @@ async function askResultsDatabaseMode(): Promise<ResultsDatabaseMode> {
 /** Resolve the hosted database, explaining how to fix a missing password. */
 function resolveHostedDatabase(): ResultsDatabaseOutcome {
   loadDotenv();
-  const database = hostedDatabaseFromEnv();
+  const database = buildHostedDatabase(resolveResultsDbCredentials());
   if (!database) {
     fitCliError(
       `\n✗ The hosted results database needs a readonly password.\n` +
-        `  Ask on #the-fit-stop for it, then set ${RESULTS_DB_PASSWORD_ENV} in your .env (see .env.example).\n` +
+        `  Ask on #the-fit-stop for it, then set it as resultsDb.password in your fit-cli config\n` +
+        `  (~/.fit-cli/config.yaml — run \`npm run init\`) or ${RESULTS_DB_PASSWORD_ENV} in your .env (see .env.example).\n` +
         `  You must also be on the vpn-public VPN to reach ${HOSTED_RESULTS_DB_HOST}.`,
     );
     return { ready: false, artifacts: [], details: [] };
