@@ -13,7 +13,6 @@ export function defaultCbdinoclusterInitConfig(): PieceData {
       network: "fit",
       host: "unix:///var/run/docker.sock"
     },
-    "default-deployer": "docker",
   };
 }
 
@@ -57,6 +56,5 @@ export function defaultSituationalCbdinoclusterInitConfig(): PieceData {
       "default-cloud": "aws",
       "default-aws-region": "us-east-1",
     },
-    "default-deployer": "docker",
   };
 }

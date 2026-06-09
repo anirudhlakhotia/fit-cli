@@ -87,6 +87,10 @@ function buildCbdinoclusterFitConfig(cng: boolean): FitConfigPiece {
           connectionString: "couchbase://${defaultHostname}",
           tls: null,
         },
+        performer: {
+          connectionString: "couchbase2://${defaultHostname}",
+          tls: null,
+        },
         username: DEFAULT_CREDENTIALS.username,
         password: DEFAULT_CREDENTIALS.password,
         rest: {

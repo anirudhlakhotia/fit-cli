@@ -119,7 +119,6 @@ instances:
             enabled: true
             network: fit
             host: unix:///var/run/docker.sock
-          default-deployer: docker
     # Sessions not tied to any particular cluster (the name distinguishes these from sessions nested under clusters:)
     clusterlessSessions:
       - performer:

@@ -15,7 +15,6 @@ instances:
                 enabled: true
                 network: fit
                 host: unix:///var/run/docker.sock
-              default-deployer: docker
           config:
             nodes:
               - count: 3

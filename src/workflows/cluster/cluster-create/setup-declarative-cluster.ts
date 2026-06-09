@@ -409,7 +409,7 @@ export async function setupDeclarativeCluster(plan: {
     }
   }
 
-  return allocate(cbdinocluster, plan.config, plan.deployer, execution, cycleDir, cng);
+  return allocate(cbdinocluster, plan.config, plan.deployer ?? (cng ? "cao" : "docker"), execution, cycleDir, cng);
 }
 
 if (isMain(import.meta.url)) {
