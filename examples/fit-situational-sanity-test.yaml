@@ -5,7 +5,9 @@ version: 1
 type: fit
 instances:
   - aws: {}
+    # FIT/SIT creates its own clusters, so none are set up here.
     clusters: []
+    # FIT/SIT creates its own clusters via cbdinocluster; this init config must be present.
     cbdinocluster:
       init:
         # This file will be uploaded verbatim into clean environments as ~/.cbdinocluster
@@ -16,6 +18,7 @@ instances:
             network: fit
             host: unix:///var/run/docker.sock
           default-deployer: docker
+    # Sessions not tied to any particular cluster (the name distinguishes these from sessions nested under clusters:)
     clusterlessSessions:
       - performer:
           sdk: kotlin

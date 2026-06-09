@@ -26,7 +26,9 @@ import {
   buildFitSituationalDefinitionFrom,
   type DefinitionCluster,
   formatFitDefinition,
+  formatFitSituationalDefinition,
   writeFitDefinition,
+  writeFitSituationalDefinition,
 } from "../definition/generate-definition.js";
 import type { FitDefinition, InstanceLifetime, InstanceMode } from "../definition/types.js";
 import {
@@ -301,9 +303,15 @@ export async function createFitDefinition(rootDir: string): Promise<RunOutput> {
     instances: state.instances,
   });
 
-  const result = writeFitDefinition(definition);
+  const allRuns = definition.instances.flatMap((i) =>
+    [...(i.clusterlessSessions ?? []), ...i.clusters.flatMap((c) => c.sessions)].flatMap((s) => s.runs),
+  );
+  const hasSituational = allRuns.some((r) => r.type === "situational");
+  const write = hasSituational ? writeFitSituationalDefinition : writeFitDefinition;
+  const format = hasSituational ? formatFitSituationalDefinition : formatFitDefinition;
+  const result = write(definition);
   console.log(`\nWriting ${result.path}:\n`);
-  printWithoutTimestamps(formatFitDefinition(definition));
+  printWithoutTimestamps(format(definition));
   console.log(`\n✓ Wrote ${result.path}`);
   console.log(
     `\nRun it later with:\n` +

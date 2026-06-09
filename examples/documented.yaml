@@ -108,7 +108,9 @@ instances:
 
   - # Situational runs do not share a functional cluster. FIT/SIT creates its own.
     localhost: {}
+    # FIT/SIT creates its own clusters, so none are set up here.
     clusters: []
+    # FIT/SIT creates its own clusters via cbdinocluster; this init config must be present.
     cbdinocluster:
       init:
         config:
@@ -118,6 +120,7 @@ instances:
             network: fit
             host: unix:///var/run/docker.sock
           default-deployer: docker
+    # Sessions not tied to any particular cluster (the name distinguishes these from sessions nested under clusters:)
     clusterlessSessions:
       - performer:
           sdk: python

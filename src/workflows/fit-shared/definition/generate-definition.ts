@@ -208,6 +208,23 @@ export function formatFitDefinition(definition: FitDefinition): string {
   return text;
 }
 
+export function formatFitSituationalDefinition(definition: FitDefinition): string {
+  let text = formatFitDefinition(definition);
+  text = text.replace(
+    /^(\s*)clusters: \[\]$/gm,
+    "$1# FIT/SIT creates its own clusters, so none are set up here.\n$1clusters: []",
+  );
+  text = text.replace(
+    /^(\s*)cbdinocluster:\n(\s+)init:/gm,
+    "$1# FIT/SIT creates its own clusters via cbdinocluster; this init config must be present.\n$1cbdinocluster:\n$2init:",
+  );
+  text = text.replace(
+    /^(\s*)clusterlessSessions:$/gm,
+    "$1# Sessions not tied to any particular cluster (the name distinguishes these from sessions nested under clusters:)\n$1clusterlessSessions:",
+  );
+  return text;
+}
+
 export const formatFitFunctionalDefinition = formatFitDefinition;
 
 export interface WriteFitFunctionalDefinitionResult {
@@ -229,6 +246,19 @@ export function writeFitDefinition(
 }
 
 export const writeFitFunctionalDefinition = writeFitDefinition;
+
+export function writeFitSituationalDefinition(
+  definition: FitDefinition,
+  runDir: string = ensureRunDir(),
+): WriteFitFunctionalDefinitionResult {
+  mkdirSync(runDir, { recursive: true, mode: 0o700 });
+  const path = fitDefinitionPath(runDir);
+  writeFileSync(path, formatFitSituationalDefinition(definition));
+  return {
+    path,
+    artifact: artifactFromPath(path, "Generated fit definition file for reruns", runDir),
+  };
+}
 
 export function generateFitFunctionalDefinition(
   sdk: Sdk,
