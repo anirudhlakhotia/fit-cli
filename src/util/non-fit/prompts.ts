@@ -26,6 +26,13 @@ function drainStdin(): void {
     // discard stale input
   }
 
+  // Return the stream to paused mode so that no keystrokes are silently
+  // dropped between now and @inquirer attaching its readline 'data' listener.
+  // Without this, stdin remains in flowing mode and any character arriving
+  // before readline is wired up is lost (e.g. a fast "y" resolves as the
+  // default because only the subsequent Enter reaches the prompt).
+  process.stdin.pause();
+
   // Restore cooked mode — @inquirer's readline will re-enable raw mode.
   process.stdin.setRawMode(false);
 }
