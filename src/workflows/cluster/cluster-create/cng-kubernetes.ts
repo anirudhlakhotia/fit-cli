@@ -8,8 +8,9 @@
  *   setup, which leaves `k8s.enabled: "true"` in ~/.cbdinocluster. We only check
  *   that's present and bail with guidance if not — we don't manage it.
  * - a clean AWS instance: fit-cli installs k3d, creates the `fit-cli-cluster`
- *   k3d cluster, writes its kubeconfig, and points the uploaded ~/.cbdinocluster
- *   at it via a `k8s` block (see {@link buildRemoteK8sBlock}).
+ *   k3d cluster, writes its kubeconfig, installs the cao (Couchbase Autonomous
+ *   Operator) tools cbdinocluster needs, and points the uploaded ~/.cbdinocluster
+ *   at it all via a `k8s` block (see {@link buildRemoteK8sBlock}).
  *
  * Run on its own:
  *   # Check this machine's ~/.cbdinocluster is CNG-ready:
@@ -25,13 +26,14 @@ import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import type { PieceData } from "../../../util/non-fit/config-pieces.js";
 import { posixQuote } from "../../../util/non-fit/remote-target.js";
 import type { ClusterCommandExecutor } from "./allocate-cluster.js";
+import { CAO_TOOLS_VERSION, installCaoToolsRemote } from "./install-cao-tools.js";
+
+export { CAO_TOOLS_VERSION } from "./install-cao-tools.js";
 
 /** The k3d cluster fit-cli stands up for CNG on a clean instance. */
 export const CNG_K3D_CLUSTER_NAME = "fit-cli-cluster";
 /** k3d prefixes the kube context with `k3d-`. */
 export const CNG_K3D_CONTEXT = `k3d-${CNG_K3D_CLUSTER_NAME}`;
-/** The Couchbase Autonomous Operator tools version CNG uses (matches the cao block). */
-export const CAO_TOOLS_VERSION = "2.8.0";
 
 /** Guide for installing Kubernetes support for cbdinocluster (Linux). */
 export const CNG_KUBERNETES_GUIDE_URL =
@@ -121,13 +123,13 @@ export function remoteHomeFromWorkspace(workspaceRootDir: string): string {
 
 /**
  * Stand up Kubernetes on a clean instance for CNG: install k3d, create the
- * `fit-cli-cluster` k3d cluster, and write its kubeconfig where the uploaded
- * ~/.cbdinocluster expects it. cbdinocluster downloads the cao-tools it needs
- * into the configured `cao-tools` directory itself, so we only make sure the
- * directory exists.
+ * `fit-cli-cluster` k3d cluster, write its kubeconfig where the uploaded
+ * ~/.cbdinocluster expects it, and install the cao tools cbdinocluster needs into
+ * the configured `cao-tools` directory (see {@link installCaoToolsRemote}).
  *
- * Idempotent-ish: `k3d cluster create` is skipped if the cluster already exists,
- * so a resumed run on the same box doesn't fail.
+ * Idempotent-ish: `k3d cluster create` is skipped if the cluster already exists
+ * and the cao install is skipped if already present, so a resumed run on the same
+ * box doesn't fail.
  */
 export async function provisionRemoteK3d(
   execution: ClusterCommandExecutor,
@@ -166,9 +168,7 @@ export async function provisionRemoteK3d(
   });
 
   const caoToolsDir = `${home}/.dinotools/cao/${CAO_TOOLS_VERSION}`;
-  await execution.run("sh", ["-lc", `mkdir -p ${posixQuote(caoToolsDir)}`], undefined, {
-    display: `mkdir -p ${caoToolsDir}`,
-  });
+  await installCaoToolsRemote(execution, caoToolsDir);
   console.log(`→ setup-cluster: Kubernetes (k3d cluster ${CNG_K3D_CLUSTER_NAME}) is ready for CNG.`);
 }
 

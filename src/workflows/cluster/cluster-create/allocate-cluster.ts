@@ -129,10 +129,26 @@ export async function allocateCluster(
   mkdirSync(cycleDir, { recursive: true, mode: 0o700 });
   const localOutputFile = join(cycleDir, "cbdinocluster-allocate.stdout");
   const targetOutputFile = execution.targetFilePath(localOutputFile);
-  await execution.runToFile(cbdinocluster, args, targetOutputFile);
-  await execution.collectFile(targetOutputFile, localOutputFile);
-  const localOutput = readFileSync(localOutputFile, "utf8");
-  writeToDebugLog(localOutput);
+  let runError: unknown;
+  try {
+    await execution.runToFile(cbdinocluster, args, targetOutputFile);
+  } catch (err) {
+    runError = err;
+  }
+  // Always try to collect and log the output, even on failure — cbdinocluster's
+  // redirected output is still written to the file before it exits non-zero, and
+  // that output is exactly what's needed to diagnose the failure.
+  let localOutput = "";
+  try {
+    await execution.collectFile(targetOutputFile, localOutputFile);
+    localOutput = readFileSync(localOutputFile, "utf8");
+    writeToDebugLog(localOutput);
+  } catch {
+    // best-effort: file may not exist if SSH itself never started
+  }
+  if (runError !== undefined) {
+    throw runError;
+  }
   const clusterId = parseAllocatedId(localOutput);
   if (!clusterId) {
     throw new Error("cbdinocluster allocate didn't print a cluster id");
