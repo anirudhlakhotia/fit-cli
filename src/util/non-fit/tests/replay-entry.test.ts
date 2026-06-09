@@ -45,7 +45,7 @@ test("buildReplayDispatch resolves a repo-relative entrypoint against this check
         version: 1,
         createdAt: "2026-06-03T00:00:00.000Z",
         invocation: {
-          entrypoint: "src/main.ts",
+          entrypoint: "src/fit/main/main.ts",
           args: ["status"],
         },
         prompts: [],
@@ -56,7 +56,7 @@ test("buildReplayDispatch resolves a repo-relative entrypoint against this check
   );
 
   assert.deepEqual(buildReplayDispatch(["--replay", logFile]), {
-    entrypoint: join(REPO_ROOT, "src/main.ts"),
+    entrypoint: join(REPO_ROOT, "src/fit/main/main.ts"),
     args: ["--replay", logFile, "status"],
   });
 });

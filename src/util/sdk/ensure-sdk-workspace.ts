@@ -11,8 +11,8 @@
  * Exits 0 always (no extra repos are required).
  */
 import { isMain, runCli } from "../non-fit/cli.js";
-import type { Repo } from "../fit/repos.js";
-import { rootDirFromArgv } from "../fit/root.js";
+import type { Repo } from "../../fit/util/repos.js";
+import { rootDirFromArgv } from "../../fit/util/root.js";
 import { SDKS, sdkByValue, type Sdk } from "./sdks.js";
 
 /** Additional repos an SDK needs under ROOT_DIR before FIT commands can run. */

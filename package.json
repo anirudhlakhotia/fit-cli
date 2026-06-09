@@ -7,12 +7,12 @@
     "fit": "./dist/index.js"
   },
   "scripts": {
-    "start": "tsx src/main.ts",
-    "init": "tsx src/init.ts",
+    "start": "tsx src/fit/main/main.ts",
+    "init": "tsx src/fit/init/init.ts",
     "replay": "tsx src/util/non-fit/replay-entry.ts --replay",
-    "definition": "tsx src/definition.ts",
-    "cloud-instances": "tsx src/cloud-instances.ts",
-    "dev": "tsx watch src/main.ts",
+    "definition": "tsx src/fit/definition/definition.ts",
+    "cloud-instances": "tsx src/cloud/cloud-instances/cloud-instances.ts",
+    "dev": "tsx watch src/fit/main/main.ts",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
