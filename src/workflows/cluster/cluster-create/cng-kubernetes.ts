@@ -101,7 +101,7 @@ export function checkLocalhostCngKubernetes(home: string = homedir()): CngKubern
 export function buildRemoteK8sBlock(home: string): PieceData {
   return {
     k8s: {
-      enabled: "false",
+      enabled: "true",
       "cao-tools": `${home}/.dinotools/cao/${CAO_TOOLS_VERSION}`,
       kubeconfig: `${home}/.config/k3d/kubeconfig-${CNG_K3D_CLUSTER_NAME}.yaml`,
       context: CNG_K3D_CONTEXT,

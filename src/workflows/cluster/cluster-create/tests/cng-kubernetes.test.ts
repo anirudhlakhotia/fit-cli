@@ -33,7 +33,7 @@ test("cbdinoclusterHasK8sEnabled is false when k8s is absent, disabled, or malfo
 test("buildRemoteK8sBlock points cbdinocluster at the k3d cluster under the given home", () => {
   assert.deepEqual(buildRemoteK8sBlock("/home/ubuntu"), {
     k8s: {
-      enabled: "false",
+      enabled: "true",
       "cao-tools": "/home/ubuntu/.dinotools/cao/2.8.0",
       kubeconfig: "/home/ubuntu/.config/k3d/kubeconfig-fit-cli-cluster.yaml",
       context: CNG_K3D_CONTEXT,
