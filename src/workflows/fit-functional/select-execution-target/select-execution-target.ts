@@ -114,18 +114,18 @@ export async function reconnectExecutionTarget(target: ResumeTargetState): Promi
 }
 
 /**
- * Acquire the execution target a single cycle declared in its definition, without
+ * Acquire the execution target a single execution group declared in its definition, without
  * prompting for *which* kind of target to use — that choice lives in the file. A
- * localhost cycle (or any cycle when `forceLocalhost` is set) runs here on this
- * machine; an AWS cycle checks credentials and provisions a clean EC2 box whose
- * key lands under the cycle's run directory. Returns `ready: false` (reason already
+ * localhost execution group (or any execution group when `forceLocalhost` is set) runs here on this
+ * machine; an AWS execution group checks credentials and provisions a clean EC2 box whose
+ * key lands under the instance's run directory. Returns `ready: false` (reason already
  * printed) if EC2 credentials are unusable or provisioning fails, so the caller can
- * treat it as fatal to the cycle.
+ * treat it as fatal to the execution group.
  */
-export async function resolveCycleExecutionTarget(
+export async function resolveExecutionGroupTarget(
   instance: ResolvedInstance,
   forceLocalhost: boolean,
-  cycleIndex: number,
+  executionGroupIndex: number,
 ): Promise<ExecutionTargetOutcome> {
   if (forceLocalhost || instance.kind === "localhost") {
     return { ready: true, target: new LocalTarget(), teardown: LOCAL_TEARDOWN, artifacts: [], details: [] };
@@ -133,12 +133,12 @@ export async function resolveCycleExecutionTarget(
 
   // AWS EC2 needs credentials, from the environment or config.yaml.
   await ensureFitCliConfigEnv({
-    promptId: `execution-target.cycle-${cycleIndex}.config.create`,
+    promptId: `execution-target.execution-group-${executionGroupIndex}.config.create`,
     promptMessage: "No fit-cli config found. Run `npm run init` now before using EC2?",
   });
   const creds = await checkCredentials();
   if (!creds.ok) {
-    fitCliError(`\nCan't use EC2 for this cycle: ${creds.message}`);
+    fitCliError(`\nCan't use EC2 for this execution group: ${creds.message}`);
     console.log(
       "Add your AWS credentials with `npm run init`, or re-run with the localhost override to run everything locally.\n",
     );
@@ -148,7 +148,7 @@ export async function resolveCycleExecutionTarget(
 
   try {
     const provisioned = await provisionFitInstance({
-      instanceIndex: cycleIndex,
+      instanceIndex: executionGroupIndex,
       ...(instance.instanceType ? { instanceType: instance.instanceType } : {}),
       ...(instance.region ? { region: instance.region } : {}),
     });

@@ -33,7 +33,7 @@ export interface ResumeTargetState {
 
 /** The shared cluster a previous run stood up (or resolved). */
 export interface ResumeClusterState {
-  /** The resolved cluster the iterations test against. */
+  /** The resolved cluster the runs test against. */
   cluster: SelectedCluster;
   /** Whether the earlier run allocated it (and so teardown should remove it). */
   allocated: boolean;
@@ -43,9 +43,9 @@ export interface ResumeClusterState {
   cbdinoclusterCommand?: string;
 }
 
-/** A performer a previous run left running, per iteration. */
+/** A performer a previous run left running, per run. */
 export interface ResumePerformerState {
-  iterationIndex: number;
+  globalRunIndex: number;
   /** Docker container id, present when fit-cli manages the performer. */
   containerId?: string;
   port: number;
@@ -59,10 +59,10 @@ export interface ResumePerformerState {
 /** Everything a `--resume-at` run needs to pick up where a previous run stopped. */
 export interface RunState {
   version: 1;
-  cycleIndex: number;
-  /** Within the cycle at cycleIndex, the first iteration to run. Absent means 0. */
-  startIterationIndex?: number;
-  /** Whether the run forced every cycle onto localhost, ignoring instance settings. */
+  executionGroupIndex: number;
+  /** Within the execution group at executionGroupIndex, the first run to execute. Absent means 0. */
+  startRunIndex?: number;
+  /** Whether the run forced every execution group onto localhost, ignoring instance settings. */
   forceLocalhost?: boolean;
   target: ResumeTargetState;
   cluster?: ResumeClusterState;

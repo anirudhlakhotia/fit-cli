@@ -8,8 +8,8 @@ import { readRunState, runStatePath, writeRunState, type RunState } from "../res
 function sampleState(): RunState {
   return {
     version: 1,
-    cycleIndex: 0,
-    startIterationIndex: 0,
+    executionGroupIndex: 0,
+    startRunIndex: 0,
     target: { kind: "remote", instanceId: "i-123", address: "ec2.example.com", region: "us-east-1", user: "ubuntu", identityFile: "/tmp/key.pem" },
     cluster: {
       cluster: {
@@ -23,7 +23,7 @@ function sampleState(): RunState {
       clusterId: "cb-abc",
       cbdinoclusterCommand: "/home/ubuntu/fit-workspace/cbdinocluster",
     },
-    performers: [{ iterationIndex: 0, containerId: "deadbeef", port: 8060, sdk: "java" }],
+    performers: [{ globalRunIndex: 0, containerId: "deadbeef", port: 8060, sdk: "java" }],
   };
 }
 

@@ -103,7 +103,7 @@ import {
 import { writeAgentsGuide } from "../../fit-shared/util/write-agents-guide.js";
 import {
   reconnectExecutionTarget,
-  resolveCycleExecutionTarget,
+  resolveExecutionGroupTarget,
   type ExecutionTargetTeardown,
 } from "../select-execution-target/select-execution-target.js";
 import {
@@ -384,7 +384,7 @@ export async function runTests(
   const artifacts: Artifact[] = [];
   const details: Detail[] = [];
 
-  if (!(await runClusterDiagFn(run.cluster))) {
+  if (!(await runClusterDiagFn(run.cluster, { captureCommand: (cmd, args, cwd, runOpts) => execution.capture(cmd, args, cwd, runOpts) }))) {
     throwFatalToCycle("Cluster sanity test failed; this execution group cannot continue.");
   }
 
@@ -490,7 +490,7 @@ async function resumePerformer(
   savedState: RunState | undefined,
   globalIterationIndex: number,
 ): Promise<RunningPerformer | undefined> {
-  const saved = savedState?.performers.find((performer) => performer.iterationIndex === globalIterationIndex);
+  const saved = savedState?.performers.find((performer) => performer.globalRunIndex === globalIterationIndex);
   if (!saved?.containerId) {
     fitCliError(
       `\nresume: the run state has no performer for run ${globalIterationIndex + 1}. ` +
@@ -607,13 +607,13 @@ function targetStateFrom(teardown: ExecutionTargetTeardown): ResumeTargetState {
 
 interface TeardownInputs {
   definitionPath: string;
-  cycleIndex: number;
-  /** Within the active cycle, the iteration that was running at teardown. */
-  iterationIndex: number;
+  executionGroupIndex: number;
+  /** Within the active execution group, the run that was active at teardown. */
+  runIndex: number;
   /** The remote/local context — absent if the run failed before it came up. */
   execution?: FitExecutionContext;
   teardown: ExecutionTargetTeardown;
-  /** Whether the run forced every cycle onto localhost; persisted so resume matches. */
+  /** Whether the run forced every execution group onto localhost; persisted so resume matches. */
   forceLocalhost: boolean;
   clusterState?: ResumeClusterState;
   performers: readonly RunningPerformer[];
@@ -621,9 +621,9 @@ interface TeardownInputs {
 }
 
 /**
- * Tear down a single cycle's resources without prompting: stop its performers,
+ * Tear down a single execution group's resources without prompting: stop its performers,
  * remove a cluster it allocated, and terminate an instance fit-cli provisioned for
- * it. Used at the end of a cycle that completed (or was abandoned) and isn't the
+ * it. Used at the end of an execution group that completed (or was abandoned) and isn't the
  * one we might leave up for debugging.
  */
 async function disposeCycleResources(
@@ -680,7 +680,7 @@ function resumeSuggestions(inputs: TeardownInputs): ResumePoint[] {
  * failed before it came up); only the instance is then up to leave or terminate.
  */
 async function teardownRun(inputs: TeardownInputs): Promise<void> {
-  const { definitionPath, cycleIndex, iterationIndex, execution, teardown, forceLocalhost, clusterState, performers, performerStates } = inputs;
+  const { definitionPath, executionGroupIndex, runIndex, execution, teardown, forceLocalhost, clusterState, performers, performerStates } = inputs;
 
   const nothingToLeaveUp = !teardown.terminate && !clusterState && performerStates.length === 0;
   if (nothingToLeaveUp) {
@@ -696,8 +696,8 @@ async function teardownRun(inputs: TeardownInputs): Promise<void> {
   if (leaveUp) {
     const state: RunState = {
       version: 1,
-      cycleIndex,
-      startIterationIndex: iterationIndex,
+      executionGroupIndex,
+      startRunIndex: runIndex,
       ...(forceLocalhost ? { forceLocalhost } : {}),
       target: targetStateFrom(teardown),
       ...(clusterState ? { cluster: clusterState } : {}),
@@ -768,9 +768,9 @@ function isInteractiveRun(): boolean {
 }
 
 /**
- * Decide whether to force every cycle onto localhost, ignoring each cycle's
+ * Decide whether to force every execution group onto localhost, ignoring each group's
  * `instance:` setting. Resuming reuses the earlier run's choice. Otherwise: if no
- * cycle wants AWS there's nothing to override; interactively we default to honoring
+ * execution group wants AWS there's nothing to override; interactively we default to honoring
  * the file (opt in to localhost); non-interactively (CI) we default to localhost so
  * a CI run never provisions AWS by surprise.
  */
@@ -825,8 +825,8 @@ export async function runFromDefinition(
     }
     console.log(`  Resuming at: ${resumeAt}`);
   }
-  const startCycleIndex = savedState?.cycleIndex ?? 0;
-  const startIterationIndex = savedState?.startIterationIndex ?? 0;
+  const startCycleIndex = savedState?.executionGroupIndex ?? 0;
+  const startIterationIndex = savedState?.startRunIndex ?? 0;
 
   // Resolve GitHub credentials upfront so we fail before provisioning an instance.
   let githubCredentials: { user: string; token: string } | undefined;
@@ -895,7 +895,7 @@ export async function runFromDefinition(
   artifacts.push(artifactFromPath(definitionCopyPath, "Definition file used for this run", runDir));
 
   // One run-wide choice: force every execution group onto localhost, ignoring each group's
-  // declared instance. Each cycle then provisions (or reconnects) its own target.
+  // declared instance. Each execution group then provisions (or reconnects) its own target.
   const forceLocalhost = await resolveForceLocalhost(executionGroups.slice(startCycleIndex), savedState);
 
   // The "active" set tracks the cycle currently up so the outer finally tears down
@@ -931,7 +931,7 @@ export async function runFromDefinition(
       const isResumeStartCycle = savedState !== undefined && cycleIndex === startCycleIndex;
       const targetOutcome = isResumeStartCycle
         ? await reconnectExecutionTarget(savedState.target)
-        : await resolveCycleExecutionTarget(group.instance, forceLocalhost, cycleIndex);
+        : await resolveExecutionGroupTarget(group.instance, forceLocalhost, cycleIndex);
       artifacts.push(...targetOutcome.artifacts);
       details.push(...targetOutcome.details);
       if (!targetOutcome.ready) {
@@ -1040,7 +1040,7 @@ export async function runFromDefinition(
                 cyclePerformers.push(performer);
                 if (performer.containerId) {
                   cyclePerformerStates.push({
-                    iterationIndex: globalIterationIndex,
+                    globalRunIndex: globalIterationIndex,
                     containerId: performer.containerId,
                     port: iteration.performerPort,
                     sdk: iteration.sdk.value,
@@ -1119,8 +1119,8 @@ export async function runFromDefinition(
   } finally {
     await teardownRun({
       definitionPath,
-      cycleIndex: activeCycleIndex,
-      iterationIndex: activeIterationIndex,
+      executionGroupIndex: activeCycleIndex,
+      runIndex: activeIterationIndex,
       ...(activeExecution ? { execution: activeExecution } : {}),
       teardown: activeTeardown,
       forceLocalhost,
