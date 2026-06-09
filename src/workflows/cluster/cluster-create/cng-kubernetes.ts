@@ -67,7 +67,8 @@ export function cngKubernetesMissingMessage(): string {
   return (
     "cbdinocluster requires Kubernetes support to run CNG. On Linux, follow this guide:\n  " +
     CNG_KUBERNETES_GUIDE_URL +
-    "\nThen re-run. (fit-cli looked for a `k8s` block with `enabled: \"true\"` in ~/.cbdinocluster.)"
+    "\nThen re-run." +
+    "\nfit-cli looked for a `k8s` block with `enabled: \"true\"` in ~/.cbdinocluster.  You can also try running `cbdinocluster init` and configure k8s."
   );
 }
 

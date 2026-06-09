@@ -7,27 +7,26 @@ import YAML from "yaml";
 import { artifactFromPath, type Artifact, type RunOutput } from "../../../util/non-fit/artifacts.js";
 import { printWithoutTimestamps } from "../../../util/non-fit/fit-cli-log.js";
 import { ensureRunDir } from "../../../util/non-fit/replay.js";
-import type { Sdk } from "../../../util/sdk/sdks.js";
 import type { PieceData } from "../../../util/non-fit/config-pieces.js";
+import type { Sdk } from "../../../util/sdk/sdks.js";
 import { buildClusterDefObject, type ClusterDef } from "../../cluster/cluster-create/build-cluster-def.js";
-import { defaultCbdinoclusterInitConfig, defaultSituationalCbdinoclusterInitConfig } from "../../cluster/cluster-create/default-cbdinocluster-init-config.js";
+import {
+  defaultCbdinoclusterInitConfig,
+  defaultSituationalCbdinoclusterInitConfig,
+} from "../../cluster/cluster-create/default-cbdinocluster-init-config.js";
 import type { ClusterExistsPolicy } from "../../cluster/cluster-create/cluster-exists-policy.js";
-import type { PortInUsePolicy } from "../../performers/util/performer-port.js";
 import type { SelectedCluster } from "../../cluster/cluster-select/cluster-select.js";
+import type { PortInUsePolicy } from "../../performers/util/performer-port.js";
 import type { FitTestSelection } from "../../fit-shared/select-fit-tests/select-fit-tests.js";
 import {
   CURRENT_FIT_DEFINITION_VERSION,
   FIT_DEFINITION_TYPE,
-  type CycleInstanceSetup,
-  type FitCycle,
-  type FitDefinition,
   type FitConfigPiece,
-  type FunctionalCycle,
-  type FunctionalIteration,
-  type PerformerSetup,
-  type SituationalCycle,
+  type FitDefinition,
+  type InstanceLifetime,
+  type InstanceMode,
+  type SessionLifetime,
   type SituationalDatabaseMode,
-  type SituationalIteration,
 } from "./types.js";
 
 export function fitDefinitionPath(runDir: string = ensureRunDir()): string {
@@ -48,18 +47,17 @@ export interface DefinitionInputs {
   onClusterExists?: ClusterExistsPolicy;
   onPortInUse?: PortInUsePolicy;
   selection: FitTestSelection;
-  /** Where the cycle runs. Omitted ⇒ no `execution` block (localhost at run time). */
-  instance?: CycleInstanceSetup;
+  instance?: InstanceMode;
 }
 
 export interface SituationalDefinitionInputs {
   sdk: Sdk;
   version?: string;
+  gerritRef?: string;
   onPortInUse?: PortInUsePolicy;
   selection: FitTestSelection;
   databaseMode: SituationalDatabaseMode;
-  /** Where the cycle runs. Omitted ⇒ no `execution` block (localhost at run time). */
-  instance?: CycleInstanceSetup;
+  instance?: InstanceMode;
 }
 
 function buildClusterAccessFitConfig(cluster: SelectedCluster): FitConfigPiece {
@@ -74,82 +72,93 @@ function buildClusterAccessFitConfig(cluster: SelectedCluster): FitConfigPiece {
   return fitConfig;
 }
 
-function buildFunctionalCycleCluster(
-  cluster: DefinitionCluster,
-  onClusterExists?: ClusterExistsPolicy,
-): FunctionalCycle["cluster"] {
-  return cluster.kind === "connection"
-    ? { useExisting: {} }
-    : {
-        cbdinocluster: {
-          init: { config: defaultCbdinoclusterInitConfig() },
-          config: buildClusterDefObject(cluster.def),
-          ...(onClusterExists ? { onClusterExists } : {}),
-        },
-      };
-}
-
-function buildRuntime(selection: FitTestSelection): FunctionalIteration["runtime"] {
+function buildTests(selection: FitTestSelection) {
   return {
-    tests: selection.mavenTestSelector
+    run: selection.mavenTestSelector
       ? selection.selectedTests.map((test) => test.className)
       : "all",
+  } as const;
+}
+
+function buildPerformerSession(
+  sdk: Sdk,
+  version: string | undefined,
+  onPortInUse: PortInUsePolicy | undefined,
+): Omit<SessionLifetime, "runs"> {
+  return {
+    performer: {
+      sdk: sdk.value,
+      ...(version ? { version } : {}),
+      ...(onPortInUse ? { onPortInUse } : {}),
+    },
   };
 }
 
-export function buildFunctionalIterationFrom(inputs: DefinitionInputs): FunctionalIteration {
-  const performer: PerformerSetup = {
-    sdk: inputs.sdk.value,
-    ...(inputs.version ? { version: inputs.version } : {}),
-    ...(inputs.onPortInUse ? { onPortInUse: inputs.onPortInUse } : {}),
-  };
-  const fitConfig = inputs.cluster.kind === "connection"
-    ? buildClusterAccessFitConfig(inputs.cluster.cluster)
-    : undefined;
+function buildFunctionalInstance(inputs: DefinitionInputs): InstanceLifetime {
   return {
-    ...(fitConfig !== undefined ? { fitConfig } : {}),
-    setup: { performer },
-    runtime: buildRuntime(inputs.selection),
-  };
-}
-
-export function buildSituationalIterationFrom(inputs: SituationalDefinitionInputs): SituationalIteration {
-  return {
-    setup: {
-      performer: {
-        sdk: inputs.sdk.value,
-        ...(inputs.version ? { version: inputs.version } : {}),
-        ...(inputs.onPortInUse ? { onPortInUse: inputs.onPortInUse } : {}),
+    ...(inputs.instance ?? { localhost: {} }),
+    clusters: [
+      {
+        ...(inputs.cluster.kind === "connection"
+          ? {
+              connection: {
+                connectionString: `${inputs.cluster.cluster.scheme}://${inputs.cluster.cluster.defaultHostname}`,
+                username: inputs.cluster.cluster.credentials.username,
+                password: inputs.cluster.cluster.credentials.password,
+                tls: inputs.cluster.cluster.tls,
+              },
+            }
+          : {
+              cbdinocluster: {
+                init: { config: defaultCbdinoclusterInitConfig() },
+                config: buildClusterDefObject(inputs.cluster.def),
+                ...(inputs.onClusterExists ? { onClusterExists: inputs.onClusterExists } : {}),
+              },
+            }),
+        sessions: [
+          {
+            ...buildPerformerSession(inputs.sdk, inputs.version, inputs.onPortInUse),
+            runs: [
+              {
+                type: "functional",
+                ...(inputs.cluster.kind === "connection"
+                  ? { fitConfig: buildClusterAccessFitConfig(inputs.cluster.cluster) }
+                  : {}),
+                tests: buildTests(inputs.selection),
+              },
+            ],
+          },
+        ],
       },
-    },
-    situational: {
-      database: { mode: inputs.databaseMode },
-    },
-    runtime: buildRuntime(inputs.selection),
+    ],
   };
 }
 
-export function buildFunctionalCycleFrom(inputs: DefinitionInputs & { iterations?: FunctionalIteration[] }): FunctionalCycle {
+function buildSituationalInstance(inputs: SituationalDefinitionInputs): InstanceLifetime {
   return {
-    type: "functional",
-    ...(inputs.instance ? { execution: { instance: inputs.instance } } : {}),
-    cluster: buildFunctionalCycleCluster(inputs.cluster, inputs.onClusterExists),
-    iterations: inputs.iterations ?? [buildFunctionalIterationFrom(inputs)],
-  };
-}
-
-export function buildSituationalCycleFrom(inputs: SituationalDefinitionInputs & { iterations?: SituationalIteration[] }): SituationalCycle {
-  return {
-    type: "situational",
-    ...(inputs.instance ? { execution: { instance: inputs.instance } } : {}),
+    ...(inputs.instance ?? { localhost: {} }),
+    clusters: [],
     cbdinocluster: { init: { config: defaultSituationalCbdinoclusterInitConfig() } },
-    iterations: inputs.iterations ?? [buildSituationalIterationFrom(inputs)],
+    clusterlessSessions: [
+      {
+        ...buildPerformerSession(inputs.sdk, inputs.version, inputs.onPortInUse),
+        runs: [
+          {
+            type: "situational",
+            tests: buildTests(inputs.selection),
+            situational: {
+              database: { mode: inputs.databaseMode },
+            },
+          },
+        ],
+      },
+    ],
   };
 }
 
 export function buildFitDefinition(inputs: {
   gerritRef?: string;
-  cycles: FitCycle[];
+  instances: InstanceLifetime[];
 }): FitDefinition {
   const setup = inputs.gerritRef
     ? { repos: { "transactions-fit-performer": { gerritRef: inputs.gerritRef } } }
@@ -158,14 +167,21 @@ export function buildFitDefinition(inputs: {
     version: CURRENT_FIT_DEFINITION_VERSION,
     type: FIT_DEFINITION_TYPE,
     ...(setup ? { setup } : {}),
-    cycles: [...inputs.cycles],
+    instances: [...inputs.instances],
   };
 }
 
 export function buildFitFunctionalDefinitionFrom(inputs: DefinitionInputs): FitDefinition {
   return buildFitDefinition({
     ...(inputs.gerritRef ? { gerritRef: inputs.gerritRef } : {}),
-    cycles: [buildFunctionalCycleFrom(inputs)],
+    instances: [buildFunctionalInstance(inputs)],
+  });
+}
+
+export function buildFitSituationalDefinitionFrom(inputs: SituationalDefinitionInputs): FitDefinition {
+  return buildFitDefinition({
+    ...(inputs.gerritRef ? { gerritRef: inputs.gerritRef } : {}),
+    instances: [buildSituationalInstance(inputs)],
   });
 }
 
@@ -221,9 +237,7 @@ export function generateFitFunctionalDefinition(
 ): RunOutput & { path: string; definition: FitDefinition } {
   const definition = buildFitFunctionalDefinition(sdk, cluster, selection);
 
-  console.log(
-    "\nGenerating a fit definition file so you can rerun this flow non-interactively or tweak it.",
-  );
+  console.log("\nGenerating a fit definition file so you can rerun this flow non-interactively or tweak it.");
   const result = writeFitDefinition(definition);
 
   console.log(`\nWriting ${result.path}:\n`);

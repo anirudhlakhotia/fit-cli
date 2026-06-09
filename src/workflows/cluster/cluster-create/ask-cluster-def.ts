@@ -55,7 +55,7 @@ export async function askClusterDef(options: AskClusterDefOptions = {}): Promise
   });
 
   const nodeCount =
-    (await number({ promptId: "cluster.create.node-count", message: "How many nodes?", default: 1, min: 1 })) ??
+    (await number({ promptId: "cluster.create.node-count", message: "How many nodes?", default: 3, min: 1 })) ??
     1;
 
   const version = await input({

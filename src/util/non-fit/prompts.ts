@@ -5,6 +5,30 @@ import { ensurePromptSession, type PromptKind, type PromptResolveOptions } from 
 type PromptContext = Parameters<typeof prompts.input>[1];
 type InputConfig = Parameters<typeof prompts.input>[0];
 type ConfirmConfig = Parameters<typeof prompts.confirm>[0];
+
+/**
+ * Drain any stale data buffered on stdin before a prompt starts. Between
+ * prompts the terminal is in cooked mode, so a stray Enter presses during
+ * long output (e.g. scrolling through test results) arrive as a buffered
+ * "\n" that the next @inquirer readline interprets as an immediate Enter,
+ * resolving the prompt to its default value without waiting for input.
+ */
+function drainStdin(): void {
+  if (!process.stdin.isTTY) return;
+
+  // Toggle raw mode to flush the terminal driver's line buffer into the
+  // kernel file-descriptor buffer so we can read it all out.
+  process.stdin.setRawMode(true);
+  process.stdin.resume();
+
+  // Read and discard any pending data from Node.js's internal stdin buffer.
+  while (process.stdin.read() !== null) {
+    // discard stale input
+  }
+
+  // Restore cooked mode — @inquirer's readline will re-enable raw mode.
+  process.stdin.setRawMode(false);
+}
 type PasswordConfig = Parameters<typeof prompts.password>[0];
 type PromptConfigWithId = { promptId: string; message: string };
 
@@ -90,7 +114,10 @@ function runPrompt<T>(
     promptId,
     kind,
     message,
-    (replayDefault) => withRawTerminalWrites(() => prompt(replayDefault)),
+    (replayDefault) => withRawTerminalWrites(() => {
+      drainStdin();
+      return prompt(replayDefault);
+    }),
     options,
   );
 }

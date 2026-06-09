@@ -37,6 +37,19 @@ Resume points for execute:
   --resume-at=after-cluster-creation    Reuse an allocated cluster.
   --resume-at=after-performer           Reuse the cluster and a running performer.`;
 
+function countRuns(definition: ReturnType<typeof loadDefinition>): number {
+  return definition.instances.reduce(
+    (total, instance) =>
+      total +
+      instance.clusters.reduce(
+        (clusterTotal, cluster) => clusterTotal + cluster.sessions.reduce((sessionTotal, session) => sessionTotal + session.runs.length, 0),
+        0,
+      ) +
+      (instance.clusterlessSessions?.reduce((sessionTotal, session) => sessionTotal + session.runs.length, 0) ?? 0),
+    0,
+  );
+}
+
 if (isMain(import.meta.url)) {
   runCli(async () => {
     // The global --interactive / --replay flags are read straight from
@@ -73,10 +86,9 @@ if (isMain(import.meta.url)) {
         process.exit(2);
       }
       const definition = loadDefinition(path);
-      const iterationCount = definition.cycles.reduce((total, cycle) => total + cycle.iterations.length, 0);
       console.log(
         `✓ Valid ${FIT_DEFINITION_TYPE} definition (version ${definition.version}, ` +
-          `${definition.cycles.length} cycle(s), ${iterationCount} iteration(s)).`,
+          `${definition.instances.length} instance(s), ${countRuns(definition)} run(s)).`,
       );
       console.log(JSON.stringify(definition, null, 2));
       return;

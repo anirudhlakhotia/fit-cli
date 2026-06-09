@@ -13,36 +13,37 @@
 # npm run definition -- execute --interactive examples/fit-functional-cng-test.yaml
 version: 1
 type: fit
-cycles:
-  - type: functional
-    cluster:
-      cbdinocluster:
-        init:
+instances:
+  - localhost: {}
+    clusters:
+      - cbdinocluster:
+          init:
+            config:
+              version: 6
+              docker:
+                enabled: true
+                network: fit
+                host: unix:///var/run/docker.sock
+              default-deployer: docker
           config:
-            version: 6
-            docker:
-              enabled: true
-              network: fit
-              host: unix:///var/run/docker.sock
-            default-deployer: docker
-        config:
-          nodes:
-            - count: 1
-              version: 8.1.0-2188
-              services:
-                - kv
-                - n1ql
-                - index
-                - fts
-          # The cao block is what turns this into a CNG cluster: cbdinocluster
-          # installs the gateway via the Couchbase Kubernetes Operator.
-          cao:
-            operator-version: "2.8.0"
-            gateway-version: 1.1.0-135
-    iterations:
-      - setup:
-          performer:
-            sdk: java
-        runtime:
-          tests:
-            - com.couchbase.client.kv.SanityTest
+            nodes:
+              - count: 1
+                version: 8.1.0-2188
+                services:
+                  - kv
+                  - n1ql
+                  - index
+                  - fts
+            # The cao block is what turns this into a CNG cluster: cbdinocluster
+            # installs the gateway via the Couchbase Kubernetes Operator.
+            cao:
+              operator-version: "2.8.0"
+              gateway-version: 1.1.0-135
+        sessions:
+          - performer:
+              sdk: java
+            runs:
+              - type: functional
+                tests:
+                  run:
+                    - com.couchbase.client.kv.SanityTest

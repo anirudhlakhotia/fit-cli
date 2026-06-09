@@ -1,9 +1,8 @@
 /**
- * Build a reusable `fit` definition file interactively, letting the user build
- * one or more cycles.
+ * Build a reusable `fit` definition file interactively.
  *
- * Run this flow on its own (skipping the top-level menu; add --root <dir> to
- * point at another workspace):
+ * Run on its own (skipping the top-level menu; add --root <dir> to point at
+ * another workspace):
  *   npx tsx src/workflows/fit-shared/create-definition/create-definition.ts
  */
 import { type RunOutput } from "../../../util/non-fit/artifacts.js";
@@ -23,15 +22,13 @@ import {
 } from "../choose-results-database/choose-results-database.js";
 import {
   buildFitDefinition,
-  buildFunctionalCycleFrom,
-  buildFunctionalIterationFrom,
-  buildSituationalCycleFrom,
-  buildSituationalIterationFrom,
-  formatFitDefinition,
+  buildFitFunctionalDefinitionFrom,
+  buildFitSituationalDefinitionFrom,
   type DefinitionCluster,
+  formatFitDefinition,
   writeFitDefinition,
 } from "../definition/generate-definition.js";
-import type { CycleInstanceSetup, FitCycle, FunctionalCycle } from "../definition/types.js";
+import type { FitDefinition, InstanceLifetime, InstanceMode } from "../definition/types.js";
 import {
   FUNCTIONAL_TEST_DOMAIN,
   SITUATIONAL_TEST_DOMAIN,
@@ -40,11 +37,12 @@ import {
 import { createLocalFitExecutionContext } from "../util/remote-fit-run.js";
 
 type DefinitionBuilderAction = "functional" | "situational" | "performance" | "done";
+type FunctionalConnectivity = "operational" | "cng";
 
 interface DefinitionBuilderState {
   gerritRefAsked: boolean;
   gerritRef?: string;
-  cycles: FitCycle[];
+  instances: InstanceLifetime[];
 }
 
 async function chooseDefinitionBuilderAction(index: number): Promise<DefinitionBuilderAction> {
@@ -60,61 +58,33 @@ async function chooseDefinitionBuilderAction(index: number): Promise<DefinitionB
   });
 }
 
-/**
- * Ask where a brand-new cycle's tests should execute. Only asked when a cycle is
- * first started — every iteration added to that cycle then shares the choice. At
- * run time the user can still override and force everything onto localhost.
- */
-/** Whether a functional cycle tests against operational Couchbase or CNG. */
-type FunctionalConnectivity = "operational" | "cng";
-
-/**
- * Ask whether this functional testing should run against an operational cluster
- * (classic `couchbase://`) or CNG / Protostellar (Cloud Native Gateway,
- * `couchbase2://`). The choice keys the cycle: switching to "the other" starts a
- * new cycle, because the cluster has to be stood up differently.
- */
 async function chooseFunctionalConnectivity(promptIdPrefix: string): Promise<FunctionalConnectivity> {
   return select<FunctionalConnectivity>({
     promptId: qualifyPromptId("connectivity", promptIdPrefix),
     message: "What do you want to FIT functional test against?",
     choices: [
       { name: "Operational, couchbase[s]://", value: "operational" },
-      {
-        name: "Cloud Native Gateway, couchbase2://)",
-        value: "cng",
-      },
+      { name: "Cloud Native Gateway, couchbase2://)", value: "cng" },
     ],
   });
 }
 
-/**
- * The connectivity a functional cycle already targets, read back from its cluster
- * def: a `cao` block means CNG, otherwise operational. Pure logic — unit-tested.
- */
-export function functionalCycleConnectivity(cycle: FunctionalCycle): FunctionalConnectivity {
-  return cycle.cluster.cbdinocluster?.config.cao !== undefined ? "cng" : "operational";
+export function functionalInstanceConnectivity(instance: InstanceLifetime): FunctionalConnectivity {
+  const cluster = instance.clusters[0];
+  return cluster?.cbdinocluster?.config.cao !== undefined ? "cng" : "operational";
 }
 
-/**
- * Pick the cluster for a brand-new functional cycle. Operational keeps the
- * existing-or-cbdinocluster choice; CNG is cbdinocluster-allocated only (fit-cli
- * stands up a cluster with the `cao` block and connects the performer over
- * couchbase2://), so it goes straight to the cbdinocluster questions with CNG on.
- */
-async function chooseFunctionalDefinitionCluster(
-  connectivity: FunctionalConnectivity,
-): Promise<DefinitionCluster> {
+async function chooseFunctionalDefinitionCluster(connectivity: FunctionalConnectivity): Promise<DefinitionCluster> {
   if (connectivity === "cng") {
     return { kind: "cbdinocluster", def: await askClusterDef({ cng: true }) };
   }
   return chooseDefinitionCluster();
 }
 
-async function chooseCycleExecution(promptIdPrefix: string): Promise<CycleInstanceSetup> {
+async function chooseInstanceExecution(promptIdPrefix: string): Promise<InstanceMode> {
   const choice = await select<"localhost" | "aws">({
     promptId: qualifyPromptId("execution.instance", promptIdPrefix),
-    message: "Where should this cycle's tests execute?  (You can override this at runtime and run it on localhost)",
+    message: "Where should this instance's tests execute? (You can override this at runtime and run it on localhost)",
     choices: [
       { name: "A clean AWS EC2 instance", value: "aws" },
       { name: "This machine (localhost)", value: "localhost" },
@@ -131,21 +101,36 @@ async function ensureSharedRepoSetup(state: DefinitionBuilderState): Promise<voi
   state.gerritRefAsked = true;
 }
 
-function currentCycleOfType<T extends FitCycle["type"]>(
-  state: DefinitionBuilderState,
-  type: T,
-): Extract<FitCycle, { type: T }> | undefined {
-  const last = state.cycles.at(-1);
-  return last?.type === type ? (last as Extract<FitCycle, { type: T }>) : undefined;
+function lastFunctionalInstance(state: DefinitionBuilderState): InstanceLifetime | undefined {
+  const last = state.instances.at(-1);
+  return last && last.clusters.length > 0 ? last : undefined;
 }
 
-async function addFunctionalIteration(
+function lastSituationalInstance(state: DefinitionBuilderState): InstanceLifetime | undefined {
+  const last = state.instances.at(-1);
+  return last?.clusterlessSessions && last.clusterlessSessions.length > 0 ? last : undefined;
+}
+
+function runCount(state: DefinitionBuilderState): number {
+  return state.instances.reduce(
+    (total, instance) =>
+      total +
+      instance.clusters.reduce(
+        (clusterTotal, cluster) => clusterTotal + cluster.sessions.reduce((sessionTotal, session) => sessionTotal + session.runs.length, 0),
+        0,
+      ) +
+      (instance.clusterlessSessions?.reduce((sessionTotal, session) => sessionTotal + session.runs.length, 0) ?? 0),
+    0,
+  );
+}
+
+async function addFunctionalRun(
   rootDir: string,
   state: DefinitionBuilderState,
-  iterationIndex: number,
+  runIndex: number,
 ): Promise<void> {
   await ensureSharedRepoSetup(state);
-  const promptIdPrefix = `fit.definition.iteration.${iterationIndex + 1}.functional`;
+  const promptIdPrefix = `fit.definition.run.${runIndex + 1}.functional`;
   const execution = createLocalFitExecutionContext(rootDir);
   const connectivity = await chooseFunctionalConnectivity(promptIdPrefix);
   const sdk = await chooseSdk("Which SDK do you want to test with FIT functional?", promptIdPrefix);
@@ -153,49 +138,56 @@ async function addFunctionalIteration(
   const onPortInUse = await askPortInUsePolicy(promptIdPrefix);
   const selection = await selectFitTests(execution, FUNCTIONAL_TEST_DOMAIN, promptIdPrefix);
 
-  // Reuse the open functional cycle only when it targets the same connectivity —
-  // operational and CNG need the cluster stood up differently, so adding "the
-  // other" starts a fresh cycle.
-  const currentCycle = currentCycleOfType(state, "functional");
-  if (currentCycle && functionalCycleConnectivity(currentCycle) === connectivity) {
-    currentCycle.iterations.push(
-      buildFunctionalIterationFrom({
-        cluster: functionalCycleCluster(currentCycle),
-        sdk,
-        ...(version ? { version } : {}),
-        onPortInUse,
-        selection,
-      }),
+  const currentInstance = lastFunctionalInstance(state);
+  if (currentInstance && functionalInstanceConnectivity(currentInstance) === connectivity) {
+    const generatedSession = buildFitFunctionalDefinitionFrom({
+      cluster: functionalDefinitionCluster(currentInstance),
+      sdk,
+      ...(version ? { version } : {}),
+      onPortInUse,
+      selection,
+    }).instances[0]?.clusters[0]?.sessions[0];
+    if (!generatedSession) {
+      throw new Error("Expected a generated functional definition to contain one session.");
+    }
+    currentInstance.clusters[0]?.sessions.push(
+      generatedSession,
     );
     return;
   }
 
   console.log(
     connectivity === "cng"
-      ? "\nStarting a new FIT functional CNG cycle. cbdinocluster installs the gateway via the Couchbase Kubernetes Operator, so this needs Kubernetes. This cycle owns one cluster lifetime, shared by every CNG iteration you add now."
-      : "\nStarting a new FIT functional cycle. This cycle owns one cluster lifetime, and every functional iteration you add now will share it.",
+      ? "\nStarting a new FIT functional CNG instance. cbdinocluster installs the gateway via the Couchbase Kubernetes Operator, so this needs Kubernetes."
+      : "\nStarting a new FIT functional instance. Runs added now will share one cluster lifetime on that instance.",
   );
-  const instance = await chooseCycleExecution(promptIdPrefix);
+  const instance = await chooseInstanceExecution(promptIdPrefix);
   const cluster = await chooseFunctionalDefinitionCluster(connectivity);
   const onClusterExists = cluster.kind === "cbdinocluster" ? await askClusterExistsPolicy() : undefined;
-  state.cycles.push(
-    buildFunctionalCycleFrom({
-      cluster,
-      instance,
-      ...(onClusterExists ? { onClusterExists } : {}),
-      sdk,
-      ...(version ? { version } : {}),
-      onPortInUse,
-      selection,
-    }),
-  );
+  const generatedInstance = buildFitFunctionalDefinitionFrom({
+    cluster,
+    instance,
+    ...(onClusterExists ? { onClusterExists } : {}),
+    sdk,
+    ...(version ? { version } : {}),
+    onPortInUse,
+    selection,
+  }).instances[0];
+  if (!generatedInstance) {
+    throw new Error("Expected a generated functional definition to contain one instance.");
+  }
+  state.instances.push(generatedInstance);
 }
 
-function functionalCycleCluster(cycle: FunctionalCycle): DefinitionCluster {
-  if (cycle.cluster.cbdinocluster) {
-    const firstNode = cycle.cluster.cbdinocluster.config.nodes[0];
+function functionalDefinitionCluster(instance: InstanceLifetime): DefinitionCluster {
+  const cluster = instance.clusters[0];
+  if (!cluster) {
+    throw new Error("Expected a functional instance to contain one cluster.");
+  }
+  if (cluster.cbdinocluster) {
+    const firstNode = cluster.cbdinocluster.config.nodes[0];
     if (!firstNode) {
-      throw new Error("Functional cycle cbdinocluster config must contain at least one node.");
+      throw new Error("Functional cbdinocluster config must contain at least one node.");
     }
     return {
       kind: "cbdinocluster",
@@ -203,53 +195,35 @@ function functionalCycleCluster(cycle: FunctionalCycle): DefinitionCluster {
         nodeCount: firstNode.count,
         version: firstNode.version,
         services: firstNode.services,
-        cng: cycle.cluster.cbdinocluster.config.cao !== undefined,
+        cng: cluster.cbdinocluster.config.cao !== undefined,
       },
     };
   }
-  const access = cycleClusterAccess(cycle);
+  if (!cluster.connection) {
+    throw new Error("Functional instance connection clusters must include connection details.");
+  }
   return {
     kind: "connection",
     cluster: {
-      ...access,
+      scheme: cluster.connection.connectionString.startsWith("couchbases://") ? "couchbases" : "couchbase",
+      defaultHostname: cluster.connection.connectionString.replace(/^couchbases?:\/\//, ""),
       flavour: "self-managed",
+      credentials: {
+        username: cluster.connection.username,
+        password: cluster.connection.password,
+      },
+      tls: cluster.connection.tls ?? null,
     },
   };
 }
 
-function cycleClusterAccess(cycle: FunctionalCycle) {
-  const first = cycle.iterations.find((iteration) => iteration.fitConfig?.clusterAccess !== undefined);
-  const clusterAccess = first?.fitConfig?.clusterAccess;
-  if (!clusterAccess || typeof clusterAccess !== "object" || Array.isArray(clusterAccess)) {
-    throw new Error("Functional useExisting cycles need clusterAccess in at least one iteration.");
-  }
-  const record = clusterAccess as {
-    connectionString?: string;
-    username?: string;
-    password?: string;
-    tls?: unknown;
-  };
-  const connectionString = String(record.connectionString ?? "couchbase://localhost");
-  const [scheme, defaultHostname] = connectionString.split("://");
-  const resolvedScheme: "couchbase" | "couchbases" = scheme === "couchbases" ? "couchbases" : "couchbase";
-  return {
-    scheme: resolvedScheme,
-    defaultHostname: defaultHostname ?? "localhost",
-    credentials: {
-      username: String(record.username ?? "Administrator"),
-      password: String(record.password ?? "password"),
-    },
-    tls: record.tls === undefined ? null : (record.tls as null | { insecure: true } | { certPath: string }),
-  };
-}
-
-async function addSituationalIteration(
+async function addSituationalRun(
   rootDir: string,
   state: DefinitionBuilderState,
-  iterationIndex: number,
+  runIndex: number,
 ): Promise<void> {
   await ensureSharedRepoSetup(state);
-  const promptIdPrefix = `fit.definition.iteration.${iterationIndex + 1}.situational`;
+  const promptIdPrefix = `fit.definition.run.${runIndex + 1}.situational`;
   const execution = createLocalFitExecutionContext(rootDir);
   const sdk = await chooseSdk("Which SDK do you want to test with FIT situational?", promptIdPrefix);
   const version = await askVersion(promptIdPrefix);
@@ -257,47 +231,46 @@ async function addSituationalIteration(
   const databaseMode: ResultsDatabaseMode = await chooseResultsDatabaseMode(promptIdPrefix);
   const selection = await selectFitTests(execution, SITUATIONAL_TEST_DOMAIN, promptIdPrefix);
 
-  const currentCycle = currentCycleOfType(state, "situational");
-  if (currentCycle) {
-    currentCycle.iterations.push(
-      buildSituationalIterationFrom({
-        sdk,
-        ...(version ? { version } : {}),
-        onPortInUse,
-        databaseMode,
-        selection,
-      }),
-    );
-    return;
-  }
-
-  console.log(
-    "\nStarting a new FIT situational cycle. Situational cycles do not carry a shared cluster because FIT/SIT creates its own.",
-  );
-  const instance = await chooseCycleExecution(promptIdPrefix);
-  state.cycles.push(
-    buildSituationalCycleFrom({
+  const currentInstance = lastSituationalInstance(state);
+  if (currentInstance?.clusterlessSessions) {
+    const generatedSession = buildFitSituationalDefinitionFrom({
       sdk,
-      instance,
       ...(version ? { version } : {}),
       onPortInUse,
       databaseMode,
       selection,
-    }),
-  );
-}
+    }).instances[0]?.clusterlessSessions?.[0];
+    if (!generatedSession) {
+      throw new Error("Expected a generated situational definition to contain one clusterless session.");
+    }
+    currentInstance.clusterlessSessions.push(
+      generatedSession,
+    );
+    return;
+  }
 
-function iterationCount(state: DefinitionBuilderState): number {
-  return state.cycles.reduce((total, cycle) => total + cycle.iterations.length, 0);
+  console.log("\nStarting a new FIT situational instance. FIT/SIT creates its own clusters.");
+  const instance = await chooseInstanceExecution(promptIdPrefix);
+  const generatedInstance = buildFitSituationalDefinitionFrom({
+    sdk,
+    instance,
+    ...(version ? { version } : {}),
+    onPortInUse,
+    databaseMode,
+    selection,
+  }).instances[0];
+  if (!generatedInstance) {
+    throw new Error("Expected a generated situational definition to contain one instance.");
+  }
+  state.instances.push(generatedInstance);
 }
 
 export async function createFitDefinition(rootDir: string): Promise<RunOutput> {
   console.log(
-    "\nThis builds a reusable fit definition file. Nothing is set up — " +
-      "no cluster is allocated, no performer built, no tests run.\n",
+    "\nThis builds a reusable fit definition file. Nothing is set up — no cluster is allocated, no performer built, no tests run.\n",
   );
 
-  const state: DefinitionBuilderState = { gerritRefAsked: false, cycles: [] };
+  const state: DefinitionBuilderState = { gerritRefAsked: false, instances: [] };
   let actionIndex = 1;
 
   while (true) {
@@ -309,23 +282,22 @@ export async function createFitDefinition(rootDir: string): Promise<RunOutput> {
       console.log("\nFIT performance definition building is not wired up yet. Pick another testing type for now.");
       continue;
     }
-
-    const nextIterationIndex = iterationCount(state);
+    const nextRunIndex = runCount(state);
     if (action === "functional") {
-      await addFunctionalIteration(rootDir, state, nextIterationIndex);
+      await addFunctionalRun(rootDir, state, nextRunIndex);
     } else {
-      await addSituationalIteration(rootDir, state, nextIterationIndex);
+      await addSituationalRun(rootDir, state, nextRunIndex);
     }
   }
 
-  if (state.cycles.length === 0) {
+  if (state.instances.length === 0) {
     console.log("\nNo FIT testing was added, so no definition file was written.");
     return { artifacts: [], details: [] };
   }
 
-  const definition = buildFitDefinition({
+  const definition: FitDefinition = buildFitDefinition({
     ...(state.gerritRef ? { gerritRef: state.gerritRef } : {}),
-    cycles: state.cycles,
+    instances: state.instances,
   });
 
   const result = writeFitDefinition(definition);

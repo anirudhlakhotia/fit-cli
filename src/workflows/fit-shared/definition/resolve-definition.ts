@@ -2,7 +2,7 @@
  * Turn a validated `fit` definition into concrete run inputs.
  */
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
-import type { PieceData } from "../../../util/non-fit/config-pieces.js";
+import { mergeConfigPieces, type ConfigPiece, type PieceData } from "../../../util/non-fit/config-pieces.js";
 import { classifyConnectionString } from "../../cluster/cluster-select/classify-connection-string.js";
 import type { SelectedCluster } from "../../cluster/cluster-select/cluster-select.js";
 import {
@@ -28,26 +28,22 @@ import {
 import type { CbdinoclusterDef } from "../../cluster/cluster-create/build-cluster-def.js";
 import { loadDefinition } from "./parse-definition.js";
 import type {
-  ClusterSetup,
+  ClusterLifetime,
   ConnectionClusterSetup,
-  CycleExecutionSetup,
-  FitCycle,
   FitDefinition,
-  FunctionalIteration,
-  RuntimeSection,
+  FitRun,
+  InstanceLifetime,
+  SessionLifetime,
   SituationalDatabaseMode,
-  SituationalIteration,
+  TestsSection,
 } from "./types.js";
 
-/** Where a resolved cycle executes. */
 export type ResolvedInstance =
   | { kind: "aws"; instanceType?: string; region?: string }
   | { kind: "localhost" };
 
-/** Resolve a cycle's `execution` block into a concrete target, defaulting to localhost. */
-export function resolveInstance(execution: CycleExecutionSetup | undefined): ResolvedInstance {
-  const instance = execution?.instance;
-  if (instance && "aws" in instance) {
+export function resolveInstance(instance: InstanceLifetime): ResolvedInstance {
+  if ("aws" in instance) {
     return {
       kind: "aws",
       ...(instance.aws.instanceType !== undefined ? { instanceType: instance.aws.instanceType } : {}),
@@ -57,14 +53,64 @@ export function resolveInstance(execution: CycleExecutionSetup | undefined): Res
   return { kind: "localhost" };
 }
 
-export interface ResolvedIterationCommon {
-  sdk: Sdk;
+export interface ResolvedRunCommon {
   fitConfig?: PieceData;
-  performerPort: number;
   testSelection: FitTestSelection;
+  extraMavenArgs: string[];
+}
+
+export interface ResolvedFunctionalRun extends ResolvedRunCommon {
+  type: "functional";
+}
+
+export interface ResolvedSituationalRun extends ResolvedRunCommon {
+  type: "situational";
+  databaseMode: SituationalDatabaseMode;
+}
+
+export type ResolvedRun = ResolvedFunctionalRun | ResolvedSituationalRun;
+
+export interface ResolvedSessionPlan {
+  sdk: Sdk;
+  performerPort: number;
   performerVersion?: string;
   onPortInUse: PortInUsePolicy;
-  extraMavenArgs: string[];
+  runs: ResolvedRun[];
+}
+
+export interface ResolvedCbdinocluster {
+  init?: { config: PieceData };
+  config: CbdinoclusterDef;
+  onClusterExists: ClusterExistsPolicy;
+  deployer?: string;
+}
+
+export interface ResolvedClusterPlan {
+  clusterMode: "connection" | "useExisting" | "cbdinocluster";
+  cng: boolean;
+  cluster?: SelectedCluster;
+  cbdinocluster?: ResolvedCbdinocluster;
+  sessions: ResolvedSessionPlan[];
+}
+
+export interface ResolvedInstancePlan {
+  instance: ResolvedInstance;
+  clusters: ResolvedClusterPlan[];
+  cbdinoclusterInit?: { config: PieceData };
+  clusterlessSessions: ResolvedSessionPlan[];
+}
+
+export interface ResolvedDefinition {
+  fitPerformerGerritRef?: string;
+  instances: ResolvedInstancePlan[];
+  cycles: ResolvedCycle[];
+}
+
+export interface ResolvedIterationCommon extends ResolvedRunCommon {
+  sdk: Sdk;
+  performerPort: number;
+  performerVersion?: string;
+  onPortInUse: PortInUsePolicy;
 }
 
 export interface ResolvedFunctionalIteration extends ResolvedIterationCommon {
@@ -79,77 +125,56 @@ export interface ResolvedSituationalIteration extends ResolvedIterationCommon {
 
 export type ResolvedIteration = ResolvedFunctionalIteration | ResolvedSituationalIteration;
 
-export interface ResolvedCbdinocluster {
-  init?: {
-    config: PieceData;
-  };
-  config: CbdinoclusterDef;
-  onClusterExists: ClusterExistsPolicy;
-  deployer?: string;
-}
-
 export interface ResolvedFunctionalCycle {
   type: "functional";
-  /** Where this cycle runs. */
   instance: ResolvedInstance;
   clusterMode: "connection" | "useExisting" | "cbdinocluster";
-  /**
-   * Whether this cycle tests against CNG / Protostellar — true when the
-   * cbdinocluster def carries a `cao` block. CNG clusters need Kubernetes and the
-   * performer connects over couchbase2://.
-   */
   cng: boolean;
+  cluster?: SelectedCluster;
   cbdinocluster?: ResolvedCbdinocluster;
   iterations: ResolvedFunctionalIteration[];
 }
 
 export interface ResolvedSituationalCycle {
   type: "situational";
-  /** Where this cycle runs. */
   instance: ResolvedInstance;
-  /** The cbdinocluster init config to upload to the execution target before the test-driver runs. */
   cbdinoclusterInit: { config: PieceData };
   iterations: ResolvedSituationalIteration[];
 }
 
 export type ResolvedCycle = ResolvedFunctionalCycle | ResolvedSituationalCycle;
 
-export interface ResolvedDefinition {
-  fitPerformerGerritRef?: string;
-  cycles: ResolvedCycle[];
-}
-
-function resolveTestSelection(runtime: RuntimeSection): FitTestSelection {
-  return runtime.tests === "all"
+function resolveTestsSelection(tests: TestsSection): FitTestSelection {
+  return tests.run === "all"
     ? buildDefaultFitTestSelection()
-    : buildFitTestSelectionFromClassNames(runtime.tests);
+    : buildFitTestSelectionFromClassNames(tests.run);
 }
 
 const JUNIT_DISABLED_CONDITION = "org.junit.jupiter.api.condition.DisabledCondition";
 
-function resolveMavenSuffix(runtime: RuntimeSection): string[] {
+function resolveMavenSuffix(tests: TestsSection): string[] {
   const extra: string[] = [];
-  if (runtime.maven?.runDisabledTests) {
+  if (tests.maven?.runDisabledTests) {
     extra.push(`-Djunit.jupiter.conditions.deactivate=${JUNIT_DISABLED_CONDITION}`);
   }
-  if (runtime.maven?.args) {
-    extra.push(...runtime.maven.args);
+  if (tests.maven?.args) {
+    extra.push(...tests.maven.args);
   }
   return extra;
 }
 
-export function resolveMavenArgs(runtime: RuntimeSection): string[] {
-  const base = runtime.excludedGroups === undefined
+export function resolveMavenArgs(tests: TestsSection): string[] {
+  const base = tests.excludedGroups === undefined
     ? [...DEFAULT_MAVEN_TEST_ARGS]
-    : [`-DexcludedGroups=${runtime.excludedGroups.join(",")}`];
-  return [...base, ...resolveMavenSuffix(runtime)];
+    : [`-DexcludedGroups=${tests.excludedGroups.join(",")}`];
+  return [...base, ...resolveMavenSuffix(tests)];
 }
 
-export function resolveSituationalMavenArgs(runtime: RuntimeSection): string[] {
-  const base = runtime.excludedGroups === undefined
+export function resolveSituationalMavenArgs(tests: TestsSection): string[] {
+  const base = tests.excludedGroups === undefined
     ? [...SITUATIONAL_MAVEN_TEST_ARGS]
-    : [SITUATIONAL_MAVEN_GROUPS_ARG, `-DexcludedGroups=${runtime.excludedGroups.join(",")}`];
-  return [...base, ...resolveMavenSuffix(runtime)];
+    : [SITUATIONAL_MAVEN_GROUPS_ARG, `-DexcludedGroups=${tests.excludedGroups.join(",")}`];
+  return [...base, ...resolveMavenSuffix(tests)];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -184,16 +209,12 @@ function resolveFitConfigTls(value: unknown, path: string): SelectedCluster["tls
   throw new Error(`${path} must be null, { insecure: true }, or { certPath: <path> }.`);
 }
 
-function resolveClusterConnectionRecord(
-  clusterAccess: Record<string, unknown>,
-  path: string,
-): SelectedCluster {
+function resolveClusterConnectionRecord(clusterAccess: Record<string, unknown>, path: string): SelectedCluster {
   const connectionString = requireString(clusterAccess, "connectionString", `${path}.connectionString`);
   const classification = classifyConnectionString(connectionString);
   if (classification.kind !== "supported") {
     throw new Error(
-      `${path}.connectionString "${connectionString}" is not one fit-cli can use (${classification.kind}). ` +
-        "Use a couchbase:// or couchbases:// connection string.",
+      `${path}.connectionString "${connectionString}" is not one fit-cli can use (${classification.kind}). Use a couchbase:// or couchbases:// connection string.`,
     );
   }
   return {
@@ -215,12 +236,15 @@ export function resolveConnectionCluster(connection: ConnectionClusterSetup | un
   return resolveClusterConnectionRecord({ ...connection }, "cluster.connection");
 }
 
-export function resolveFitConfigCluster(fitConfig: PieceData | undefined): SelectedCluster | undefined {
+export function resolveFitConfigCluster(
+  fitConfig: PieceData | undefined,
+  path: string = "cluster.fitConfig",
+): SelectedCluster | undefined {
   if (!fitConfig) {
     return undefined;
   }
-  const clusterAccess = requireRecord(fitConfig.clusterAccess, "iterations[].fitConfig.clusterAccess");
-  return resolveClusterConnectionRecord(clusterAccess, "iterations[].fitConfig.clusterAccess");
+  const clusterAccess = requireRecord(fitConfig.clusterAccess, `${path}.clusterAccess`);
+  return resolveClusterConnectionRecord(clusterAccess, `${path}.clusterAccess`);
 }
 
 function stripFitConfigClusterAccess(fitConfig: PieceData | undefined): PieceData | undefined {
@@ -232,120 +256,158 @@ function stripFitConfigClusterAccess(fitConfig: PieceData | undefined): PieceDat
   return Object.keys(rest).length > 0 ? rest : undefined;
 }
 
-export function resolveCbdinocluster(
-  clusterSetup: ClusterSetup | undefined,
-): ResolvedCbdinocluster | undefined {
-  const cbdinocluster = clusterSetup?.cbdinocluster;
-  if (!cbdinocluster) {
+function mergeFitConfig(clusterFitConfig: PieceData | undefined, runFitConfig: PieceData | undefined): PieceData | undefined {
+  const pieces: ConfigPiece[] = [];
+  if (clusterFitConfig) {
+    pieces.push({ label: "cluster fitConfig", data: clusterFitConfig });
+  }
+  if (runFitConfig) {
+    pieces.push({ label: "run fitConfig", data: runFitConfig });
+  }
+  if (pieces.length === 0) {
+    return undefined;
+  }
+  return mergeConfigPieces(pieces) as PieceData;
+}
+
+export function resolveCbdinocluster(cluster: ClusterLifetime): ResolvedCbdinocluster | undefined {
+  if (!cluster.cbdinocluster) {
     return undefined;
   }
   return {
-    config: cbdinocluster.config,
-    onClusterExists: cbdinocluster.onClusterExists ?? DEFAULT_CLUSTER_EXISTS_POLICY,
-    ...(cbdinocluster.init !== undefined ? { init: { config: cbdinocluster.init.config } } : {}),
-    ...(cbdinocluster.deployer !== undefined ? { deployer: cbdinocluster.deployer } : {}),
+    config: cluster.cbdinocluster.config,
+    onClusterExists: cluster.cbdinocluster.onClusterExists ?? DEFAULT_CLUSTER_EXISTS_POLICY,
+    ...(cluster.cbdinocluster.init !== undefined ? { init: { config: cluster.cbdinocluster.init.config } } : {}),
+    ...(cluster.cbdinocluster.deployer !== undefined ? { deployer: cluster.cbdinocluster.deployer } : {}),
   };
 }
 
-export function resolveFunctionalIteration(iteration: FunctionalIteration): ResolvedFunctionalIteration {
-  const sdk = sdkByValue(iteration.setup.performer.sdk);
-  if (!sdk) {
-    throw new Error(
-      `Unknown sdk "${iteration.setup.performer.sdk}". Valid values: ${SDKS.map((s) => s.value).join(", ")}.`,
-    );
-  }
-
-  return {
-    type: "functional",
-    sdk,
-    ...(iteration.fitConfig !== undefined ? { fitConfig: iteration.fitConfig } : {}),
-    performerPort: iteration.setup.performer.port ?? DEFAULT_PERFORMER_PORT,
-    testSelection: resolveTestSelection(iteration.runtime),
-    ...(iteration.setup.performer.version !== undefined
-      ? { performerVersion: iteration.setup.performer.version }
-      : {}),
-    onPortInUse: iteration.setup.performer.onPortInUse ?? DEFAULT_PORT_IN_USE_POLICY,
-    extraMavenArgs: resolveMavenArgs(iteration.runtime),
-  };
-}
-
-export function resolveSituationalIteration(iteration: SituationalIteration): ResolvedSituationalIteration {
-  const sdk = sdkByValue(iteration.setup.performer.sdk);
-  if (!sdk) {
-    throw new Error(
-      `Unknown sdk "${iteration.setup.performer.sdk}". Valid values: ${SDKS.map((s) => s.value).join(", ")}.`,
-    );
-  }
-
-  return {
-    type: "situational",
-    sdk,
-    ...(iteration.fitConfig !== undefined ? { fitConfig: iteration.fitConfig } : {}),
-    performerPort: iteration.setup.performer.port ?? DEFAULT_PERFORMER_PORT,
-    testSelection: resolveTestSelection(iteration.runtime),
-    ...(iteration.setup.performer.version !== undefined
-      ? { performerVersion: iteration.setup.performer.version }
-      : {}),
-    onPortInUse: iteration.setup.performer.onPortInUse ?? DEFAULT_PORT_IN_USE_POLICY,
-    extraMavenArgs: resolveSituationalMavenArgs(iteration.runtime),
-    databaseMode: iteration.situational.database.mode,
-  };
-}
-
-export function resolveCycle(cycle: FitCycle): ResolvedCycle {
-  if (cycle.type === "situational") {
+function resolveRun(run: FitRun, clusterFitConfig: PieceData | undefined, stripClusterAccess: boolean): ResolvedRun {
+  const mergedFitConfig = mergeFitConfig(clusterFitConfig, run.fitConfig);
+  const fitConfig = stripClusterAccess ? stripFitConfigClusterAccess(mergedFitConfig) : mergedFitConfig;
+  if (run.type === "situational") {
     return {
       type: "situational",
-      instance: resolveInstance(cycle.execution),
-      cbdinoclusterInit: { config: cycle.cbdinocluster.init.config },
-      iterations: cycle.iterations.map(resolveSituationalIteration),
+      ...(fitConfig !== undefined ? { fitConfig } : {}),
+      testSelection: resolveTestsSelection(run.tests),
+      extraMavenArgs: resolveSituationalMavenArgs(run.tests),
+      databaseMode: run.situational.database.mode,
     };
   }
-
-  const connection = resolveConnectionCluster(cycle.cluster.connection);
-  const cbdinocluster = resolveCbdinocluster(cycle.cluster);
-  const useExisting = cycle.cluster.useExisting !== undefined;
-  const clusterMode = connection ? "connection" : useExisting ? "useExisting" : "cbdinocluster";
-
   return {
     type: "functional",
-    instance: resolveInstance(cycle.execution),
+    ...(fitConfig !== undefined ? { fitConfig } : {}),
+    testSelection: resolveTestsSelection(run.tests),
+    extraMavenArgs: resolveMavenArgs(run.tests),
+  };
+}
+
+export function resolveSession(
+  session: SessionLifetime,
+  clusterFitConfig: PieceData | undefined,
+  stripClusterAccess: boolean,
+): ResolvedSessionPlan {
+  const sdk = sdkByValue(session.performer.sdk);
+  if (!sdk) {
+    throw new Error(`Unknown sdk "${session.performer.sdk}". Valid values: ${SDKS.map((s) => s.value).join(", ")}.`);
+  }
+  return {
+    sdk,
+    performerPort: session.performer.port ?? DEFAULT_PERFORMER_PORT,
+    ...(session.performer.version !== undefined ? { performerVersion: session.performer.version } : {}),
+    onPortInUse: session.performer.onPortInUse ?? DEFAULT_PORT_IN_USE_POLICY,
+    runs: session.runs.map((run) => resolveRun(run, clusterFitConfig, stripClusterAccess)),
+  };
+}
+
+export function resolveCluster(cluster: ClusterLifetime): ResolvedClusterPlan {
+  const connection = resolveConnectionCluster(cluster.connection);
+  const cbdinocluster = resolveCbdinocluster(cluster);
+  const useExisting = cluster.useExisting !== undefined;
+  const clusterMode = connection ? "connection" : useExisting ? "useExisting" : "cbdinocluster";
+  const resolvedCluster = connection ?? (useExisting ? resolveFitConfigCluster(cluster.fitConfig) : undefined);
+  if (useExisting && !resolvedCluster) {
+    throw new Error("cluster.useExisting requires cluster.fitConfig.clusterAccess.");
+  }
+  return {
     clusterMode,
     cng: cbdinocluster?.config.cao !== undefined,
+    ...(resolvedCluster ? { cluster: resolvedCluster } : {}),
     ...(cbdinocluster ? { cbdinocluster } : {}),
-    iterations: cycle.iterations.map((iteration) => {
-      const resolved = resolveFunctionalIteration(iteration);
-      if (connection) {
-        const fitConfig = stripFitConfigClusterAccess(resolved.fitConfig);
-        return {
-          ...resolved,
-          ...(fitConfig !== undefined ? { fitConfig } : {}),
-          cluster: connection,
-        };
-      }
-      if (!useExisting) {
-        return resolved;
-      }
-      if (!resolved.fitConfig) {
-        throw new Error(
-          "cycle.cluster.useExisting requires each functional iteration to define fitConfig.clusterAccess.",
-        );
-      }
-      return {
-        ...resolved,
-        cluster: resolveFitConfigCluster(resolved.fitConfig),
-      };
-    }),
+    sessions: cluster.sessions.map((session) => resolveSession(session, cluster.fitConfig, clusterMode === "connection")),
+  };
+}
+
+export function resolveInstancePlan(instance: InstanceLifetime): ResolvedInstancePlan {
+  return {
+    instance: resolveInstance(instance),
+    clusters: instance.clusters.map(resolveCluster),
+    ...(instance.cbdinocluster !== undefined ? { cbdinoclusterInit: { config: instance.cbdinocluster.init.config } } : {}),
+    clusterlessSessions: (instance.clusterlessSessions ?? []).map((session) => resolveSession(session, undefined, false)),
   };
 }
 
 export function resolveDefinition(definition: FitDefinition): ResolvedDefinition {
+  const instances = definition.instances.map(resolveInstancePlan);
   return {
     ...(definition.setup?.repos?.["transactions-fit-performer"]?.gerritRef !== undefined
       ? { fitPerformerGerritRef: definition.setup.repos["transactions-fit-performer"].gerritRef }
       : {}),
-    cycles: definition.cycles.map(resolveCycle),
+    instances,
+    cycles: flattenInstancesToCycles(instances),
   };
+}
+
+function flattenInstancesToCycles(instances: ResolvedInstancePlan[]): ResolvedCycle[] {
+  return instances.flatMap((instance) => [
+    ...instance.clusters.map<ResolvedFunctionalCycle>((cluster) => ({
+      type: "functional",
+      instance: instance.instance,
+      clusterMode: cluster.clusterMode,
+      cng: cluster.cng,
+      ...(cluster.cluster ? { cluster: cluster.cluster } : {}),
+      ...(cluster.cbdinocluster ? { cbdinocluster: cluster.cbdinocluster } : {}),
+      iterations: cluster.sessions.flatMap((session) =>
+        session.runs
+          .filter((run): run is ResolvedFunctionalRun => run.type === "functional")
+          .map((run) => ({
+            type: "functional",
+            sdk: session.sdk,
+            performerPort: session.performerPort,
+            ...(session.performerVersion !== undefined ? { performerVersion: session.performerVersion } : {}),
+            onPortInUse: session.onPortInUse,
+            ...(run.fitConfig !== undefined ? { fitConfig: run.fitConfig } : {}),
+            testSelection: run.testSelection,
+            extraMavenArgs: run.extraMavenArgs,
+            ...(cluster.cluster ? { cluster: cluster.cluster } : {}),
+          })),
+      ),
+    })),
+    ...(instance.clusterlessSessions.length === 0 || !instance.cbdinoclusterInit
+      ? []
+      : [
+          {
+            type: "situational" as const,
+            instance: instance.instance,
+            cbdinoclusterInit: instance.cbdinoclusterInit,
+            iterations: instance.clusterlessSessions.flatMap((session) =>
+              session.runs
+                .filter((run): run is ResolvedSituationalRun => run.type === "situational")
+                .map((run) => ({
+                  type: "situational" as const,
+                  sdk: session.sdk,
+                  performerPort: session.performerPort,
+                  ...(session.performerVersion !== undefined ? { performerVersion: session.performerVersion } : {}),
+                  onPortInUse: session.onPortInUse,
+                  ...(run.fitConfig !== undefined ? { fitConfig: run.fitConfig } : {}),
+                  testSelection: run.testSelection,
+                  extraMavenArgs: run.extraMavenArgs,
+                  databaseMode: run.databaseMode,
+                })),
+            ),
+          },
+        ]),
+  ]);
 }
 
 if (isMain(import.meta.url)) {

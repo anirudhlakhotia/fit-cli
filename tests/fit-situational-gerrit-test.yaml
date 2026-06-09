@@ -5,22 +5,9 @@ setup:
   repos:
     transactions-fit-performer:
       gerritRef: refs/changes/30/246430/2
-cycles:
-  - type: situational
-    execution:
-      instance:
-        aws: {}
-    iterations:
-      - setup:
-          performer:
-            sdk: kotlin
-            onPortInUse: restart
-        situational:
-          database:
-            mode: hosted
-        runtime:
-          tests:
-            - com.couchbase.situational.tests.SanityTest
+instances:
+  - aws: {}
+    clusters: []
     cbdinocluster:
       init:
         # This file will be uploaded verbatim into clean environments as ~/.cbdinocluster
@@ -31,4 +18,15 @@ cycles:
             network: fit
             host: unix:///var/run/docker.sock
           default-deployer: docker
-      # Note config: is not provided here as FIT/SIT creates its own clusters
+    clusterlessSessions:
+      - performer:
+          sdk: kotlin
+          onPortInUse: restart
+        runs:
+          - type: situational
+            situational:
+              database:
+                mode: hosted
+            tests:
+              run:
+                - com.couchbase.situational.tests.SanityTest

@@ -3,34 +3,32 @@
 # npm run definition -- --interactive examples/fit-functional-sanity-test.yaml
 version: 1
 type: fit
-cycles:
-  - type: functional
-    execution:
-      instance:
-        aws: {}
-    cluster:
-      cbdinocluster:
-        init:
+instances:
+  - aws: {}
+    clusters:
+      - cbdinocluster:
+          init:
+            config:
+              version: 6
+              docker:
+                enabled: true
+                network: fit
+                host: unix:///var/run/docker.sock
+              default-deployer: docker
           config:
-            version: 6
-            docker:
-              enabled: true
-              network: fit
-              host: unix:///var/run/docker.sock
-            default-deployer: docker
-        config:
-          nodes:
-            - count: 1
-              version: 8.1.0-2188
-              services:
-                - kv
-                - n1ql
-                - index
-                - fts
-    iterations:
-      - setup:
-          performer:
-            sdk: java
-        runtime:
-          tests:
-            - com.couchbase.client.kv.SanityTest
+            nodes:
+              - count: 1
+                version: 8.1.0-2188
+                services:
+                  - kv
+                  - n1ql
+                  - index
+                  - fts
+        sessions:
+          - performer:
+              sdk: java
+            runs:
+              - type: functional
+                tests:
+                  run:
+                    - com.couchbase.client.kv.SanityTest

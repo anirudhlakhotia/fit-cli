@@ -1,7 +1,7 @@
 # Example fit definition file.
 #
 # A definition file is a repeatable, hand-editable description of one or more
-# FIT cycles. Run it with:
+# FIT execution lifetimes. Run it with:
 #
 #   npm run definition examples/documented.yaml
 #
@@ -14,121 +14,118 @@ type: fit
 # Shared setup that applies once for the whole definition.
 setup:
   repos:
-    # Optional: fetch this FIT Gerrit ref before any cycles run.
+    # Optional: fetch this FIT Gerrit ref before any instances run.
     # transactions-fit-performer:
     #   gerritRef: refs/changes/29/246329/1
 
-# A definition is now a list of cycles. A cycle owns one testing flavour and, at
-# most, one cluster lifetime.
-cycles:
-  - type: functional
-    # Where this cycle's iterations run. Optional — omit it to run on this machine
-    # (localhost). Provide exactly one of "aws" or "localhost". At run time you can
-    # still override and force every cycle onto localhost.
-    execution:
-      instance:
-        # aws: {}              # provision a clean EC2 box for this cycle
-        #   instanceType: c5.4xlarge   # optional; defaults to the FIT type
-        #   region: us-east-1          # optional; defaults to your AWS region
-        localhost: {}          # ...or run directly on this machine
-    # Functional cycles must have a cluster. Every iteration in this cycle tests
-    # against it.
-    cluster:
-      # Point at an already-running cluster. Put the connection details under
-      # each iteration's fitConfig piece so they line up with FITConfiguration.md.
-      useExisting: {}
+# A definition is now a list of instances. Each instance owns one execution
+# target and contains one or more cluster lifetimes or clusterless situational
+# sessions.
+instances:
+  - # Provide exactly one of "aws" or "localhost". At run time you can still
+    # override and force every instance onto localhost.
+    # aws: {}
+    # aws:
+    #   instanceType: c5.4xlarge
+    #   region: us-east-1
+    localhost: {}
+    clusters:
+      - # Functional runs live under a cluster lifetime.
+        connection:
+          connectionString: couchbase://localhost
+          username: Administrator
+          password: password
+          # How the SDK should trust a couchbases:// cluster. Use null for
+          # couchbase:// and for production Capella.
+          #   null                        no TLS section
+          #   { insecure: true }          skip certificate verification
+          #   { certPath: /path/cb.pem }  trust this PEM certificate
+          tls: null
 
-      # Or allocate a fresh cluster for just this cycle:
-      # cbdinocluster:
-      #   config:
-      #     nodes:
-      #       - count: 1
-      #         version: '8.1.0-2188'
-      #         services: [ kv, n1ql, index ]
+        # Or allocate a fresh cluster for just this cluster lifetime:
+        # cbdinocluster:
+        #   config:
+        #     nodes:
+        #       - count: 1
+        #         version: "8.1.0-2188"
+        #         services: [kv, n1ql, index]
 
-    iterations:
-      - fitConfig:
-          clusterAccess:
-            connectionString: couchbase://localhost
-            username: Administrator
-            password: password
-            # How the SDK should trust a couchbases:// cluster. Use null for
-            # couchbase:// and for production Capella.
-            #   null                        no TLS section
-            #   { insecure: true }          skip certificate verification
-            #   { certPath: /path/cb.pem }  trust this PEM certificate
-            tls: null
+        sessions:
+          - performer:
+              # Which SDK to test. One of: java, scala, kotlin, cpp, dotnet, go,
+              # node, python, ruby, rust.
+              sdk: java
+              # Port the performer listens on (default 8060).
+              port: 8060
+              # What to do if the performer port is already in use:
+              #   fail    - stop the run.
+              #   restart - stop what's there and bring up a fresh performer (default).
+              #   reuse   - assume a performer is already running and test against it.
+              # onPortInUse: restart
+              # Optional: pin the performer image version/tag.
+              # version: "1.2.3"
+            runs:
+              - type: functional
+                # fitConfig remains an opaque FITConfiguration artifact piece, so you
+                # can still pass FIT-native resourceCreation settings through here when
+                # you need them.
+                # fitConfig:
+                #   resourceCreation:
+                #     cluster:
+                #       cbdinocluster:
+                #         path: /usr/local/bin/cbdinocluster
+                #       preferredCluster:
+                #         version: 8.0.1-4654
+                tests:
+                  # Which FIT test-driver tests to run:
+                  #   all          run everything (the default)
+                  #   a YAML list  run just those fully-qualified test classes
+                  run: all
+                  # run:
+                  #   - com.couchbase.client.kv.SanityTest
 
-          # fitConfig remains an opaque FITConfiguration artifact piece, so you
-          # can still pass FIT-native resourceCreation settings through here when
-          # you need them.
-          # resourceCreation:
-          #   cluster:
-          #     cbdinocluster:
-          #       path: /usr/local/bin/cbdinocluster
-          #     preferredCluster:
-          #       version: 8.0.1-4654
+                  # Optional: Maven test groups to exclude (-DexcludedGroups). Omit to
+                  # use the standard CI exclusions (situational, openshift, syncgateway).
+                  # excludedGroups:
+                  #   - situational
+                  #   - openshift
+                  #   - syncgateway
 
-        setup:
-          performer:
-            # Which SDK to test. One of: java, scala, kotlin, cpp, dotnet, go,
-            # node, python, ruby, rust.
-            sdk: java
-            # Port the performer listens on (default 8060).
-            port: 8060
-            # What to do if the performer port is already in use:
-            #   fail    - stop the run.
-            #   restart - stop what's there and bring up a fresh performer (default).
-            #   reuse   - assume a performer is already running and test against it.
-            # onPortInUse: restart
-            # Optional: pin the performer image version/tag.
-            # version: "1.2.3"
+                  # Optional: Maven-level overrides.
+                  # maven:
+                  #   runDisabledTests: true
+                  #   args:
+                  #     - -Dsome.flag=true
 
-        runtime:
-          # Which FIT test-driver tests to run:
-          #   all          run everything (the default)
-          #   a YAML list  run just those fully-qualified test classes
-          tests: all
-          # tests:
-          #   - com.couchbase.client.kv.SanityTest
+          # Could test other SDKs against the same cluster here by adding another
+          # session with its own performer and runs.
+          # - performer:
+          #     sdk: python
+          #   runs:
+          #     - type: functional
+          #       tests:
+          #         run: all
 
-          # Optional: Maven test groups to exclude (-DexcludedGroups). Omit to
-          # use the standard CI exclusions (situational, openshift, syncgateway).
-          # excludedGroups:
-          #   - situational
-          #   - openshift
-          #   - syncgateway
-
-          # Optional: Maven-level overrides.
-          # maven:
-          #   # Run tests annotated @Disabled (overrides the JUnit 5 DisabledCondition).
-          #   runDisabledTests: true
-          #   # Append extra -D system properties verbatim to the ./mvnw command.
-          #   args:
-          #     - -Dsome.flag=true
-
-      # Could test other SDKs against the same functional-cycle cluster here.
-      # - fitConfig:
-      #     clusterAccess:
-      #       connectionString: couchbase://localhost
-      #       username: Administrator
-      #       password: password
-      #       tls: null
-      #   setup:
-      #     performer:
-      #       sdk: python
-      #   runtime:
-      #     tests: all
-
-  - type: situational
-    # Situational cycles never carry a shared cluster. FIT/SIT creates its own.
-    iterations:
-      - setup:
-          performer:
-            sdk: python
-        situational:
-          database:
-            # Where situational timeseries results land.
-            mode: hosted
-        runtime:
-          tests: all
+  - # Situational runs do not share a functional cluster. FIT/SIT creates its own.
+    localhost: {}
+    clusters: []
+    cbdinocluster:
+      init:
+        config:
+          version: 6
+          docker:
+            enabled: true
+            network: fit
+            host: unix:///var/run/docker.sock
+          default-deployer: docker
+    clusterlessSessions:
+      - performer:
+          sdk: python
+        runs:
+          - type: situational
+            situational:
+              database:
+                # Where situational timeseries results land.
+                mode: hosted
+            tests:
+              run: all
