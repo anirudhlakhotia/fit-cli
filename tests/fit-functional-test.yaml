@@ -3,6 +3,9 @@ version: 1
 type: fit
 cycles:
   - type: functional
+    execution:
+      instance:
+        aws: {}
     cluster:
       cbdinocluster:
         init:

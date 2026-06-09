@@ -5,6 +5,12 @@ export const FIT_PERFORMER_IMAGE_OWNER = "couchbase";
 export const JVM_PERFORMER_IMAGE_OWNER = "couchbase";
 export const JVM_PERFORMER_PACKAGES_REPOSITORY = "couchbase-jvm-clients";
 export const DEFAULT_PERFORMER_IMAGE_TAG = "main";
+export const JVM_DEFAULT_PERFORMER_IMAGE_TAG = "master";
+
+/** The default Docker tag used for a given SDK's prebuilt GHCR image. */
+export function sdkDefaultPerformerTag(sdk: Sdk): string {
+  return sdk.jvm ? JVM_DEFAULT_PERFORMER_IMAGE_TAG : DEFAULT_PERFORMER_IMAGE_TAG;
+}
 
 const JVM_SDK_VALUES = new Set(["java", "kotlin", "scala"]);
 
@@ -22,21 +28,22 @@ export function performerPackageUrl(sdk: Sdk): string {
   return `https://github.com/orgs/${FIT_PERFORMER_IMAGE_OWNER}/packages/container/package/${pkg}`;
 }
 
-/** Normalize a user-supplied tag; blank or `main` means the default tag. */
-export function normalizePerformerVersion(version?: string): string | undefined {
+/** Normalize a user-supplied tag; blank or the SDK's default tag means "use default". */
+export function normalizePerformerVersion(version?: string, sdk?: Sdk): string | undefined {
   const trimmed = version?.trim();
-  return !trimmed || trimmed === DEFAULT_PERFORMER_IMAGE_TAG ? undefined : trimmed;
+  const defaultTag = sdk ? sdkDefaultPerformerTag(sdk) : DEFAULT_PERFORMER_IMAGE_TAG;
+  return !trimmed || trimmed === defaultTag ? undefined : trimmed;
 }
 
 /** The Docker tag used for this performer image. */
-export function performerImageTag(version?: string): string {
-  return normalizePerformerVersion(version) ?? DEFAULT_PERFORMER_IMAGE_TAG;
+function performerImageTag(sdk: Sdk, version?: string): string {
+  return normalizePerformerVersion(version, sdk) ?? sdkDefaultPerformerTag(sdk);
 }
 
 /** The fully-qualified Docker image reference for this SDK's performer. */
 export function performerImageName(sdk: Sdk, version?: string): string {
   const owner = JVM_SDK_VALUES.has(sdk.value) ? JVM_PERFORMER_IMAGE_OWNER : FIT_PERFORMER_IMAGE_OWNER;
-  return `${GHCR_REGISTRY}/${owner}/${performerPackageName(sdk)}:${performerImageTag(version)}`;
+  return `${GHCR_REGISTRY}/${owner}/${performerPackageName(sdk)}:${performerImageTag(sdk, version)}`;
 }
 
 /** Validate a manually-entered performer tag. */

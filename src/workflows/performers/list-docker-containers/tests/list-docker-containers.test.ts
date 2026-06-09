@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { sdkByValue } from "../../../../util/sdk/sdks.js";
 import {
   collectContainerTags,
   formatCompactContainerVersions,
@@ -60,9 +61,18 @@ test("collectContainerTags preserves first-seen order and removes duplicates", (
   );
 });
 
-test("preferredContainerTag prefers main when it exists", () => {
-  assert.equal(preferredContainerTag(["4.2.0", "main", "4.1.9"]), "main");
-  assert.equal(preferredContainerTag(["4.2.0", "4.1.9"]), "4.2.0");
+test("preferredContainerTag prefers main for non-JVM SDKs when it exists", () => {
+  const sdk = sdkByValue("node");
+  assert.ok(sdk);
+  assert.equal(preferredContainerTag(sdk, ["4.2.0", "main", "4.1.9"]), "main");
+  assert.equal(preferredContainerTag(sdk, ["4.2.0", "4.1.9"]), "4.2.0");
+});
+
+test("preferredContainerTag prefers master for JVM SDKs when it exists", () => {
+  const sdk = sdkByValue("java");
+  assert.ok(sdk);
+  assert.equal(preferredContainerTag(sdk, ["4.2.0", "master", "4.1.9"]), "master");
+  assert.equal(preferredContainerTag(sdk, ["4.2.0", "4.1.9"]), "4.2.0");
 });
 
 test("formatCompactContainerVersions prints one tag per line", () => {

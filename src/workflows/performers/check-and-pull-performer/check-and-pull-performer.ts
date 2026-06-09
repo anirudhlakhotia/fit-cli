@@ -15,8 +15,8 @@ import { rootDirFromArgv } from "../../../util/fit/root.js";
 import { type Sdk } from "../../../util/sdk/sdks.js";
 import { createLocalFitExecutionContext, type FitExecutionContext } from "../../fit-shared/util/remote-fit-run.js";
 import { choosePerformerVersion } from "../list-docker-containers/list-docker-containers.js";
-import { GHCR_REGISTRY } from "../util/performer-image.js";
-import { performerStatus } from "../check-performer/check-performer.js";
+import { GHCR_REGISTRY, performerImageName } from "../util/performer-image.js";
+import { performerImageInspectArgs, performerStatus } from "../check-performer/check-performer.js";
 
 /** Build the `docker login` args used for GHCR. */
 export function dockerLoginArgs(registry: string = GHCR_REGISTRY): string[] {
@@ -50,6 +50,15 @@ async function loginToGhcr(execution: FitExecutionContext, token: string): Promi
   }
 }
 
+async function ghcrImageExists(execution: FitExecutionContext, imageName: string): Promise<boolean> {
+  try {
+    await execution.capture(execution.dockerCommand, performerImageInspectArgs(imageName));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Check for a performer image and pull it from GHCR if it is missing locally. */
 export async function checkAndPullPerformer(
   execution: FitExecutionContext,
@@ -57,19 +66,20 @@ export async function checkAndPullPerformer(
   version?: string,
 ): Promise<boolean> {
   const status = await performerStatus(execution, sdk, version);
+  const imageName = performerImageName(sdk, version);
 
   if (!status.dockerAvailable) {
     fitCliError("Could not find docker on your PATH");
     return false;
   }
 
-  if (status.imageExists) {
-    console.log(`✓ Found the ${sdk.name} performer Docker image ${status.imageName}`);
+  if (await ghcrImageExists(execution, imageName)) {
+    console.log(`✓ Found the ${sdk.name} performer Docker image ${imageName}`);
     return true;
   }
 
   const githubToken = resolveGithubToken();
-  console.log(`\nPulling performer with:\n  docker ${dockerPullArgs(status.imageName).join(" ")}\n`);
+  console.log(`\nPulling performer with:\n  docker ${dockerPullArgs(imageName).join(" ")}\n`);
 
   try {
     if (githubToken) {
@@ -77,10 +87,10 @@ export async function checkAndPullPerformer(
       await loginToGhcr(execution, githubToken);
     }
     console.log("\nPulling performer container...\n");
-    await execution.run(execution.dockerCommand, dockerPullArgs(status.imageName));
+    await execution.run(execution.dockerCommand, dockerPullArgs(imageName));
   } catch (err) {
     fitCliError(
-      `\nFailed to pull the ${sdk.name} performer image ${status.imageName}: ${(err as Error).message}` +
+      `\nFailed to pull the ${sdk.name} performer image ${imageName}: ${(err as Error).message}` +
         (githubToken
           ? ""
           : "\nAdd a GitHub token with read:packages scope via `npm run init`, GITHUB_TOKEN, or GH_TOKEN, then try again."),
@@ -88,13 +98,12 @@ export async function checkAndPullPerformer(
     return false;
   }
 
-  const updatedStatus = await performerStatus(execution, sdk, version);
-  if (!updatedStatus.imageExists) {
-    fitCliError(`\nPulled the ${sdk.name} performer, but ${updatedStatus.imageName} is still missing`);
+  if (!(await ghcrImageExists(execution, imageName))) {
+    fitCliError(`\nPulled the ${sdk.name} performer, but ${imageName} is still missing`);
     return false;
   }
 
-  console.log(`\n✓ Pulled the ${sdk.name} performer Docker image ${updatedStatus.imageName}`);
+  console.log(`\n✓ Pulled the ${sdk.name} performer Docker image ${imageName}`);
   return true;
 }
 

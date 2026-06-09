@@ -38,10 +38,29 @@ test("JVM performerImageName uses the couchbase GHCR namespace", () => {
   assert.equal(performerImageName(sdk, "4.2.0"), "ghcr.io/couchbase/java-fit-performer:4.2.0");
 });
 
+test("JVM performerImageName defaults to master tag", () => {
+  const sdk = sdkByValue("java");
+  assert.ok(sdk);
+  assert.equal(performerImageName(sdk), "ghcr.io/couchbase/java-fit-performer:master");
+});
+
+test("non-JVM performerImageName defaults to main tag", () => {
+  const sdk = sdkByValue("node");
+  assert.ok(sdk);
+  assert.equal(performerImageName(sdk), "ghcr.io/couchbase/node-fit-performer:main");
+});
+
 test("normalizePerformerVersion collapses blank and main to the default tag", () => {
   assert.equal(normalizePerformerVersion(""), undefined);
   assert.equal(normalizePerformerVersion(" main "), undefined);
   assert.equal(normalizePerformerVersion("4.2.0"), "4.2.0");
+});
+
+test("normalizePerformerVersion collapses master to undefined for JVM SDKs", () => {
+  const sdk = sdkByValue("java");
+  assert.ok(sdk);
+  assert.equal(normalizePerformerVersion("master", sdk), undefined);
+  assert.equal(normalizePerformerVersion("4.2.0", sdk), "4.2.0");
 });
 
 test("validatePerformerVersion rejects full image references", () => {

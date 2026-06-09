@@ -13,10 +13,10 @@ import { resolveGithubToken } from "../../../util/fit/config.js";
 import { chooseSdk } from "../../../util/sdk/choose-sdk.js";
 import { sdkByValue, type Sdk } from "../../../util/sdk/sdks.js";
 import {
-  DEFAULT_PERFORMER_IMAGE_TAG,
   normalizePerformerVersion,
   performerImageName,
   performerPackageUrl,
+  sdkDefaultPerformerTag,
   validatePerformerVersion,
 } from "../util/performer-image.js";
 
@@ -235,9 +235,10 @@ export function collectContainerTags(versions: readonly GhcrPackageVersion[]): s
   return tags;
 }
 
-/** Prefer `main` when available, otherwise the first returned tag. */
-export function preferredContainerTag(tags: readonly string[]): string | undefined {
-  return tags.includes(DEFAULT_PERFORMER_IMAGE_TAG) ? DEFAULT_PERFORMER_IMAGE_TAG : tags[0];
+/** Prefer the SDK's default tag when available, otherwise the first returned tag. */
+export function preferredContainerTag(sdk: Sdk, tags: readonly string[]): string | undefined {
+  const defaultTag = sdkDefaultPerformerTag(sdk);
+  return tags.includes(defaultTag) ? defaultTag : tags[0];
 }
 
 /** Render the Groovy-style human-readable container list. */
@@ -287,7 +288,7 @@ export async function choosePerformerVersion(sdk: Sdk): Promise<string | undefin
   const packageUrl = performerPackageUrl(sdk);
   const token = resolveGithubToken();
 
-  const askForCustomTag = async (defaultTag: string = DEFAULT_PERFORMER_IMAGE_TAG): Promise<string | undefined> =>
+  const askForCustomTag = async (defaultTag: string = sdkDefaultPerformerTag(sdk)): Promise<string | undefined> =>
     normalizePerformerVersion(
       await input({
         promptId: `performer.version.custom.${sdk.value}`,
@@ -320,7 +321,7 @@ export async function choosePerformerVersion(sdk: Sdk): Promise<string | undefin
   }
 
   const customChoice = "__custom__";
-  const preferred = preferredContainerTag(tags);
+  const preferred = preferredContainerTag(sdk, tags);
   const choice = await select<string>({
     promptId: `performer.version.select.${sdk.value}`,
     message: `Which ${sdk.name} performer container do you want to use?`,
@@ -336,7 +337,7 @@ export async function choosePerformerVersion(sdk: Sdk): Promise<string | undefin
   });
 
   if (choice === customChoice) {
-    return askForCustomTag(preferred ?? DEFAULT_PERFORMER_IMAGE_TAG);
+    return askForCustomTag(preferred ?? sdkDefaultPerformerTag(sdk));
   }
   return normalizePerformerVersion(choice);
 }
