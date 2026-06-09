@@ -79,9 +79,9 @@ async function chooseFunctionalConnectivity(promptIdPrefix: string): Promise<Fun
     promptId: qualifyPromptId("connectivity", promptIdPrefix),
     message: "What do you want to FIT functional test against?",
     choices: [
-      { name: "Operational (classic couchbase:// connection)", value: "operational" },
+      { name: "Operational, couchbase[s]://", value: "operational" },
       {
-        name: "CNG / Protostellar (Cloud Native Gateway, couchbase2:// — needs Kubernetes)",
+        name: "Cloud Native Gateway, couchbase2://)",
         value: "cng",
       },
     ],
