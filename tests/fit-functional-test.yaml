@@ -38,6 +38,9 @@ cycles:
 
   # Test multiple cycles
   - type: functional
+    execution:
+      instance:
+        aws: {}
     cluster:
       cbdinocluster:
         init:

@@ -86,6 +86,36 @@ test("the tls choice is passed straight through", () => {
   assert.deepEqual(access.tls, { insecure: true });
 });
 
+test("a CNG cluster splits clusterAccess into classic driver and couchbase2 performer blocks", () => {
+  const config = buildFitConfiguration({
+    scheme: "couchbase",
+    defaultHostname: "172.19.0.2",
+    flavour: "self-managed",
+    credentials,
+    tls: null,
+    cng: { performerConnectionString: "couchbase2://172.19.0.2:32700", tls: { insecure: true } },
+  });
+
+  const access = config.clusterAccess as Record<string, unknown>;
+  assert.equal(access.defaultHostname, "172.19.0.2");
+  assert.deepEqual(access.driver, {
+    "//": "The driver connects with classic, which lets it create users, inspect cluster configs, etc.",
+    connectionString: "couchbase://${defaultHostname}",
+    tls: null,
+  });
+  assert.deepEqual(access.performer, {
+    connectionString: "couchbase2://172.19.0.2:32700",
+    tls: { insecure: true },
+  });
+  // The FIT proxy doesn't support couchbase2 yet, and DNS SRV is off for CNG.
+  assert.equal(access.proxy, null);
+  assert.deepEqual(access.rest, { hostname: "${defaultHostname}", resolveDnsSrv: false });
+  assert.equal(config["//"], AUTO_GENERATED_MARKER);
+  assert.deepEqual(config.excludeTests, ["situational"]);
+  // A plain operational connectionString must NOT be emitted for CNG.
+  assert.equal(access.connectionString, undefined);
+});
+
 test("a definition fitConfig piece can override defaults while runtime fields still win", () => {
   const config = buildFitConfiguration(
     {

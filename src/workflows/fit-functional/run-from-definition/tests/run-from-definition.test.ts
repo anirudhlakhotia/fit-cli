@@ -22,6 +22,7 @@ function functionalCycle(): ResolvedFunctionalCycle {
     type: "functional",
     instance: { kind: "localhost" },
     clusterMode: "cbdinocluster",
+    cng: false,
     cbdinocluster: {
       config: { nodes: [{ count: 1, version: "8.1.0-2188", services: ["kv"] }] },
       onClusterExists: "destroyAndRecreate",

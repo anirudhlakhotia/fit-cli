@@ -232,25 +232,63 @@ export function buildSelectedClusterFromConnstr(connectionString: string): Selec
   };
 }
 
-/** Resolve a cluster id's connection string into a {@link SelectedCluster}. */
+/**
+ * Pull a cluster id's connection string out of cbdinocluster. For CNG we ask for
+ * the performer's couchbase2 string with `--couchbase2`; otherwise we take the
+ * classic one. Returns null (after explaining) if there isn't a usable string.
+ */
+async function connstrFor(
+  cbdinocluster: string,
+  id: string,
+  execution: ClusterCommandExecutor,
+  couchbase2: boolean,
+): Promise<string | null> {
+  const args = couchbase2 ? ["connstr", "--couchbase2", id] : ["connstr", id];
+  let connectionString: string | null;
+  try {
+    connectionString = parseConnstr(await execution.capture(cbdinocluster, args));
+  } catch (err) {
+    console.error(`✗ setup-cluster: couldn't get the connection string for ${id}: ${(err as Error).message}`);
+    return null;
+  }
+  if (!connectionString) {
+    console.error(`✗ setup-cluster: cbdinocluster didn't return a connection string for ${id}.`);
+    return null;
+  }
+  return connectionString;
+}
+
+/**
+ * Resolve a cluster id's connection string into a {@link SelectedCluster}. For a
+ * CNG cluster the classic string drives the test-driver (admin) while a second
+ * `--couchbase2` string drives the performer, so both are fetched and combined.
+ */
 async function selectedClusterFor(
   cbdinocluster: string,
   id: string,
   execution: ClusterCommandExecutor,
+  cng = false,
 ): Promise<SelectedCluster | undefined> {
-  let connectionString: string | null;
-  try {
-    connectionString = parseConnstr(await execution.capture(cbdinocluster, ["connstr", id]));
-  } catch (err) {
-    console.error(`✗ setup-cluster: couldn't get the connection string for ${id}: ${(err as Error).message}`);
-    return undefined;
-  }
+  const connectionString = await connstrFor(cbdinocluster, id, execution, false);
   if (!connectionString) {
-    console.error(`✗ setup-cluster: cbdinocluster didn't return a connection string for ${id}.`);
     return undefined;
   }
   console.log(`→ setup-cluster: cluster ${id} is at ${connectionString}`);
-  return buildSelectedClusterFromConnstr(connectionString);
+  const cluster = buildSelectedClusterFromConnstr(connectionString);
+  if (!cluster || !cng) {
+    return cluster;
+  }
+
+  const performerConnectionString = await connstrFor(cbdinocluster, id, execution, true);
+  if (!performerConnectionString) {
+    console.error(`✗ setup-cluster: CNG cluster ${id} has no couchbase2 connection string for the performer.`);
+    return undefined;
+  }
+  console.log(`→ setup-cluster: CNG performer connects over ${performerConnectionString}`);
+  return {
+    ...cluster,
+    cng: { performerConnectionString, tls: { insecure: true } },
+  };
 }
 
 /** Build the `cbdinocluster rm <id>` args. */
@@ -282,6 +320,7 @@ async function allocate(
   deployer: string | undefined,
   execution: ClusterCommandExecutor,
   cycleDir: string,
+  cng: boolean,
 ): Promise<SetupDeclarativeClusterResult> {
   let allocated;
   try {
@@ -292,7 +331,7 @@ async function allocate(
     return FAILED({ cbdinocluster });
   }
 
-  const cluster = await selectedClusterFor(cbdinocluster, allocated.clusterId, execution);
+  const cluster = await selectedClusterFor(cbdinocluster, allocated.clusterId, execution, cng);
   return {
     ...(cluster ? { cluster } : {}),
     allocated: true,
@@ -314,9 +353,12 @@ export async function setupDeclarativeCluster(plan: {
   config: CbdinoclusterDef;
   onClusterExists: ClusterExistsPolicy;
   deployer?: string;
+  /** CNG cluster: also fetch the couchbase2 connstr so the performer can connect. */
+  cng?: boolean;
   /** GitHub credentials to inject into the uploaded ~/.cbdinocluster (for GHCR image pulls). */
   githubCredentials?: { user: string; token: string };
 }, execution: ClusterCommandExecutor = localClusterCommandExecutor(), cycleDir: string = ensureRunDir()): Promise<SetupDeclarativeClusterResult> {
+  const cng = plan.cng ?? false;
   const cbdinocluster = await resolveCbdinoclusterCommand(execution);
   if (!cbdinocluster) {
     console.error(
@@ -346,7 +388,7 @@ export async function setupDeclarativeCluster(plan: {
       `→ setup-cluster: onClusterExists is "useExisting" — trusting the running cluster ` +
         `${decision.cluster.id} [${decision.cluster.details}].`,
     );
-    const cluster = await selectedClusterFor(cbdinocluster, decision.cluster.id, execution);
+    const cluster = await selectedClusterFor(cbdinocluster, decision.cluster.id, execution, cng);
     return { ...(cluster ? { cluster } : {}), allocated: false, cbdinocluster, artifacts: [], details: [] };
   }
 
@@ -360,7 +402,7 @@ export async function setupDeclarativeCluster(plan: {
     }
   }
 
-  return allocate(cbdinocluster, plan.config, plan.deployer, execution, cycleDir);
+  return allocate(cbdinocluster, plan.config, plan.deployer, execution, cycleDir, cng);
 }
 
 if (isMain(import.meta.url)) {

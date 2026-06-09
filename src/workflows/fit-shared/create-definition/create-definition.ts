@@ -12,6 +12,7 @@ import { printWithoutTimestamps } from "../../../util/non-fit/fit-cli-log.js";
 import { qualifyPromptId, select } from "../../../util/non-fit/prompts.js";
 import { rootDirFromArgv } from "../../../util/fit/root.js";
 import { chooseSdk } from "../../../util/sdk/choose-sdk.js";
+import { askClusterDef } from "../../cluster/cluster-create/ask-cluster-def.js";
 import { askClusterExistsPolicy } from "../../cluster/cluster-create/ask-cluster-exists-policy.js";
 import { askVersion } from "../../performers/build-performer/ask-version.js";
 import { askPortInUsePolicy } from "../../performers/util/ask-port-in-use-policy.js";
@@ -64,6 +65,52 @@ async function chooseDefinitionBuilderAction(index: number): Promise<DefinitionB
  * first started — every iteration added to that cycle then shares the choice. At
  * run time the user can still override and force everything onto localhost.
  */
+/** Whether a functional cycle tests against operational Couchbase or CNG. */
+type FunctionalConnectivity = "operational" | "cng";
+
+/**
+ * Ask whether this functional testing should run against an operational cluster
+ * (classic `couchbase://`) or CNG / Protostellar (Cloud Native Gateway,
+ * `couchbase2://`). The choice keys the cycle: switching to "the other" starts a
+ * new cycle, because the cluster has to be stood up differently.
+ */
+async function chooseFunctionalConnectivity(promptIdPrefix: string): Promise<FunctionalConnectivity> {
+  return select<FunctionalConnectivity>({
+    promptId: qualifyPromptId("connectivity", promptIdPrefix),
+    message: "What do you want to FIT functional test against?",
+    choices: [
+      { name: "Operational (classic couchbase:// connection)", value: "operational" },
+      {
+        name: "CNG / Protostellar (Cloud Native Gateway, couchbase2:// — needs Kubernetes)",
+        value: "cng",
+      },
+    ],
+  });
+}
+
+/**
+ * The connectivity a functional cycle already targets, read back from its cluster
+ * def: a `cao` block means CNG, otherwise operational. Pure logic — unit-tested.
+ */
+export function functionalCycleConnectivity(cycle: FunctionalCycle): FunctionalConnectivity {
+  return cycle.cluster.cbdinocluster?.config.cao !== undefined ? "cng" : "operational";
+}
+
+/**
+ * Pick the cluster for a brand-new functional cycle. Operational keeps the
+ * existing-or-cbdinocluster choice; CNG is cbdinocluster-allocated only (fit-cli
+ * stands up a cluster with the `cao` block and connects the performer over
+ * couchbase2://), so it goes straight to the cbdinocluster questions with CNG on.
+ */
+async function chooseFunctionalDefinitionCluster(
+  connectivity: FunctionalConnectivity,
+): Promise<DefinitionCluster> {
+  if (connectivity === "cng") {
+    return { kind: "cbdinocluster", def: await askClusterDef({ cng: true }) };
+  }
+  return chooseDefinitionCluster();
+}
+
 async function chooseCycleExecution(promptIdPrefix: string): Promise<CycleInstanceSetup> {
   const choice = await select<"localhost" | "aws">({
     promptId: qualifyPromptId("execution.instance", promptIdPrefix),
@@ -100,13 +147,17 @@ async function addFunctionalIteration(
   await ensureSharedRepoSetup(state);
   const promptIdPrefix = `fit.definition.iteration.${iterationIndex + 1}.functional`;
   const execution = createLocalFitExecutionContext(rootDir);
+  const connectivity = await chooseFunctionalConnectivity(promptIdPrefix);
   const sdk = await chooseSdk("Which SDK do you want to test with FIT functional?", promptIdPrefix);
   const version = await askVersion(promptIdPrefix);
   const onPortInUse = await askPortInUsePolicy(promptIdPrefix);
   const selection = await selectFitTests(execution, FUNCTIONAL_TEST_DOMAIN, promptIdPrefix);
 
+  // Reuse the open functional cycle only when it targets the same connectivity —
+  // operational and CNG need the cluster stood up differently, so adding "the
+  // other" starts a fresh cycle.
   const currentCycle = currentCycleOfType(state, "functional");
-  if (currentCycle) {
+  if (currentCycle && functionalCycleConnectivity(currentCycle) === connectivity) {
     currentCycle.iterations.push(
       buildFunctionalIterationFrom({
         cluster: functionalCycleCluster(currentCycle),
@@ -120,10 +171,12 @@ async function addFunctionalIteration(
   }
 
   console.log(
-    "\nStarting a new FIT functional cycle. This cycle owns one cluster lifetime, and every functional iteration you add now will share it.",
+    connectivity === "cng"
+      ? "\nStarting a new FIT functional CNG cycle. cbdinocluster installs the gateway via the Couchbase Kubernetes Operator, so this needs Kubernetes. This cycle owns one cluster lifetime, shared by every CNG iteration you add now."
+      : "\nStarting a new FIT functional cycle. This cycle owns one cluster lifetime, and every functional iteration you add now will share it.",
   );
   const instance = await chooseCycleExecution(promptIdPrefix);
-  const cluster = await chooseDefinitionCluster();
+  const cluster = await chooseFunctionalDefinitionCluster(connectivity);
   const onClusterExists = cluster.kind === "cbdinocluster" ? await askClusterExistsPolicy() : undefined;
   state.cycles.push(
     buildFunctionalCycleFrom({

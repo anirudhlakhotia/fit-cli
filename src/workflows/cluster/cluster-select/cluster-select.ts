@@ -31,6 +31,18 @@ export interface SelectedCluster {
   flavour: ClusterFlavour;
   credentials: Credentials;
   tls: TlsConfig;
+  /**
+   * Present for CNG / Protostellar clusters. The fields above stay classic — the
+   * test-driver still connects over couchbase:// for admin (creating buckets,
+   * inspecting configs) — while the performer connects to the gateway over this
+   * couchbase2:// connection string. See FITConfiguration.couchbase2.example.json.
+   */
+  cng?: {
+    /** The full couchbase2:// connection string the performer uses. */
+    performerConnectionString: string;
+    /** TLS for the performer's couchbase2 connection (cbdino gateways are insecure). */
+    tls: TlsConfig;
+  };
 }
 
 /** The outcome of the cluster-select workflow. */

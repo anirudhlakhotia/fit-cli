@@ -363,6 +363,14 @@ export async function runPerformerClusterSanityCheck(
     return performerClusterSanityDetails(true, "skipped: performer container is externally managed");
   }
 
+  // CNG performers connect to the gateway over couchbase2 (often via an exposed
+  // node port), not to the classic cluster host on a shared Docker network — so
+  // the Docker-network heuristic below doesn't apply and would false-negative.
+  if (cluster.cng) {
+    fitCliWarn("\nSkipping performer/cluster sanity check for CNG (performer reaches the gateway over couchbase2).");
+    return performerClusterSanityDetails(true, "skipped: CNG performer connects to the gateway over couchbase2");
+  }
+
   const captureCommand = options.captureCommand ?? capture;
   const dockerCommand = options.dockerCommand ?? "docker";
 

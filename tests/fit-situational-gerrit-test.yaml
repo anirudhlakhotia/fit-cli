@@ -1,8 +1,10 @@
-# Runs a single sanity FIT/SIT test against a single SDK, in a clean environment.
-# Run with:
-# npm run definition -- --interactive examples/fit-situational-sanity-test.yaml
 version: 1
 type: fit
+# Test checking out from gerrit
+setup:
+  repos:
+    transactions-fit-performer:
+      gerritRef: refs/changes/30/246430/2
 cycles:
   - type: situational
     execution:
@@ -18,7 +20,7 @@ cycles:
             mode: hosted
         runtime:
           tests:
-            - com.couchbase.situational.tests.VolumeTest#steadyStateKvGets
+            - com.couchbase.situational.tests.SanityTest
     cbdinocluster:
       init:
         # This file will be uploaded verbatim into clean environments as ~/.cbdinocluster

@@ -93,6 +93,12 @@ export interface ResolvedFunctionalCycle {
   /** Where this cycle runs. */
   instance: ResolvedInstance;
   clusterMode: "connection" | "useExisting" | "cbdinocluster";
+  /**
+   * Whether this cycle tests against CNG / Protostellar — true when the
+   * cbdinocluster def carries a `cao` block. CNG clusters need Kubernetes and the
+   * performer connects over couchbase2://.
+   */
+  cng: boolean;
   cbdinocluster?: ResolvedCbdinocluster;
   iterations: ResolvedFunctionalIteration[];
 }
@@ -305,6 +311,7 @@ export function resolveCycle(cycle: FitCycle): ResolvedCycle {
     type: "functional",
     instance: resolveInstance(cycle.execution),
     clusterMode,
+    cng: cbdinocluster?.config.cao !== undefined,
     ...(cbdinocluster ? { cbdinocluster } : {}),
     iterations: cycle.iterations.map((iteration) => {
       const resolved = resolveFunctionalIteration(iteration);

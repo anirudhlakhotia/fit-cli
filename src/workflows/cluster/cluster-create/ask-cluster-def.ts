@@ -1,11 +1,15 @@
 /**
  * Step: ask the user what cluster they want cbdinocluster to allocate — the
- * cluster type, node count, Couchbase version, services, and whether they want
- * CNG/Protostellar support. Pure prompting; turning the answers into the YAML
- * def lives in build-cluster-def.ts.
+ * cluster type, node count, Couchbase version and services. Pure prompting;
+ * turning the answers into the YAML def lives in build-cluster-def.ts.
  *
- * Run on its own:
+ * Whether the cluster should add CNG/Protostellar (Cloud Native Gateway) support
+ * is *not* asked here — the caller decides it (the definition builder asks
+ * "operational vs CNG" when adding functional testing) and passes it in.
+ *
+ * Run on its own (add --cng to build a CNG cluster def):
  *   npx tsx src/workflows/cluster/cluster-create/ask-cluster-def.ts
+ *   npx tsx src/workflows/cluster/cluster-create/ask-cluster-def.ts --cng
  *
  * Prints the gathered answers as JSON.
  */
@@ -24,8 +28,19 @@ const SERVICES = [
   { name: "backup (Backup)", value: "backup", checked: false },
 ];
 
+/** Options controlling what {@link askClusterDef} produces. */
+export interface AskClusterDefOptions {
+  /**
+   * Build a CNG/Protostellar (Cloud Native Gateway) cluster — adds the `cao`
+   * block to the cbdinocluster def. The connectivity choice is made one level up
+   * (the definition builder's "operational vs CNG" prompt), so this is passed in
+   * rather than asked here.
+   */
+  cng?: boolean;
+}
+
 /** Ask the questions that describe the cluster to allocate. */
-export async function askClusterDef(): Promise<ClusterDef> {
+export async function askClusterDef(options: AskClusterDefOptions = {}): Promise<ClusterDef> {
   // Only one cluster type for now, but we still ask so adding more later is
   // natural — and so the limitation is visible.
   await select({
@@ -55,22 +70,12 @@ export async function askClusterDef(): Promise<ClusterDef> {
     choices: SERVICES,
   });
 
-  // CNG/Protostellar support is intentionally not offered yet — re-enable this
-  // prompt once fit-cli is ready to actually drive CNG testing. Until then we
-  // always build a plain operational cluster (no cao block; see build-cluster-def).
-  //
-  // const cng = await confirm({
-  //   promptId: "cluster.create.cng",
-  //   message: "Do you want CNG/Protostellar (Cloud Native Gateway) support? (this just enables it in the cluster, it doesn't make CNG testing happen - yet!)",
-  //   default: false,
-  // });
-  const cng = false;
-
-  return { nodeCount, version, services, cng };
+  return { nodeCount, version, services, cng: options.cng ?? false };
 }
 
 if (isMain(import.meta.url)) {
   runCli(async () => {
-    console.log(JSON.stringify(await askClusterDef(), null, 2));
+    const cng = process.argv.slice(2).includes("--cng");
+    console.log(JSON.stringify(await askClusterDef({ cng }), null, 2));
   });
 }

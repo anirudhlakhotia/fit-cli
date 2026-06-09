@@ -61,6 +61,13 @@ import {
 } from "../../cluster/cluster-create/allocate-cluster.js";
 import { runClusterDiag } from "../../cluster/cluster-diag/cluster-diag.js";
 import { prepareCbdinoclusterConfig, removeCluster, setupDeclarativeCluster } from "../../cluster/cluster-create/setup-declarative-cluster.js";
+import { defaultCbdinoclusterInitConfig } from "../../cluster/cluster-create/default-cbdinocluster-init-config.js";
+import {
+  checkLocalhostCngKubernetes,
+  provisionRemoteK3d,
+  remoteHomeFromWorkspace,
+  withRemoteK8sBlock,
+} from "../../cluster/cluster-create/cng-kubernetes.js";
 import {
   checkBuildAndRunPerformer,
   performerLogStem,
@@ -131,7 +138,11 @@ function clusterLabel(cycle: ResolvedCycle): string {
   }
   const cluster = cycle.iterations.find(functionalWithCluster)?.cluster;
   if (cluster) {
-    return `${cluster.scheme}://${cluster.defaultHostname} (${cluster.flavour})`;
+    const cng = cluster.cng ? ` — CNG performer ${cluster.cng.performerConnectionString}` : "";
+    return `${cluster.scheme}://${cluster.defaultHostname} (${cluster.flavour})${cng}`;
+  }
+  if (cycle.cng) {
+    return "CNG cbdinocluster plan (couchbase2; allocated during setup-cluster)";
   }
   if (cycle.clusterMode === "connection") {
     return "existing cluster from cycle.cluster.connection";
@@ -223,6 +234,50 @@ function announce(
 }
 
 /**
+ * Augment a CNG cycle's cbdinocluster init config with the `k8s` block pointing
+ * at the k3d cluster fit-cli stood up on the remote box.
+ */
+function withRemoteK8sInit(cycle: ResolvedFunctionalCycle, home: string): ResolvedFunctionalCycle {
+  if (!cycle.cbdinocluster) {
+    return cycle;
+  }
+  const initConfig = cycle.cbdinocluster.init?.config ?? defaultCbdinoclusterInitConfig();
+  return {
+    ...cycle,
+    cbdinocluster: {
+      ...cycle.cbdinocluster,
+      init: { config: withRemoteK8sBlock(initConfig, home) },
+    },
+  };
+}
+
+/**
+ * Make a functional cycle's execution target CNG-ready. Non-CNG cycles pass
+ * through untouched. For CNG: on localhost, verify ~/.cbdinocluster has
+ * Kubernetes enabled (FatalToCycle with guidance if not); on a clean instance,
+ * install k3d and point the uploaded cbdinocluster config at it.
+ */
+async function prepareFunctionalCngCycle(
+  cycle: ResolvedFunctionalCycle,
+  execution: FitExecutionContext,
+): Promise<ResolvedFunctionalCycle> {
+  if (!cycle.cng) {
+    return cycle;
+  }
+  if (execution.kind === "remote") {
+    const home = remoteHomeFromWorkspace(execution.rootDir);
+    await provisionRemoteK3d(execution, home);
+    return withRemoteK8sInit(cycle, home);
+  }
+  const check = checkLocalhostCngKubernetes();
+  if (!check.ok) {
+    throwFatalToCycle(check.message);
+  }
+  console.log("→ setup-cluster: this machine's ~/.cbdinocluster has Kubernetes enabled — CNG-ready.");
+  return cycle;
+}
+
+/**
  * The setup-cluster step. Existing-cluster modes only report what the file
  * resolved to; a cbdinocluster plan is allocated here and then shared across
  * every iteration in the run.
@@ -243,7 +298,7 @@ export async function setupCluster(
     return { cycle, artifacts: [], details: [] };
   }
   if (cycle.cbdinocluster) {
-    const outcome = await setupDeclarativeClusterFn({ ...cycle.cbdinocluster, githubCredentials }, execution, cycleRunDir(cycleIndex));
+    const outcome = await setupDeclarativeClusterFn({ ...cycle.cbdinocluster, cng: cycle.cng, githubCredentials }, execution, cycleRunDir(cycleIndex));
     const clusterState: ResumeClusterState | undefined = outcome.cluster
       ? {
           cluster: outcome.cluster,
@@ -932,12 +987,16 @@ export async function runFromDefinition(
 
       try {
         if (cycle.type === "functional") {
+          // CNG cycles need Kubernetes where cbdinocluster runs: check it on
+          // localhost, or stand up k3d (and point the uploaded ~/.cbdinocluster at
+          // it) on a clean instance, before allocating anything.
+          const functionalCycle = await prepareFunctionalCngCycle(cycle, execution);
           if (cycleIndex === startCycleIndex && !phases.setupCluster) {
-            const resumed = await resumeCluster(cycle, savedState);
+            const resumed = await resumeCluster(functionalCycle, savedState);
             activeCycle = resumed.cycle;
             clusterState = resumed.clusterState;
           } else {
-            const setup = await setupCluster(cycle, execution, setupDeclarativeCluster, githubCredentials, cycleIndex);
+            const setup = await setupCluster(functionalCycle, execution, setupDeclarativeCluster, githubCredentials, cycleIndex);
             activeCycle = setup.cycle;
             clusterState = setup.clusterState;
             artifacts.push(...setup.artifacts);
