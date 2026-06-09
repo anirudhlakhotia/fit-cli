@@ -11,6 +11,7 @@ import {
   AUTO_GENERATED_MARKER,
   buildFitConfiguration,
   firstHostname,
+  runtimeFitConfigurationPiece,
 } from "../build-fit-configuration.js";
 
 const credentials = { username: "Administrator", password: "password" };
@@ -145,6 +146,43 @@ test("a definition fitConfig piece can override defaults while runtime fields st
   assert.equal(access.username, "custom-user");
   assert.equal(access.password, "custom-password");
   assert.equal(access.defaultHostname, "actual-host");
+});
+
+test("when fitConfig has ${defaultHostname} for rest.hostname, runtime piece corrects it to the first IP", () => {
+  const config = buildFitConfiguration(
+    {
+      scheme: "couchbase",
+      defaultHostname: "172.18.0.2,172.18.0.4,172.18.0.3",
+      flavour: "self-managed",
+      credentials,
+      tls: null,
+    },
+    8060,
+    {
+      clusterAccess: {
+        connectionString: "couchbase://${defaultHostname}",
+        rest: { hostname: "${defaultHostname}", resolveDnsSrv: false },
+      },
+    },
+  );
+
+  const access = config.clusterAccess as Record<string, unknown>;
+  assert.equal(access.defaultHostname, "172.18.0.2,172.18.0.4,172.18.0.3");
+  assert.deepEqual(access.rest, { hostname: "172.18.0.2", resolveDnsSrv: false });
+});
+
+test("runtimeFitConfigurationPiece patches both defaultHostname and rest.hostname", () => {
+  const piece = runtimeFitConfigurationPiece({
+    scheme: "couchbase",
+    defaultHostname: "172.18.0.2,172.18.0.4,172.18.0.3",
+    flavour: "self-managed",
+    credentials,
+    tls: null,
+  });
+
+  const access = (piece.data.clusterAccess as Record<string, unknown>);
+  assert.equal(access.defaultHostname, "172.18.0.2,172.18.0.4,172.18.0.3");
+  assert.deepEqual(access.rest, { hostname: "172.18.0.2" });
 });
 
 test("a multi-node self-managed cluster uses only the first IP for rest.hostname", () => {

@@ -15,6 +15,7 @@ import {
   defaultSituationalCbdinoclusterInitConfig,
 } from "../../cluster/cluster-create/default-cbdinocluster-init-config.js";
 import type { ClusterExistsPolicy } from "../../cluster/cluster-create/cluster-exists-policy.js";
+import { DEFAULT_CREDENTIALS } from "../../cluster/cluster-select/ask-credentials.js";
 import type { SelectedCluster } from "../../cluster/cluster-select/cluster-select.js";
 import type { PortInUsePolicy } from "../../performers/util/performer-port.js";
 import type { FitTestSelection } from "../../fit-shared/select-fit-tests/select-fit-tests.js";
@@ -72,6 +73,49 @@ function buildClusterAccessFitConfig(cluster: SelectedCluster): FitConfigPiece {
   return fitConfig;
 }
 
+/**
+ * Build a fitConfig template for a cbdinocluster-based cluster.  The cluster
+ * IPs are not known at definition time, so ${defaultHostname} is used as a
+ * placeholder — fit-cli fills in defaultHostname and rest.hostname at runtime
+ * via the runtime config piece.
+ */
+function buildCbdinoclusterFitConfig(cng: boolean): FitConfigPiece {
+  if (cng) {
+    return {
+      clusterAccess: {
+        driver: {
+          connectionString: "couchbase://${defaultHostname}",
+          tls: null,
+        },
+        username: DEFAULT_CREDENTIALS.username,
+        password: DEFAULT_CREDENTIALS.password,
+        rest: {
+          hostname: "${defaultHostname}",
+          resolveDnsSrv: false,
+        },
+        proxy: null,
+      },
+      excludeTests: ["situational"],
+    };
+  }
+  return {
+    clusterAccess: {
+      connectionString: "couchbase://${defaultHostname}",
+      username: DEFAULT_CREDENTIALS.username,
+      password: DEFAULT_CREDENTIALS.password,
+      tls: null,
+      rest: {
+        hostname: "${defaultHostname}",
+        resolveDnsSrv: false,
+      },
+      proxy: {
+        hostname: "host.docker.internal",
+      },
+    },
+    excludeTests: ["situational"],
+  };
+}
+
 function buildTests(selection: FitTestSelection) {
   return {
     run: selection.mavenTestSelector
@@ -114,6 +158,7 @@ function buildFunctionalInstance(inputs: DefinitionInputs): InstanceLifetime {
                 config: buildClusterDefObject(inputs.cluster.def),
                 ...(inputs.onClusterExists ? { onClusterExists: inputs.onClusterExists } : {}),
               },
+              fitConfig: buildCbdinoclusterFitConfig(inputs.cluster.def.cng),
             }),
         sessions: [
           {
@@ -201,7 +246,8 @@ export function formatFitDefinition(definition: FitDefinition): string {
   text = text.replace(
     /^(\s*)(-\s+)?fitConfig:$/gm,
     [
-      "$1# This will be used as a base when generating FITConfiguration.json.  Anything here will be copied into the config (unless overwritten by fit-cli)",
+      "$1# This will be used as a base when generating FITConfiguration.json.  Anything here will be copied into the config (unless overwritten by fit-cli).",
+      "$1# fit-cli will provide some fields like \\${defaultHostname} at runtime when cluster details are known.",
       "$1$2fitConfig:",
     ].join("\n"),
   );

@@ -128,6 +128,9 @@ export function runtimeFitConfigurationPiece(cluster: SelectedCluster): ConfigPi
     data: {
       clusterAccess: {
         defaultHostname: cluster.defaultHostname,
+        rest: {
+          hostname: firstHostname(cluster.defaultHostname),
+        },
       },
     },
   };
