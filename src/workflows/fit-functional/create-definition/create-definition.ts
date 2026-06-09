@@ -20,6 +20,7 @@ import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { printWithoutTimestamps } from "../../../util/non-fit/fit-cli-log.js";
 import { confirm, input, qualifyPromptId } from "../../../util/non-fit/prompts.js";
 import { rootDirFromArgv } from "../../../util/fit/root.js";
+import { loadFitCliConfig } from "../../../util/fit/config.js";
 import { chooseSdk } from "../../../util/sdk/choose-sdk.js";
 import { askClusterDef } from "../../cluster/cluster-create/ask-cluster-def.js";
 import { askClusterExistsPolicy } from "../../cluster/cluster-create/ask-cluster-exists-policy.js";
@@ -101,6 +102,7 @@ export async function createFitFunctionalDefinition(rootDir: string): Promise<Ru
     ...(onClusterExists ? { onClusterExists } : {}),
     onPortInUse,
     selection,
+    githubUser: loadFitCliConfig().config?.github?.user,
   });
 
   const result = writeFitFunctionalDefinition(definition);

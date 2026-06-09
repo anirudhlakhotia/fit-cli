@@ -10,6 +10,7 @@ import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { printWithoutTimestamps } from "../../../util/non-fit/fit-cli-log.js";
 import { qualifyPromptId, select } from "../../../util/non-fit/prompts.js";
 import { rootDirFromArgv } from "../../../util/fit/root.js";
+import { loadFitCliConfig } from "../../../util/fit/config.js";
 import { chooseSdk } from "../../../util/sdk/choose-sdk.js";
 import { askClusterDef } from "../../cluster/cluster-create/ask-cluster-def.js";
 import { askClusterExistsPolicy } from "../../cluster/cluster-create/ask-cluster-exists-policy.js";
@@ -149,6 +150,7 @@ async function addFunctionalRun(
       ...(version ? { version } : {}),
       onPortInUse,
       selection,
+      githubUser: loadFitCliConfig().config?.github?.user,
     }).instances[0]?.clusters[0]?.sessions[0];
     if (!generatedSession) {
       throw new Error("Expected a generated functional definition to contain one session.");
@@ -175,6 +177,7 @@ async function addFunctionalRun(
     ...(version ? { version } : {}),
     onPortInUse,
     selection,
+    githubUser: loadFitCliConfig().config?.github?.user,
   }).instances[0];
   if (!generatedInstance) {
     throw new Error("Expected a generated functional definition to contain one instance.");

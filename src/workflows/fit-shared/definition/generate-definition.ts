@@ -14,6 +14,7 @@ import {
   defaultCbdinoclusterInitConfig,
   defaultSituationalCbdinoclusterInitConfig,
 } from "../../cluster/cluster-create/default-cbdinocluster-init-config.js";
+import { CNG_K3D_CONTEXT } from "../../cluster/cluster-create/cng-kubernetes.js";
 import type { ClusterExistsPolicy } from "../../cluster/cluster-create/cluster-exists-policy.js";
 import { DEFAULT_CREDENTIALS } from "../../cluster/cluster-select/ask-credentials.js";
 import type { SelectedCluster } from "../../cluster/cluster-select/cluster-select.js";
@@ -49,6 +50,8 @@ export interface DefinitionInputs {
   onPortInUse?: PortInUsePolicy;
   selection: FitTestSelection;
   instance?: InstanceMode;
+  /** GitHub username for the cbdinocluster github section (needed for GHCR pulls). */
+  githubUser?: string;
 }
 
 export interface SituationalDefinitionInputs {
@@ -120,6 +123,24 @@ function buildCbdinoclusterFitConfig(cng: boolean): FitConfigPiece {
   };
 }
 
+/**
+ * Build the cbdinocluster init config for a definition. For CNG, includes the
+ * k8s block (enabled + context — cao-tools and kubeconfig are CSP-dependent and
+ * added at runtime) and optionally the github block (token added at runtime).
+ */
+function buildCbdinoclusterInitConfig(cng: boolean, githubUser?: string): PieceData {
+  const base = defaultCbdinoclusterInitConfig();
+  if (!cng) {
+    return githubUser ? { ...base, github: { enabled: "true", user: githubUser } } : base;
+  }
+  return {
+    ...base,
+    // cao-tools and kubeconfig paths are added at runtime (CSP-dependent).
+    k8s: { enabled: "true", context: CNG_K3D_CONTEXT },
+    ...(githubUser ? { github: { enabled: "true", user: githubUser } } : {}),
+  };
+}
+
 function buildTests(selection: FitTestSelection) {
   return {
     run: selection.mavenTestSelector
@@ -143,6 +164,7 @@ function buildPerformerSession(
 }
 
 function buildFunctionalInstance(inputs: DefinitionInputs): InstanceLifetime {
+  const cng = inputs.cluster.kind === "cbdinocluster" && inputs.cluster.def.cng;
   return {
     ...(inputs.instance ?? { localhost: {} }),
     clusters: [
@@ -158,11 +180,11 @@ function buildFunctionalInstance(inputs: DefinitionInputs): InstanceLifetime {
             }
           : {
               cbdinocluster: {
-                init: { config: defaultCbdinoclusterInitConfig() },
+                init: { config: buildCbdinoclusterInitConfig(cng, inputs.githubUser) },
                 config: buildClusterDefObject(inputs.cluster.def),
                 ...(inputs.onClusterExists ? { onClusterExists: inputs.onClusterExists } : {}),
               },
-              fitConfig: buildCbdinoclusterFitConfig(inputs.cluster.def.cng),
+              fitConfig: buildCbdinoclusterFitConfig(cng),
             }),
         sessions: [
           {
