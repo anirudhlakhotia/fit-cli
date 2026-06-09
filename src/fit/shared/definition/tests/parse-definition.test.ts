@@ -151,3 +151,140 @@ test("rejects unsupported future versions", () => {
     UnsupportedDefinitionVersionError,
   );
 });
+
+test("parses clusterConfig string ref and fitConfig string ref at run level", () => {
+  const def = parseDefinition(`
+version: 1
+type: fit
+instances:
+  - localhost: {}
+    clusters:
+      - clusterConfig: "cluster-0"
+        sessions:
+          - performer:
+              sdk: java
+            runs:
+              - type: functional
+                fitConfig: "fit-config-0"
+                tests:
+                  run: all
+clusterConfigs:
+  - id: "cluster-0"
+    cbdinocluster:
+      config:
+        nodes:
+          - count: 1
+            version: 8.1.0-2188
+            services: [kv]
+fitConfigs:
+  - id: "fit-config-0"
+    config:
+      clusterAccess:
+        connectionString: couchbase://\${defaultHostname}
+        username: Administrator
+        password: password
+        tls: null
+`);
+  assert.equal(def.instances[0]?.clusters[0]?.clusterConfig, "cluster-0");
+  assert.equal(def.instances[0]?.clusters[0]?.sessions[0]?.runs[0]?.fitConfig, "fit-config-0");
+  assert.equal(def.clusterConfigs?.[0]?.id, "cluster-0");
+  assert.equal(def.fitConfigs?.[0]?.id, "fit-config-0");
+});
+
+test("rejects clusterConfig mixed with inline cluster fields", () => {
+  assert.throws(
+    () =>
+      parseDefinition(`
+version: 1
+type: fit
+instances:
+  - localhost: {}
+    clusters:
+      - clusterConfig: "cluster-0"
+        cbdinocluster:
+          config:
+            nodes:
+              - count: 1
+                version: 8.1.0-2188
+                services: [kv]
+        sessions:
+          - performer:
+              sdk: java
+            runs:
+              - type: functional
+                tests:
+                  run: all
+clusterConfigs: []
+`),
+    (err: unknown) => err instanceof InvalidDefinitionError && /mix/.test(err.message),
+  );
+});
+
+test("rejects duplicate clusterConfigs ids", () => {
+  assert.throws(
+    () =>
+      parseDefinition(`
+version: 1
+type: fit
+instances:
+  - localhost: {}
+    clusters:
+      - clusterConfig: "cluster-0"
+        sessions:
+          - performer:
+              sdk: java
+            runs:
+              - type: functional
+                tests:
+                  run: all
+clusterConfigs:
+  - id: "cluster-0"
+    cbdinocluster:
+      config:
+        nodes:
+          - count: 1
+            version: 8.1.0-2188
+            services: [kv]
+  - id: "cluster-0"
+    cbdinocluster:
+      config:
+        nodes:
+          - count: 1
+            version: 8.1.0-2188
+            services: [kv]
+`),
+    (err: unknown) => err instanceof InvalidDefinitionError && /[Dd]uplicate/.test(err.message),
+  );
+});
+
+test("rejects duplicate fitConfigs ids", () => {
+  assert.throws(
+    () =>
+      parseDefinition(`
+version: 1
+type: fit
+instances:
+  - localhost: {}
+    clusters:
+      - connection:
+          connectionString: couchbase://localhost
+          username: Administrator
+          password: password
+        sessions:
+          - performer:
+              sdk: java
+            runs:
+              - type: functional
+                tests:
+                  run: all
+fitConfigs:
+  - id: "fit-config-0"
+    config:
+      key: value
+  - id: "fit-config-0"
+    config:
+      key: other
+`),
+    (err: unknown) => err instanceof InvalidDefinitionError && /[Dd]uplicate/.test(err.message),
+  );
+});

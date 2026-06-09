@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   resolveConnectionCluster,
   resolveDefinition,
+  resolveDefinitionRefs,
   resolveFitConfigCluster,
   resolveMavenArgs,
   resolveSession,
@@ -97,14 +98,13 @@ test("resolveSession applies performer defaults and strips redundant clusterAcce
       ],
     } satisfies SessionLifetime,
     { instanceIndex: 0, clusterIndex: 0, sessionIndex: 0 },
-    undefined,
     true,
   );
   assert.equal(resolved.performerPort, DEFAULT_PERFORMER_PORT);
   assert.deepEqual(resolved.runs[0]?.fitConfig, { excludeTests: ["openshift"] });
 });
 
-test("resolveDefinition uses cluster-level fitConfig for useExisting clusters", () => {
+test("resolveDefinition uses run-level fitConfig for useExisting clusters", () => {
   const resolved = resolveDefinition({
     version: 1,
     type: "fit",
@@ -114,8 +114,7 @@ test("resolveDefinition uses cluster-level fitConfig for useExisting clusters", 
         clusters: [
           {
             useExisting: {},
-            fitConfig: LOCAL_FIT_CONFIG,
-            sessions: [{ performer: { sdk: "java" }, runs: [{ type: "functional", tests: { run: "all" } }] }],
+            sessions: [{ performer: { sdk: "java" }, runs: [{ type: "functional", tests: { run: "all" }, fitConfig: LOCAL_FIT_CONFIG }] }],
           },
         ],
       },
@@ -141,4 +140,101 @@ test("situational runs use the situational Maven args", () => {
     "-Dgroups=situational,cbDino",
     "-DexcludedGroups=openshift",
   ]);
+});
+
+test("resolveDefinitionRefs replaces clusterConfig string ref with inline fields", () => {
+  const def = resolveDefinitionRefs({
+    version: 1,
+    type: "fit",
+    instances: [
+      {
+        localhost: {},
+        clusters: [
+          {
+            clusterConfig: "cluster-0",
+            sessions: [{ performer: { sdk: "java" }, runs: [{ type: "functional", tests: { run: "all" } }] }],
+          },
+        ],
+      },
+    ],
+    clusterConfigs: [
+      {
+        id: "cluster-0",
+        cbdinocluster: {
+          config: { nodes: [{ count: 1, version: "8.1.0-2188", services: ["kv"] }] },
+        },
+      },
+    ],
+  });
+  const cluster = def.instances[0]?.clusters[0];
+  assert.ok(cluster?.cbdinocluster, "ref should be replaced with inline cbdinocluster");
+  assert.equal(cluster?.clusterConfig, undefined);
+  assert.equal(def.clusterConfigs, undefined);
+});
+
+test("resolveDefinitionRefs replaces fitConfig string ref with inline config", () => {
+  const fitConfigData = { clusterAccess: { connectionString: "couchbase://localhost", username: "Administrator", password: "password", tls: null } };
+  const def = resolveDefinitionRefs({
+    version: 1,
+    type: "fit",
+    instances: [
+      {
+        localhost: {},
+        clusters: [
+          {
+            connection: { connectionString: "couchbase://localhost", username: "Administrator", password: "password", tls: null },
+            sessions: [{ performer: { sdk: "java" }, runs: [{ type: "functional", fitConfig: "fit-config-0", tests: { run: "all" } }] }],
+          },
+        ],
+      },
+    ],
+    fitConfigs: [{ id: "fit-config-0", config: fitConfigData }],
+  });
+  const run = def.instances[0]?.clusters[0]?.sessions[0]?.runs[0];
+  assert.deepEqual(run?.fitConfig, fitConfigData);
+  assert.equal(def.fitConfigs, undefined);
+});
+
+test("resolveDefinitionRefs throws on unknown clusterConfig ref", () => {
+  assert.throws(
+    () =>
+      resolveDefinitionRefs({
+        version: 1,
+        type: "fit",
+        instances: [
+          {
+            localhost: {},
+            clusters: [
+              {
+                clusterConfig: "nonexistent",
+                sessions: [{ performer: { sdk: "java" }, runs: [{ type: "functional", tests: { run: "all" } }] }],
+              },
+            ],
+          },
+        ],
+      }),
+    /nonexistent/,
+  );
+});
+
+test("resolveDefinitionRefs throws on unknown fitConfig ref", () => {
+  assert.throws(
+    () =>
+      resolveDefinitionRefs({
+        version: 1,
+        type: "fit",
+        instances: [
+          {
+            localhost: {},
+            clusters: [
+              {
+                connection: { connectionString: "couchbase://localhost", username: "Administrator", password: "password", tls: null },
+                sessions: [{ performer: { sdk: "java" }, runs: [{ type: "functional", fitConfig: "nonexistent", tests: { run: "all" } }] }],
+              },
+            ],
+          },
+        ],
+      }),
+    /nonexistent/,
+  );
 });

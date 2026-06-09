@@ -2,7 +2,7 @@
  * Turn a validated `fit` definition into concrete run inputs.
  */
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
-import { mergeConfigPieces, type ConfigPiece, type PieceData } from "../../../util/non-fit/config-pieces.js";
+import type { PieceData } from "../../../util/non-fit/config-pieces.js";
 import type { DefinitionRunPath } from "../../../util/non-fit/replay.js";
 import { classifyConnectionString } from "../../../cluster/cluster-select/classify-connection-string.js";
 import type { SelectedCluster } from "../../../cluster/cluster-select/cluster-select.js";
@@ -31,6 +31,7 @@ import { loadDefinition } from "./parse-definition.js";
 import type {
   ClusterLifetime,
   ConnectionClusterSetup,
+  FitConfigPiece,
   FitDefinition,
   FitRun,
   InstanceLifetime,
@@ -150,6 +151,60 @@ export interface ResolvedSituationalExecutionGroup {
 
 export type ResolvedExecutionGroup = ResolvedFunctionalExecutionGroup | ResolvedSituationalExecutionGroup;
 
+export function resolveDefinitionRefs(def: FitDefinition): FitDefinition {
+  const clusterConfigMap = new Map((def.clusterConfigs ?? []).map((c) => [c.id, c]));
+  const fitConfigMap = new Map((def.fitConfigs ?? []).map((f) => [f.id, f]));
+
+  function resolveRunRefs(run: FitRun, path: string): FitRun {
+    if (typeof run.fitConfig !== "string") {
+      return run;
+    }
+    const ref = fitConfigMap.get(run.fitConfig);
+    if (!ref) {
+      throw new Error(`fitConfig ref "${run.fitConfig}" not found in fitConfigs (at ${path}.fitConfig).`);
+    }
+    return { ...run, fitConfig: ref.config };
+  }
+
+  function resolveSessionRefs(session: SessionLifetime, path: string): SessionLifetime {
+    return {
+      ...session,
+      runs: session.runs.map((run, i) => resolveRunRefs(run, `${path}.runs[${i}]`)),
+    };
+  }
+
+  function resolveClusterRefs(cluster: ClusterLifetime, path: string): ClusterLifetime {
+    if (typeof cluster.clusterConfig === "string") {
+      const ref = clusterConfigMap.get(cluster.clusterConfig);
+      if (!ref) {
+        throw new Error(`clusterConfig ref "${cluster.clusterConfig}" not found in clusterConfigs (at ${path}).`);
+      }
+      const { id: _id, ...refFields } = ref;
+      const resolved: ClusterLifetime = { ...refFields, sessions: cluster.sessions };
+      return {
+        ...resolved,
+        sessions: resolved.sessions.map((session, i) => resolveSessionRefs(session, `${path}.sessions[${i}]`)),
+      };
+    }
+    return {
+      ...cluster,
+      sessions: cluster.sessions.map((session, i) => resolveSessionRefs(session, `${path}.sessions[${i}]`)),
+    };
+  }
+
+  const { clusterConfigs: _cc, fitConfigs: _fc, ...rest } = def;
+  return {
+    ...rest,
+    instances: def.instances.map((instance, instanceIndex) => ({
+      ...instance,
+      clusters: instance.clusters.map((cluster, clusterIndex) =>
+        resolveClusterRefs(cluster, `instances[${instanceIndex}].clusters[${clusterIndex}]`)),
+      clusterlessSessions: (instance.clusterlessSessions ?? []).map((session, sessionIndex) =>
+        resolveSessionRefs(session, `instances[${instanceIndex}].clusterlessSessions[${sessionIndex}]`)),
+    })),
+  };
+}
+
 function resolveTestsSelection(tests: TestsSection): FitTestSelection {
   return tests.run === "all"
     ? buildDefaultFitTestSelection()
@@ -199,6 +254,10 @@ function requireString(record: Record<string, unknown>, key: string, path: strin
     throw new Error(`${path} must be a string.`);
   }
   return record[key];
+}
+
+function asFitConfigPiece(value: FitConfigPiece | string | undefined): FitConfigPiece | undefined {
+  return typeof value === "string" ? undefined : value;
 }
 
 function resolveFitConfigTls(value: unknown, path: string): SelectedCluster["tls"] {
@@ -262,20 +321,6 @@ function stripFitConfigClusterAccess(fitConfig: PieceData | undefined): PieceDat
   return Object.keys(rest).length > 0 ? rest : undefined;
 }
 
-function mergeFitConfig(clusterFitConfig: PieceData | undefined, runFitConfig: PieceData | undefined): PieceData | undefined {
-  const pieces: ConfigPiece[] = [];
-  if (clusterFitConfig) {
-    pieces.push({ label: "cluster fitConfig", data: clusterFitConfig });
-  }
-  if (runFitConfig) {
-    pieces.push({ label: "run fitConfig", data: runFitConfig });
-  }
-  if (pieces.length === 0) {
-    return undefined;
-  }
-  return mergeConfigPieces(pieces) as PieceData;
-}
-
 export function resolveCbdinocluster(cluster: ClusterLifetime): ResolvedCbdinocluster | undefined {
   if (!cluster.cbdinocluster) {
     return undefined;
@@ -290,9 +335,9 @@ export function resolveCbdinocluster(cluster: ClusterLifetime): ResolvedCbdinocl
 
 type ResolvedRunWithoutPath = Omit<ResolvedFunctionalRun, "path"> | Omit<ResolvedSituationalRun, "path">;
 
-function resolveRun(run: FitRun, clusterFitConfig: PieceData | undefined, stripClusterAccess: boolean): ResolvedRunWithoutPath {
-  const mergedFitConfig = mergeFitConfig(clusterFitConfig, run.fitConfig);
-  const fitConfig = stripClusterAccess ? stripFitConfigClusterAccess(mergedFitConfig) : mergedFitConfig;
+function resolveRun(run: FitRun, stripClusterAccess: boolean): ResolvedRunWithoutPath {
+  const rawFitConfig = asFitConfigPiece(run.fitConfig);
+  const fitConfig = stripClusterAccess ? stripFitConfigClusterAccess(rawFitConfig) : rawFitConfig;
   if (run.type === "situational") {
     return {
       type: "situational",
@@ -313,7 +358,6 @@ function resolveRun(run: FitRun, clusterFitConfig: PieceData | undefined, stripC
 export function resolveSession(
   session: SessionLifetime,
   path: DefinitionRunPath,
-  clusterFitConfig: PieceData | undefined,
   stripClusterAccess: boolean,
 ): ResolvedSessionPlan {
   const sdk = sdkByValue(session.performer.sdk);
@@ -327,17 +371,16 @@ export function resolveSession(
     ...(session.performer.version !== undefined ? { performerVersion: session.performer.version } : {}),
     onPortInUse: session.performer.onPortInUse ?? DEFAULT_PORT_IN_USE_POLICY,
     runs: session.runs.map((run, runIndex) =>
-      resolveRunWithPath(run, { ...path, runIndex }, clusterFitConfig, stripClusterAccess)),
+      resolveRunWithPath(run, { ...path, runIndex }, stripClusterAccess)),
   };
 }
 
 function resolveRunWithPath(
   run: FitRun,
   path: DefinitionRunPath,
-  clusterFitConfig: PieceData | undefined,
   stripClusterAccess: boolean,
 ): ResolvedRun {
-  return { ...resolveRun(run, clusterFitConfig, stripClusterAccess), path };
+  return { ...resolveRun(run, stripClusterAccess), path };
 }
 
 export function resolveCluster(cluster: ClusterLifetime, path: DefinitionRunPath): ResolvedClusterPlan {
@@ -345,9 +388,13 @@ export function resolveCluster(cluster: ClusterLifetime, path: DefinitionRunPath
   const cbdinocluster = resolveCbdinocluster(cluster);
   const useExisting = cluster.useExisting !== undefined;
   const clusterMode = connection ? "connection" : useExisting ? "useExisting" : "cbdinocluster";
-  const resolvedCluster = connection ?? (useExisting ? resolveFitConfigCluster(cluster.fitConfig) : undefined);
-  if (useExisting && !resolvedCluster) {
-    throw new Error("cluster.useExisting requires cluster.fitConfig.clusterAccess.");
+  let resolvedCluster = connection;
+  if (useExisting) {
+    const firstRunFitConfig = asFitConfigPiece(cluster.sessions[0]?.runs[0]?.fitConfig);
+    resolvedCluster = resolveFitConfigCluster(firstRunFitConfig);
+    if (!resolvedCluster) {
+      throw new Error("cluster.useExisting requires a run-level fitConfig with clusterAccess.");
+    }
   }
   return {
     path,
@@ -356,7 +403,7 @@ export function resolveCluster(cluster: ClusterLifetime, path: DefinitionRunPath
     ...(resolvedCluster ? { cluster: resolvedCluster } : {}),
     ...(cbdinocluster ? { cbdinocluster } : {}),
     sessions: cluster.sessions.map((session, sessionIndex) =>
-      resolveSession(session, { ...path, sessionIndex }, cluster.fitConfig, clusterMode === "connection")),
+      resolveSession(session, { ...path, sessionIndex }, clusterMode === "connection")),
   };
 }
 
@@ -368,15 +415,16 @@ export function resolveInstancePlan(instance: InstanceLifetime, instanceIndex: n
     clusters: instance.clusters.map((cluster, clusterIndex) => resolveCluster(cluster, { instanceIndex, clusterIndex })),
     ...(instance.cbdinocluster !== undefined ? { cbdinoclusterInit: { config: instance.cbdinocluster.init.config } } : {}),
     clusterlessSessions: (instance.clusterlessSessions ?? []).map((session, sessionIndex) =>
-      resolveSession(session, { instanceIndex, sessionIndex, clusterlessSession: true }, undefined, false)),
+      resolveSession(session, { instanceIndex, sessionIndex, clusterlessSession: true }, false)),
   };
 }
 
 export function resolveDefinition(definition: FitDefinition): ResolvedDefinition {
-  const instances = definition.instances.map(resolveInstancePlan);
+  const resolved = resolveDefinitionRefs(definition);
+  const instances = resolved.instances.map(resolveInstancePlan);
   return {
-    ...(definition.setup?.repos?.["transactions-fit-performer"]?.gerritRef !== undefined
-      ? { fitPerformerGerritRef: definition.setup.repos["transactions-fit-performer"].gerritRef }
+    ...(resolved.setup?.repos?.["transactions-fit-performer"]?.gerritRef !== undefined
+      ? { fitPerformerGerritRef: resolved.setup.repos["transactions-fit-performer"].gerritRef }
       : {}),
     instances,
   };

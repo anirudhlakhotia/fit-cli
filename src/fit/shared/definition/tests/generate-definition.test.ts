@@ -52,8 +52,8 @@ test("buildFitFunctionalDefinitionFrom records a cbdinocluster in the nested mod
   assert.equal(definition.instances[0]?.clusters[0]?.cbdinocluster?.config.nodes[0]?.count, 2);
   assert.equal(definition.instances[0]?.clusters[0]?.sessions[0]?.performer.version, "1.2.3");
 
-  const fitConfig = definition.instances[0]?.clusters[0]?.fitConfig as Record<string, unknown> | undefined;
-  assert.ok(fitConfig, "cbdinocluster cluster should have a fitConfig template");
+  const fitConfig = definition.instances[0]?.clusters[0]?.sessions[0]?.runs[0]?.fitConfig as Record<string, unknown> | undefined;
+  assert.ok(fitConfig, "cbdinocluster cluster should have a fitConfig template in the first run");
   const access = fitConfig?.clusterAccess as Record<string, unknown>;
   assert.equal(access.connectionString, "couchbase://${defaultHostname}");
   assert.deepEqual(access.rest, { hostname: "${defaultHostname}", resolveDnsSrv: false });

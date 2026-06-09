@@ -19,11 +19,13 @@ import {
   type AwsInstanceSetup,
   type CbdinoclusterInitSetup,
   type CbdinoclusterSetup,
+  type ClusterConfigRef,
   type ClusterLifetime,
   type ClusterTls,
   type ConnectionClusterSetup,
   type DefinitionTests,
   type FitConfigPiece,
+  type FitConfigRef,
   type FitDefinition,
   type FitRun,
   type InstanceLifetime,
@@ -367,6 +369,13 @@ function validateSituationalSection(value: unknown, path: string): SituationalSe
   return { database: validateSituationalDatabase(record.database, `${path}.database`) };
 }
 
+function validateRunFitConfig(value: unknown, path: string): FitConfigPiece | string {
+  if (isString(value)) {
+    return value;
+  }
+  return validateFitConfig(value, path);
+}
+
 function validateRun(value: unknown, path: string, clusterless: boolean): FitRun {
   const record = requireRecord(value, path);
   const type = record.type;
@@ -383,7 +392,7 @@ function validateRun(value: unknown, path: string, clusterless: boolean): FitRun
     return {
       type: "functional",
       tests: validateTestsSection(record.tests, `${path}.tests`),
-      ...(record.fitConfig !== undefined ? { fitConfig: validateFitConfig(record.fitConfig, `${path}.fitConfig`) } : {}),
+      ...(record.fitConfig !== undefined ? { fitConfig: validateRunFitConfig(record.fitConfig, `${path}.fitConfig`) } : {}),
     };
   }
   if (record.situational === undefined) {
@@ -393,7 +402,7 @@ function validateRun(value: unknown, path: string, clusterless: boolean): FitRun
     type: "situational",
     tests: validateTestsSection(record.tests, `${path}.tests`),
     situational: validateSituationalSection(record.situational, `${path}.situational`),
-    ...(record.fitConfig !== undefined ? { fitConfig: validateFitConfig(record.fitConfig, `${path}.fitConfig`) } : {}),
+    ...(record.fitConfig !== undefined ? { fitConfig: validateRunFitConfig(record.fitConfig, `${path}.fitConfig`) } : {}),
   };
 }
 
@@ -419,23 +428,81 @@ function validateCluster(value: unknown, path: string): ClusterLifetime {
   const cluster: ClusterLifetime = {
     sessions: record.sessions.map((session, index) => validateSession(session, `${path}.sessions[${index}]`, false)),
   };
-  if (record.connection !== undefined) {
-    cluster.connection = validateConnection(record.connection, `${path}.connection`);
-  }
-  if (record.useExisting !== undefined) {
-    cluster.useExisting = validateUseExisting(record.useExisting, `${path}.useExisting`);
-  }
-  if (record.cbdinocluster !== undefined) {
-    cluster.cbdinocluster = validateCbdinocluster(record.cbdinocluster, `${path}.cbdinocluster`);
-  }
-  if (record.fitConfig !== undefined) {
-    cluster.fitConfig = validateFitConfig(record.fitConfig, `${path}.fitConfig`);
-  }
-  const modes = [cluster.connection, cluster.useExisting, cluster.cbdinocluster].filter(Boolean);
-  if (modes.length !== 1) {
-    throw new InvalidDefinitionError(`"${path}" must have exactly one of "connection", "useExisting", or "cbdinocluster".`);
+  if (record.clusterConfig !== undefined) {
+    if (!isString(record.clusterConfig)) {
+      throw new InvalidDefinitionError(`"${path}.clusterConfig" must be a string id; got ${JSON.stringify(record.clusterConfig)}`);
+    }
+    if (record.connection !== undefined || record.useExisting !== undefined || record.cbdinocluster !== undefined) {
+      throw new InvalidDefinitionError(`"${path}" cannot mix "clusterConfig" (ref) with inline cluster fields.`);
+    }
+    cluster.clusterConfig = record.clusterConfig;
+  } else {
+    if (record.connection !== undefined) {
+      cluster.connection = validateConnection(record.connection, `${path}.connection`);
+    }
+    if (record.useExisting !== undefined) {
+      cluster.useExisting = validateUseExisting(record.useExisting, `${path}.useExisting`);
+    }
+    if (record.cbdinocluster !== undefined) {
+      cluster.cbdinocluster = validateCbdinocluster(record.cbdinocluster, `${path}.cbdinocluster`);
+    }
+    const modes = [cluster.connection, cluster.useExisting, cluster.cbdinocluster].filter(Boolean);
+    if (modes.length !== 1) {
+      throw new InvalidDefinitionError(`"${path}" must have exactly one of "connection", "useExisting", or "cbdinocluster".`);
+    }
   }
   return cluster;
+}
+
+function validateClusterConfigs(value: unknown): ClusterConfigRef[] {
+  if (!Array.isArray(value)) {
+    throw new InvalidDefinitionError(`"clusterConfigs" must be a list; got ${JSON.stringify(value)}`);
+  }
+  const ids = new Set<string>();
+  return value.map((entry, index) => {
+    const path = `clusterConfigs[${index}]`;
+    const record = requireRecord(entry, path);
+    const id = requireString(record, "id", `${path}.id`);
+    if (ids.has(id)) {
+      throw new InvalidDefinitionError(`Duplicate clusterConfigs id: "${id}"`);
+    }
+    ids.add(id);
+    const ref: ClusterConfigRef = { id };
+    if (record.connection !== undefined) {
+      ref.connection = validateConnection(record.connection, `${path}.connection`);
+    }
+    if (record.useExisting !== undefined) {
+      ref.useExisting = validateUseExisting(record.useExisting, `${path}.useExisting`);
+    }
+    if (record.cbdinocluster !== undefined) {
+      ref.cbdinocluster = validateCbdinocluster(record.cbdinocluster, `${path}.cbdinocluster`);
+    }
+    const modes = [ref.connection, ref.useExisting, ref.cbdinocluster].filter(Boolean);
+    if (modes.length !== 1) {
+      throw new InvalidDefinitionError(`"${path}" must have exactly one of "connection", "useExisting", or "cbdinocluster".`);
+    }
+    return ref;
+  });
+}
+
+function validateFitConfigs(value: unknown): FitConfigRef[] {
+  if (!Array.isArray(value)) {
+    throw new InvalidDefinitionError(`"fitConfigs" must be a list; got ${JSON.stringify(value)}`);
+  }
+  const ids = new Set<string>();
+  return value.map((entry, index) => {
+    const path = `fitConfigs[${index}]`;
+    const record = requireRecord(entry, path);
+    const id = requireString(record, "id", `${path}.id`);
+    if (ids.has(id)) {
+      throw new InvalidDefinitionError(`Duplicate fitConfigs id: "${id}"`);
+    }
+    ids.add(id);
+    if (record.config === undefined) {
+      throw new InvalidDefinitionError(`Missing required field: ${path}.config`);
+    }
+    return { id, config: validateFitConfig(record.config, `${path}.config`) };
+  });
 }
 
 function validateInstance(value: unknown, index: number): InstanceLifetime {
@@ -530,6 +597,8 @@ export function validateDefinition(raw: unknown): FitDefinition {
     type: FIT_DEFINITION_TYPE,
     ...(raw.setup !== undefined ? { setup: validateSharedSetup(raw.setup) } : {}),
     instances: raw.instances.map(validateInstance),
+    ...(raw.clusterConfigs !== undefined ? { clusterConfigs: validateClusterConfigs(raw.clusterConfigs) } : {}),
+    ...(raw.fitConfigs !== undefined ? { fitConfigs: validateFitConfigs(raw.fitConfigs) } : {}),
   };
 }
 

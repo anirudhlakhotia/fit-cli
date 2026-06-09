@@ -25,26 +25,26 @@ instances:
                   - index
                   - fts
           onClusterExists: useExisting
-        # This will be used as a base when generating FITConfiguration.json.  Anything here will be copied into the config (unless overwritten by fit-cli).
-        fitConfig:
-          clusterAccess:
-            connectionString: couchbase://${defaultHostname}
-            username: Administrator
-            password: password
-            tls: null
-            rest:
-              hostname: ${defaultHostname}
-              resolveDnsSrv: false
-            proxy:
-              hostname: host.docker.internal
-          excludeTests:
-            - situational
         sessions:
           - performer:
               sdk: java
               onPortInUse: reuse
             runs:
               - type: functional
+                # This will be used as a base when generating FITConfiguration.json.  Anything here will be copied into the config (unless overwritten by fit-cli).
+                fitConfig:
+                  clusterAccess:
+                    connectionString: couchbase://${defaultHostname}
+                    username: Administrator
+                    password: password
+                    tls: null
+                    rest:
+                      hostname: ${defaultHostname}
+                      resolveDnsSrv: false
+                    proxy:
+                      hostname: host.docker.internal
+                  excludeTests:
+                    - situational
                 tests:
                   run:
                     - com.couchbase.client.kv.SanityTest

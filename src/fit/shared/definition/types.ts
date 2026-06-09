@@ -89,13 +89,13 @@ export interface SituationalSection {
 
 export interface FunctionalRun {
   type: "functional";
-  fitConfig?: FitConfigPiece;
+  fitConfig?: FitConfigPiece | string;
   tests: TestsSection;
 }
 
 export interface SituationalRun {
   type: "situational";
-  fitConfig?: FitConfigPiece;
+  fitConfig?: FitConfigPiece | string;
   situational: SituationalSection;
   tests: TestsSection;
 }
@@ -111,8 +111,20 @@ export interface ClusterLifetime {
   connection?: ConnectionClusterSetup;
   useExisting?: UseExistingClusterSetup;
   cbdinocluster?: CbdinoclusterSetup;
-  fitConfig?: FitConfigPiece;
+  clusterConfig?: string;
   sessions: SessionLifetime[];
+}
+
+export interface ClusterConfigRef {
+  id: string;
+  cbdinocluster?: CbdinoclusterSetup;
+  connection?: ConnectionClusterSetup;
+  useExisting?: UseExistingClusterSetup;
+}
+
+export interface FitConfigRef {
+  id: string;
+  config: FitConfigPiece;
 }
 
 export type InstanceLifetime =
@@ -128,4 +140,6 @@ export interface FitDefinition {
   type: typeof FIT_DEFINITION_TYPE;
   instances: InstanceLifetime[];
   setup?: SharedSetup;
+  clusterConfigs?: ClusterConfigRef[];
+  fitConfigs?: FitConfigRef[];
 }

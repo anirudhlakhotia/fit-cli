@@ -184,7 +184,6 @@ function buildFunctionalInstance(inputs: DefinitionInputs): InstanceLifetime {
                 config: buildClusterDefObject(inputs.cluster.def),
                 ...(inputs.onClusterExists ? { onClusterExists: inputs.onClusterExists } : {}),
               },
-              fitConfig: buildCbdinoclusterFitConfig(cng),
             }),
         sessions: [
           {
@@ -192,9 +191,9 @@ function buildFunctionalInstance(inputs: DefinitionInputs): InstanceLifetime {
             runs: [
               {
                 type: "functional",
-                ...(inputs.cluster.kind === "connection"
-                  ? { fitConfig: buildClusterAccessFitConfig(inputs.cluster.cluster) }
-                  : {}),
+                fitConfig: inputs.cluster.kind === "connection"
+                  ? buildClusterAccessFitConfig(inputs.cluster.cluster)
+                  : buildCbdinoclusterFitConfig(cng),
                 tests: buildTests(inputs.selection),
               },
             ],
