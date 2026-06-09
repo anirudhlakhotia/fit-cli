@@ -54,16 +54,17 @@ export async function createRemoteFitExecutionContext(
     console.log("→ resume: reusing the already-prepared remote workspace (skipping apt install and repo clones).");
   } else {
     console.log("\nInstalling the remote FIT dependencies...");
-    // apt-get is noisy; run it quietly (-qq) and drop stdout, keeping stderr so
-    // genuine failures still surface. DEBIAN_FRONTEND avoids interactive prompts.
+    // apt-get is noisy; run it quietly (-qq) and hide it until failure so the
+    // terminal stays clean — but the captured output is written to session.debug.log
+    // so it's available for post-run diagnosis. DEBIAN_FRONTEND avoids interactive prompts.
     const aptEnv = "DEBIAN_FRONTEND=noninteractive";
-    await target.run("sh", ["-lc", `sudo -n ${aptEnv} apt-get -qq update >/dev/null`], undefined, {
+    await target.runHiddenUntilFailure("sh", ["-lc", `sudo -n ${aptEnv} apt-get -qq update`], undefined, {
       display: "apt-get update",
     });
-    await target.run("sh", [
+    await target.runHiddenUntilFailure("sh", [
       "-lc",
       // JDK 17+ needed for jenkins-sdk ./gradlew
-      `sudo -n ${aptEnv} apt-get -qq install -y git docker.io openjdk-17-jdk-headless lsof >/dev/null`,
+      `sudo -n ${aptEnv} apt-get -qq install -y git docker.io openjdk-17-jdk-headless lsof`,
     ], undefined, { display: "apt-get install git docker.io openjdk-17-jdk-headless lsof" });
     // Allow running Docker without sudo
     await target.run("sudo", ["usermod", "-aG", "docker", "ubuntu"]);
