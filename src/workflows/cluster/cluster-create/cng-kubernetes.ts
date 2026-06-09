@@ -127,6 +127,10 @@ export function remoteHomeFromWorkspace(workspaceRootDir: string): string {
  * ~/.cbdinocluster expects it, and install the cao tools cbdinocluster needs into
  * the configured `cao-tools` directory (see {@link installCaoToolsRemote}).
  *
+ * The other cao prerequisites — the Couchbase CRDs and the admission controller —
+ * are installed later, once the ~/.cbdinocluster config is uploaded, by
+ * setup-declarative-cluster (see `installCaoCrdsAndAdmission`).
+ *
  * Idempotent-ish: `k3d cluster create` is skipped if the cluster already exists
  * and the cao install is skipped if already present, so a resumed run on the same
  * box doesn't fail.

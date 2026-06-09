@@ -34,6 +34,7 @@ import {
 } from "./allocate-cluster.js";
 import { CBDINOCLUSTER_URL } from "./ensure-cbdinocluster.js";
 import { installCbdinoclusterRemote } from "./install-cbdinocluster.js";
+import { installCaoCrdsAndAdmission } from "./install-cao-tools.js";
 import { type ClusterExistsPolicy } from "./cluster-exists-policy.js";
 import { type CbdinoclusterDef } from "./build-cluster-def.js";
 
@@ -62,6 +63,11 @@ async function resolveCbdinoclusterCommand(execution: ClusterCommandExecutor): P
 
 export function cbdinoclusterNeedsInit(message: string): boolean {
   return message.includes(CBDINOCLUSTER_INIT_REQUIRED);
+}
+
+/** Whether the executor runs on a remote box (vs. this machine). */
+function isRemoteExecution(execution: ClusterCommandExecutor): boolean {
+  return "kind" in execution && (execution as { kind?: string }).kind === "remote";
 }
 
 function dockerNetworkFromInitConfig(config: PieceData): string | undefined {
@@ -376,6 +382,15 @@ export async function setupDeclarativeCluster(plan: {
   }
 
   await prepareCbdinoclusterConfig(execution, plan.init?.config, plan.githubCredentials, cycleDir);
+
+  // CNG on a clean box: the k3d cluster is up (provisionRemoteK3d) and the config
+  // is now uploaded, so install the Couchbase CRDs + admission controller the cao
+  // deployer needs — the steps cbdinocluster's interactive `init` would prompt for
+  // and which the non-interactive allocate would otherwise fail on. On localhost
+  // we leave the operator's own ~/.cbdinocluster (and its cluster) alone.
+  if (cng && isRemoteExecution(execution)) {
+    await installCaoCrdsAndAdmission(execution, cbdinocluster);
+  }
 
   // `cbdinocluster ps` doubles as a sanity check and the list of what's running.
   const existing = await listExistingClusters(cbdinocluster, execution);
