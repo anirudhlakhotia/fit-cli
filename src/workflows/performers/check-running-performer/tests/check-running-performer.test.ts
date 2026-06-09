@@ -31,6 +31,7 @@ function fakeExecutionContext(): FitExecutionContext {
     ensureWorkspace: () => Promise.resolve(true),
     ensureBuildWorkspace: () => Promise.resolve(true),
     run: () => Promise.resolve(),
+    runHiddenUntilFailure: () => Promise.resolve(),
     capture: () => Promise.resolve(""),
     runToFile: () => Promise.resolve(),
     targetFilePath: (path) => path,

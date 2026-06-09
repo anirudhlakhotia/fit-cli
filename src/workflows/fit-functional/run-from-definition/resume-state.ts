@@ -13,7 +13,7 @@
  * logic so it stays testable.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import type { SelectedCluster } from "../../cluster/cluster-select/cluster-select.js";
 
 /** How to reconnect to the execution target a previous run used. */

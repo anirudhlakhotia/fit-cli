@@ -24,6 +24,13 @@ export interface ExecutionTarget {
   /** Run a command and resolve with its captured stdout. */
   capture(command: string, args: string[], cwd?: string, opts?: RunOptions): Promise<string>;
 
+  /**
+   * Run a command, hiding its output unless it fails. On success the output is
+   * silently discarded; on failure it is dumped to the terminal before rejecting.
+   * In both cases output is written to the debug log if one is active.
+   */
+  runHiddenUntilFailure(command: string, args: string[], cwd?: string, opts?: RunOptions): Promise<void>;
+
   /** Copy a local file to `remotePath` on the target. */
   putFile(localPath: string, remotePath: string): Promise<void>;
 

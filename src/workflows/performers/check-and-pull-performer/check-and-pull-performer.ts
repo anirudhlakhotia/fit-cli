@@ -87,7 +87,7 @@ export async function checkAndPullPerformer(
       await loginToGhcr(execution, githubToken);
     }
     console.log("\nPulling performer container...\n");
-    await execution.run(execution.dockerCommand, dockerPullArgs(imageName));
+    await execution.runHiddenUntilFailure(execution.dockerCommand, dockerPullArgs(imageName));
   } catch (err) {
     fitCliError(
       `\nFailed to pull the ${sdk.name} performer image ${imageName}: ${(err as Error).message}` +

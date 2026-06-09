@@ -227,6 +227,49 @@ export function startDebugLog(logFile: string): SessionLog {
 }
 
 /**
+ * Run a command, capturing stdout and stderr into a buffer without showing it on
+ * the terminal. On success the buffer is discarded silently; on failure the
+ * buffer is dumped to stderr before rejecting. In both cases the captured output
+ * is written to the debug log (if one has been started), so the full I/O is
+ * available for post-run diagnosis.
+ *
+ * This is the "hidden as unimportant noise, only shown on failure" mode from the
+ * README — ideal for noisy but seldom-interesting commands like docker pull.
+ */
+export function runHiddenUntilFailure(
+  command: string,
+  args: string[],
+  cwd: string = process.cwd(),
+  opts?: RunOptions,
+): Promise<void> {
+  announce(command, args, opts);
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
+    let output = "";
+    const collect = (chunk: Buffer) => {
+      output += chunk.toString();
+    };
+    child.stdout.on("data", collect);
+    child.stderr.on("data", collect);
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (currentDebugLog && output) {
+        const normalized = output.endsWith("\n") ? output : `${output}\n`;
+        currentDebugLog.write(formatTimestampedChunk(normalized, true).text);
+      }
+      if (code === 0) {
+        resolve();
+      } else {
+        if (output) {
+          process.stderr.write(output.endsWith("\n") ? output : `${output}\n`);
+        }
+        reject(new Error(`${command} exited with code ${code}`));
+      }
+    });
+  });
+}
+
+/**
  * Start a command in the background and stream stdout/stderr directly to a log
  * file as output is produced.
  */

@@ -38,6 +38,7 @@ export interface FitExecutionContext {
   ensureBuildWorkspace(sdk: Sdk): Promise<boolean>;
   run(command: string, args: string[], cwd?: string, opts?: RunOptions): Promise<void>;
   capture(command: string, args: string[], cwd?: string, opts?: RunOptions): Promise<string>;
+  runHiddenUntilFailure(command: string, args: string[], cwd?: string, opts?: RunOptions): Promise<void>;
   runToFile(command: string, args: string[], targetPath: string, cwd?: string): Promise<void>;
   targetFilePath(localPath: string): string;
   stageFile(localPath: string, targetPath?: string): Promise<string>;
@@ -244,6 +245,7 @@ export function createLocalFitExecutionContext(rootDir: string): FitExecutionCon
     },
     run: (command, args, cwd, opts) => target.run(command, args, cwd, opts),
     capture: (command, args, cwd, opts) => target.capture(command, args, cwd, opts),
+    runHiddenUntilFailure: (command, args, cwd, opts) => target.runHiddenUntilFailure(command, args, cwd, opts),
     runToFile: (command, args, targetPath, cwd) => streamToFile(command, args, targetPath, cwd),
     targetFilePath: (localPath) => localPath,
     stageFile: (localPath) => Promise.resolve(localPath),

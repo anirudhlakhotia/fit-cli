@@ -4,7 +4,7 @@
  * This is what the FIT functional flow uses when the user picks "local laptop".
  */
 import { copyFileSync } from "node:fs";
-import { run, capture, type RunOptions } from "./proc.js";
+import { run, capture, runHiddenUntilFailure, type RunOptions } from "./proc.js";
 import type { ExecutionTarget } from "./target.js";
 
 export class LocalTarget implements ExecutionTarget {
@@ -17,6 +17,10 @@ export class LocalTarget implements ExecutionTarget {
 
   capture(command: string, args: string[], cwd?: string, opts?: RunOptions): Promise<string> {
     return capture(command, args, cwd, opts);
+  }
+
+  runHiddenUntilFailure(command: string, args: string[], cwd?: string, opts?: RunOptions): Promise<void> {
+    return runHiddenUntilFailure(command, args, cwd, opts);
   }
 
   putFile(localPath: string, remotePath: string): Promise<void> {

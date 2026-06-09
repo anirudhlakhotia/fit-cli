@@ -120,6 +120,11 @@ export async function createRemoteFitExecutionContext(
         display: commandOn(formatCommandLine(command, args), target.description),
         ...opts,
       }),
+    runHiddenUntilFailure: (command, args, cwd, opts) =>
+      target.runHiddenUntilFailure("sh", ["-lc", pathPrefixedCommand(binDir, command, args)], cwd, {
+        display: commandOn(formatCommandLine(command, args), target.description),
+        ...opts,
+      }),
     runToFile: (command, args, targetPath, cwd) =>
       target.run("sh", ["-lc", redirectShellCommand(pathPrefixedCommand(binDir, command, args), targetPath)], cwd, {
         display: commandOn(formatCommandLine(command, args), target.description),

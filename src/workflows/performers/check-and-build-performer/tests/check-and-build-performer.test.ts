@@ -35,6 +35,7 @@ test("checkAndBuildPerformer treats a missing local image as informational befor
     ensureWorkspace: () => Promise.resolve(true),
     ensureBuildWorkspace: () => Promise.resolve(true),
     run: () => Promise.resolve(),
+    runHiddenUntilFailure: () => Promise.resolve(),
     capture: (_command, args) => {
       if (args[0] === "image" && args[1] === "inspect" && !built) {
         return Promise.reject(new Error("missing"));
