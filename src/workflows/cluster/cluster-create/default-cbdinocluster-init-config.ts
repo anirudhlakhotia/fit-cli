@@ -46,15 +46,17 @@ export function defaultSituationalCbdinoclusterInitConfig(): PieceData {
     },
     aws: {
       enabled: "true",
-      region: "eu-west-1",
+      // todo seeing if we can remove these
+      // region: "eu-west-1",
     },
     capella: {
       enabled: "true",
-      endpoint: "http://localhost:8080",
-      "override-token": "the-secret-test-override-key",
-      "internal-support-token": "the-secret-token-for-internal-support",
+      // todo seeing if we can remove these
+      // endpoint: "http://localhost:8080",
+      // "override-token": "the-secret-test-override-key",
+      // "internal-support-token": "the-secret-token-for-internal-support",
+      // "default-aws-region": "us-east-1",
       "default-cloud": "aws",
-      "default-aws-region": "us-east-1",
     },
   };
 }
