@@ -955,7 +955,7 @@ export async function runFromDefinition(
       fitCliError(
         `\n✗ The hosted results database needs a readonly password in your fit-cli config.\n` +
           `  Ask on #the-fit-stop for it, then set it as resultsDb.password in your fit-cli config\n` +
-          `  (~/.fit-cli/config.yaml — run \`npm run init\`).`,
+          `  (~/.fit-cli/config.json5 — run \`npm run init\`).`,
       );
       return { artifacts: [], details: [] };
     }

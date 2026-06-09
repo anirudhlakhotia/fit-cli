@@ -1,0 +1,50 @@
+// Runs a single sanity FIT/SIT test against a single SDK, in a clean environment.
+// Run with:
+// npm run definition -- --interactive examples/fit-situational-sanity-test.json5
+{
+  version: 1,
+  type: 'fit',
+  instances: [
+    {
+      aws: {},
+      // FIT/SIT creates its own clusters, so none are set up here.
+      clusters: [],
+      // FIT/SIT creates its own clusters via cbdinocluster; this init config must be present.
+      cbdinocluster: {
+        init: {
+          // This file will be uploaded verbatim into clean environments as ~/.cbdinocluster
+          config: {
+            version: 6,
+            docker: {
+              enabled: true,
+              network: 'fit',
+              host: 'unix:///var/run/docker.sock',
+            },
+          },
+        },
+      },
+      // Sessions not tied to any particular cluster (the name distinguishes these from sessions nested under clusters:)
+      clusterlessSessions: [
+        {
+          performer: {
+            sdk: 'kotlin',
+            onPortInUse: 'restart',
+          },
+          runs: [
+            {
+              type: 'situational',
+              situational: {
+                database: {
+                  mode: 'hosted',
+                },
+              },
+              tests: {
+                run: ['com.couchbase.situational.tests.VolumeTest#steadyStateKvGets'],
+              },
+            },
+          ],
+        },
+      ],
+    },
+  ],
+}

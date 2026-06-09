@@ -131,7 +131,7 @@ export async function resolveExecutionGroupTarget(
     return { ready: true, target: new LocalTarget(), teardown: LOCAL_TEARDOWN, artifacts: [], details: [] };
   }
 
-  // AWS EC2 needs credentials, from the environment or config.yaml.
+  // AWS EC2 needs credentials, from the environment or fit-cli config.
   await ensureFitCliConfigEnv({
     promptId: `execution-target.execution-group-${executionGroupIndex}.config.create`,
     promptMessage: "No fit-cli config found. Run `npm run init` now before using EC2?",
@@ -192,7 +192,7 @@ export async function selectExecutionTarget(): Promise<ExecutionTargetOutcome> {
       return { ready: true, target: new LocalTarget(), teardown: LOCAL_TEARDOWN, artifacts: [], details: [] };
     }
 
-    // Both EC2 paths need credentials, from the environment or config.yaml.
+    // Both EC2 paths need credentials, from the environment or fit-cli config.
     await ensureFitCliConfigEnv({
       promptId: promptId(attempt, "config.create"),
       promptMessage: "No fit-cli config found. Run `npm run init` now before using EC2?",

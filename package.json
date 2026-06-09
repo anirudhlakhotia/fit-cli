@@ -24,6 +24,7 @@
   },
   "dependencies": {
     "@inquirer/prompts": "^7.2.0",
+    "json5": "^2.2.3",
     "xunit-viewer": "^10.6.1",
     "yaml": "^2.9.0"
   },

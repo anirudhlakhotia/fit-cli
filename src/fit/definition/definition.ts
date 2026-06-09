@@ -23,9 +23,11 @@ type Subcommand = (typeof SUBCOMMANDS)[number];
 const HELP = `Manage FIT definition files.
 
 Usage:
-  npm run definition -- execute <file.yaml> [--resume-at=<point>] [--root <dir>]
-  npm run definition -- validate <file.yaml>
+  npm run definition -- execute <file.json5> [--resume-at=<point>] [--root <dir>]
+  npm run definition -- validate <file.json5>
   npm run definition -- --help
+
+Both .json5 and .yaml definition files are accepted.
 
 Subcommands:
   execute   Run FIT tests from a definition file.
@@ -72,7 +74,7 @@ if (isMain(import.meta.url)) {
     // what people reach for. Anything that's neither a subcommand nor a plausible
     // definition file is a genuine mistake.
     const isSubcommand = SUBCOMMANDS.includes(subcommand as Subcommand);
-    const looksLikeDefinitionPath = /\.ya?ml$/i.test(subcommand) || existsSync(subcommand);
+    const looksLikeDefinitionPath = /\.(ya?ml|json5)$/i.test(subcommand) || existsSync(subcommand);
     if (!isSubcommand && !looksLikeDefinitionPath) {
       console.error(`Unknown subcommand: ${subcommand}\n`);
       console.error(HELP);
@@ -82,7 +84,7 @@ if (isMain(import.meta.url)) {
     if (subcommand === "validate") {
       const [path] = rest;
       if (!path) {
-        console.error("Usage: npm run definition -- validate <file.yaml>");
+        console.error("Usage: npm run definition -- validate <file.json5>");
         process.exit(2);
       }
       const definition = loadDefinition(path);

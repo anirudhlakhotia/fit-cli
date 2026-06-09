@@ -1,0 +1,68 @@
+// Runs a single SanityTest against a single SDK over CNG / Protostellar (Cloud
+// Native Gateway): the performer connects with couchbase2://.
+//
+// CNG needs Kubernetes where cbdinocluster runs (cbdinocluster installs the
+// gateway via the Couchbase Kubernetes Operator — that's the `cao` block below).
+//  - On localhost: do the one-off k3d + `cbdinocluster init --kube-config` setup
+//    first; fit-cli checks ~/.cbdinocluster has Kubernetes enabled and bails with
+//    a guide link if not.
+//  - On a clean AWS instance (set execution.instance.aws): fit-cli installs k3d
+//    for you and points cbdinocluster at it.
+//
+// Run with:
+// npm run definition -- execute --interactive examples/fit-functional-cng-test.json5
+{
+  version: 1,
+  type: 'fit',
+  instances: [
+    {
+      localhost: {},
+      clusters: [
+        {
+          cbdinocluster: {
+            init: {
+              config: {
+                version: 6,
+                docker: {
+                  enabled: true,
+                  network: 'fit',
+                  host: 'unix:///var/run/docker.sock',
+                },
+              },
+            },
+            config: {
+              nodes: [
+                {
+                  count: 1,
+                  version: '8.1.0-2188',
+                  services: ['kv', 'n1ql', 'index', 'fts'],
+                },
+              ],
+              // The cao block is what turns this into a CNG cluster: cbdinocluster
+              // installs the gateway via the Couchbase Kubernetes Operator.
+              cao: {
+                'operator-version': '2.8.0',
+                'gateway-version': '1.1.0-135',
+              },
+            },
+          },
+          sessions: [
+            {
+              performer: {
+                sdk: 'java',
+              },
+              runs: [
+                {
+                  type: 'functional',
+                  tests: {
+                    run: ['com.couchbase.client.kv.SanityTest'],
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+}

@@ -1,0 +1,55 @@
+// Test checking out from gerrit
+{
+  version: 1,
+  type: 'fit',
+  setup: {
+    repos: {
+      'transactions-fit-performer': {
+        gerritRef: 'refs/changes/30/246430/2',
+      },
+    },
+  },
+  instances: [
+    {
+      aws: {},
+      // FIT/SIT creates its own clusters, so none are set up here.
+      clusters: [],
+      // FIT/SIT creates its own clusters via cbdinocluster; this init config must be present.
+      cbdinocluster: {
+        init: {
+          // This file will be uploaded verbatim into clean environments as ~/.cbdinocluster
+          config: {
+            version: 6,
+            docker: {
+              enabled: true,
+              network: 'fit',
+              host: 'unix:///var/run/docker.sock',
+            },
+          },
+        },
+      },
+      // Sessions not tied to any particular cluster (the name distinguishes these from sessions nested under clusters:)
+      clusterlessSessions: [
+        {
+          performer: {
+            sdk: 'kotlin',
+            onPortInUse: 'restart',
+          },
+          runs: [
+            {
+              type: 'situational',
+              situational: {
+                database: {
+                  mode: 'hosted',
+                },
+              },
+              tests: {
+                run: ['com.couchbase.situational.tests.SanityTest'],
+              },
+            },
+          ],
+        },
+      ],
+    },
+  ],
+}

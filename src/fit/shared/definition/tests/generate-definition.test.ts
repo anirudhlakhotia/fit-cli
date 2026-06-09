@@ -84,7 +84,7 @@ test("buildFitSituationalDefinitionFrom emits clusterless sessions", () => {
   assert.equal(definition.instances[0]?.clusterlessSessions?.[0]?.runs[0]?.type, "situational");
 });
 
-test("buildFitDefinition remains round-trippable through the parser", () => {
+test("buildFitDefinition remains round-trippable through the parser (JSON5)", () => {
   const functionalDef = buildFitFunctionalDefinitionFrom({
     cluster: { kind: "connection", cluster },
     sdk,
@@ -109,16 +109,32 @@ test("buildFitDefinition remains round-trippable through the parser", () => {
     fitConfigs: functionalDef.fitConfigs,
   });
 
-  assert.deepEqual(parseDefinition(formatFitDefinition(definition)), definition);
+  assert.deepEqual(parseDefinition(formatFitDefinition(definition, "json5")), definition);
+  assert.deepEqual(parseDefinition(formatFitDefinition(definition, "yaml"), "yaml"), definition);
 });
 
-test("formatFitDefinition includes the nested instances key and fitConfigs comment", () => {
+test("formatFitDefinition includes the nested instances key and fitConfigs comment (JSON5)", () => {
   const rendered = formatFitDefinition(
     buildFitFunctionalDefinitionFrom({
       cluster: { kind: "connection", cluster },
       sdk,
       selection: buildDefaultFitTestSelection(),
     }),
+    "json5",
+  );
+
+  assert.match(rendered, /fitConfigs:/);
+  assert.match(rendered, /\/\/ Each fitConfig is used as a base when generating FITConfiguration\.json/);
+});
+
+test("formatFitDefinition includes the nested instances key and fitConfigs comment (YAML)", () => {
+  const rendered = formatFitDefinition(
+    buildFitFunctionalDefinitionFrom({
+      cluster: { kind: "connection", cluster },
+      sdk,
+      selection: buildDefaultFitTestSelection(),
+    }),
+    "yaml",
   );
 
   assert.match(rendered, /instances:/);

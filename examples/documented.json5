@@ -1,0 +1,199 @@
+// Example fit definition file.
+//
+// A definition file is a repeatable, hand-editable description of one or more
+// FIT execution lifetimes. Run it with:
+//
+//   npm run definition examples/documented.json5
+//
+// Validate a file without running it:
+//   npm run definition -- validate examples/documented.json5
+//
+// Both .json5 and .yaml formats are accepted.
+{
+  version: 1,
+  type: 'fit',
+
+  // Shared setup that applies once for the whole definition.
+  setup: {
+    repos: {
+      // Optional: fetch this FIT Gerrit ref before any instances run.
+      // 'transactions-fit-performer': {
+      //   gerritRef: 'refs/changes/29/246329/1',
+      // },
+    },
+  },
+
+  // A definition is a list of instances. Each instance owns one execution
+  // target and contains one or more cluster lifetimes or clusterless situational
+  // sessions.
+  instances: [
+    {
+      // Provide exactly one of "aws" or "localhost". At run time you can still
+      // override and force every instance onto localhost.
+      // aws: {},
+      // aws: { instanceType: 'c5.4xlarge', region: 'us-east-1' },
+      localhost: {},
+      clusters: [
+        {
+          // Functional runs live under a cluster lifetime.
+          connection: {
+            connectionString: 'couchbase://localhost',
+            username: 'Administrator',
+            password: 'password',
+            // How the SDK should trust a couchbases:// cluster. Use null for
+            // couchbase:// and for production Capella.
+            //   null                        no TLS section
+            //   { insecure: true }          skip certificate verification
+            //   { certPath: '/path/cb.pem' }  trust this PEM certificate
+            tls: null,
+          },
+
+          // Or allocate a fresh cluster for just this cluster lifetime:
+          // cbdinocluster: {
+          //   config: {
+          //     nodes: [
+          //       { count: 1, version: '8.1.0-2188', services: ['kv', 'n1ql', 'index'] },
+          //     ],
+          //   },
+          // },
+
+          sessions: [
+            {
+              performer: {
+                // Which SDK to test. One of: java, scala, kotlin, cpp, dotnet, go,
+                // node, python, ruby, rust.
+                sdk: 'java',
+                // Port the performer listens on (default 8060).
+                port: 8060,
+                // What to do if the performer port is already in use:
+                //   fail    - stop the run.
+                //   restart - stop what's there and bring up a fresh performer (default).
+                //   reuse   - assume a performer is already running and test against it.
+                // onPortInUse: 'restart',
+                // Optional: pin the performer image version/tag.
+                // version: '1.2.3',
+              },
+              runs: [
+                {
+                  type: 'functional',
+                  // fitConfig is an opaque FITConfiguration artifact piece, written per
+                  // test-driver invocation.  Pass FIT-native settings (resourceCreation,
+                  // clusterAccess, etc.) here.  Use a string id to reference a reusable
+                  // definition in the bottom-level fitConfigs section.
+                  // fitConfig: 'my-fit-config',
+                  // fitConfig: {
+                  //   resourceCreation: {
+                  //     cluster: {
+                  //       cbdinocluster: { path: '/usr/local/bin/cbdinocluster' },
+                  //       preferredCluster: { version: '8.0.1-4654' },
+                  //     },
+                  //   },
+                  // },
+                  tests: {
+                    // Which FIT test-driver tests to run:
+                    //   'all'        run everything (the default)
+                    //   a list       run just those fully-qualified test classes
+                    run: 'all',
+                    // run: ['com.couchbase.client.kv.SanityTest'],
+
+                    // Optional: Maven test groups to exclude (-DexcludedGroups). Omit to
+                    // use the standard CI exclusions (situational, openshift, syncgateway).
+                    // excludedGroups: ['situational', 'openshift', 'syncgateway'],
+
+                    // Optional: Maven-level overrides.
+                    // maven: {
+                    //   runDisabledTests: true,
+                    //   args: ['-Dsome.flag=true'],
+                    // },
+                  },
+                },
+              ],
+            },
+
+            // Could test other SDKs against the same cluster here by adding another
+            // session with its own performer and runs.
+            // {
+            //   performer: { sdk: 'python' },
+            //   runs: [{ type: 'functional', tests: { run: 'all' } }],
+            // },
+          ],
+        },
+      ],
+    },
+
+    {
+      // Situational runs do not share a functional cluster. FIT/SIT creates its own.
+      localhost: {},
+      // FIT/SIT creates its own clusters, so none are set up here.
+      clusters: [],
+      // FIT/SIT creates its own clusters via cbdinocluster; this init config must be present.
+      cbdinocluster: {
+        init: {
+          config: {
+            version: 6,
+            docker: {
+              enabled: true,
+              network: 'fit',
+              host: 'unix:///var/run/docker.sock',
+            },
+          },
+        },
+      },
+      // Sessions not tied to any particular cluster (the name distinguishes these from sessions nested under clusters:)
+      clusterlessSessions: [
+        {
+          performer: {
+            sdk: 'python',
+          },
+          runs: [
+            {
+              type: 'situational',
+              situational: {
+                database: {
+                  // Where situational timeseries results land.
+                  mode: 'hosted',
+                },
+              },
+              tests: {
+                run: 'all',
+              },
+            },
+          ],
+        },
+      ],
+    },
+  ],
+
+  // Optional: reusable cluster definitions — reference them in clusters[].clusterConfig above.
+  // Avoids repeating the same cbdinocluster config across multiple instances or clusters.
+  // clusterConfigs: [
+  //   {
+  //     id: 'my-cluster',
+  //     cbdinocluster: {
+  //       config: {
+  //         nodes: [
+  //           { count: 3, version: '8.1.0-2188', services: ['kv', 'n1ql', 'index', 'fts'] },
+  //         ],
+  //       },
+  //       onClusterExists: 'useExisting',
+  //     },
+  //   },
+  // ],
+
+  // Optional: reusable fitConfig definitions — reference them in runs[].fitConfig above.
+  // Avoids repeating the same FITConfiguration template across multiple runs.
+  // fitConfigs: [
+  //   {
+  //     id: 'my-fit-config',
+  //     config: {
+  //       clusterAccess: {
+  //         connectionString: 'couchbase://${defaultHostname}',
+  //         username: 'Administrator',
+  //         password: 'password',
+  //         tls: null,
+  //         excludeTests: ['situational'],
+  //       },
+  //     },
+  //   },
+  // ],
+}

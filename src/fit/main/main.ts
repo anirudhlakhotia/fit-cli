@@ -13,6 +13,7 @@ import { ensurePromptSession, type PromptSession } from "../../util/non-fit/repl
 import { createFitDefinition } from "../shared/create-definition/create-definition.js";
 import { rootDirFromArgv } from "../util/root.js";
 import { runFromDefinition } from "../functional/run-from-definition/run-from-definition.js";
+import type { DefinitionFormat } from "../shared/definition/generate-definition.js";
 
 const WORKFLOW_PROMPT_MESSAGE = "What would you like to do?";
 
@@ -86,13 +87,38 @@ export async function askDefinitionPath(): Promise<string> {
   return definitionPath.trim();
 }
 
-export async function runWorkflow(choice: WorkflowChoice, rootDir: string, definitionPath?: string): Promise<RunOutput> {
+export async function runWorkflow(choice: WorkflowChoice, rootDir: string, definitionPath?: string, format?: DefinitionFormat): Promise<RunOutput> {
   switch (choice) {
     case "create-definition":
-      return createFitDefinition(rootDir);
+      return createFitDefinition(rootDir, { format });
     case "run-definition":
       return runFromDefinition(definitionPath ?? await askDefinitionPath(), rootDir);
   }
+}
+
+function extractOutputFormat(argv: readonly string[]): { format: DefinitionFormat; positionals: string[] } {
+  const positionals: string[] = [];
+  let format: DefinitionFormat = "json5";
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === "--output") {
+      const value = argv[i + 1];
+      if (value !== "yaml" && value !== "json5") {
+        throw new Error(`--output must be "yaml" or "json5"; got "${value ?? ""}"`);
+      }
+      format = value;
+      i++;
+    } else if (arg.startsWith("--output=")) {
+      const value = arg.slice("--output=".length);
+      if (value !== "yaml" && value !== "json5") {
+        throw new Error(`--output must be "yaml" or "json5"; got "${value}"`);
+      }
+      format = value;
+    } else {
+      positionals.push(arg);
+    }
+  }
+  return { format, positionals };
 }
 
 function checkPlatform(): void {
@@ -127,16 +153,17 @@ export async function main(): Promise<RunOutput> {
   // without being passed on the command line. Real exported vars still win.
   loadDotenv();
 
-  const { rootDir, positionals } = rootDirFromArgv(process.argv.slice(2));
+  const { format, positionals: afterOutput } = extractOutputFormat(process.argv.slice(2));
+  const { rootDir, positionals } = rootDirFromArgv(afterOutput);
   if (positionals.length > 1) {
-    throw new Error("Usage: npm start [definition-file.yaml] [--root <dir>]");
+    throw new Error("Usage: npm start [definition-file.json5] [--output yaml|json5] [--root <dir>]");
   }
   if (positionals[0]) {
     ensurePromptSession().setWorkflow("run-definition");
     return runFromDefinition(positionals[0], rootDir);
   }
   const choice = await chooseWorkflow();
-  return runWorkflow(choice, rootDir, positionals[0]);
+  return runWorkflow(choice, rootDir, positionals[0], format);
 }
 
 if (isMain(import.meta.url)) {

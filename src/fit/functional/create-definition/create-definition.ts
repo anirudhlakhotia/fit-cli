@@ -31,9 +31,10 @@ import { createLocalFitExecutionContext } from "../../shared/util/remote-fit-run
 import { selectFitTests } from "../../shared/select-fit-tests/select-fit-tests.js";
 import {
   buildFitFunctionalDefinitionFrom,
+  type DefinitionCluster,
+  type DefinitionFormat,
   formatFitFunctionalDefinition,
   writeFitFunctionalDefinition,
-  type DefinitionCluster,
 } from "../../shared/definition/generate-definition.js";
 
 /**
@@ -70,10 +71,10 @@ export async function askFitGerritRef(promptIdPrefix?: string): Promise<string |
 }
 
 /**
- * Walk through the definition questions and write the resulting fit.yaml.
+ * Walk through the definition questions and write the resulting fit.json5.
  * Nothing is built, allocated, or run.
  */
-export async function createFitFunctionalDefinition(rootDir: string): Promise<RunOutput> {
+export async function createFitFunctionalDefinition(rootDir: string, options?: { format?: DefinitionFormat }): Promise<RunOutput> {
   console.log(
     "\nThis builds a reusable fit definition file. Nothing is set up — " +
       "no cluster is allocated, no performer built, no tests run.\n",
@@ -105,9 +106,10 @@ export async function createFitFunctionalDefinition(rootDir: string): Promise<Ru
     githubUser: loadFitCliConfig().config?.github?.user,
   });
 
-  const result = writeFitFunctionalDefinition(definition);
+  const outputFormat = options?.format ?? "json5";
+  const result = writeFitFunctionalDefinition(definition, undefined, outputFormat);
   console.log(`\nWriting ${result.path}:\n`);
-  printWithoutTimestamps(formatFitFunctionalDefinition(definition));
+  printWithoutTimestamps(formatFitFunctionalDefinition(definition, outputFormat));
   console.log(`\n✓ Wrote ${result.path}`);
   console.log(`\nRun it later with:\n  
   npm run definition -- --interactive ${result.path}\n

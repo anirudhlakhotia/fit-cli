@@ -1,8 +1,9 @@
 /**
- * Build and write reusable `fit` YAML definition files.
+ * Build and write reusable `fit` definition files (JSON5 by default, YAML optional).
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import JSON5 from "json5";
 import YAML from "yaml";
 import { artifactFromPath, type Artifact, type RunOutput } from "../../../util/non-fit/artifacts.js";
 import { printWithoutTimestamps } from "../../../util/non-fit/fit-cli-log.js";
@@ -36,8 +37,10 @@ import {
 const CLUSTER_CONFIG_ID = "cluster-0";
 const FIT_CONFIG_ID = "fit-config-0";
 
-export function fitDefinitionPath(runDir: string = ensureRunDir()): string {
-  return join(runDir, "fit.yaml");
+export type DefinitionFormat = "json5" | "yaml";
+
+export function fitDefinitionPath(runDir: string = ensureRunDir(), format: DefinitionFormat = "json5"): string {
+  return join(runDir, format === "yaml" ? "fit.yaml" : "fit.json5");
 }
 
 export const fitFunctionalDefinitionPath = fitDefinitionPath;
@@ -289,7 +292,7 @@ export function buildFitFunctionalDefinition(
   return buildFitFunctionalDefinitionFrom({ cluster: { kind: "connection", cluster }, sdk, selection });
 }
 
-export function formatFitDefinition(definition: FitDefinition): string {
+function formatFitDefinitionYaml(definition: FitDefinition): string {
   let text = YAML.stringify(definition);
   text = text.replace(/(^\s*init:\n)(\s*)config:$/gm, (_match, initLine: string, indent: string) =>
     `${initLine}${indent}# This file will be uploaded verbatim into clean environments as ~/.cbdinocluster\n${indent}config:`
@@ -305,8 +308,8 @@ export function formatFitDefinition(definition: FitDefinition): string {
   return text;
 }
 
-export function formatFitSituationalDefinition(definition: FitDefinition): string {
-  let text = formatFitDefinition(definition);
+function formatFitSituationalDefinitionYaml(definition: FitDefinition): string {
+  let text = formatFitDefinitionYaml(definition);
   text = text.replace(
     /^(\s*)clusters: \[\]$/gm,
     "$1# FIT/SIT creates its own clusters, so none are set up here.\n$1clusters: []",
@@ -322,7 +325,45 @@ export function formatFitSituationalDefinition(definition: FitDefinition): strin
   return text;
 }
 
-export const formatFitFunctionalDefinition = formatFitDefinition;
+function formatFitDefinitionJson5(definition: FitDefinition): string {
+  let text = JSON5.stringify(definition, null, 2);
+  // Insert comment before `config:` inside every `init: {` block
+  text = text.replace(/^(\s*)(init: \{)\n(\s*)(config:)/gm, (_, ind1: string, initBrace: string, ind2: string, configKey: string) =>
+    `${ind1}${initBrace}\n${ind2}// This file will be uploaded verbatim into clean environments as ~/.cbdinocluster\n${ind2}${configKey}`,
+  );
+  // Insert comments before `fitConfigs:`
+  text = text.replace(/^(\s*)(fitConfigs: \[)/gm, (_match: string, ind: string, fitConfigsKey: string) =>
+    `${ind}// Each fitConfig is used as a base when generating FITConfiguration.json.  Anything here will be copied into the config (unless overwritten by fit-cli).\n${ind}// fit-cli will provide some fields like \${defaultHostname} at runtime when cluster details are known.\n${ind}${fitConfigsKey}`,
+  );
+  if (!text.endsWith("\n")) text += "\n";
+  return text;
+}
+
+function formatFitSituationalDefinitionJson5(definition: FitDefinition): string {
+  let text = formatFitDefinitionJson5(definition);
+  text = text.replace(/^(\s*)(clusters: \[\],?)$/gm, (_match: string, ind: string, clustersKey: string) =>
+    `${ind}// FIT/SIT creates its own clusters, so none are set up here.\n${ind}${clustersKey}`,
+  );
+  text = text.replace(/^(\s*)(cbdinocluster: \{)\n(\s*)(init:)/gm, (_match: string, ind1: string, cbdBrace: string, ind2: string, initKey: string) =>
+    `${ind1}// FIT/SIT creates its own clusters via cbdinocluster; this init config must be present.\n${ind1}${cbdBrace}\n${ind2}${initKey}`,
+  );
+  text = text.replace(/^(\s*)(clusterlessSessions: \[)/gm, (_match: string, ind: string, clKey: string) =>
+    `${ind}// Sessions not tied to any particular cluster (the name distinguishes these from sessions nested under clusters:)\n${ind}${clKey}`,
+  );
+  return text;
+}
+
+export function formatFitDefinition(definition: FitDefinition, format: DefinitionFormat = "json5"): string {
+  return format === "yaml" ? formatFitDefinitionYaml(definition) : formatFitDefinitionJson5(definition);
+}
+
+export function formatFitSituationalDefinition(definition: FitDefinition, format: DefinitionFormat = "json5"): string {
+  return format === "yaml" ? formatFitSituationalDefinitionYaml(definition) : formatFitSituationalDefinitionJson5(definition);
+}
+
+export function formatFitFunctionalDefinition(definition: FitDefinition, format: DefinitionFormat = "json5"): string {
+  return formatFitDefinition(definition, format);
+}
 
 export interface WriteFitFunctionalDefinitionResult {
   path: string;
@@ -332,10 +373,11 @@ export interface WriteFitFunctionalDefinitionResult {
 export function writeFitDefinition(
   definition: FitDefinition,
   runDir: string = ensureRunDir(),
+  format: DefinitionFormat = "json5",
 ): WriteFitFunctionalDefinitionResult {
   mkdirSync(runDir, { recursive: true, mode: 0o700 });
-  const path = fitDefinitionPath(runDir);
-  writeFileSync(path, formatFitDefinition(definition));
+  const path = fitDefinitionPath(runDir, format);
+  writeFileSync(path, formatFitDefinition(definition, format));
   return {
     path,
     artifact: artifactFromPath(path, "Generated fit definition file for reruns", runDir),
@@ -347,10 +389,11 @@ export const writeFitFunctionalDefinition = writeFitDefinition;
 export function writeFitSituationalDefinition(
   definition: FitDefinition,
   runDir: string = ensureRunDir(),
+  format: DefinitionFormat = "json5",
 ): WriteFitFunctionalDefinitionResult {
   mkdirSync(runDir, { recursive: true, mode: 0o700 });
-  const path = fitDefinitionPath(runDir);
-  writeFileSync(path, formatFitSituationalDefinition(definition));
+  const path = fitDefinitionPath(runDir, format);
+  writeFileSync(path, formatFitSituationalDefinition(definition, format));
   return {
     path,
     artifact: artifactFromPath(path, "Generated fit definition file for reruns", runDir),
@@ -361,14 +404,15 @@ export function generateFitFunctionalDefinition(
   sdk: Sdk,
   cluster: SelectedCluster,
   selection: FitTestSelection,
+  format: DefinitionFormat = "json5",
 ): RunOutput & { path: string; definition: FitDefinition } {
   const definition = buildFitFunctionalDefinition(sdk, cluster, selection);
 
   console.log("\nGenerating a fit definition file so you can rerun this flow non-interactively or tweak it.");
-  const result = writeFitDefinition(definition);
+  const result = writeFitDefinition(definition, undefined, format);
 
   console.log(`\nWriting ${result.path}:\n`);
-  printWithoutTimestamps(formatFitDefinition(definition));
+  printWithoutTimestamps(formatFitDefinition(definition, format));
   console.log(`\n✓ Wrote ${result.path}`);
 
   return { path: result.path, definition, artifacts: [result.artifact], details: [] };

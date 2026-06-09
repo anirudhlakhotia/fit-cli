@@ -15,14 +15,31 @@ import {
   saveFitCliConfig,
 } from "../config.js";
 
-test("parses a version 1 fit-cli config", () => {
-  const parsed = parseFitCliConfig(`
-version: 1
-aws:
-  region: us-east-1
-  profile: dev
-  instanceType: c5.xlarge
-`);
+test("parses a version 1 fit-cli config (JSON5)", () => {
+  const parsed = parseFitCliConfig(`{
+  version: 1,
+  aws: {
+    region: 'us-east-1',
+    profile: 'dev',
+    instanceType: 'c5.xlarge',
+  },
+}`);
+
+  assert.deepEqual(parsed, {
+    version: FIT_CLI_CONFIG_VERSION,
+    aws: {
+      region: "us-east-1",
+      profile: "dev",
+      instanceType: "c5.xlarge",
+    },
+  });
+});
+
+test("parses a version 1 fit-cli config (YAML, backward compat)", () => {
+  const parsed = parseFitCliConfig(
+    `version: 1\naws:\n  region: us-east-1\n  profile: dev\n  instanceType: c5.xlarge\n`,
+    "yaml",
+  );
 
   assert.deepEqual(parsed, {
     version: FIT_CLI_CONFIG_VERSION,
@@ -35,14 +52,15 @@ aws:
 });
 
 test("ignores legacy stored AWS credentials in config", () => {
-  const parsed = parseFitCliConfig(`
-version: 1
-aws:
-  accessKeyId: abc
-  secretAccessKey: def
-  region: us-east-1
-  profile: dev
-`);
+  const parsed = parseFitCliConfig(`{
+  version: 1,
+  aws: {
+    accessKeyId: 'abc',
+    secretAccessKey: 'def',
+    region: 'us-east-1',
+    profile: 'dev',
+  },
+}`);
 
   assert.deepEqual(parsed, {
     version: FIT_CLI_CONFIG_VERSION,
@@ -54,11 +72,7 @@ aws:
 });
 
 test("parses a stored GitHub token", () => {
-  const parsed = parseFitCliConfig(`
-version: 1
-github:
-  token: ghp_example
-`);
+  const parsed = parseFitCliConfig(`{ version: 1, github: { token: 'ghp_example' } }`);
 
   assert.deepEqual(parsed, {
     version: FIT_CLI_CONFIG_VERSION,
@@ -87,12 +101,7 @@ test("resolveGithubToken falls back to GITHUB_TOKEN then GH_TOKEN", () => {
 });
 
 test("parses stored results-database credentials", () => {
-  const parsed = parseFitCliConfig(`
-version: 1
-resultsDb:
-  password: s3cret
-  username: readonly
-`);
+  const parsed = parseFitCliConfig(`{ version: 1, resultsDb: { password: 's3cret', username: 'readonly' } }`);
 
   assert.deepEqual(parsed, {
     version: FIT_CLI_CONFIG_VERSION,
@@ -120,7 +129,7 @@ test("resolveResultsDbCredentials falls back to FIT_RESULTS_DB_* env vars", () =
 
 test("rejects unsupported newer config versions", () => {
   assert.throws(
-    () => parseFitCliConfig("version: 2\n"),
+    () => parseFitCliConfig("{ version: 2 }"),
     UnsupportedFitCliConfigVersionError,
   );
 });
@@ -147,7 +156,35 @@ test("applies config values only when the environment is unset", () => {
   });
 });
 
-test("saves and reloads config.yaml", () => {
+test("saves and reloads config.json5", () => {
+  const dir = mkdtempSync(join(tmpdir(), "fit-cli-config-"));
+  const path = join(dir, "config.json5");
+  saveFitCliConfig(
+    {
+      version: FIT_CLI_CONFIG_VERSION,
+      aws: {
+        region: "us-east-1",
+        instanceType: "c5.xlarge",
+      },
+    },
+    path,
+  );
+
+  assert.match(readFileSync(path, "utf8"), /version: 1/);
+  assert.deepEqual(loadFitCliConfig(path), {
+    loaded: true,
+    path,
+    config: {
+      version: FIT_CLI_CONFIG_VERSION,
+      aws: {
+        region: "us-east-1",
+        instanceType: "c5.xlarge",
+      },
+    },
+  });
+});
+
+test("saves and reloads config.yaml (YAML format, backward compat)", () => {
   const dir = mkdtempSync(join(tmpdir(), "fit-cli-config-"));
   const path = join(dir, "config.yaml");
   saveFitCliConfig(
@@ -177,7 +214,7 @@ test("saves and reloads config.yaml", () => {
 
 test("ensureFitCliConfigEnv can run init and apply the created config", async () => {
   const dir = mkdtempSync(join(tmpdir(), "fit-cli-config-"));
-  const path = join(dir, "config.yaml");
+  const path = join(dir, "config.json5");
   const env: NodeJS.ProcessEnv = {};
   const result = await ensureFitCliConfigEnv({
     path,
@@ -205,7 +242,7 @@ test("ensureFitCliConfigEnv can run init and apply the created config", async ()
 
 test("ensureFitCliConfigEnv returns without creating when the user declines", async () => {
   const dir = mkdtempSync(join(tmpdir(), "fit-cli-config-"));
-  const path = join(dir, "config.yaml");
+  const path = join(dir, "config.json5");
   const result = await ensureFitCliConfigEnv({
     path,
     confirmCreate: () => Promise.resolve(false),

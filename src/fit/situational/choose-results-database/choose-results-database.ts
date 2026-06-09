@@ -5,7 +5,7 @@
  * workflow can set up via ../setup-local-database.
  *
  * The hosted database's readonly password is secret, so it's taken from the
- * fit-cli config (`resultsDb.password` in ~/.fit-cli/config.yaml), falling back
+ * fit-cli config (`resultsDb.password` in ~/.fit-cli/config.json5), falling back
  * to the FIT_RESULTS_DB_PASSWORD environment variable (a `.env` file is loaded
  * automatically) rather than prompted for and logged. Ask on #the-fit-stop for
  * the password — see .env.example.
@@ -99,7 +99,7 @@ function resolveHostedDatabase(): ResultsDatabaseOutcome {
     fitCliError(
       `\n✗ The hosted results database needs a readonly password.\n` +
         `  Ask on #the-fit-stop for it, then set it as resultsDb.password in your fit-cli config\n` +
-        `  (~/.fit-cli/config.yaml — run \`npm run init\`) or ${RESULTS_DB_PASSWORD_ENV} in your .env (see .env.example).\n` +
+        `  (~/.fit-cli/config.json5 — run \`npm run init\`) or ${RESULTS_DB_PASSWORD_ENV} in your .env (see .env.example).\n` +
         `  You must also be on the vpn-public VPN to reach ${HOSTED_RESULTS_DB_HOST}.`,
     );
     return { ready: false, artifacts: [], details: [] };
@@ -124,7 +124,7 @@ function resolveHostedDatabaseFromConfig(): ResultsDatabaseOutcome {
     fitCliError(
       `\n✗ The hosted results database needs a readonly password in your fit-cli config.\n` +
         `  Ask on #the-fit-stop for it, then set it as resultsDb.password in your fit-cli config\n` +
-        `  (~/.fit-cli/config.yaml — run \`npm run init\`).\n` +
+        `  (~/.fit-cli/config.json5 — run \`npm run init\`).\n` +
         `  You must also be on the vpn-public VPN to reach ${HOSTED_RESULTS_DB_HOST}.`,
     );
     return { ready: false, artifacts: [], details: [] };

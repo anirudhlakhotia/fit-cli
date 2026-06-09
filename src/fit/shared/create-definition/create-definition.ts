@@ -26,6 +26,7 @@ import {
   buildFitFunctionalDefinitionFrom,
   buildFitSituationalDefinitionFrom,
   type DefinitionCluster,
+  type DefinitionFormat,
   formatFitDefinition,
   formatFitSituationalDefinition,
   writeFitDefinition,
@@ -271,7 +272,7 @@ async function addSituationalRun(
   state.instances.push(generatedInstance);
 }
 
-export async function createFitDefinition(rootDir: string): Promise<RunOutput> {
+export async function createFitDefinition(rootDir: string, options?: { format?: DefinitionFormat }): Promise<RunOutput> {
   console.log(
     "\nThis builds a reusable fit definition file. Nothing is set up — no cluster is allocated, no performer built, no tests run.\n",
   );
@@ -310,11 +311,12 @@ export async function createFitDefinition(rootDir: string): Promise<RunOutput> {
     [...(i.clusterlessSessions ?? []), ...i.clusters.flatMap((c) => c.sessions)].flatMap((s) => s.runs),
   );
   const hasSituational = allRuns.some((r) => r.type === "situational");
+  const outputFormat = options?.format ?? "json5";
   const write = hasSituational ? writeFitSituationalDefinition : writeFitDefinition;
-  const format = hasSituational ? formatFitSituationalDefinition : formatFitDefinition;
-  const result = write(definition);
+  const formatFn = hasSituational ? formatFitSituationalDefinition : formatFitDefinition;
+  const result = write(definition, undefined, outputFormat);
   console.log(`\nWriting ${result.path}:\n`);
-  printWithoutTimestamps(format(definition));
+  printWithoutTimestamps(formatFn(definition, outputFormat));
   console.log(`\n✓ Wrote ${result.path}`);
   console.log(
     `\nRun it later with:\n` +

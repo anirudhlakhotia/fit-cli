@@ -2,6 +2,7 @@
  * Parse and validate a `fit` definition file.
  */
 import { readFileSync } from "node:fs";
+import JSON5 from "json5";
 import YAML from "yaml";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { PORT_IN_USE_POLICIES, type PortInUsePolicy } from "../../performers/util/performer-port.js";
@@ -574,7 +575,7 @@ function validateVersion(version: unknown): number {
 
 export function validateDefinition(raw: unknown): FitDefinition {
   if (!isRecord(raw)) {
-    throw new InvalidDefinitionError("Definition file must be a YAML mapping at the top level.");
+    throw new InvalidDefinitionError("Definition file must be an object at the top level.");
   }
   validateVersion(raw.version);
   if (raw.type !== FIT_DEFINITION_TYPE) {
@@ -602,18 +603,48 @@ export function validateDefinition(raw: unknown): FitDefinition {
   };
 }
 
-export function parseDefinition(text: string): FitDefinition {
+export type DefinitionFormat = "json5" | "yaml";
+
+function detectDefinitionFormat(path: string): DefinitionFormat {
+  if (/\.json5$/i.test(path)) return "json5";
+  if (/\.ya?ml$/i.test(path)) return "yaml";
+  return "json5";
+}
+
+export function parseDefinition(text: string, format?: DefinitionFormat): FitDefinition {
   let raw: unknown;
-  try {
-    raw = YAML.parse(text);
-  } catch (err) {
-    throw new InvalidDefinitionError(`Could not parse YAML: ${(err as Error).message}`);
+  if (format === "yaml") {
+    try {
+      raw = YAML.parse(text);
+    } catch (err) {
+      throw new InvalidDefinitionError(`Could not parse YAML: ${(err as Error).message}`);
+    }
+  } else if (format === "json5") {
+    try {
+      raw = JSON5.parse(text);
+    } catch (err) {
+      throw new InvalidDefinitionError(`Could not parse JSON5: ${(err as Error).message}`);
+    }
+  } else {
+    let json5Err: Error;
+    try {
+      raw = JSON5.parse(text);
+    } catch (err) {
+      json5Err = err as Error;
+      try {
+        raw = YAML.parse(text);
+      } catch (yamlErr) {
+        throw new InvalidDefinitionError(
+          `Could not parse definition file as JSON5 (${json5Err.message}) or YAML (${(yamlErr as Error).message})`,
+        );
+      }
+    }
   }
   return validateDefinition(raw);
 }
 
 export function loadDefinition(path: string): FitDefinition {
-  return parseDefinition(readFileSync(path, "utf8"));
+  return parseDefinition(readFileSync(path, "utf8"), detectDefinitionFormat(path));
 }
 
 function countRuns(definition: FitDefinition): number {
@@ -632,12 +663,13 @@ function countRuns(definition: FitDefinition): number {
 const HELP = `Validate a fit definition file and print the parsed result.
 
 Primary usage:
-  npm run definition -- validate <file.yaml>
+  npm run definition -- validate <file.json5>
 
 Direct invocation (for debugging):
-  npx tsx src/fit/shared/definition/parse-definition.ts <file.yaml>
+  npx tsx src/fit/shared/definition/parse-definition.ts <file.json5>
   npx tsx src/fit/shared/definition/parse-definition.ts --help
 
+Both .json5 and .yaml definition files are accepted.
 Exits 0 and prints the normalised definition as JSON if the file is valid;
 exits 1 with an explanation otherwise.`;
 

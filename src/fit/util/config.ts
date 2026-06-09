@@ -1,12 +1,14 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
+import JSON5 from "json5";
 import YAML from "yaml";
 import { confirm } from "../../util/non-fit/prompts.js";
 
 export const FIT_CLI_CONFIG_VERSION = 1;
 export const FIT_CLI_CONFIG_DIRNAME = ".fit-cli";
-export const FIT_CLI_CONFIG_BASENAME = "config.yaml";
+export const FIT_CLI_CONFIG_BASENAME = "config.json5";
+const LEGACY_CONFIG_YAML_BASENAME = "config.yaml";
 
 export interface FitCliAwsConfig {
   region?: string;
@@ -103,12 +105,20 @@ function configEnvEntries(config: FitCliConfig): Record<string, string> {
 const promptedMissingConfigPaths = new Set<string>();
 
 export function defaultFitCliConfigPath(home: string = homedir()): string {
-  return resolve(home, FIT_CLI_CONFIG_DIRNAME, FIT_CLI_CONFIG_BASENAME);
+  const json5Path = resolve(home, FIT_CLI_CONFIG_DIRNAME, FIT_CLI_CONFIG_BASENAME);
+  // Fall back to legacy config.yaml if config.json5 does not exist yet.
+  if (!existsSync(json5Path)) {
+    const yamlPath = resolve(home, FIT_CLI_CONFIG_DIRNAME, LEGACY_CONFIG_YAML_BASENAME);
+    if (existsSync(yamlPath)) {
+      return yamlPath;
+    }
+  }
+  return json5Path;
 }
 
 export function validateFitCliConfig(raw: unknown): FitCliConfig {
   if (!isRecord(raw)) {
-    throw new InvalidFitCliConfigError("fit-cli config must be a YAML mapping at the top level.");
+    throw new InvalidFitCliConfigError("fit-cli config must be an object at the top level.");
   }
 
   const { version } = raw;
@@ -173,12 +183,33 @@ export function validateFitCliConfig(raw: unknown): FitCliConfig {
   };
 }
 
-export function parseFitCliConfig(text: string): FitCliConfig {
+function detectConfigFormat(path: string): "json5" | "yaml" {
+  if (/\.ya?ml$/i.test(path)) return "yaml";
+  return "json5";
+}
+
+export function parseFitCliConfig(text: string, format?: "json5" | "yaml"): FitCliConfig {
   let raw: unknown;
-  try {
-    raw = YAML.parse(text);
-  } catch (err) {
-    throw new InvalidFitCliConfigError(`Could not parse YAML: ${(err as Error).message}`);
+  if (format !== undefined) {
+    try {
+      raw = format === "yaml" ? YAML.parse(text) : JSON5.parse(text);
+    } catch (err) {
+      throw new InvalidFitCliConfigError(`Could not parse config: ${(err as Error).message}`);
+    }
+  } else {
+    let json5Err: Error;
+    try {
+      raw = JSON5.parse(text);
+    } catch (err) {
+      json5Err = err as Error;
+      try {
+        raw = YAML.parse(text);
+      } catch (yamlErr) {
+        throw new InvalidFitCliConfigError(
+          `Could not parse config as JSON5 (${json5Err.message}) or YAML (${(yamlErr as Error).message})`,
+        );
+      }
+    }
   }
   return validateFitCliConfig(raw);
 }
@@ -191,15 +222,15 @@ export function loadFitCliConfig(path: string = defaultFitCliConfigPath()): FitC
   return {
     loaded: true,
     path: absolute,
-    config: parseFitCliConfig(readFileSync(absolute, "utf8")),
+    config: parseFitCliConfig(readFileSync(absolute, "utf8"), detectConfigFormat(absolute)),
   };
 }
 
 /**
  * The GitHub token used to clone the private FIT repos. We prefer the value
- * saved in config.yaml, then fall back to the usual environment variables, so
- * that someone who already exports GITHUB_TOKEN/GH_TOKEN doesn't have to run
- * `npm run init`. Loads config.yaml itself when a parsed config isn't supplied.
+ * saved in the fit-cli config, then fall back to the usual environment variables,
+ * so that someone who already exports GITHUB_TOKEN/GH_TOKEN doesn't have to run
+ * `npm run init`. Loads the config itself when a parsed config isn't supplied.
  */
 export function resolveGithubToken(
   options: { config?: FitCliConfig; path?: string; env?: NodeJS.ProcessEnv } = {},
@@ -211,7 +242,7 @@ export function resolveGithubToken(
 
 /**
  * The GitHub credentials (user + token) needed for GHCR image pulls in remote
- * cbdinocluster environments. Both fields must be present in config.yaml —
+ * cbdinocluster environments. Both fields must be present in the fit-cli config —
  * environment-variable fallbacks are intentionally not supported here since GHCR
  * pulls require an explicit username. Returns the credentials on success, or an
  * error message string on failure.
@@ -224,18 +255,17 @@ export function resolveGithubCredentials(
   const token = config?.github?.token;
   if (!user || !token) {
     const missing = [!user && "github.user", !token && "github.token"].filter(Boolean).join(" and ");
-    return `${missing} must be set in ~/.fit-cli/config.yaml — run \`npm run init\` to configure it.`;
+    return `${missing} must be set in ~/.fit-cli/config.json5 — run \`npm run init\` to configure it.`;
   }
   return { user, token };
 }
 
 /**
  * The hosted results-database readonly credentials. We prefer the values saved
- * in config.yaml, then fall back to the FIT_RESULTS_DB_* environment variables
- * (loaded from a `.env`), so existing setups keep working. The password is a
- * secret, so it's resolved on demand (like the GitHub token) rather than pushed
- * into the process env. Loads config.yaml itself when a parsed config isn't
- * supplied.
+ * in the fit-cli config, then fall back to the FIT_RESULTS_DB_* environment
+ * variables (loaded from a `.env`), so existing setups keep working. The password
+ * is a secret, so it's resolved on demand (like the GitHub token) rather than
+ * pushed into the process env. Loads the config itself when one isn't supplied.
  */
 export function resolveResultsDbCredentials(
   options: { config?: FitCliConfig; path?: string; env?: NodeJS.ProcessEnv } = {},
@@ -273,8 +303,15 @@ export function loadFitCliConfigEnv(
 export function saveFitCliConfig(config: FitCliConfig, path: string = defaultFitCliConfigPath()): string {
   const absolute = resolve(path);
   mkdirSync(dirname(absolute), { recursive: true, mode: 0o700 });
-  const text = YAML.stringify(validateFitCliConfig(config));
-  writeFileSync(absolute, text.endsWith("\n") ? text : `${text}\n`, { mode: 0o600 });
+  const format = detectConfigFormat(absolute);
+  let text: string;
+  if (format === "yaml") {
+    text = YAML.stringify(validateFitCliConfig(config));
+  } else {
+    text = JSON5.stringify(validateFitCliConfig(config), null, 2);
+    if (!text.endsWith("\n")) text += "\n";
+  }
+  writeFileSync(absolute, text, { mode: 0o600 });
   return absolute;
 }
 
