@@ -4,9 +4,9 @@
  * invocation reads it to reconnect the same execution target and reuse the
  * cluster/performer the earlier run stood up.
  *
- * The file lives next to the definition you pass, under `it0/_internal/`, so it
+ * The file lives next to the definition you pass, under `instances/0/_internal/`, so it
  * is clearly internal bookkeeping rather than a run artifact:
- *   <dir-of-fit.yaml>/it0/_internal/run-state.json
+ *   <dir-of-fit.yaml>/instances/0/_internal/run-state.json
  *
  * Reading and writing are the only IO here; deciding what to do with the state
  * (validation, which phases to skip) lives in the resume.ts/run-from-definition
@@ -71,7 +71,7 @@ export interface RunState {
 
 /** Where the run-state file lives for the definition at `definitionPath`. */
 export function runStatePath(definitionPath: string): string {
-  return resolve(dirname(definitionPath), "it0", "_internal", "run-state.json");
+  return resolve(dirname(definitionPath), "instances", "0", "_internal", "run-state.json");
 }
 
 /** Read the saved run state for a definition, or undefined if none exists. */
@@ -87,7 +87,7 @@ export function readRunState(definitionPath: string): RunState | undefined {
   return parsed as RunState;
 }
 
-/** Write the run state for a definition, creating the `it0/_internal` dir. */
+/** Write the run state for a definition, creating the `instances/0/_internal` dir. */
 export function writeRunState(definitionPath: string, state: RunState): string {
   const path = runStatePath(definitionPath);
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });

@@ -17,6 +17,7 @@ import { type SelectedCluster } from "../../cluster/cluster-select/cluster-selec
 import { DEFAULT_PERFORMER_PORT } from "../../performers/util/performer-port.js";
 import { buildFitConfiguration } from "../../fit-functional/util/build-fit-configuration.js";
 import type { PieceData } from "../../../util/non-fit/config-pieces.js";
+import type { DefinitionRunPath } from "../../../util/non-fit/replay.js";
 import {
   fitConfigDocPath,
   writeFitConfiguration,
@@ -32,10 +33,9 @@ import {
 export function generateFitConfiguration(
   cluster: SelectedCluster,
   rootDir: string,
+  path: DefinitionRunPath,
   performerPort: number = DEFAULT_PERFORMER_PORT,
   fitConfigPiece?: PieceData,
-  cycleIndex: number = 0,
-  iteration: number = 0,
 ): RunOutput & {
   path: string;
 } {
@@ -45,7 +45,7 @@ export function generateFitConfiguration(
     `\nGenerating a FITConfiguration.json for you. You can also produce this by hand by ` +
       `following ${fitConfigDocPath(rootDir)}.`,
   );
-  const result = writeFitConfiguration(config, undefined, cycleIndex, iteration);
+  const result = writeFitConfiguration(config, path);
 
   console.log(`\nWriting ${result.path}:\n`);
   console.log(JSON.stringify(config, null, 2));
@@ -64,6 +64,6 @@ if (isMain(import.meta.url)) {
     if (!outcome.ready) {
       process.exit(1);
     }
-    return generateFitConfiguration(outcome.cluster, rootDir);
+    return generateFitConfiguration(outcome.cluster, rootDir, { instanceIndex: 0, clusterIndex: 0, sessionIndex: 0, runIndex: 0 });
   });
 }

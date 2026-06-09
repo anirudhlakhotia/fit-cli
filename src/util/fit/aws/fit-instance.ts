@@ -25,7 +25,7 @@ import { terminateInstance } from "../../non-fit/aws/terminate-instance.js";
 import { ensureFitCliConfigEnv } from "../config.js";
 import { createKeyPair, deleteKeyPair } from "../../non-fit/aws/key-pair.js";
 import { ensureSecurityGroup } from "../../non-fit/aws/security-group.js";
-import { cycleRunDir } from "../../non-fit/replay.js";
+import { instanceRunDir } from "../../non-fit/replay.js";
 import { waitForSsh, type RemoteHost } from "../../non-fit/ssh.js";
 import { RemoteTarget } from "../../non-fit/remote-target.js";
 import { fitCliWarn } from "../../non-fit/fit-cli-log.js";
@@ -94,8 +94,8 @@ export interface ProvisionedInstance {
 export interface ProvisionOptions {
   instanceType?: string;
   region?: string;
-  /** Cycle this instance belongs to; its key and info land under that cycle's dir. */
-  cycleIndex?: number;
+  /** Instance this execution target belongs to; its key and info land under that instance dir. */
+  instanceIndex?: number;
 }
 
 /**
@@ -142,7 +142,7 @@ export async function provisionFitInstance(options: ProvisionOptions = {}): Prom
   );
 
   const keyName = `fit-cli-${Date.now().toString(36)}`;
-  const instanceDir = cycleRunDir(options.cycleIndex ?? 0);
+  const instanceDir = instanceRunDir(options.instanceIndex ?? 0);
   mkdirSync(instanceDir, { recursive: true, mode: 0o700 });
   const keyPath = join(instanceDir, `${keyName}.pem`);
   await createKeyPair(keyName, keyPath, awsOptions);

@@ -85,7 +85,7 @@ test("failed sanity tests still show the command and error", () => {
 
   const driver = [
     `import { runClusterDiag } from ${JSON.stringify(modulePath)};`,
-    `const ok = await runClusterDiag(${JSON.stringify(cluster({ defaultHostname: "172.18.0.2" }))});`,
+    `const ok = await runClusterDiag(${JSON.stringify(cluster({ defaultHostname: "172.18.0.2" }))}, { retryTimeoutMs: 0 });`,
     `process.exit(ok ? 0 : 1);`,
   ].join("\n");
 

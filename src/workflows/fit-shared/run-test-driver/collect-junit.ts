@@ -22,7 +22,7 @@ import { join } from "node:path";
 import { artifactFromPath, type Artifact } from "../../../util/non-fit/artifacts.js";
 import { run } from "../../../util/non-fit/proc.js";
 import { posixQuote } from "../../../util/non-fit/remote-target.js";
-import { iterationRunDir } from "../../../util/non-fit/replay.js";
+import { runRunDir, type DefinitionRunPath } from "../../../util/non-fit/replay.js";
 import type { ExecutionTarget } from "../../../util/non-fit/target.js";
 import { FIT_PERFORMER, repoPath } from "../../../util/fit/repos.js";
 
@@ -111,7 +111,7 @@ async function renderJunitReport(reportsDir: string, runDir: string): Promise<Ar
  * empty list when no reports were produced, and still returns the XML artifact
  * if the HTML render fails.
  */
-export async function collectJunitArtifacts(rootDir: string, cycleIndex: number = 0, iteration: number = 0): Promise<Artifact[]> {
+export async function collectJunitArtifacts(rootDir: string, path: DefinitionRunPath): Promise<Artifact[]> {
   const sourceDir = surefireReportsDir(rootDir);
   const xmlFiles = junitXmlFiles(sourceDir);
   if (xmlFiles.length === 0) {
@@ -119,8 +119,8 @@ export async function collectJunitArtifacts(rootDir: string, cycleIndex: number 
     return [];
   }
 
-  const itDir = iterationRunDir(cycleIndex, iteration);
-  const destDir = join(itDir, "surefire-reports");
+  const runDir = runRunDir(path);
+  const destDir = join(runDir, "surefire-reports");
   mkdirSync(destDir, { recursive: true, mode: 0o700 });
   for (const file of xmlFiles) {
     cpSync(join(sourceDir, file), join(destDir, file));
@@ -130,7 +130,7 @@ export async function collectJunitArtifacts(rootDir: string, cycleIndex: number 
     artifactFromPath(destDir, `JUnit XML reports from the FIT test-driver (${xmlFiles.length} file(s))`),
   ];
 
-  const reportArtifact = await renderJunitReport(destDir, itDir);
+  const reportArtifact = await renderJunitReport(destDir, runDir);
   if (reportArtifact) {
     artifacts.push(reportArtifact);
   }
@@ -144,8 +144,7 @@ export async function collectJunitArtifacts(rootDir: string, cycleIndex: number 
 export async function collectJunitArtifactsFromTarget(
   target: ExecutionTarget,
   sourceDir: string,
-  cycleIndex: number = 0,
-  iteration: number = 0,
+  path: DefinitionRunPath,
 ): Promise<Artifact[]> {
   // Guard the find against a missing surefire-reports dir: a test run that
   // produced no reports (e.g. nothing matched, or the driver bailed early) would
@@ -163,8 +162,8 @@ export async function collectJunitArtifactsFromTarget(
     return [];
   }
 
-  const itDir = iterationRunDir(cycleIndex, iteration);
-  const destDir = join(itDir, "surefire-reports");
+  const runDir = runRunDir(path);
+  const destDir = join(runDir, "surefire-reports");
   mkdirSync(destDir, { recursive: true, mode: 0o700 });
   for (const file of xmlFiles) {
     await target.getFile(join(sourceDir, file), join(destDir, file));
@@ -174,7 +173,7 @@ export async function collectJunitArtifactsFromTarget(
     artifactFromPath(destDir, `JUnit XML reports from the FIT test-driver (${xmlFiles.length} file(s))`),
   ];
 
-  const reportArtifact = await renderJunitReport(destDir, itDir);
+  const reportArtifact = await renderJunitReport(destDir, runDir);
   if (reportArtifact) {
     artifacts.push(reportArtifact);
   }

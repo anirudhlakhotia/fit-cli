@@ -5,7 +5,10 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { sdkByValue } from "../../../../util/sdk/sdks.js";
 import type { ClusterCommandExecutor } from "../../../cluster/cluster-create/allocate-cluster.js";
-import type { ResolvedFunctionalCycle, ResolvedSituationalIteration } from "../../../fit-shared/definition/resolve-definition.js";
+import type {
+  ResolvedFunctionalExecutionGroup,
+  ResolvedSituationalExecutionRun,
+} from "../../../fit-shared/definition/resolve-definition.js";
 import type { FitExecutionContext } from "../../../fit-shared/util/remote-fit-run.js";
 import {
   cbdinoclusterSetupFailed,
@@ -15,11 +18,12 @@ import {
   setupCluster,
 } from "../run-from-definition.js";
 
-function functionalCycle(): ResolvedFunctionalCycle {
+function functionalCycle(): ResolvedFunctionalExecutionGroup {
   const sdk = sdkByValue("java");
   assert.ok(sdk);
   return {
     type: "functional",
+    path: { instanceIndex: 0, clusterIndex: 0 },
     instance: { kind: "localhost" },
     clusterMode: "cbdinocluster",
     cng: false,
@@ -27,9 +31,10 @@ function functionalCycle(): ResolvedFunctionalCycle {
       config: { nodes: [{ count: 1, version: "8.1.0-2188", services: ["kv"] }] },
       onClusterExists: "destroyAndRecreate",
     },
-    iterations: [
+    runs: [
       {
         type: "functional",
+        path: { instanceIndex: 0, clusterIndex: 0, sessionIndex: 0, runIndex: 0 },
         sdk,
         performerPort: 8060,
         testSelection: { allTests: [], selectedTests: [] },
@@ -38,6 +43,7 @@ function functionalCycle(): ResolvedFunctionalCycle {
       },
       {
         type: "functional",
+        path: { instanceIndex: 0, clusterIndex: 0, sessionIndex: 0, runIndex: 1 },
         sdk,
         performerPort: 8061,
         testSelection: { allTests: [], selectedTests: [] },
@@ -76,6 +82,7 @@ function iteration() {
   assert.ok(sdk);
   return {
     type: "functional" as const,
+    path: { instanceIndex: 0, clusterIndex: 0, sessionIndex: 0, runIndex: 0 },
     sdk,
     cluster: cluster(),
     performerPort: 8060,
@@ -139,7 +146,7 @@ test("setupCluster applies the allocated cbdinocluster to every functional itera
   });
 
   assert.equal(receivedExecution, execution);
-  assert.deepEqual(result.cycle.iterations.map((iteration) => iteration.cluster), [cluster(), cluster()]);
+  assert.deepEqual(result.group.runs.map((iteration) => iteration.cluster), [cluster(), cluster()]);
 });
 
 test("setupCluster leaves the iterations unchanged when allocation fails", async () => {
@@ -151,14 +158,14 @@ test("setupCluster leaves the iterations unchanged when allocation fails", async
     }),
   );
 
-  assert.deepEqual(result.cycle.iterations.map((iteration) => iteration.cluster), [undefined, undefined]);
+  assert.deepEqual(result.group.runs.map((iteration) => iteration.cluster), [undefined, undefined]);
 });
 
 test("cbdinoclusterSetupFailed flags a missing cycle cluster after the cluster phase ran", () => {
   assert.equal(cbdinoclusterSetupFailed(functionalCycle(), true), true);
 
   const resolved = functionalCycle();
-  resolved.iterations = resolved.iterations.map((iteration) => ({ ...iteration, cluster: cluster() }));
+  resolved.runs = resolved.runs.map((iteration) => ({ ...iteration, cluster: cluster() }));
   assert.equal(cbdinoclusterSetupFailed(resolved, true), false);
   assert.equal(cbdinoclusterSetupFailed(functionalCycle(), false), false);
 });
@@ -166,12 +173,18 @@ test("cbdinoclusterSetupFailed flags a missing cycle cluster after the cluster p
 test("finalizeRunFromDefinition writes AGENTS.md and includes it in artifacts", () => {
   const runDir = mkdtempSync(join(tmpdir(), "fit-cli-run-from-definition-"));
   const result = finalizeRunFromDefinition([
-    { filename: "it0/driver.log", explanation: "FIT test-driver stdout/stderr captured for this run" },
+    {
+      filename: "instances/0/clusters/0/sessions/0/runs/0/driver.log",
+      explanation: "FIT test-driver stdout/stderr captured for this run",
+    },
   ], [], runDir);
 
-  assert.deepEqual(result.artifacts.map((artifact) => artifact.filename), ["it0/driver.log", "AGENTS.md"]);
+  assert.deepEqual(result.artifacts.map((artifact) => artifact.filename), [
+    "instances/0/clusters/0/sessions/0/runs/0/driver.log",
+    "AGENTS.md",
+  ]);
   const written = readFileSync(join(runDir, "AGENTS.md"), "utf8");
-  assert.match(written, /it0\/driver\.log/);
+  assert.match(written, /instances\/0\/clusters\/0\/sessions\/0\/runs\/0\/driver\.log/);
 });
 
 test("runTests stops before later steps when the cluster REST sanity check fails", async () => {
@@ -181,7 +194,7 @@ test("runTests stops before later steps when the cluster REST sanity check fails
 
   await assert.rejects(
     () =>
-      runTests(fitExecutionContext(), "connection", iteration(), undefined, 0, 0, {
+      runTests(fitExecutionContext(), "connection", iteration(), undefined, {
         runClusterDiagFn: () => Promise.resolve(false),
         generateFitConfigurationFn: () => {
           generatedFitConfig = true;
@@ -196,7 +209,7 @@ test("runTests stops before later steps when the cluster REST sanity check fails
           return Promise.resolve({ ok: true, logFile: "/tmp/driver.log", artifacts: [], details: [] });
         },
       }),
-    { message: "Cluster sanity test failed; this cycle cannot continue." },
+    { message: "Cluster sanity test failed; this execution group cannot continue." },
   );
 
   assert.equal(generatedFitConfig, false);
@@ -204,11 +217,12 @@ test("runTests stops before later steps when the cluster REST sanity check fails
   assert.equal(ranDriver, false);
 });
 
-function situationalIteration(): ResolvedSituationalIteration {
+function situationalIteration(): ResolvedSituationalExecutionRun {
   const sdk = sdkByValue("java");
   assert.ok(sdk);
   return {
     type: "situational",
+    path: { instanceIndex: 0, sessionIndex: 0, runIndex: 0, clusterlessSession: true },
     sdk,
     performerPort: 8060,
     testSelection: { allTests: [], selectedTests: [] },
@@ -229,7 +243,7 @@ test("runSituationalTests stops before generating a config when the database isn
   let generatedConfig = false;
   let ranDriver = false;
 
-  const result = await runSituationalTests(fitExecutionContext(), situationalIteration(), 0, 0, {
+  const result = await runSituationalTests(fitExecutionContext(), situationalIteration(), {
     resolveResultsDatabaseFn: () => Promise.resolve({ ready: false, artifacts: [], details: [] }),
     generateSituationalConfigurationFn: () => {
       generatedConfig = true;
@@ -251,17 +265,17 @@ test("runSituationalTests generates the situational config then runs the driver"
   let configPerformerPort: number | undefined;
   let driverMavenArgs: readonly string[] | undefined;
 
-  const result = await runSituationalTests(fitExecutionContext(), situationalIteration(), 0, 0, {
+  const result = await runSituationalTests(fitExecutionContext(), situationalIteration(), {
     resolveResultsDatabaseFn: () => {
       calls.push("database");
       return Promise.resolve(READY_DATABASE);
     },
-    generateSituationalConfigurationFn: (_db, _cbdino, _rootDir, performerPort) => {
+    generateSituationalConfigurationFn: (_db, _cbdino, _rootDir, _path, performerPort) => {
       calls.push("config");
       configPerformerPort = performerPort;
       return { path: "/tmp/fit.json", artifacts: [], details: [] };
     },
-    runTestDriverFn: (_execution, _selection, _fitConfigPath, extraMavenArgs) => {
+    runTestDriverFn: (_execution, _selection, _path, _fitConfigPath, extraMavenArgs) => {
       calls.push("driver");
       driverMavenArgs = extraMavenArgs;
       return Promise.resolve({ ok: true, logFile: "/tmp/driver.log", artifacts: [], details: [] });

@@ -3,6 +3,7 @@
  */
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { mergeConfigPieces, type ConfigPiece, type PieceData } from "../../../util/non-fit/config-pieces.js";
+import type { DefinitionRunPath } from "../../../util/non-fit/replay.js";
 import { classifyConnectionString } from "../../cluster/cluster-select/classify-connection-string.js";
 import type { SelectedCluster } from "../../cluster/cluster-select/cluster-select.js";
 import {
@@ -54,6 +55,7 @@ export function resolveInstance(instance: InstanceLifetime): ResolvedInstance {
 }
 
 export interface ResolvedRunCommon {
+  path: DefinitionRunPath;
   fitConfig?: PieceData;
   testSelection: FitTestSelection;
   extraMavenArgs: string[];
@@ -71,6 +73,7 @@ export interface ResolvedSituationalRun extends ResolvedRunCommon {
 export type ResolvedRun = ResolvedFunctionalRun | ResolvedSituationalRun;
 
 export interface ResolvedSessionPlan {
+  path: DefinitionRunPath;
   sdk: Sdk;
   performerPort: number;
   performerVersion?: string;
@@ -86,6 +89,7 @@ export interface ResolvedCbdinocluster {
 }
 
 export interface ResolvedClusterPlan {
+  path: DefinitionRunPath;
   clusterMode: "connection" | "useExisting" | "cbdinocluster";
   cng: boolean;
   cluster?: SelectedCluster;
@@ -94,6 +98,7 @@ export interface ResolvedClusterPlan {
 }
 
 export interface ResolvedInstancePlan {
+  path: DefinitionRunPath;
   instance: ResolvedInstance;
   clusters: ResolvedClusterPlan[];
   cbdinoclusterInit?: { config: PieceData };
@@ -103,46 +108,47 @@ export interface ResolvedInstancePlan {
 export interface ResolvedDefinition {
   fitPerformerGerritRef?: string;
   instances: ResolvedInstancePlan[];
-  cycles: ResolvedCycle[];
 }
 
-export interface ResolvedIterationCommon extends ResolvedRunCommon {
+export interface ResolvedExecutionRunCommon extends ResolvedRunCommon {
   sdk: Sdk;
   performerPort: number;
   performerVersion?: string;
   onPortInUse: PortInUsePolicy;
 }
 
-export interface ResolvedFunctionalIteration extends ResolvedIterationCommon {
+export interface ResolvedFunctionalExecutionRun extends ResolvedExecutionRunCommon {
   type: "functional";
   cluster?: SelectedCluster;
 }
 
-export interface ResolvedSituationalIteration extends ResolvedIterationCommon {
+export interface ResolvedSituationalExecutionRun extends ResolvedExecutionRunCommon {
   type: "situational";
   databaseMode: SituationalDatabaseMode;
 }
 
-export type ResolvedIteration = ResolvedFunctionalIteration | ResolvedSituationalIteration;
+export type ResolvedExecutionRun = ResolvedFunctionalExecutionRun | ResolvedSituationalExecutionRun;
 
-export interface ResolvedFunctionalCycle {
+export interface ResolvedFunctionalExecutionGroup {
   type: "functional";
+  path: DefinitionRunPath;
   instance: ResolvedInstance;
   clusterMode: "connection" | "useExisting" | "cbdinocluster";
   cng: boolean;
   cluster?: SelectedCluster;
   cbdinocluster?: ResolvedCbdinocluster;
-  iterations: ResolvedFunctionalIteration[];
+  runs: ResolvedFunctionalExecutionRun[];
 }
 
-export interface ResolvedSituationalCycle {
+export interface ResolvedSituationalExecutionGroup {
   type: "situational";
+  path: DefinitionRunPath;
   instance: ResolvedInstance;
   cbdinoclusterInit: { config: PieceData };
-  iterations: ResolvedSituationalIteration[];
+  runs: ResolvedSituationalExecutionRun[];
 }
 
-export type ResolvedCycle = ResolvedFunctionalCycle | ResolvedSituationalCycle;
+export type ResolvedExecutionGroup = ResolvedFunctionalExecutionGroup | ResolvedSituationalExecutionGroup;
 
 function resolveTestsSelection(tests: TestsSection): FitTestSelection {
   return tests.run === "all"
@@ -282,7 +288,9 @@ export function resolveCbdinocluster(cluster: ClusterLifetime): ResolvedCbdinocl
   };
 }
 
-function resolveRun(run: FitRun, clusterFitConfig: PieceData | undefined, stripClusterAccess: boolean): ResolvedRun {
+type ResolvedRunWithoutPath = Omit<ResolvedFunctionalRun, "path"> | Omit<ResolvedSituationalRun, "path">;
+
+function resolveRun(run: FitRun, clusterFitConfig: PieceData | undefined, stripClusterAccess: boolean): ResolvedRunWithoutPath {
   const mergedFitConfig = mergeFitConfig(clusterFitConfig, run.fitConfig);
   const fitConfig = stripClusterAccess ? stripFitConfigClusterAccess(mergedFitConfig) : mergedFitConfig;
   if (run.type === "situational") {
@@ -304,6 +312,7 @@ function resolveRun(run: FitRun, clusterFitConfig: PieceData | undefined, stripC
 
 export function resolveSession(
   session: SessionLifetime,
+  path: DefinitionRunPath,
   clusterFitConfig: PieceData | undefined,
   stripClusterAccess: boolean,
 ): ResolvedSessionPlan {
@@ -312,15 +321,26 @@ export function resolveSession(
     throw new Error(`Unknown sdk "${session.performer.sdk}". Valid values: ${SDKS.map((s) => s.value).join(", ")}.`);
   }
   return {
+    path,
     sdk,
     performerPort: session.performer.port ?? DEFAULT_PERFORMER_PORT,
     ...(session.performer.version !== undefined ? { performerVersion: session.performer.version } : {}),
     onPortInUse: session.performer.onPortInUse ?? DEFAULT_PORT_IN_USE_POLICY,
-    runs: session.runs.map((run) => resolveRun(run, clusterFitConfig, stripClusterAccess)),
+    runs: session.runs.map((run, runIndex) =>
+      resolveRunWithPath(run, { ...path, runIndex }, clusterFitConfig, stripClusterAccess)),
   };
 }
 
-export function resolveCluster(cluster: ClusterLifetime): ResolvedClusterPlan {
+function resolveRunWithPath(
+  run: FitRun,
+  path: DefinitionRunPath,
+  clusterFitConfig: PieceData | undefined,
+  stripClusterAccess: boolean,
+): ResolvedRun {
+  return { ...resolveRun(run, clusterFitConfig, stripClusterAccess), path };
+}
+
+export function resolveCluster(cluster: ClusterLifetime, path: DefinitionRunPath): ResolvedClusterPlan {
   const connection = resolveConnectionCluster(cluster.connection);
   const cbdinocluster = resolveCbdinocluster(cluster);
   const useExisting = cluster.useExisting !== undefined;
@@ -330,20 +350,25 @@ export function resolveCluster(cluster: ClusterLifetime): ResolvedClusterPlan {
     throw new Error("cluster.useExisting requires cluster.fitConfig.clusterAccess.");
   }
   return {
+    path,
     clusterMode,
     cng: cbdinocluster?.config.cao !== undefined,
     ...(resolvedCluster ? { cluster: resolvedCluster } : {}),
     ...(cbdinocluster ? { cbdinocluster } : {}),
-    sessions: cluster.sessions.map((session) => resolveSession(session, cluster.fitConfig, clusterMode === "connection")),
+    sessions: cluster.sessions.map((session, sessionIndex) =>
+      resolveSession(session, { ...path, sessionIndex }, cluster.fitConfig, clusterMode === "connection")),
   };
 }
 
-export function resolveInstancePlan(instance: InstanceLifetime): ResolvedInstancePlan {
+export function resolveInstancePlan(instance: InstanceLifetime, instanceIndex: number): ResolvedInstancePlan {
+  const path = { instanceIndex } satisfies DefinitionRunPath;
   return {
+    path,
     instance: resolveInstance(instance),
-    clusters: instance.clusters.map(resolveCluster),
+    clusters: instance.clusters.map((cluster, clusterIndex) => resolveCluster(cluster, { instanceIndex, clusterIndex })),
     ...(instance.cbdinocluster !== undefined ? { cbdinoclusterInit: { config: instance.cbdinocluster.init.config } } : {}),
-    clusterlessSessions: (instance.clusterlessSessions ?? []).map((session) => resolveSession(session, undefined, false)),
+    clusterlessSessions: (instance.clusterlessSessions ?? []).map((session, sessionIndex) =>
+      resolveSession(session, { instanceIndex, sessionIndex, clusterlessSession: true }, undefined, false)),
   };
 }
 
@@ -354,24 +379,25 @@ export function resolveDefinition(definition: FitDefinition): ResolvedDefinition
       ? { fitPerformerGerritRef: definition.setup.repos["transactions-fit-performer"].gerritRef }
       : {}),
     instances,
-    cycles: flattenInstancesToCycles(instances),
   };
 }
 
-function flattenInstancesToCycles(instances: ResolvedInstancePlan[]): ResolvedCycle[] {
+export function buildExecutionGroups(instances: ResolvedInstancePlan[]): ResolvedExecutionGroup[] {
   return instances.flatMap((instance) => [
-    ...instance.clusters.map<ResolvedFunctionalCycle>((cluster) => ({
+    ...instance.clusters.map<ResolvedFunctionalExecutionGroup>((cluster) => ({
       type: "functional",
+      path: cluster.path,
       instance: instance.instance,
       clusterMode: cluster.clusterMode,
       cng: cluster.cng,
       ...(cluster.cluster ? { cluster: cluster.cluster } : {}),
       ...(cluster.cbdinocluster ? { cbdinocluster: cluster.cbdinocluster } : {}),
-      iterations: cluster.sessions.flatMap((session) =>
+      runs: cluster.sessions.flatMap((session) =>
         session.runs
           .filter((run): run is ResolvedFunctionalRun => run.type === "functional")
           .map((run) => ({
             type: "functional",
+            path: run.path,
             sdk: session.sdk,
             performerPort: session.performerPort,
             ...(session.performerVersion !== undefined ? { performerVersion: session.performerVersion } : {}),
@@ -388,13 +414,15 @@ function flattenInstancesToCycles(instances: ResolvedInstancePlan[]): ResolvedCy
       : [
           {
             type: "situational" as const,
+            path: { instanceIndex: instance.path.instanceIndex, sessionIndex: instance.clusterlessSessions[0]?.path.sessionIndex, clusterlessSession: true },
             instance: instance.instance,
             cbdinoclusterInit: instance.cbdinoclusterInit,
-            iterations: instance.clusterlessSessions.flatMap((session) =>
+            runs: instance.clusterlessSessions.flatMap((session) =>
               session.runs
                 .filter((run): run is ResolvedSituationalRun => run.type === "situational")
                 .map((run) => ({
                   type: "situational" as const,
+                  path: run.path,
                   sdk: session.sdk,
                   performerPort: session.performerPort,
                   ...(session.performerVersion !== undefined ? { performerVersion: session.performerVersion } : {}),

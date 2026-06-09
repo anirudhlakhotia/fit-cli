@@ -15,7 +15,12 @@ import { checkBuildAndRunPerformer } from "../check-build-and-run-performer/chec
 
 /** Run a performer Docker image, building it first if needed. */
 export async function runPerformer(rootDir: string, sdk: Sdk, version?: string): Promise<boolean> {
-  const performer = await checkBuildAndRunPerformer(createLocalFitExecutionContext(rootDir), sdk, version);
+  const performer = await checkBuildAndRunPerformer(
+    createLocalFitExecutionContext(rootDir),
+    sdk,
+    { instanceIndex: 0, clusterIndex: 0, sessionIndex: 0 },
+    version,
+  );
   if (!performer) {
     return false;
   }

@@ -74,10 +74,6 @@ Note these aren't intended to be stable CLI commands.  They are just for transie
 
 If you find any are broken due to refactorings then please ask an AI to "sweep the files quickly".  It should find the instructions in this file.
 
-## Contributing
-
-
-
 ## Scripts
 
 - `npm start` — run the interactive wizard.

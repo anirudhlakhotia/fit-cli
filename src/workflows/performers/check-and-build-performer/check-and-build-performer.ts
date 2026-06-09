@@ -10,6 +10,7 @@ import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { artifactFromPath, type RunOutput } from "../../../util/non-fit/artifacts.js";
 import { fitCliError } from "../../../util/non-fit/fit-cli-log.js";
 import { createLogFile } from "../../../util/non-fit/proc.js";
+import type { DefinitionRunPath } from "../../../util/non-fit/replay.js";
 import { rootDirFromArgv } from "../../../util/fit/root.js";
 import { type Sdk } from "../../../util/sdk/sdks.js";
 import { chooseSdk } from "../../../util/sdk/choose-sdk.js";
@@ -22,26 +23,23 @@ import {
 } from "../build-performer/build-performer.js";
 import { performerStatus } from "../check-performer/check-performer.js";
 
-export function performerBuildLogStem(cycleIndex: number, iteration: number, sdk: Sdk, version?: string, gerritRef?: string): string {
-  return join(
-    "cycles",
-    String(cycleIndex),
-    `it${iteration}`,
-    `${sdk.value}-${dockerImageComponent(performerBuildIdentity(version, gerritRef))}-performer-build`,
-  );
+export function performerBuildLogStem(path: DefinitionRunPath, sdk: Sdk, version?: string, gerritRef?: string): string {
+  const base = path.clusterlessSession
+    ? join("instances", String(path.instanceIndex), "clusterless-sessions", String(path.sessionIndex))
+    : join("instances", String(path.instanceIndex), "clusters", String(path.clusterIndex), "sessions", String(path.sessionIndex));
+  return join(base, `${sdk.value}-${dockerImageComponent(performerBuildIdentity(version, gerritRef))}-performer-build`);
 }
 
-function performerBuildLogFile(cycleIndex: number, iteration: number, sdk: Sdk, version?: string, gerritRef?: string): string {
-  return createLogFile(performerBuildLogStem(cycleIndex, iteration, sdk, version, gerritRef));
+function performerBuildLogFile(path: DefinitionRunPath, sdk: Sdk, version?: string, gerritRef?: string): string {
+  return createLogFile(performerBuildLogStem(path, sdk, version, gerritRef));
 }
 
 /** Check for a performer image and offer to build it if it is missing. */
 export async function checkAndBuildPerformer(
   execution: FitExecutionContext,
   sdk: Sdk,
+  path: DefinitionRunPath,
   version?: string,
-  cycleIndex: number = 0,
-  iteration: number = 0,
   gerritRef?: string,
 ): Promise<boolean> {
   const status = await performerStatus(execution, sdk, version, gerritRef);
@@ -65,7 +63,7 @@ export async function checkAndBuildPerformer(
 
   console.log(`The ${sdk.name} performer Docker image ${status.imageName} is not present locally, so fit-cli will build it now.`);
   const args = buildPerformerArgs(execution.rootDir, sdk, version, gerritRef);
-  const logFile = performerBuildLogFile(cycleIndex, iteration, sdk, version, gerritRef);
+  const logFile = performerBuildLogFile(path, sdk, version, gerritRef);
   const targetLogFile = execution.targetFilePath(logFile);
   console.log(`\nBuilding performer with:\n  cd ${execution.jenkinsDir} && ./gradlew ${args.join(" ")}\n`);
   console.log(`Streaming performer build output to:\n  ${targetLogFile}\n`);
@@ -111,7 +109,7 @@ export async function runCheckAndBuildPerformer(rootDir: string): Promise<Partia
   if (!(await execution.ensureWorkspace(sdk))) {
     return { artifacts: execution.artifacts, details: execution.details };
   }
-  await checkAndBuildPerformer(execution, sdk, version);
+  await checkAndBuildPerformer(execution, sdk, { instanceIndex: 0, clusterIndex: 0, sessionIndex: 0 }, version);
   return { artifacts: execution.artifacts, details: execution.details };
 }
 

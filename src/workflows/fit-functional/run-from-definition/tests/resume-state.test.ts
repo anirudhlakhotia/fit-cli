@@ -27,10 +27,10 @@ function sampleState(): RunState {
   };
 }
 
-test("runStatePath puts the state under it0/_internal next to the definition", () => {
+test("runStatePath puts the state under instances/0/_internal next to the definition", () => {
   assert.equal(
     runStatePath("/tmp/fit-cli/20260605-142043/fit.yaml"),
-    "/tmp/fit-cli/20260605-142043/it0/_internal/run-state.json",
+    "/tmp/fit-cli/20260605-142043/instances/0/_internal/run-state.json",
   );
 });
 

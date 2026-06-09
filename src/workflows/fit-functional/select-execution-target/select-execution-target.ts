@@ -148,7 +148,7 @@ export async function resolveCycleExecutionTarget(
 
   try {
     const provisioned = await provisionFitInstance({
-      cycleIndex,
+      instanceIndex: cycleIndex,
       ...(instance.instanceType ? { instanceType: instance.instanceType } : {}),
       ...(instance.region ? { region: instance.region } : {}),
     });

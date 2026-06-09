@@ -15,6 +15,7 @@ import { artifactFromPath, combineArtifacts, type Detail, type RunOutput } from 
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { surefireReportsDir } from "./collect-junit.js";
 import { createLogFile } from "../../../util/non-fit/proc.js";
+import type { DefinitionRunPath } from "../../../util/non-fit/replay.js";
 import { rootDirFromArgv } from "../../../util/fit/root.js";
 import { createLocalFitExecutionContext, type FitExecutionContext } from "../util/remote-fit-run.js";
 import { selectFitTests, type FitTestSelection } from "../select-fit-tests/select-fit-tests.js";
@@ -51,12 +52,15 @@ export interface FitTestDriverSummary {
 
 const JUNIT_ATTRIBUTE_RE = (name: string): RegExp => new RegExp(`\\b${name}="(\\d+)"`);
 
-export function fitTestLogStem(cycleIndex: number, iteration: number): string {
-  return join("cycles", String(cycleIndex), `it${iteration}`, "driver");
+export function fitTestLogStem(path: DefinitionRunPath): string {
+  const base = path.clusterlessSession
+    ? join("instances", String(path.instanceIndex), "clusterless-sessions", String(path.sessionIndex), "runs", String(path.runIndex))
+    : join("instances", String(path.instanceIndex), "clusters", String(path.clusterIndex), "sessions", String(path.sessionIndex), "runs", String(path.runIndex));
+  return join(base, "driver");
 }
 
-function fitTestLogFile(cycleIndex: number, iteration: number): string {
-  return createLogFile(fitTestLogStem(cycleIndex, iteration));
+function fitTestLogFile(path: DefinitionRunPath): string {
+  return createLogFile(fitTestLogStem(path));
 }
 
 function extractJunitAttribute(xml: string, name: string): number | undefined {
@@ -117,30 +121,30 @@ export function didFitTestDriverPass(summary: FitTestDriverSummary): boolean {
   return summary.failures === 0 && summary.errors === 0;
 }
 
-function iterationDetailLabel(iteration: number, label: string): string {
-  return `it${iteration} ${label}`;
+function runDetailLabel(path: DefinitionRunPath, label: string): string {
+  return `run ${path.runIndex ?? 0} ${label}`;
 }
 
-export function fitTestDriverSummaryDetails(summary: FitTestDriverSummary, iteration: number = 0): Detail[] {
+export function fitTestDriverSummaryDetails(summary: FitTestDriverSummary, path: DefinitionRunPath): Detail[] {
   return [
     {
-      label: iterationDetailLabel(iteration, "Result"),
+      label: runDetailLabel(path, "Result"),
       value: didFitTestDriverPass(summary) ? "PASS" : "FAIL",
     },
     {
-      label: iterationDetailLabel(iteration, "Tests run"),
+      label: runDetailLabel(path, "Tests run"),
       value: String(summary.testsRun),
     },
     {
-      label: iterationDetailLabel(iteration, "Failures"),
+      label: runDetailLabel(path, "Failures"),
       value: String(summary.failures),
     },
     {
-      label: iterationDetailLabel(iteration, "Errors"),
+      label: runDetailLabel(path, "Errors"),
       value: String(summary.errors),
     },
     {
-      label: iterationDetailLabel(iteration, "Skipped"),
+      label: runDetailLabel(path, "Skipped"),
       value: String(summary.skipped),
     },
   ];
@@ -172,10 +176,9 @@ export function runTestDriverArgs(
 export async function runTestDriver(
   execution: FitExecutionContext,
   selection: FitTestSelection,
+  path: DefinitionRunPath,
   fitConfigPath?: string,
   extraMavenArgs: readonly string[] = DEFAULT_MAVEN_TEST_ARGS,
-  cycleIndex: number = 0,
-  iteration: number = 0,
 ): Promise<TestRunResult> {
   const targetFitConfigPath = fitConfigPath ? await execution.stageFile(fitConfigPath) : undefined;
   const args = runTestDriverArgs(selection, targetFitConfigPath, extraMavenArgs);
@@ -188,7 +191,7 @@ export async function runTestDriver(
   // every iteration pay the recompile cost.
   await execution.removeTree(surefireReportsDir(execution.rootDir));
 
-  const logFile = fitTestLogFile(cycleIndex, iteration);
+  const logFile = fitTestLogFile(path);
   const targetLogFile = execution.targetFilePath(logFile);
   const logArtifact = artifactFromPath(logFile, "FIT test-driver stdout/stderr captured for this run");
   console.log(`\nRunning FIT test-driver with:\n  cd ${execution.fitPerformerDir} && ./mvnw ${args.join(" ")}\n`);
@@ -209,11 +212,11 @@ export async function runTestDriver(
   await execution.collectFile(targetLogFile, logFile);
   const artifacts = combineArtifacts(
     [logArtifact],
-    await execution.collectJunitArtifacts(surefireReportsDir(execution.rootDir), cycleIndex, iteration),
+    await execution.collectJunitArtifacts(surefireReportsDir(execution.rootDir), path),
   );
   const summary = extractFitTestDriverSummaryFromJunitReports(join(dirname(logFile), "surefire-reports"));
   const ok = commandOk && (summary ? didFitTestDriverPass(summary) : true);
-  return { ok, logFile, artifacts, details: summary ? fitTestDriverSummaryDetails(summary, iteration) : [] };
+  return { ok, logFile, artifacts, details: summary ? fitTestDriverSummaryDetails(summary, path) : [] };
 }
 
 if (isMain(import.meta.url)) {
@@ -221,6 +224,6 @@ if (isMain(import.meta.url)) {
     const { rootDir } = rootDirFromArgv(process.argv.slice(2));
     const execution = createLocalFitExecutionContext(rootDir);
     const selection = await selectFitTests(execution);
-    return await runTestDriver(execution, selection);
+    return await runTestDriver(execution, selection, { instanceIndex: 0, clusterIndex: 0, sessionIndex: 0, runIndex: 0 });
   });
 }

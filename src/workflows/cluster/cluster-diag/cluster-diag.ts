@@ -30,20 +30,46 @@ function managementHost(defaultHostname: string): string {
   return colon === -1 ? firstHost : firstHost.slice(0, colon);
 }
 
-/** Run a quick curl-based sanity check against the cluster's management endpoint. */
-export async function runClusterDiag(cluster: SelectedCluster): Promise<boolean> {
+export interface ClusterDiagOptions {
+  /** How long to keep retrying before giving up, in milliseconds. Defaults to 30 000 (30 s). */
+  retryTimeoutMs?: number;
+}
+
+/** Run a quick curl-based sanity check against the cluster's management endpoint.
+ *  Retries with exponential backoff (up to 5 s per sleep) for up to retryTimeoutMs. */
+export async function runClusterDiag(cluster: SelectedCluster, opts?: ClusterDiagOptions): Promise<boolean> {
   const url = clusterDiagUrl(cluster);
   const command = `curl -k -u <username>:<password> -X GET ${url}`;
+  const retryTimeoutMs = opts?.retryTimeoutMs ?? 30_000;
+  const deadline = Date.now() + retryTimeoutMs;
+  let delayMs = 500;
+  let attempt = 0;
 
-  try {
-    // For convenience in testing e.g. Capella, always use -k (insecure)
-    await capture("curl", ["-k", "-u", `${cluster.credentials.username}:${cluster.credentials.password}`, "-X", "GET", url]);
-    console.log(`\n✓ Cluster sanity test succeeded with:\n  ${command}`);
-    return true;
-  } catch (err) {
-    console.error(`\nSanity-testing the cluster with:\n  ${command}\n`);
-    console.error(`\n✗ Cluster sanity test failed: ${(err as Error).message}`);
-    return false;
+  while (true) {
+    try {
+      // For convenience in testing e.g. Capella, always use -k (insecure).
+      // Use quiet on retries to avoid spamming the terminal with repeated curl echoes.
+      await capture(
+        "curl",
+        ["-k", "-u", `${cluster.credentials.username}:${cluster.credentials.password}`, "-X", "GET", url],
+        process.cwd(),
+        attempt > 0 ? { quiet: true } : undefined,
+      );
+      console.log(`\n✓ Cluster sanity test succeeded with:\n  ${command}`);
+      return true;
+    } catch (err) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) {
+        console.error(`\nSanity-testing the cluster with:\n  ${command}\n`);
+        console.error(`\n✗ Cluster sanity test failed: ${(err as Error).message}`);
+        return false;
+      }
+      const waitMs = Math.min(delayMs, remaining, 5_000);
+      console.error(`  Cluster not ready yet (${(err as Error).message}), retrying in ${(waitMs / 1000).toFixed(1)}s (${Math.ceil(remaining / 1000)}s remaining)...`);
+      await new Promise<void>((resolve) => setTimeout(resolve, waitMs));
+      delayMs = Math.min(delayMs * 2, 5_000);
+      attempt++;
+    }
   }
 }
 

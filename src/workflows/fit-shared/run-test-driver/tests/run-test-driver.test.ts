@@ -96,34 +96,40 @@ test("didFitTestDriverPass returns true only when there are no failures or error
 
 test("fitTestDriverSummaryDetails formats the parsed summary for the CLI table", () => {
   assert.deepEqual(
-    fitTestDriverSummaryDetails({ testsRun: 13, failures: 7, errors: 0, skipped: 2 }, 0),
+    fitTestDriverSummaryDetails(
+      { testsRun: 13, failures: 7, errors: 0, skipped: 2 },
+      { instanceIndex: 0, clusterIndex: 0, sessionIndex: 0, runIndex: 0 },
+    ),
     [
       {
-        label: "it0 Result",
+        label: "run 0 Result",
         value: "FAIL",
       },
       {
-        label: "it0 Tests run",
+        label: "run 0 Tests run",
         value: "13",
       },
       {
-        label: "it0 Failures",
+        label: "run 0 Failures",
         value: "7",
       },
       {
-        label: "it0 Errors",
+        label: "run 0 Errors",
         value: "0",
       },
       {
-        label: "it0 Skipped",
+        label: "run 0 Skipped",
         value: "2",
       },
     ],
   );
 });
 
-test("fitTestLogStem places the driver log under cycles/N/itM", () => {
-  assert.equal(fitTestLogStem(0, 0), "cycles/0/it0/driver");
+test("fitTestLogStem places the driver log under instances/clusters/sessions/runs", () => {
+  assert.equal(
+    fitTestLogStem({ instanceIndex: 0, clusterIndex: 0, sessionIndex: 0, runIndex: 0 }),
+    "instances/0/clusters/0/sessions/0/runs/0/driver",
+  );
 });
 
 test("runTestDriverArgs omits -Dtest when all tests are selected", () => {

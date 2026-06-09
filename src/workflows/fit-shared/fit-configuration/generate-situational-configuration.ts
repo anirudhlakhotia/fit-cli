@@ -13,6 +13,7 @@
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { type RunOutput } from "../../../util/non-fit/artifacts.js";
 import { type PieceData } from "../../../util/non-fit/config-pieces.js";
+import type { DefinitionRunPath } from "../../../util/non-fit/replay.js";
 import { DEFAULT_PERFORMER_PORT } from "../../performers/util/performer-port.js";
 import { rootDirFromArgv } from "../../../util/fit/root.js";
 import { type ResultsDatabase } from "../util/results-database.js";
@@ -28,10 +29,9 @@ export function generateSituationalConfiguration(
   database: ResultsDatabase,
   cbdino: CbdinoSettings = DEFAULT_CBDINO_SETTINGS,
   rootDir: string,
+  path: DefinitionRunPath,
   performerPort: number = DEFAULT_PERFORMER_PORT,
   fitConfigPiece?: PieceData,
-  cycleIndex: number = 0,
-  iteration: number = 0,
 ): RunOutput & { path: string } {
   const config = buildSituationalConfiguration(database, cbdino, performerPort, fitConfigPiece);
 
@@ -41,7 +41,7 @@ export function generateSituationalConfiguration(
   );
   // The results-DB password is secret, so don't echo the config verbatim; show
   // it with the password masked while writing the real value to the file.
-  const result = writeFitConfiguration(config, undefined, cycleIndex, iteration);
+  const result = writeFitConfiguration(config, path);
   console.log(`\nWriting ${result.path}:\n`);
   console.log(JSON.stringify(maskDatabasePassword(config), null, 2));
   console.log(`\n✓ Wrote ${result.path}`);

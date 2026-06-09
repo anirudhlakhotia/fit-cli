@@ -96,6 +96,7 @@ test("resolveSession applies performer defaults and strips redundant clusterAcce
         },
       ],
     } satisfies SessionLifetime,
+    { instanceIndex: 0, clusterIndex: 0, sessionIndex: 0 },
     undefined,
     true,
   );

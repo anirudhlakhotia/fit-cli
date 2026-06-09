@@ -4,10 +4,13 @@ import type { FitExecutionContext } from "../../../fit-shared/util/remote-fit-ru
 import { sdkByValue } from "../../../../util/sdk/sdks.js";
 import { checkAndBuildPerformer, performerBuildLogStem } from "../check-and-build-performer.js";
 
-test("performerBuildLogStem puts the normalized version under cycles/N/itM", () => {
+test("performerBuildLogStem puts the normalized version under the session path", () => {
   const sdk = sdkByValue("node");
   assert.ok(sdk);
-  assert.equal(performerBuildLogStem(0, 0, sdk, "Release Candidate #1"), "cycles/0/it0/node-release-candidate-1-performer-build");
+  assert.equal(
+    performerBuildLogStem({ instanceIndex: 0, clusterIndex: 0, sessionIndex: 0 }, sdk, "Release Candidate #1"),
+    "instances/0/clusters/0/sessions/0/node-release-candidate-1-performer-build",
+  );
 });
 
 test("checkAndBuildPerformer treats a missing local image as informational before building", async () => {
@@ -57,7 +60,7 @@ test("checkAndBuildPerformer treats a missing local image as informational befor
   };
 
   try {
-    const success = await checkAndBuildPerformer(execution, sdk);
+    const success = await checkAndBuildPerformer(execution, sdk, { instanceIndex: 0, clusterIndex: 0, sessionIndex: 0 });
     assert.equal(success, true);
   } finally {
     console.log = originalLog;

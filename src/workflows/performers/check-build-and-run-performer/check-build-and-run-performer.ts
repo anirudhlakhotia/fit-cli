@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { artifactFromPath, type RunOutput } from "../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { createLogFile } from "../../../util/non-fit/proc.js";
+import type { DefinitionRunPath } from "../../../util/non-fit/replay.js";
 import { rootDirFromArgv } from "../../../util/fit/root.js";
 import { type Sdk } from "../../../util/sdk/sdks.js";
 import { chooseSdk } from "../../../util/sdk/choose-sdk.js";
@@ -40,17 +41,15 @@ export interface RunningPerformer extends RunOutput {
   reused?: boolean;
 }
 
-export function performerLogStem(cycleIndex: number, iteration: number, sdk: Sdk, version?: string, gerritRef?: string): string {
-  return join(
-    "cycles",
-    String(cycleIndex),
-    `it${iteration}`,
-    `${sdk.value}-${dockerImageComponent(performerBuildIdentity(version, gerritRef))}-performer`,
-  );
+export function performerLogStem(path: DefinitionRunPath, sdk: Sdk, version?: string, gerritRef?: string): string {
+  const base = path.clusterlessSession
+    ? join("instances", String(path.instanceIndex), "clusterless-sessions", String(path.sessionIndex))
+    : join("instances", String(path.instanceIndex), "clusters", String(path.clusterIndex), "sessions", String(path.sessionIndex));
+  return join(base, `${sdk.value}-${dockerImageComponent(performerBuildIdentity(version, gerritRef))}-performer`);
 }
 
-function performerLogFile(cycleIndex: number, iteration: number, sdk: Sdk, version?: string, gerritRef?: string): string {
-  return createLogFile(performerLogStem(cycleIndex, iteration, sdk, version, gerritRef));
+function performerLogFile(path: DefinitionRunPath, sdk: Sdk, version?: string, gerritRef?: string): string {
+  return createLogFile(performerLogStem(path, sdk, version, gerritRef));
 }
 
 /** Build the docker args needed to run a performer locally for FIT. */
@@ -86,12 +85,11 @@ export function checkBuildAndRunPerformerArgs(
 export async function checkBuildAndRunPerformer(
   execution: FitExecutionContext,
   sdk: Sdk,
+  path: DefinitionRunPath,
   version?: string,
   dockerNetwork?: string,
   onPortInUse?: PortInUsePolicy,
   hostPort: number = DEFAULT_PERFORMER_PORT,
-  cycleIndex: number = 0,
-  iteration: number = 0,
   gerritRef?: string,
 ): Promise<RunningPerformer | undefined> {
   // JVM SDKs (Java, Kotlin, Scala) use prebuilt GHCR images; non-JVM SDKs
@@ -126,7 +124,7 @@ export async function checkBuildAndRunPerformer(
     if (!containerId) {
       return undefined;
     }
-    const logFile = performerLogFile(cycleIndex, iteration, sdk, version, gerritRef);
+    const logFile = performerLogFile(path, sdk, version, gerritRef);
     return {
       containerId,
       logFile,
@@ -140,7 +138,7 @@ export async function checkBuildAndRunPerformer(
   // must be located first (pulled from GHCR for JVM, built from source for others).
   const imageReady = sdk.jvm
     ? await checkAndPullPerformer(execution, sdk, version)
-    : await checkAndBuildPerformer(execution, sdk, version, cycleIndex, iteration, gerritRef);
+    : await checkAndBuildPerformer(execution, sdk, path, version, gerritRef);
   if (!imageReady) {
     return undefined;
   }
@@ -159,7 +157,7 @@ export async function checkBuildAndRunPerformer(
   try {
     const containerId = (await execution.capture(execution.dockerCommand, args)).trim();
     console.log(`\n✓ Started the ${sdk.name} performer in container ${containerId}`);
-    const logFile = performerLogFile(cycleIndex, iteration, sdk, version, gerritRef);
+    const logFile = performerLogFile(path, sdk, version, gerritRef);
     return {
       containerId,
       logFile,
@@ -220,7 +218,7 @@ export async function runCheckBuildAndRunPerformer(rootDir: string): Promise<voi
   const sdk = await chooseSdk("Which SDK performer do you want to check, build, and run?");
   const version = await askVersion();
   const execution = createLocalFitExecutionContext(rootDir);
-  const performer = await checkBuildAndRunPerformer(execution, sdk, version);
+  const performer = await checkBuildAndRunPerformer(execution, sdk, { instanceIndex: 0, clusterIndex: 0, sessionIndex: 0 }, version);
   await stopManagedPerformer(execution, performer);
 }
 

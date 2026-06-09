@@ -4,14 +4,14 @@
  * the run (local or a clean EC2 instance) and, at the end, whether to leave
  * everything up for debugging and resuming.
  *
- * Iterations come in two flavours. `functional` iterations test against the
- * shared cluster set up once for the run. `situational` iterations (FIT/SIT) let
+ * Runs come in two flavours. `functional` runs test against the shared cluster
+ * set up once for the execution group. `situational` runs (FIT/SIT) let
  * the test-driver build and manage their own cluster via cbdino and stream
  * timeseries results to a database, so they skip the shared cluster entirely —
- * their cbdino + database settings live under each iteration's `situational`
+ * their cbdino + database settings live under each run's situational settings
  * block (see resolve-definition.ts and build-situational-configuration.ts).
  *
- * The cluster is shared across the whole run; each iteration stands up its own
+ * The cluster is shared across the whole execution group; each run stands up its own
  * performer and runs its own tests. Provisioning an instance, preparing its
  * workspace, standing up a cluster and building a performer are all slow, so a
  * run can leave them up and a later invocation can `--resume-at` a point to
@@ -44,10 +44,11 @@ import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { fitCliError, fitCliWarn } from "../../../util/non-fit/fit-cli-log.js";
 import { createLogFile } from "../../../util/non-fit/proc.js";
 import {
-  cycleRunDir,
   defaultsToNonInteractive,
   ensureRunDir,
   extractInteractiveFlag,
+  clusterRunDir,
+  instanceRunDir,
 } from "../../../util/non-fit/replay.js";
 import { confirm } from "../../../util/non-fit/prompts.js";
 import { rootDirFromArgv } from "../../../util/fit/root.js";
@@ -79,12 +80,13 @@ import { generateSituationalConfiguration } from "../../fit-shared/fit-configura
 import { createFitExecutionContext, uploadRemoteAwsCredentials, type FitExecutionContext } from "../../fit-shared/util/remote-fit-run.js";
 import { loadDefinition } from "../../fit-shared/definition/parse-definition.js";
 import {
+  buildExecutionGroups,
   resolveDefinition,
-  type ResolvedCycle,
-  type ResolvedFunctionalCycle,
-  type ResolvedFunctionalIteration,
-  type ResolvedIteration,
-  type ResolvedSituationalIteration,
+  type ResolvedExecutionGroup,
+  type ResolvedExecutionRun,
+  type ResolvedFunctionalExecutionGroup,
+  type ResolvedFunctionalExecutionRun,
+  type ResolvedSituationalExecutionRun,
 } from "../../fit-shared/definition/resolve-definition.js";
 import { runTestDriver } from "../../fit-shared/run-test-driver/run-test-driver.js";
 import {
@@ -126,47 +128,47 @@ import {
 
 /** True for a functional iteration that has resolved to a concrete cluster. */
 function functionalWithCluster(
-  iteration: ResolvedFunctionalIteration,
-): iteration is ResolvedFunctionalIteration & { cluster: NonNullable<ResolvedFunctionalIteration["cluster"]> } {
-  return iteration.cluster !== undefined;
+  run: ResolvedFunctionalExecutionRun,
+): run is ResolvedFunctionalExecutionRun & { cluster: NonNullable<ResolvedFunctionalExecutionRun["cluster"]> } {
+  return run.cluster !== undefined;
 }
 
-/** Describe one cycle's cluster for the run header / setup-cluster step. */
-function clusterLabel(cycle: ResolvedCycle): string {
-  if (cycle.type === "situational") {
-    return "none — situational cycles build their own cluster via FIT/SIT";
+/** Describe one execution group's cluster for the run header / setup-cluster step. */
+function clusterLabel(group: ResolvedExecutionGroup): string {
+  if (group.type === "situational") {
+    return "none — situational runs build their own cluster via FIT/SIT";
   }
-  const cluster = cycle.iterations.find(functionalWithCluster)?.cluster;
+  const cluster = group.runs.find(functionalWithCluster)?.cluster;
   if (cluster) {
     const cng = cluster.cng ? ` — CNG performer ${cluster.cng.performerConnectionString}` : "";
     return `${cluster.scheme}://${cluster.defaultHostname} (${cluster.flavour})${cng}`;
   }
-  if (cycle.cng) {
+  if (group.cng) {
     return "CNG cbdinocluster plan (couchbase2; allocated during setup-cluster)";
   }
-  if (cycle.clusterMode === "connection") {
-    return "existing cluster from cycle.cluster.connection";
+  if (group.clusterMode === "connection") {
+    return "existing cluster from cluster.connection";
   }
-  if (cycle.clusterMode === "useExisting") {
-    return "existing cluster from iteration fitConfig.clusterAccess";
+  if (group.clusterMode === "useExisting") {
+    return "existing cluster from cluster.fitConfig.clusterAccess";
   }
-  if (cycle.clusterMode === "cbdinocluster") {
+  if (group.clusterMode === "cbdinocluster") {
     return "cbdinocluster plan (allocated during setup-cluster)";
   }
   return "none configured";
 }
 
-function applyCycleCluster(
-  cycle: ResolvedFunctionalCycle,
-  cluster: NonNullable<ResolvedFunctionalIteration["cluster"]>,
-): ResolvedFunctionalCycle {
+function applyGroupCluster(
+  group: ResolvedFunctionalExecutionGroup,
+  cluster: NonNullable<ResolvedFunctionalExecutionRun["cluster"]>,
+): ResolvedFunctionalExecutionGroup {
   return {
-    ...cycle,
-    iterations: cycle.iterations.map((iteration) => ({ ...iteration, cluster })),
+    ...group,
+    runs: group.runs.map((run) => ({ ...run, cluster })),
   };
 }
 
-function missingClusterMessage(clusterMode: ResolvedFunctionalCycle["clusterMode"]): string {
+function missingClusterMessage(clusterMode: ResolvedFunctionalExecutionGroup["clusterMode"]): string {
   if (clusterMode === "cbdinocluster") {
     return (
       "\nrun: no cluster available yet, so a FITConfiguration can't be generated. " +
@@ -180,13 +182,13 @@ function missingClusterMessage(clusterMode: ResolvedFunctionalCycle["clusterMode
 }
 
 export function cbdinoclusterSetupFailed(
-  cycle: ResolvedFunctionalCycle,
+  group: ResolvedFunctionalExecutionGroup,
   ranSetupCluster: boolean,
 ): boolean {
   return (
-    cycle.clusterMode === "cbdinocluster" &&
+    group.clusterMode === "cbdinocluster" &&
     ranSetupCluster &&
-    cycle.iterations.some((iteration) => !iteration.cluster)
+    group.runs.some((run) => !run.cluster)
   );
 }
 
@@ -206,27 +208,28 @@ export function finalizeRunFromDefinition(
 
 /** Print what an iteration resolved to, so a CI log shows the run's inputs. */
 function announce(
-  cycleIndex: number,
-  cycleCount: number,
-  index: number,
-  total: number,
+  group: ResolvedExecutionGroup,
+  run: ResolvedExecutionRun,
   fitPerformerGerritRef: string | undefined,
-  iteration: ResolvedIteration,
 ): void {
-  const { testSelection } = iteration;
+  const { testSelection } = run;
   const testsLabel = testSelection.mavenTestSelector
     ? `${testSelection.selectedTests.length} test(s): ${testSelection.mavenTestSelector}`
     : "all tests";
-  console.log(`\n=== Cycle ${cycleIndex + 1}/${cycleCount} (${iteration.type}) ===`);
-  console.log(`\n=== Iteration ${index + 1}/${total} (${iteration.type}) ===`);
-  console.log(`  SDK:     ${iteration.sdk.name}`);
-  console.log(`  Tests:   ${testsLabel}`);
-  if (iteration.type === "situational") {
-    console.log(`  Results database: ${iteration.databaseMode}`);
+  console.log(`\n=== Instance ${run.path.instanceIndex + 1} (${group.instance.kind}) ===`);
+  if (!run.path.clusterlessSession) {
+    console.log(`=== Cluster ${((run.path.clusterIndex ?? 0) + 1)} (${run.type}) ===`);
   }
-  console.log(`  Performer port: ${iteration.performerPort}`);
-  if (iteration.performerVersion) {
-    console.log(`  Performer version: ${iteration.performerVersion}`);
+  console.log(`=== Session ${((run.path.sessionIndex ?? 0) + 1)} ===`);
+  console.log(`=== Run ${((run.path.runIndex ?? 0) + 1)} (${run.type}) ===`);
+  console.log(`  SDK:     ${run.sdk.name}`);
+  console.log(`  Tests:   ${testsLabel}`);
+  if (run.type === "situational") {
+    console.log(`  Results database: ${run.databaseMode}`);
+  }
+  console.log(`  Performer port: ${run.performerPort}`);
+  if (run.performerVersion) {
+    console.log(`  Performer version: ${run.performerVersion}`);
   }
   if (fitPerformerGerritRef) {
     console.log(`  FIT Gerrit ref: ${fitPerformerGerritRef}`);
@@ -237,15 +240,15 @@ function announce(
  * Augment a CNG cycle's cbdinocluster init config with the `k8s` block pointing
  * at the k3d cluster fit-cli stood up on the remote box.
  */
-function withRemoteK8sInit(cycle: ResolvedFunctionalCycle, home: string): ResolvedFunctionalCycle {
-  if (!cycle.cbdinocluster) {
-    return cycle;
+function withRemoteK8sInit(group: ResolvedFunctionalExecutionGroup, home: string): ResolvedFunctionalExecutionGroup {
+  if (!group.cbdinocluster) {
+    return group;
   }
-  const initConfig = cycle.cbdinocluster.init?.config ?? defaultCbdinoclusterInitConfig();
+  const initConfig = group.cbdinocluster.init?.config ?? defaultCbdinoclusterInitConfig();
   return {
-    ...cycle,
+    ...group,
     cbdinocluster: {
-      ...cycle.cbdinocluster,
+      ...group.cbdinocluster,
       init: { config: withRemoteK8sBlock(initConfig, home) },
     },
   };
@@ -258,47 +261,50 @@ function withRemoteK8sInit(cycle: ResolvedFunctionalCycle, home: string): Resolv
  * install k3d and point the uploaded cbdinocluster config at it.
  */
 async function prepareFunctionalCngCycle(
-  cycle: ResolvedFunctionalCycle,
+  group: ResolvedFunctionalExecutionGroup,
   execution: FitExecutionContext,
-): Promise<ResolvedFunctionalCycle> {
-  if (!cycle.cng) {
-    return cycle;
+): Promise<ResolvedFunctionalExecutionGroup> {
+  if (!group.cng) {
+    return group;
   }
   if (execution.kind === "remote") {
     const home = remoteHomeFromWorkspace(execution.rootDir);
     await provisionRemoteK3d(execution, home);
-    return withRemoteK8sInit(cycle, home);
+    return withRemoteK8sInit(group, home);
   }
   const check = checkLocalhostCngKubernetes();
   if (!check.ok) {
     throwFatalToCycle(check.message);
   }
   console.log("→ setup-cluster: this machine's ~/.cbdinocluster has Kubernetes enabled — CNG-ready.");
-  return cycle;
+  return group;
 }
 
 /**
  * The setup-cluster step. Existing-cluster modes only report what the file
  * resolved to; a cbdinocluster plan is allocated here and then shared across
- * every iteration in the run.
+ * every run in the execution group.
  */
 export async function setupCluster(
-  cycle: ResolvedFunctionalCycle,
+  group: ResolvedFunctionalExecutionGroup,
   execution: ClusterCommandExecutor = localClusterCommandExecutor(),
   setupDeclarativeClusterFn: typeof setupDeclarativeCluster = setupDeclarativeCluster,
   githubCredentials?: { user: string; token: string },
-  cycleIndex: number = 0,
-): Promise<RunOutput & { cycle: ResolvedFunctionalCycle; clusterState?: ResumeClusterState }> {
-  if (cycle.clusterMode === "connection") {
-    fitCliWarn("\nsetup-cluster: using the existing cluster from cycle.cluster.connection; nothing to allocate.");
-    return { cycle, artifacts: [], details: [] };
+): Promise<RunOutput & { group: ResolvedFunctionalExecutionGroup; clusterState?: ResumeClusterState }> {
+  if (group.clusterMode === "connection") {
+    fitCliWarn("\nsetup-cluster: using the existing cluster from cluster.connection; nothing to allocate.");
+    return { group, artifacts: [], details: [] };
   }
-  if (cycle.clusterMode === "useExisting") {
-    fitCliWarn("\nsetup-cluster: using the existing cluster described by iteration fitConfig.clusterAccess; nothing to allocate.");
-    return { cycle, artifacts: [], details: [] };
+  if (group.clusterMode === "useExisting") {
+    fitCliWarn("\nsetup-cluster: using the existing cluster described by cluster.fitConfig.clusterAccess; nothing to allocate.");
+    return { group, artifacts: [], details: [] };
   }
-  if (cycle.cbdinocluster) {
-    const outcome = await setupDeclarativeClusterFn({ ...cycle.cbdinocluster, cng: cycle.cng, githubCredentials }, execution, cycleRunDir(cycleIndex));
+  if (group.cbdinocluster) {
+    const outcome = await setupDeclarativeClusterFn(
+      { ...group.cbdinocluster, cng: group.cng, githubCredentials },
+      execution,
+      clusterRunDir(group.path.instanceIndex, group.path.clusterIndex ?? 0),
+    );
     const clusterState: ResumeClusterState | undefined = outcome.cluster
       ? {
           cluster: outcome.cluster,
@@ -308,27 +314,25 @@ export async function setupCluster(
         }
       : undefined;
     return {
-      cycle: outcome.cluster ? applyCycleCluster(cycle, outcome.cluster) : cycle,
+      group: outcome.cluster ? applyGroupCluster(group, outcome.cluster) : group,
       ...(clusterState ? { clusterState } : {}),
       artifacts: outcome.artifacts,
       details: outcome.details,
     };
   }
   fitCliWarn("\nsetup-cluster: no cluster configured.");
-  return { cycle, artifacts: [], details: [] };
+  return { group, artifacts: [], details: [] };
 }
 
 /** The setup-performer step: build the performer image and start it in Docker. */
 async function setupPerformer(
   execution: FitExecutionContext,
   fitPerformerGerritRef: string | undefined,
-  iteration: ResolvedIteration,
-  cycleIndex: number,
-  localIterationIndex: number,
+  run: ResolvedExecutionRun,
 ): Promise<RunningPerformer | undefined> {
   const clusterDockerEnvironment =
-    iteration.type === "functional" && iteration.cluster
-      ? await detectClusterDockerEnvironment(iteration.cluster, {
+    run.type === "functional" && run.cluster
+      ? await detectClusterDockerEnvironment(run.cluster, {
           captureCommand: (command, args) => execution.capture(command, args),
           dockerCommand: execution.dockerCommand,
         })
@@ -341,13 +345,12 @@ async function setupPerformer(
   }
   return checkBuildAndRunPerformer(
     execution,
-    iteration.sdk,
-    iteration.performerVersion,
+    run.sdk,
+    run.path,
+    run.performerVersion,
     clusterDockerEnvironment?.networkNames[0],
-    iteration.onPortInUse,
-    iteration.performerPort,
-    cycleIndex,
-    localIterationIndex,
+    run.onPortInUse,
+    run.performerPort,
     fitPerformerGerritRef,
   );
 }
@@ -362,14 +365,12 @@ interface RunTestsDependencies {
 
 export async function runTests(
   execution: FitExecutionContext,
-  clusterMode: ResolvedFunctionalCycle["clusterMode"],
-  iteration: ResolvedFunctionalIteration,
+  clusterMode: ResolvedFunctionalExecutionGroup["clusterMode"],
+  run: ResolvedFunctionalExecutionRun,
   performer: RunningPerformer | undefined,
-  cycleIndex: number,
-  localIterationIndex: number,
   dependencies: RunTestsDependencies = {},
 ): Promise<RunOutput> {
-  if (!iteration.cluster) {
+  if (!run.cluster) {
     fitCliWarn(missingClusterMessage(clusterMode));
     return { artifacts: [], details: [] };
   }
@@ -383,22 +384,21 @@ export async function runTests(
   const artifacts: Artifact[] = [];
   const details: Detail[] = [];
 
-  if (!(await runClusterDiagFn(iteration.cluster))) {
-    throwFatalToCycle("Cluster sanity test failed; this cycle cannot continue.");
+  if (!(await runClusterDiagFn(run.cluster))) {
+    throwFatalToCycle("Cluster sanity test failed; this execution group cannot continue.");
   }
 
   const fitConfig = generateFitConfigurationFn(
-    iteration.cluster,
+    run.cluster,
     execution.rootDir,
-    iteration.performerPort,
-    iteration.fitConfig,
-    cycleIndex,
-    localIterationIndex,
+    run.path,
+    run.performerPort,
+    run.fitConfig,
   );
   artifacts.push(...fitConfig.artifacts);
   details.push(...fitConfig.details);
 
-  const performerSanity = await runPerformerClusterSanityCheckFn(iteration.cluster, performer?.containerId, {
+  const performerSanity = await runPerformerClusterSanityCheckFn(run.cluster, performer?.containerId, {
     captureCommand: (command, args) => execution.capture(command, args),
     dockerCommand: execution.dockerCommand,
   });
@@ -409,11 +409,10 @@ export async function runTests(
 
   const testRun = await runTestDriverFn(
     execution,
-    iteration.testSelection,
+    run.testSelection,
+    run.path,
     fitConfig.path,
-    iteration.extraMavenArgs,
-    cycleIndex,
-    localIterationIndex,
+    run.extraMavenArgs,
   );
   artifacts.push(...testRun.artifacts);
   details.push(...testRun.details);
@@ -429,9 +428,7 @@ export async function runTests(
  */
 export async function runSituationalTests(
   execution: FitExecutionContext,
-  iteration: ResolvedSituationalIteration,
-  cycleIndex: number,
-  localIterationIndex: number,
+  run: ResolvedSituationalExecutionRun,
   dependencies: {
     resolveResultsDatabaseFn?: typeof resolveResultsDatabase;
     generateSituationalConfigurationFn?: typeof generateSituationalConfiguration;
@@ -448,7 +445,7 @@ export async function runSituationalTests(
       "(usually `dinonet`) so it can reach the cluster cbdino creates.",
   );
 
-  const database = await resolveResultsDatabaseFn(iteration.databaseMode, execution.rootDir);
+  const database = await resolveResultsDatabaseFn(run.databaseMode, execution.rootDir);
   if (!database.ready) {
     return { artifacts: database.artifacts, details: database.details };
   }
@@ -460,21 +457,19 @@ export async function runSituationalTests(
     database.database,
     undefined,
     execution.rootDir,
-    iteration.performerPort,
-    iteration.fitConfig,
-    cycleIndex,
-    localIterationIndex,
+    run.path,
+    run.performerPort,
+    run.fitConfig,
   );
   artifacts.push(...fitConfig.artifacts);
   details.push(...fitConfig.details);
 
   const testRun = await runTestDriverFn(
     execution,
-    iteration.testSelection,
+    run.testSelection,
+    run.path,
     fitConfig.path,
-    iteration.extraMavenArgs,
-    cycleIndex,
-    localIterationIndex,
+    run.extraMavenArgs,
   );
   artifacts.push(...testRun.artifacts);
   details.push(...testRun.details);
@@ -487,20 +482,18 @@ export async function runSituationalTests(
 /**
  * Reconstruct the performer a previous run left running for this iteration,
  * after checking its container is still up. Returns undefined (explaining why)
- * if the run state has no performer for the iteration or the container is gone.
+ * if the run state has no performer for the run or the container is gone.
  */
 async function resumePerformer(
   execution: FitExecutionContext,
-  iteration: ResolvedIteration,
+  run: ResolvedExecutionRun,
   savedState: RunState | undefined,
   globalIterationIndex: number,
-  cycleIndex: number,
-  localIterationIndex: number,
 ): Promise<RunningPerformer | undefined> {
   const saved = savedState?.performers.find((performer) => performer.iterationIndex === globalIterationIndex);
   if (!saved?.containerId) {
     fitCliError(
-      `\nresume: the run state has no performer for iteration ${globalIterationIndex + 1}. ` +
+      `\nresume: the run state has no performer for run ${globalIterationIndex + 1}. ` +
         "Re-run with --resume-at=after-cluster-creation to rebuild it.",
     );
     return undefined;
@@ -519,12 +512,12 @@ async function resumePerformer(
     return undefined;
   }
 
-  console.log(`\n→ resume: reusing performer container ${saved.containerId} for iteration ${globalIterationIndex + 1}.`);
-  const logFile = createLogFile(performerLogStem(cycleIndex, localIterationIndex, iteration.sdk, iteration.performerVersion));
+  console.log(`\n→ resume: reusing performer container ${saved.containerId} for run ${globalIterationIndex + 1}.`);
+  const logFile = createLogFile(performerLogStem(run.path, run.sdk, run.performerVersion));
   return {
     containerId: saved.containerId,
     logFile,
-    artifacts: [artifactFromPath(logFile, `${iteration.sdk.name} performer logs captured for this FIT run`)],
+    artifacts: [artifactFromPath(logFile, `${run.sdk.name} performer logs captured for this FIT run`)],
     details: [],
   };
 }
@@ -536,13 +529,11 @@ async function resumePerformer(
 /** Run one iteration: stand up (or reuse) its performer, then run the tests. */
 async function runIteration(
   execution: FitExecutionContext,
-  functionalClusterMode: ResolvedFunctionalCycle["clusterMode"] | undefined,
+  functionalClusterMode: ResolvedFunctionalExecutionGroup["clusterMode"] | undefined,
   fitPerformerGerritRef: string | undefined,
-  iteration: ResolvedIteration,
+  run: ResolvedExecutionRun,
   setupPerformerPhase: boolean,
   savedState: RunState | undefined,
-  cycleIndex: number,
-  localIterationIndex: number,
   globalIterationIndex: number,
   definitionPath: string,
 ): Promise<{ output: RunOutput; performer?: RunningPerformer }> {
@@ -550,8 +541,8 @@ async function runIteration(
   const details: Detail[] = [];
 
   const performer = setupPerformerPhase
-    ? await setupPerformer(execution, fitPerformerGerritRef, iteration, cycleIndex, localIterationIndex)
-    : await resumePerformer(execution, iteration, savedState, globalIterationIndex, cycleIndex, localIterationIndex);
+    ? await setupPerformer(execution, fitPerformerGerritRef, run)
+    : await resumePerformer(execution, run, savedState, globalIterationIndex);
   if (!performer) {
     throwFatalToIteration("The performer isn't ready to run; stopping this iteration.");
   }
@@ -561,11 +552,11 @@ async function runIteration(
   }
 
   let output: RunOutput;
-  if (iteration.type === "situational") {
-    output = await runSituationalTests(execution, iteration, cycleIndex, localIterationIndex);
+  if (run.type === "situational") {
+    output = await runSituationalTests(execution, run);
   } else {
-    const clusterMode: ResolvedFunctionalCycle["clusterMode"] = functionalClusterMode ?? "useExisting";
-    output = await runTests(execution, clusterMode, iteration, performer, cycleIndex, localIterationIndex);
+    const clusterMode: ResolvedFunctionalExecutionGroup["clusterMode"] = functionalClusterMode ?? "useExisting";
+    output = await runTests(execution, clusterMode, run, performer);
   }
   artifacts.push(...output.artifacts);
   details.push(...output.details);
@@ -577,13 +568,13 @@ async function runIteration(
 
 /** Resolve the shared cluster when resuming: reuse the one in the run state. */
 async function resumeCluster(
-  cycle: ResolvedFunctionalCycle,
+  group: ResolvedFunctionalExecutionGroup,
   savedState: RunState | undefined,
-): Promise<{ cycle: ResolvedFunctionalCycle; clusterState?: ResumeClusterState }> {
+): Promise<{ group: ResolvedFunctionalExecutionGroup; clusterState?: ResumeClusterState }> {
   // Existing-cluster modes already carry the cluster from the file, so there's
   // nothing in the run state to reuse — the resolved iterations are ready.
-  if (cycle.clusterMode !== "cbdinocluster") {
-    return { cycle };
+  if (group.clusterMode !== "cbdinocluster") {
+    return { group };
   }
 
   const clusterState = savedState?.cluster;
@@ -600,7 +591,7 @@ async function resumeCluster(
       "resume: the saved cluster is no longer reachable. Re-run without --resume-at to allocate a fresh one.",
     );
   }
-  return { cycle: applyCycleCluster(cycle, clusterState.cluster), clusterState };
+  return { group: applyGroupCluster(group, clusterState.cluster), clusterState };
 }
 
 function targetStateFrom(teardown: ExecutionTargetTeardown): ResumeTargetState {
@@ -784,25 +775,25 @@ function isInteractiveRun(): boolean {
  * a CI run never provisions AWS by surprise.
  */
 async function resolveForceLocalhost(
-  cycles: readonly ResolvedCycle[],
+  groups: readonly ResolvedExecutionGroup[],
   savedState: RunState | undefined,
 ): Promise<boolean> {
   if (savedState) {
     return savedState.forceLocalhost ?? false;
   }
-  if (!cycles.some((cycle) => cycle.instance.kind === "aws")) {
+  if (!groups.some((group) => group.instance.kind === "aws")) {
     return false;
   }
   if (!isInteractiveRun()) {
     console.log(
       "\nNon-interactive run: running every cycle on localhost (ignoring AWS instance settings). " +
-        "Use --interactive to provision the instances each cycle asks for.",
+        "Use --interactive to provision the instances each execution group asks for.",
     );
     return true;
   }
   return confirm({
     promptId: "run-from-definition.force-localhost",
-    message: "Run everything on localhost, ignoring each cycle's instance setting?",
+    message: "Run everything on localhost, ignoring each execution group's instance setting?",
     default: false,
   });
 }
@@ -820,6 +811,7 @@ export async function runFromDefinition(
   const { resumeAt } = options;
   const phases = phasesForResumePoint(resumeAt);
   const resolved = resolveDefinition(loadDefinition(definitionPath));
+  const executionGroups = buildExecutionGroups(resolved.instances);
   console.log(`\nRunning FIT tests from definition:\n  ${definitionPath}`);
 
   const savedState = resumeAt ? readRunState(definitionPath) : undefined;
@@ -840,9 +832,9 @@ export async function runFromDefinition(
   let githubCredentials: { user: string; token: string } | undefined;
   if (
     phases.setupCluster &&
-    resolved.cycles
+    executionGroups
       .slice(startCycleIndex)
-      .some((cycle) => cycle.type === "functional" && cycle.clusterMode === "cbdinocluster")
+      .some((group) => group.type === "functional" && group.clusterMode === "cbdinocluster")
   ) {
     const result = resolveGithubCredentials();
     if (typeof result === "string") {
@@ -855,7 +847,7 @@ export async function runFromDefinition(
   // Resolve AWS credentials upfront for situational cycles — the test-driver's
   // cbdinocluster call uses the cloud (AWS) deployer.
   let awsCredentials: AwsCredentials | undefined;
-  if (resolved.cycles.slice(startCycleIndex).some((cycle) => cycle.type === "situational")) {
+  if (executionGroups.slice(startCycleIndex).some((group) => group.type === "situational")) {
     const result = await resolveAwsCredentials();
     if (typeof result === "string") {
       fitCliError(`\n✗ ${result}`);
@@ -866,12 +858,12 @@ export async function runFromDefinition(
 
   // Check hosted results-database config and connectivity upfront — fail before
   // provisioning an instance when the run can't reach the database.
-  const needsHostedDatabase = resolved.cycles
+  const needsHostedDatabase = executionGroups
     .slice(startCycleIndex)
     .some(
-      (cycle) =>
-        cycle.type === "situational" &&
-        cycle.iterations.some((it) => it.databaseMode === "hosted"),
+      (group) =>
+        group.type === "situational" &&
+        group.runs.some((run) => run.databaseMode === "hosted"),
     );
   if (needsHostedDatabase) {
     const database = buildHostedDatabase(resolveResultsDbCredentials({ env: {} }));
@@ -902,9 +894,9 @@ export async function runFromDefinition(
   copyFileSync(definitionPath, definitionCopyPath);
   artifacts.push(artifactFromPath(definitionCopyPath, "Definition file used for this run", runDir));
 
-  // One run-wide choice: force every cycle onto localhost, ignoring each cycle's
+  // One run-wide choice: force every execution group onto localhost, ignoring each group's
   // declared instance. Each cycle then provisions (or reconnects) its own target.
-  const forceLocalhost = await resolveForceLocalhost(resolved.cycles.slice(startCycleIndex), savedState);
+  const forceLocalhost = await resolveForceLocalhost(executionGroups.slice(startCycleIndex), savedState);
 
   // The "active" set tracks the cycle currently up so the outer finally tears down
   // (or offers to leave up) the right instance/cluster/performers. Completed,
@@ -917,34 +909,34 @@ export async function runFromDefinition(
   let activePerformers: RunningPerformer[] = [];
   let activePerformerStates: ResumePerformerState[] = [];
   try {
-    let globalIterationIndex = resolved.cycles
+    let globalIterationIndex = executionGroups
       .slice(0, startCycleIndex)
-      .reduce((total, cycle) => total + cycle.iterations.length, 0);
+      .reduce((total, group) => total + group.runs.length, 0);
 
-    for (let cycleIndex = startCycleIndex; cycleIndex < resolved.cycles.length; cycleIndex++) {
+    for (let cycleIndex = startCycleIndex; cycleIndex < executionGroups.length; cycleIndex++) {
       activeCycleIndex = cycleIndex;
       if (cycleIndex !== startCycleIndex) {
         activeIterationIndex = 0;
       }
-      const cycle = resolved.cycles[cycleIndex];
-      if (!cycle) {
+      const group = executionGroups[cycleIndex];
+      if (!group) {
         break;
       }
-      console.log(`\nCycle ${cycleIndex + 1}/${resolved.cycles.length}: ${cycle.type}`);
-      console.log(`  Execution: ${forceLocalhost ? "localhost (forced)" : cycle.instance.kind}`);
-      console.log(`  Cluster: ${clusterLabel(cycle)}`);
+      console.log(`\nExecution group ${cycleIndex + 1}/${executionGroups.length}: ${group.type}`);
+      console.log(`  Execution: ${forceLocalhost ? "localhost (forced)" : group.instance.kind}`);
+      console.log(`  Cluster: ${clusterLabel(group)}`);
 
       // Acquire this cycle's execution target: reconnect the resumed instance for
       // the start cycle, otherwise provision (or run locally) per the definition.
       const isResumeStartCycle = savedState !== undefined && cycleIndex === startCycleIndex;
       const targetOutcome = isResumeStartCycle
         ? await reconnectExecutionTarget(savedState.target)
-        : await resolveCycleExecutionTarget(cycle.instance, forceLocalhost, cycleIndex);
+        : await resolveCycleExecutionTarget(group.instance, forceLocalhost, cycleIndex);
       artifacts.push(...targetOutcome.artifacts);
       details.push(...targetOutcome.details);
       if (!targetOutcome.ready) {
-        fitCliError(`\n✗ Could not acquire an execution target for cycle ${cycleIndex + 1}; skipping it.`);
-        globalIterationIndex += cycle.iterations.length;
+        fitCliError(`\n✗ Could not acquire an execution target for execution group ${cycleIndex + 1}; skipping it.`);
+        globalIterationIndex += group.runs.length;
         continue;
       }
       const cycleTeardown = targetOutcome.teardown;
@@ -953,9 +945,9 @@ export async function runFromDefinition(
         printResumeHint("after-instance-creation", definitionPath);
       }
 
-      const execution = await createFitExecutionContext(targetOutcome.target, rootDir, cycle.iterations[0].sdk, {
+      const execution = await createFitExecutionContext(targetOutcome.target, rootDir, group.runs[0].sdk, {
         skipRemotePreparation: isResumeStartCycle && !phases.prepareRemote,
-        cycleIndex,
+        instanceIndex: group.path.instanceIndex,
       });
       activeExecution = execution;
       artifacts.push(...execution.artifacts);
@@ -967,7 +959,7 @@ export async function runFromDefinition(
       // This cycle's situational iterations may stream to the hosted DB; if it runs
       // on a remote box, confirm the box can reach the DB before doing real work.
       const cycleNeedsHostedDatabase =
-        cycle.type === "situational" && cycle.iterations.some((it) => it.databaseMode === "hosted");
+        group.type === "situational" && group.runs.some((run) => run.databaseMode === "hosted");
       if (cycleNeedsHostedDatabase && execution.kind === "remote") {
         console.log(`\nChecking results database connectivity from the remote instance...`);
         if (!(await checkResultsDatabaseConnectivity((cmd, args) => execution.capture(cmd, args)))) {
@@ -980,56 +972,54 @@ export async function runFromDefinition(
         console.log(`  ✓ Reached ${HOSTED_RESULTS_DB_HOST} from the remote instance.`);
       }
 
-      let activeCycle = cycle;
+      let activeCycle = group;
       let clusterState: ResumeClusterState | undefined;
       const cyclePerformers: RunningPerformer[] = [];
       const cyclePerformerStates: ResumePerformerState[] = [];
 
       try {
-        if (cycle.type === "functional") {
+        if (group.type === "functional") {
           // CNG cycles need Kubernetes where cbdinocluster runs: check it on
           // localhost, or stand up k3d (and point the uploaded ~/.cbdinocluster at
           // it) on a clean instance, before allocating anything.
-          const functionalCycle = await prepareFunctionalCngCycle(cycle, execution);
+          const functionalCycle = await prepareFunctionalCngCycle(group, execution);
           if (cycleIndex === startCycleIndex && !phases.setupCluster) {
             const resumed = await resumeCluster(functionalCycle, savedState);
-            activeCycle = resumed.cycle;
+            activeCycle = resumed.group;
             clusterState = resumed.clusterState;
           } else {
-            const setup = await setupCluster(functionalCycle, execution, setupDeclarativeCluster, githubCredentials, cycleIndex);
-            activeCycle = setup.cycle;
+            const setup = await setupCluster(functionalCycle, execution, setupDeclarativeCluster, githubCredentials);
+            activeCycle = setup.group;
             clusterState = setup.clusterState;
             artifacts.push(...setup.artifacts);
             details.push(...setup.details);
             if (cbdinoclusterSetupFailed(activeCycle, true)) {
-              throwFatalToCycle("setup-cluster didn't produce a cluster, so this cycle can't continue.");
+              throwFatalToCycle("setup-cluster didn't produce a cluster, so this execution group can't continue.");
             }
             if (clusterState) {
               printResumeHint("after-cluster-creation", definitionPath);
             }
           }
         } else {
-          await prepareCbdinoclusterConfig(execution, cycle.cbdinoclusterInit.config, undefined, cycleRunDir(cycleIndex));
+          await prepareCbdinoclusterConfig(
+            execution,
+            group.cbdinoclusterInit.config,
+            undefined,
+            instanceRunDir(group.path.instanceIndex),
+          );
           if (execution.kind === "remote" && awsCredentials) {
             await uploadRemoteAwsCredentials(execution.target, execution.rootDir, awsCredentials);
           }
         }
 
-        for (const [cycleIterationIndex, iteration] of activeCycle.iterations.entries()) {
+        for (const [cycleIterationIndex, iteration] of activeCycle.runs.entries()) {
           if (cycleIndex === startCycleIndex && cycleIterationIndex < startIterationIndex) {
             globalIterationIndex++;
             continue;
           }
           activeIterationIndex = cycleIterationIndex;
-          const isLastIteration = cycleIterationIndex === activeCycle.iterations.length - 1;
-          announce(
-            cycleIndex,
-            resolved.cycles.length,
-            cycleIterationIndex,
-            activeCycle.iterations.length,
-            resolved.fitPerformerGerritRef,
-            iteration,
-          );
+          const isLastIteration = cycleIterationIndex === activeCycle.runs.length - 1;
+          announce(activeCycle, iteration, resolved.fitPerformerGerritRef);
           const isStartIteration = cycleIndex === startCycleIndex && cycleIterationIndex === startIterationIndex;
           const setupPerformerPhase = isStartIteration ? phases.setupPerformer : true;
           try {
@@ -1040,8 +1030,6 @@ export async function runFromDefinition(
               iteration,
               setupPerformerPhase,
               savedState,
-              cycleIndex,
-              cycleIterationIndex,
               globalIterationIndex,
               definitionPath,
             );
@@ -1075,7 +1063,7 @@ export async function runFromDefinition(
       } catch (err) {
         if (err instanceof ClassifiedFailure && err.classification === "FatalToCycle") {
           fitCliError(`\n✗ ${err.message} (FatalToCycle)`);
-          globalIterationIndex += activeCycle.iterations.length;
+          globalIterationIndex += activeCycle.runs.length;
 
           // Promote this cycle as the active set so that stopping here lets
           // teardownRun offer to leave its instance/cluster/performers up.
@@ -1083,14 +1071,14 @@ export async function runFromDefinition(
           activePerformers = cyclePerformers;
           activePerformerStates = cyclePerformerStates;
 
-          const isLastCycle = cycleIndex === resolved.cycles.length - 1;
+          const isLastCycle = cycleIndex === executionGroups.length - 1;
           if (isLastCycle) {
             break;
           }
 
           const continueToNextCycle = await confirm({
             promptId: "run-from-definition.fatal-to-cycle.continue",
-            message: "Continue to the next cycle? (this cycle's instance and resources are cleaned up first)",
+            message: "Continue to the next execution group? (this instance and its resources are cleaned up first)",
             default: true,
           });
 
@@ -1111,7 +1099,7 @@ export async function runFromDefinition(
         throw err;
       }
 
-      const isLastCycle = cycleIndex === resolved.cycles.length - 1;
+      const isLastCycle = cycleIndex === executionGroups.length - 1;
       if (isLastCycle) {
         activeClusterState = clusterState;
         activePerformers = cyclePerformers;

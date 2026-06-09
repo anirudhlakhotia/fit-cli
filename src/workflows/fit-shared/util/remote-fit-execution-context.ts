@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { commandOn, formatCommandLine } from "../../../util/non-fit/fit-cli-log.js";
-import { cycleInternalRunDir } from "../../../util/non-fit/replay.js";
+import { instanceInternalRunDir } from "../../../util/non-fit/replay.js";
 import { posixQuote } from "../../../util/non-fit/remote-target.js";
 import { RemoteTarget } from "../../../util/non-fit/remote-target.js";
 import type { ExecutionTarget } from "../../../util/non-fit/target.js";
@@ -38,7 +38,7 @@ export async function createRemoteFitExecutionContext(
   target: ExecutionTarget,
   sdk: Sdk,
   skipPreparation = false,
-  cycleIndex = 0,
+  instanceIndex = 0,
 ): Promise<FitExecutionContext> {
   const rootDir = remoteFitRootDir();
   const binDir = remoteFitBinDir(rootDir);
@@ -71,7 +71,7 @@ export async function createRemoteFitExecutionContext(
   }
 
   await target.run("mkdir", ["-p", binDir]);
-  const internalDir = cycleInternalRunDir(cycleIndex);
+  const internalDir = instanceInternalRunDir(instanceIndex);
   mkdirSync(internalDir, { recursive: true, mode: 0o700 });
   const localDockerWrapper = join(internalDir, "remote-docker-wrapper.sh");
   writeFileSync(localDockerWrapper, remoteDockerWrapperScript(), { mode: 0o700 });
@@ -139,8 +139,8 @@ export async function createRemoteFitExecutionContext(
       return target.getFile(targetPath, localPath);
     },
     removeTree: (path) => target.run("rm", ["-rf", path]),
-    collectJunitArtifacts: async (sourceDir, iteration) =>
-      await collectJunitArtifactsFromTarget(target, sourceDir, iteration),
+    collectJunitArtifacts: async (sourceDir, path) =>
+      await collectJunitArtifactsFromTarget(target, sourceDir, path),
     pathExists: (path) => target.run("test", ["-e", path], undefined, { quiet: true }).then(() => true).catch(() => false),
     commandAvailable: (command) =>
       target

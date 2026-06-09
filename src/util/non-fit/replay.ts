@@ -551,17 +551,47 @@ export function createRunFilePath(filename: string, argv: string[] = process.arg
   return createRunFilePathInDir(runDir, filename);
 }
 
-/** Absolute path to the artifact directory for cycle N (e.g. `{runDir}/cycles/0`). */
-export function cycleRunDir(cycleIndex: number, runDir: string = ensureRunDir()): string {
-  return join(runDir, "cycles", String(cycleIndex));
+export interface DefinitionRunPath {
+  instanceIndex: number;
+  clusterIndex?: number;
+  sessionIndex?: number;
+  runIndex?: number;
+  clusterlessSession?: boolean;
 }
 
-/** Absolute path to the artifact directory for iteration M within cycle N (e.g. `{runDir}/cycles/0/it0`). */
-export function iterationRunDir(cycleIndex: number, iterationIndex: number, runDir: string = ensureRunDir()): string {
-  return join(cycleRunDir(cycleIndex, runDir), `it${iterationIndex}`);
+/** Absolute path to the artifact directory for instance N (e.g. `{runDir}/instances/0`). */
+export function instanceRunDir(instanceIndex: number, runDir: string = ensureRunDir()): string {
+  return join(runDir, "instances", String(instanceIndex));
 }
 
-/** Absolute path to the internal-files directory for cycle N (e.g. `{runDir}/cycles/0/_internal`). */
-export function cycleInternalRunDir(cycleIndex: number, runDir: string = ensureRunDir()): string {
-  return join(cycleRunDir(cycleIndex, runDir), "_internal");
+/** Absolute path to the artifact directory for a cluster lifetime. */
+export function clusterRunDir(instanceIndex: number, clusterIndex: number, runDir: string = ensureRunDir()): string {
+  return join(instanceRunDir(instanceIndex, runDir), "clusters", String(clusterIndex));
+}
+
+/** Absolute path to the artifact directory for a session lifetime. */
+export function sessionRunDir(path: DefinitionRunPath, runDir: string = ensureRunDir()): string {
+  if (path.clusterlessSession) {
+    if (path.sessionIndex === undefined) {
+      throw new Error("clusterless session paths require sessionIndex.");
+    }
+    return join(instanceRunDir(path.instanceIndex, runDir), "clusterless-sessions", String(path.sessionIndex));
+  }
+  if (path.clusterIndex === undefined || path.sessionIndex === undefined) {
+    throw new Error("cluster session paths require clusterIndex and sessionIndex.");
+  }
+  return join(clusterRunDir(path.instanceIndex, path.clusterIndex, runDir), "sessions", String(path.sessionIndex));
+}
+
+/** Absolute path to the artifact directory for a run. */
+export function runRunDir(path: DefinitionRunPath, runDir: string = ensureRunDir()): string {
+  if (path.runIndex === undefined) {
+    throw new Error("run paths require runIndex.");
+  }
+  return join(sessionRunDir(path, runDir), "runs", String(path.runIndex));
+}
+
+/** Absolute path to the internal-files directory for an instance. */
+export function instanceInternalRunDir(instanceIndex: number, runDir: string = ensureRunDir()): string {
+  return join(instanceRunDir(instanceIndex, runDir), "_internal");
 }

@@ -64,8 +64,11 @@ test("checkBuildAndRunPerformerArgs uses a Gerrit-specific image name when reque
   );
 });
 
-test("performerLogStem puts the normalized version under cycles/N/itM", () => {
+test("performerLogStem puts the normalized version under the session path", () => {
   const sdk = sdkByValue("java");
   assert.ok(sdk);
-  assert.equal(performerLogStem(0, 0, sdk, "Release Candidate #1"), "cycles/0/it0/java-release-candidate-1-performer");
+  assert.equal(
+    performerLogStem({ instanceIndex: 0, clusterIndex: 0, sessionIndex: 0 }, sdk, "Release Candidate #1"),
+    "instances/0/clusters/0/sessions/0/java-release-candidate-1-performer",
+  );
 });

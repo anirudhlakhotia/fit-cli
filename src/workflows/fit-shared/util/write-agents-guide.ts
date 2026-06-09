@@ -82,8 +82,14 @@ export function writeAgentsGuide(
 if (isMain(import.meta.url)) {
   runCli(() => {
     const samples: Artifact[] = [
-      { filename: "it0/driver.log", explanation: "FIT test-driver stdout/stderr captured for this run" },
-      { filename: "it0/FITConfiguration.json", explanation: "Generated FITConfiguration.json for the FIT test-driver" },
+      {
+        filename: "instances/0/clusters/0/sessions/0/runs/0/driver.log",
+        explanation: "FIT test-driver stdout/stderr captured for this run",
+      },
+      {
+        filename: "instances/0/clusters/0/sessions/0/runs/0/FITConfiguration.json",
+        explanation: "Generated FITConfiguration.json for the FIT test-driver",
+      },
     ];
     const { path } = writeAgentsGuide(samples);
     console.log(`Wrote a sample AGENTS.md to:\n${path}`);
