@@ -23,13 +23,18 @@ import type { FitTestSelection } from "../select-fit-tests/select-fit-tests.js";
 import {
   CURRENT_FIT_DEFINITION_VERSION,
   FIT_DEFINITION_TYPE,
+  type ClusterConfigRef,
   type FitConfigPiece,
+  type FitConfigRef,
   type FitDefinition,
   type InstanceLifetime,
   type InstanceMode,
   type SessionLifetime,
   type SituationalDatabaseMode,
 } from "./types.js";
+
+const CLUSTER_CONFIG_ID = "cluster-0";
+const FIT_CONFIG_ID = "fit-config-0";
 
 export function fitDefinitionPath(runDir: string = ensureRunDir()): string {
   return join(runDir, "fit.yaml");
@@ -163,37 +168,50 @@ function buildPerformerSession(
   };
 }
 
-function buildFunctionalInstance(inputs: DefinitionInputs): InstanceLifetime {
+interface BuiltFunctionalInstance {
+  instance: InstanceLifetime;
+  clusterConfigRef: ClusterConfigRef;
+  fitConfigRef: FitConfigRef;
+}
+
+function buildFunctionalInstance(inputs: DefinitionInputs): BuiltFunctionalInstance {
   const cng = inputs.cluster.kind === "cbdinocluster" && inputs.cluster.def.cng;
-  return {
+  const clusterConfigRef: ClusterConfigRef = inputs.cluster.kind === "connection"
+    ? {
+        id: CLUSTER_CONFIG_ID,
+        connection: {
+          connectionString: `${inputs.cluster.cluster.scheme}://${inputs.cluster.cluster.defaultHostname}`,
+          username: inputs.cluster.cluster.credentials.username,
+          password: inputs.cluster.cluster.credentials.password,
+          tls: inputs.cluster.cluster.tls,
+        },
+      }
+    : {
+        id: CLUSTER_CONFIG_ID,
+        cbdinocluster: {
+          init: { config: buildCbdinoclusterInitConfig(cng, inputs.githubUser) },
+          config: buildClusterDefObject(inputs.cluster.def),
+          ...(inputs.onClusterExists ? { onClusterExists: inputs.onClusterExists } : {}),
+        },
+      };
+  const fitConfigRef: FitConfigRef = {
+    id: FIT_CONFIG_ID,
+    config: inputs.cluster.kind === "connection"
+      ? buildClusterAccessFitConfig(inputs.cluster.cluster)
+      : buildCbdinoclusterFitConfig(cng),
+  };
+  const instance: InstanceLifetime = {
     ...(inputs.instance ?? { localhost: {} }),
     clusters: [
       {
-        ...(inputs.cluster.kind === "connection"
-          ? {
-              connection: {
-                connectionString: `${inputs.cluster.cluster.scheme}://${inputs.cluster.cluster.defaultHostname}`,
-                username: inputs.cluster.cluster.credentials.username,
-                password: inputs.cluster.cluster.credentials.password,
-                tls: inputs.cluster.cluster.tls,
-              },
-            }
-          : {
-              cbdinocluster: {
-                init: { config: buildCbdinoclusterInitConfig(cng, inputs.githubUser) },
-                config: buildClusterDefObject(inputs.cluster.def),
-                ...(inputs.onClusterExists ? { onClusterExists: inputs.onClusterExists } : {}),
-              },
-            }),
+        clusterConfig: CLUSTER_CONFIG_ID,
         sessions: [
           {
             ...buildPerformerSession(inputs.sdk, inputs.version, inputs.onPortInUse),
             runs: [
               {
                 type: "functional",
-                fitConfig: inputs.cluster.kind === "connection"
-                  ? buildClusterAccessFitConfig(inputs.cluster.cluster)
-                  : buildCbdinoclusterFitConfig(cng),
+                fitConfig: FIT_CONFIG_ID,
                 tests: buildTests(inputs.selection),
               },
             ],
@@ -202,6 +220,7 @@ function buildFunctionalInstance(inputs: DefinitionInputs): InstanceLifetime {
       },
     ],
   };
+  return { instance, clusterConfigRef, fitConfigRef };
 }
 
 function buildSituationalInstance(inputs: SituationalDefinitionInputs): InstanceLifetime {
@@ -229,6 +248,8 @@ function buildSituationalInstance(inputs: SituationalDefinitionInputs): Instance
 export function buildFitDefinition(inputs: {
   gerritRef?: string;
   instances: InstanceLifetime[];
+  clusterConfigs?: ClusterConfigRef[];
+  fitConfigs?: FitConfigRef[];
 }): FitDefinition {
   const setup = inputs.gerritRef
     ? { repos: { "transactions-fit-performer": { gerritRef: inputs.gerritRef } } }
@@ -238,13 +259,18 @@ export function buildFitDefinition(inputs: {
     type: FIT_DEFINITION_TYPE,
     ...(setup ? { setup } : {}),
     instances: [...inputs.instances],
+    ...(inputs.clusterConfigs?.length ? { clusterConfigs: inputs.clusterConfigs } : {}),
+    ...(inputs.fitConfigs?.length ? { fitConfigs: inputs.fitConfigs } : {}),
   };
 }
 
 export function buildFitFunctionalDefinitionFrom(inputs: DefinitionInputs): FitDefinition {
+  const { instance, clusterConfigRef, fitConfigRef } = buildFunctionalInstance(inputs);
   return buildFitDefinition({
     ...(inputs.gerritRef ? { gerritRef: inputs.gerritRef } : {}),
-    instances: [buildFunctionalInstance(inputs)],
+    instances: [instance],
+    clusterConfigs: [clusterConfigRef],
+    fitConfigs: [fitConfigRef],
   });
 }
 
@@ -269,11 +295,11 @@ export function formatFitDefinition(definition: FitDefinition): string {
     `${initLine}${indent}# This file will be uploaded verbatim into clean environments as ~/.cbdinocluster\n${indent}config:`
   );
   text = text.replace(
-    /^(\s*)(-\s+)?fitConfig:$/gm,
+    /^fitConfigs:$/gm,
     [
-      "$1# This will be used as a base when generating FITConfiguration.json.  Anything here will be copied into the config (unless overwritten by fit-cli).",
-      "$1# fit-cli will provide some fields like \\${defaultHostname} at runtime when cluster details are known.",
-      "$1$2fitConfig:",
+      "# Each fitConfig is used as a base when generating FITConfiguration.json.  Anything here will be copied into the config (unless overwritten by fit-cli).",
+      "# fit-cli will provide some fields like ${defaultHostname} at runtime when cluster details are known.",
+      "fitConfigs:",
     ].join("\n"),
   );
   return text;

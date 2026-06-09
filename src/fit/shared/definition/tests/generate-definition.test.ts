@@ -36,7 +36,7 @@ test("buildFitFunctionalDefinition emits one instance with one cluster, session,
   assert.equal(definition.instances[0]?.clusters[0]?.sessions[0]?.runs[0]?.type, "functional");
 });
 
-test("buildFitFunctionalDefinitionFrom records a cbdinocluster in the nested model", () => {
+test("buildFitFunctionalDefinitionFrom records a cbdinocluster in clusterConfigs and fitConfig in fitConfigs", () => {
   const definition = buildFitFunctionalDefinitionFrom({
     cluster: {
       kind: "cbdinocluster",
@@ -49,11 +49,23 @@ test("buildFitFunctionalDefinitionFrom records a cbdinocluster in the nested mod
   });
 
   assert.equal(definition.setup?.repos?.["transactions-fit-performer"]?.gerritRef, "refs/changes/29/246329/1");
-  assert.equal(definition.instances[0]?.clusters[0]?.cbdinocluster?.config.nodes[0]?.count, 2);
   assert.equal(definition.instances[0]?.clusters[0]?.sessions[0]?.performer.version, "1.2.3");
 
-  const fitConfig = definition.instances[0]?.clusters[0]?.sessions[0]?.runs[0]?.fitConfig as Record<string, unknown> | undefined;
-  assert.ok(fitConfig, "cbdinocluster cluster should have a fitConfig template in the first run");
+  // Cluster uses a ref, not inline fields
+  assert.equal(definition.instances[0]?.clusters[0]?.clusterConfig, "cluster-0");
+  assert.equal(definition.instances[0]?.clusters[0]?.cbdinocluster, undefined);
+
+  // cbdinocluster details live in clusterConfigs
+  assert.equal(definition.clusterConfigs?.[0]?.id, "cluster-0");
+  assert.equal(definition.clusterConfigs?.[0]?.cbdinocluster?.config.nodes[0]?.count, 2);
+
+  // Run uses a ref, not an inline fitConfig object
+  assert.equal(definition.instances[0]?.clusters[0]?.sessions[0]?.runs[0]?.fitConfig, "fit-config-0");
+
+  // fitConfig details live in fitConfigs
+  assert.equal(definition.fitConfigs?.[0]?.id, "fit-config-0");
+  const fitConfig = definition.fitConfigs?.[0]?.config as Record<string, unknown> | undefined;
+  assert.ok(fitConfig, "cbdinocluster cluster should have a fitConfig template in fitConfigs");
   const access = fitConfig?.clusterAccess as Record<string, unknown>;
   assert.equal(access.connectionString, "couchbase://${defaultHostname}");
   assert.deepEqual(access.rest, { hostname: "${defaultHostname}", resolveDnsSrv: false });
@@ -73,11 +85,12 @@ test("buildFitSituationalDefinitionFrom emits clusterless sessions", () => {
 });
 
 test("buildFitDefinition remains round-trippable through the parser", () => {
-  const functionalInstance = buildFitFunctionalDefinitionFrom({
+  const functionalDef = buildFitFunctionalDefinitionFrom({
     cluster: { kind: "connection", cluster },
     sdk,
     selection: buildDefaultFitTestSelection(),
-  }).instances[0];
+  });
+  const functionalInstance = functionalDef.instances[0];
   const situationalInstance = buildFitSituationalDefinitionFrom({
     sdk,
     version: "1.2.3",
@@ -92,12 +105,14 @@ test("buildFitDefinition remains round-trippable through the parser", () => {
   const definition = buildFitDefinition({
     gerritRef: "refs/changes/29/246329/1",
     instances: [functionalInstance, situationalInstance],
+    clusterConfigs: functionalDef.clusterConfigs,
+    fitConfigs: functionalDef.fitConfigs,
   });
 
   assert.deepEqual(parseDefinition(formatFitDefinition(definition)), definition);
 });
 
-test("formatFitDefinition includes the nested instances key and fitConfig comment", () => {
+test("formatFitDefinition includes the nested instances key and fitConfigs comment", () => {
   const rendered = formatFitDefinition(
     buildFitFunctionalDefinitionFrom({
       cluster: { kind: "connection", cluster },
@@ -107,5 +122,5 @@ test("formatFitDefinition includes the nested instances key and fitConfig commen
   );
 
   assert.match(rendered, /instances:/);
-  assert.match(rendered, /# This will be used as a base when generating FITConfiguration\.json/);
+  assert.match(rendered, /# Each fitConfig is used as a base when generating FITConfiguration\.json/);
 });
