@@ -67,15 +67,12 @@ async function chooseDefinitionBuilderAction(index: number): Promise<DefinitionB
 async function chooseCycleExecution(promptIdPrefix: string): Promise<CycleInstanceSetup> {
   const choice = await select<"localhost" | "aws">({
     promptId: qualifyPromptId("execution.instance", promptIdPrefix),
-    message: "Where should this cycle's tests execute?",
+    message: "Where should this cycle's tests execute?  (You can override this at runtime and run it on localhost)",
     choices: [
-      { name: "This machine (localhost)", value: "localhost" },
       { name: "A clean AWS EC2 instance", value: "aws" },
+      { name: "This machine (localhost)", value: "localhost" },
     ],
   });
-  console.log(
-    "  You can override this and run everything on localhost when you execute the definition.",
-  );
   return choice === "aws" ? { aws: {} } : { localhost: {} };
 }
 
