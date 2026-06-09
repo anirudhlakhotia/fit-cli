@@ -7,7 +7,7 @@ import { createRunFilePath } from "./replay.js";
 /**
  * When set, every command's captured stdout/stderr (from `capture()`) is also
  * written here, giving a complete command I/O transcript alongside the terminal
- * mirror in session.log. Set by startDebugLog().
+ * mirror in session.info.log. Set by startDebugLog().
  */
 let currentDebugLog: WriteStream | null = null;
 
@@ -200,13 +200,13 @@ export interface SessionLog {
 /**
  * Start the debug log file. Once started, two things write to it:
  *
- * 1. Everything written to process.stdout/stderr (same as session.log) — picked
+ * 1. Everything written to process.stdout/stderr (same as session.info.log) — picked
  *    up by the monkey-patch installed in startSessionLog, so startSessionLog
  *    must be called in the same session.
  * 2. The captured stdout/stderr from every capture() call — output that is
  *    consumed programmatically and never shown on the terminal.
  *
- * The result is a superset of session.log: every command echo AND its full
+  * The result is a superset of session.info.log: every command echo AND its full
  * output in one file, useful for diagnosing failures after the fact.
  */
 export function startDebugLog(logFile: string): SessionLog {

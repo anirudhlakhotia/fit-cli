@@ -33,8 +33,8 @@ export function isMain(metaUrl: string): boolean {
 export function runCli(main: () => Promise<void | Partial<RunOutput>>): void {
   installFitCliConsoleFormatting();
   const promptSession = ensurePromptSession(process.argv.slice(2));
-  const sessionLog = startSessionLog(join(promptSession.runDir, "session.log"));
-  const debugLog = startDebugLog(join(promptSession.runDir, "debug.log"));
+  const sessionLog = startSessionLog(join(promptSession.runDir, "session.info.log"));
+  const debugLog = startDebugLog(join(promptSession.runDir, "session.debug.log"));
   const sessionLogArtifact = artifactFromPath(
     sessionLog.path,
     "Terminal output log for this fit-cli session",

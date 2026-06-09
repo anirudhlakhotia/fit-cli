@@ -78,7 +78,7 @@ test("streamToFile does not echo the command's output to the terminal", async ()
 
 test("run tees child output into the session log by default", async () => {
   const dir = mkdtempSync(join(tmpdir(), "fit-cli-proc-"));
-  const logFile = join(dir, "session.log");
+  const logFile = join(dir, "session.info.log");
   const procModule = new URL("../proc.ts", import.meta.url).href;
 
   const driver = [
@@ -98,7 +98,7 @@ test("run tees child output into the session log by default", async () => {
 
 test("runAndCapture returns stdout while teeing stderr into the session log", async () => {
   const dir = mkdtempSync(join(tmpdir(), "fit-cli-proc-"));
-  const logFile = join(dir, "session.log");
+  const logFile = join(dir, "session.info.log");
   const procModule = new URL("../proc.ts", import.meta.url).href;
 
   const driver = [
