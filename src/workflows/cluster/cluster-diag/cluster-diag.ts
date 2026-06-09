@@ -6,7 +6,7 @@
  *   npx tsx src/workflows/cluster/cluster-diag/cluster-diag.ts couchbase://127.0.0.1 Administrator password
  */
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
-import { capture } from "../../../util/non-fit/proc.js";
+import { capture, type RunOptions } from "../../../util/non-fit/proc.js";
 import type { SelectedCluster } from "../cluster-select/cluster-select.js";
 import { classifyConnectionString } from "../cluster-select/classify-connection-string.js";
 
@@ -33,6 +33,12 @@ function managementHost(defaultHostname: string): string {
 export interface ClusterDiagOptions {
   /** How long to keep retrying before giving up, in milliseconds. Defaults to 30 000 (30 s). */
   retryTimeoutMs?: number;
+  /**
+   * The function used to run curl. Defaults to the local `capture()`.
+   * Pass `execution.capture` when the cluster is only reachable from a remote
+   * execution target (e.g. an EC2 instance) so curl runs there instead of locally.
+   */
+  captureCommand?: (command: string, args: string[], cwd?: string, opts?: RunOptions) => Promise<string>;
 }
 
 /** Run a quick curl-based sanity check against the cluster's management endpoint.
@@ -41,6 +47,7 @@ export async function runClusterDiag(cluster: SelectedCluster, opts?: ClusterDia
   const url = clusterDiagUrl(cluster);
   const command = `curl -k -u <username>:<password> -X GET ${url}`;
   const retryTimeoutMs = opts?.retryTimeoutMs ?? 30_000;
+  const captureCommand = opts?.captureCommand ?? capture;
   const deadline = Date.now() + retryTimeoutMs;
   let delayMs = 500;
   let attempt = 0;
@@ -49,7 +56,7 @@ export async function runClusterDiag(cluster: SelectedCluster, opts?: ClusterDia
     try {
       // For convenience in testing e.g. Capella, always use -k (insecure).
       // Use quiet on retries to avoid spamming the terminal with repeated curl echoes.
-      await capture(
+      await captureCommand(
         "curl",
         ["-k", "-u", `${cluster.credentials.username}:${cluster.credentials.password}`, "-X", "GET", url],
         process.cwd(),

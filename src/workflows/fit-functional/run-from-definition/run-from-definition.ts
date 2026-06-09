@@ -570,6 +570,7 @@ async function runIteration(
 async function resumeCluster(
   group: ResolvedFunctionalExecutionGroup,
   savedState: RunState | undefined,
+  execution: FitExecutionContext,
 ): Promise<{ group: ResolvedFunctionalExecutionGroup; clusterState?: ResumeClusterState }> {
   // Existing-cluster modes already carry the cluster from the file, so there's
   // nothing in the run state to reuse — the resolved iterations are ready.
@@ -586,7 +587,7 @@ async function resumeCluster(
   console.log(
     `\n→ resume: reusing cluster ${clusterState.clusterId ?? clusterState.cluster.defaultHostname} from the run state.`,
   );
-  if (!(await runClusterDiag(clusterState.cluster))) {
+  if (!(await runClusterDiag(clusterState.cluster, { captureCommand: (cmd, args, cwd, runOpts) => execution.capture(cmd, args, cwd, runOpts) }))) {
     throw new Error(
       "resume: the saved cluster is no longer reachable. Re-run without --resume-at to allocate a fresh one.",
     );
@@ -984,7 +985,7 @@ export async function runFromDefinition(
           // it) on a clean instance, before allocating anything.
           const functionalCycle = await prepareFunctionalCngCycle(group, execution);
           if (cycleIndex === startCycleIndex && !phases.setupCluster) {
-            const resumed = await resumeCluster(functionalCycle, savedState);
+            const resumed = await resumeCluster(functionalCycle, savedState, execution);
             activeCycle = resumed.group;
             clusterState = resumed.clusterState;
           } else {
