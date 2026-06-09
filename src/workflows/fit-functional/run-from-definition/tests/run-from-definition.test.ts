@@ -175,23 +175,26 @@ test("runTests stops before later steps when the cluster REST sanity check fails
   let checkedPerformer = false;
   let ranDriver = false;
 
-  const result = await runTests(fitExecutionContext(), "connection", iteration(), undefined, 0, {
-    runClusterDiagFn: () => Promise.resolve(false),
-    generateFitConfigurationFn: () => {
-      generatedFitConfig = true;
-      return { path: "/tmp/fit.json", artifacts: [], details: [] };
-    },
-    runPerformerClusterSanityCheckFn: () => {
-      checkedPerformer = true;
-      return Promise.resolve({ ok: true, artifacts: [], details: [] });
-    },
-    runTestDriverFn: () => {
-      ranDriver = true;
-      return Promise.resolve({ ok: true, logFile: "/tmp/driver.log", artifacts: [], details: [] });
-    },
-  });
+  await assert.rejects(
+    () =>
+      runTests(fitExecutionContext(), "connection", iteration(), undefined, 0, 0, {
+        runClusterDiagFn: () => Promise.resolve(false),
+        generateFitConfigurationFn: () => {
+          generatedFitConfig = true;
+          return { path: "/tmp/fit.json", artifacts: [], details: [] };
+        },
+        runPerformerClusterSanityCheckFn: () => {
+          checkedPerformer = true;
+          return Promise.resolve({ ok: true, artifacts: [], details: [] });
+        },
+        runTestDriverFn: () => {
+          ranDriver = true;
+          return Promise.resolve({ ok: true, logFile: "/tmp/driver.log", artifacts: [], details: [] });
+        },
+      }),
+    { message: "Cluster sanity test failed; this cycle cannot continue." },
+  );
 
-  assert.deepEqual(result, { artifacts: [], details: [] });
   assert.equal(generatedFitConfig, false);
   assert.equal(checkedPerformer, false);
   assert.equal(ranDriver, false);
@@ -222,7 +225,7 @@ test("runSituationalTests stops before generating a config when the database isn
   let generatedConfig = false;
   let ranDriver = false;
 
-  const result = await runSituationalTests(fitExecutionContext(), situationalIteration(), 0, {
+  const result = await runSituationalTests(fitExecutionContext(), situationalIteration(), 0, 0, {
     resolveResultsDatabaseFn: () => Promise.resolve({ ready: false, artifacts: [], details: [] }),
     generateSituationalConfigurationFn: () => {
       generatedConfig = true;
@@ -244,7 +247,7 @@ test("runSituationalTests generates the situational config then runs the driver"
   let configPerformerPort: number | undefined;
   let driverMavenArgs: readonly string[] | undefined;
 
-  const result = await runSituationalTests(fitExecutionContext(), situationalIteration(), 0, {
+  const result = await runSituationalTests(fitExecutionContext(), situationalIteration(), 0, 0, {
     resolveResultsDatabaseFn: () => {
       calls.push("database");
       return Promise.resolve(READY_DATABASE);

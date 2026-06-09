@@ -18,6 +18,7 @@ import { type RunOutput } from "../../../util/non-fit/artifacts.js";
 import { loadDotenv } from "../../../util/non-fit/dotenv.js";
 import { resolveResultsDbCredentials } from "../../../util/fit/config.js";
 import { fitCliError } from "../../../util/non-fit/fit-cli-log.js";
+import { capture } from "../../../util/non-fit/proc.js";
 import { qualifyPromptId, select } from "../../../util/non-fit/prompts.js";
 import { rootDirFromArgv } from "../../../util/fit/root.js";
 import { type ResultsDatabase } from "../util/results-database.js";
@@ -56,6 +57,23 @@ export function buildHostedDatabase(
     username: credentials.username?.trim() || HOSTED_RESULTS_DB_USERNAME,
     password,
   };
+}
+
+/**
+ * TCP connectivity probe: returns true if the hosted results database is
+ * reachable on its PostgreSQL port, false if not (VPN likely not active).
+ * Pass a `captureCommand` to run the check from a remote execution context.
+ */
+export async function checkResultsDatabaseConnectivity(
+  captureCommand?: (cmd: string, args: string[]) => Promise<string>,
+): Promise<boolean> {
+  const run = captureCommand ?? ((cmd: string, args: string[]) => capture(cmd, args));
+  try {
+    await run("nc", ["-z", "-w", "5", HOSTED_RESULTS_DB_HOST, "5432"]);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function chooseResultsDatabaseMode(promptIdPrefix?: string): Promise<ResultsDatabaseMode> {

@@ -99,10 +99,19 @@ export interface IterationSetup {
  */
 export type DefinitionTests = "all" | string[];
 
+/** Maven-specific overrides for a test run. */
+export interface MavenOptions {
+  /** Extra `-D` system properties appended verbatim to the `./mvnw` command. */
+  args?: string[];
+  /** Deactivate JUnit 5's DisabledCondition, overriding `@Disabled` on tests. */
+  runDisabledTests?: boolean;
+}
+
 /** The runtime section of an iteration: what to do once setup is up. */
 export interface RuntimeSection {
   tests: DefinitionTests;
   excludedGroups?: string[];
+  maven?: MavenOptions;
 }
 
 /** One FIT functional performer + runtime pass. */

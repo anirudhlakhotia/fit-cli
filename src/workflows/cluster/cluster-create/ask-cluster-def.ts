@@ -10,7 +10,7 @@
  * Prints the gathered answers as JSON.
  */
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
-import { checkbox, confirm, input, number, select } from "../../../util/non-fit/prompts.js";
+import { checkbox, input, number, select } from "../../../util/non-fit/prompts.js";
 import type { ClusterDef } from "./build-cluster-def.js";
 
 /** Services offered, with the FIT-typical set selected by default. */
@@ -57,11 +57,16 @@ export async function askClusterDef(): Promise<ClusterDef> {
     choices: SERVICES,
   });
 
-  const cng = await confirm({
-    promptId: "cluster.create.cng",
-    message: "Do you want CNG/Protostellar (Cloud Native Gateway) support? (this just enables it in the cluster, it doesn't make CNG testing happen - yet!)",
-    default: false,
-  });
+  // CNG/Protostellar support is intentionally not offered yet — re-enable this
+  // prompt once fit-cli is ready to actually drive CNG testing. Until then we
+  // always build a plain operational cluster (no cao block; see build-cluster-def).
+  //
+  // const cng = await confirm({
+  //   promptId: "cluster.create.cng",
+  //   message: "Do you want CNG/Protostellar (Cloud Native Gateway) support? (this just enables it in the cluster, it doesn't make CNG testing happen - yet!)",
+  //   default: false,
+  // });
+  const cng = false;
 
   return { nodeCount, version, services, cng };
 }

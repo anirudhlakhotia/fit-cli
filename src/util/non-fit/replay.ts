@@ -550,3 +550,18 @@ export function createRunFilePath(filename: string, argv: string[] = process.arg
   mkdirSync(runDir, { recursive: true, mode: 0o700 });
   return createRunFilePathInDir(runDir, filename);
 }
+
+/** Absolute path to the artifact directory for cycle N (e.g. `{runDir}/cycles/0`). */
+export function cycleRunDir(cycleIndex: number, runDir: string = ensureRunDir()): string {
+  return join(runDir, "cycles", String(cycleIndex));
+}
+
+/** Absolute path to the artifact directory for iteration M within cycle N (e.g. `{runDir}/cycles/0/it0`). */
+export function iterationRunDir(cycleIndex: number, iterationIndex: number, runDir: string = ensureRunDir()): string {
+  return join(cycleRunDir(cycleIndex, runDir), `it${iterationIndex}`);
+}
+
+/** Absolute path to the internal-files directory for cycle N (e.g. `{runDir}/cycles/0/_internal`). */
+export function cycleInternalRunDir(cycleIndex: number, runDir: string = ensureRunDir()): string {
+  return join(cycleRunDir(cycleIndex, runDir), "_internal");
+}

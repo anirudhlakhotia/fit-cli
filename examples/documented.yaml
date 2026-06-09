@@ -90,6 +90,14 @@ cycles:
           #   - openshift
           #   - syncgateway
 
+          # Optional: Maven-level overrides.
+          # maven:
+          #   # Run tests annotated @Disabled (overrides the JUnit 5 DisabledCondition).
+          #   runDisabledTests: true
+          #   # Append extra -D system properties verbatim to the ./mvnw command.
+          #   args:
+          #     - -Dsome.flag=true
+
       # Could test other SDKs against the same functional-cycle cluster here.
       # - fitConfig:
       #     clusterAccess:

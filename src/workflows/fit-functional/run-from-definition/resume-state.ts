@@ -13,7 +13,7 @@
  * logic so it stays testable.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import type { SelectedCluster } from "../../cluster/cluster-select/cluster-select.js";
 
 /** How to reconnect to the execution target a previous run used. */
@@ -60,6 +60,8 @@ export interface ResumePerformerState {
 export interface RunState {
   version: 1;
   cycleIndex: number;
+  /** Within the cycle at cycleIndex, the first iteration to run. Absent means 0. */
+  startIterationIndex?: number;
   target: ResumeTargetState;
   cluster?: ResumeClusterState;
   performers: ResumePerformerState[];
@@ -67,7 +69,7 @@ export interface RunState {
 
 /** Where the run-state file lives for the definition at `definitionPath`. */
 export function runStatePath(definitionPath: string): string {
-  return join(dirname(definitionPath), "it0", "_internal", "run-state.json");
+  return resolve(dirname(definitionPath), "it0", "_internal", "run-state.json");
 }
 
 /** Read the saved run state for a definition, or undefined if none exists. */

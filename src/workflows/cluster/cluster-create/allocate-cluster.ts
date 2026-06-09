@@ -16,7 +16,7 @@ import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { input } from "../../../util/non-fit/prompts.js";
 import { formatCommandLine } from "../../../util/non-fit/fit-cli-log.js";
 import { capture, run, type RunOptions } from "../../../util/non-fit/proc.js";
-import { createRunFilePath, ensureRunDir } from "../../../util/non-fit/replay.js";
+import { ensureRunDir } from "../../../util/non-fit/replay.js";
 import { posixQuote } from "../../../util/non-fit/remote-target.js";
 import { findOnPath } from "../../../util/non-fit/which.js";
 import { buildClusterDef } from "./build-cluster-def.js";
@@ -70,13 +70,17 @@ export function localClusterCommandExecutor(): ClusterCommandExecutor {
 }
 
 /**
- * Write the cbdinocluster def to a file in the current run directory and return
- * its absolute path. The run directory is already timestamped, so the filename
- * doesn't need to be.
+ * Write the cbdinocluster def to a file in the given directory and return its
+ * absolute path. Pass a cycle-scoped directory (e.g. `cycleRunDir(cycleIndex)`)
+ * for full runs, or omit to use the run root for standalone invocations.
  */
-export function writeClusterDef(def: string, runDir: string = ensureRunDir()): WriteClusterDefResult {
-  mkdirSync(runDir, { recursive: true, mode: 0o700 });
-  const path = join(runDir, "cbdinocluster.yaml");
+export function writeClusterDef(
+  def: string,
+  cycleDir: string = ensureRunDir(),
+  runDir: string = ensureRunDir(),
+): WriteClusterDefResult {
+  mkdirSync(cycleDir, { recursive: true, mode: 0o700 });
+  const path = join(cycleDir, "cbdinocluster.yaml");
   writeFileSync(path, def);
   return {
     path,
@@ -109,8 +113,10 @@ export async function allocateCluster(
   def: string,
   deployer?: string,
   execution: ClusterCommandExecutor = localClusterCommandExecutor(),
+  cycleDir: string = ensureRunDir(),
 ): Promise<AllocatedCluster> {
-  const { path: localDefFile, artifact } = writeClusterDef(def);
+  const runDir = ensureRunDir();
+  const { path: localDefFile, artifact } = writeClusterDef(def, cycleDir, runDir);
   console.log(`Wrote cbdinocluster def to ${localDefFile}:\n\n${def}`);
   const defFile = await execution.stageFile(localDefFile, execution.targetFilePath(localDefFile));
 
@@ -120,7 +126,8 @@ export async function allocateCluster(
   }
   args.push(`--def-file=${defFile}`);
 
-  const localOutputFile = createRunFilePath("cbdinocluster-allocate.stdout");
+  mkdirSync(cycleDir, { recursive: true, mode: 0o700 });
+  const localOutputFile = join(cycleDir, "cbdinocluster-allocate.stdout");
   const targetOutputFile = execution.targetFilePath(localOutputFile);
   await execution.runToFile(cbdinocluster, args, targetOutputFile);
   await execution.collectFile(targetOutputFile, localOutputFile);

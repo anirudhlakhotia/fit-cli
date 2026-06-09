@@ -69,3 +69,22 @@ test("an empty / absent reservation list yields no instances", () => {
   assert.deepEqual(parseInstances({ Reservations: [] }), []);
   assert.deepEqual(parseInstances({ Instances: [] }), []);
 });
+
+test("reads the created-by tag into creator", () => {
+  const response = {
+    Reservations: [
+      {
+        Instances: [
+          {
+            InstanceId: "i-ggg",
+            State: { Name: "running" },
+            Tags: [{ Key: "created-by", Value: "alice" }],
+          },
+        ],
+      },
+    ],
+  };
+  assert.deepEqual(parseInstances(response), [
+    { instanceId: "i-ggg", state: "running", publicDns: undefined, publicIp: undefined, creator: "alice" },
+  ]);
+});

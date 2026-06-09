@@ -42,6 +42,7 @@ function functionalIteration(overrides: {
   onPortInUse?: FunctionalIteration["setup"]["performer"]["onPortInUse"];
   tests?: FunctionalIteration["runtime"]["tests"];
   excludedGroups?: string[];
+  maven?: FunctionalIteration["runtime"]["maven"];
   fitConfig?: FunctionalIteration["fitConfig"];
 } = {}): FunctionalIteration {
   return {
@@ -57,6 +58,7 @@ function functionalIteration(overrides: {
     runtime: {
       tests: overrides.tests ?? "all",
       ...(overrides.excludedGroups !== undefined ? { excludedGroups: overrides.excludedGroups } : {}),
+      ...(overrides.maven !== undefined ? { maven: overrides.maven } : {}),
     },
   };
 }
@@ -65,6 +67,7 @@ function situationalIteration(overrides: {
   sdk?: string;
   mode?: "hosted" | "local";
   excludedGroups?: string[];
+  maven?: SituationalIteration["runtime"]["maven"];
 } = {}): SituationalIteration {
   return {
     setup: {
@@ -78,6 +81,7 @@ function situationalIteration(overrides: {
     runtime: {
       tests: "all",
       ...(overrides.excludedGroups !== undefined ? { excludedGroups: overrides.excludedGroups } : {}),
+      ...(overrides.maven !== undefined ? { maven: overrides.maven } : {}),
     },
   };
 }
@@ -247,6 +251,35 @@ test("situational runs use the situational Maven args", () => {
     "-Dgroups=situational,cbDino",
     "-DexcludedGroups=openshift",
   ]);
+});
+
+test("maven.runDisabledTests appends the JUnit DisabledCondition deactivation flag", () => {
+  assert.deepEqual(resolveMavenArgs({ tests: "all", maven: { runDisabledTests: true } }), [
+    ...DEFAULT_MAVEN_TEST_ARGS,
+    "-Djunit.jupiter.conditions.deactivate=org.junit.jupiter.api.condition.DisabledCondition",
+  ]);
+  assert.deepEqual(resolveSituationalMavenArgs({ tests: "all", maven: { runDisabledTests: true } }), [
+    ...SITUATIONAL_MAVEN_TEST_ARGS,
+    "-Djunit.jupiter.conditions.deactivate=org.junit.jupiter.api.condition.DisabledCondition",
+  ]);
+});
+
+test("maven.args are appended verbatim after the base args", () => {
+  assert.deepEqual(resolveMavenArgs({ tests: "all", maven: { args: ["-Dsome.flag=true"] } }), [
+    ...DEFAULT_MAVEN_TEST_ARGS,
+    "-Dsome.flag=true",
+  ]);
+});
+
+test("maven.runDisabledTests and maven.args combine in order", () => {
+  assert.deepEqual(
+    resolveMavenArgs({ tests: "all", maven: { runDisabledTests: true, args: ["-Dextra=1"] } }),
+    [
+      ...DEFAULT_MAVEN_TEST_ARGS,
+      "-Djunit.jupiter.conditions.deactivate=org.junit.jupiter.api.condition.DisabledCondition",
+      "-Dextra=1",
+    ],
+  );
 });
 
 test("rejects a useExisting cycle without fitConfig clusterAccess", () => {

@@ -258,10 +258,12 @@ export async function createFitDefinition(rootDir: string): Promise<RunOutput> {
   console.log(`\nWriting ${result.path}:\n`);
   printWithoutTimestamps(formatFitDefinition(definition));
   console.log(`\n✓ Wrote ${result.path}`);
-  console.log(`\nRun it later with:\n  
-  npm run definition -- --interactive ${result.path}\n
-  Or if on CI choose default options with:\n
-  npm run definition ${result.path}`);
+  console.log(
+    `\nRun it later with:\n` +
+      `  npm run definition -- execute --interactive ${result.path}\n` +
+      `\nOr non-interactively (e.g. on CI), taking the default answer to every prompt:\n` +
+      `  npm run definition -- execute ${result.path}`,
+  );
 
   return { artifacts: [result.artifact], details: [] };
 }

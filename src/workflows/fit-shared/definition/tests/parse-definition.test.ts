@@ -282,6 +282,44 @@ cycles:
   );
 });
 
+test("parses runtime.maven.runDisabledTests", () => {
+  const def = parseDefinition(FUNCTIONAL.replace(
+    "          tests: all",
+    "          tests: all\n          maven:\n            runDisabledTests: true",
+  ));
+  assert.equal(def.cycles[0]?.iterations[0]?.runtime.maven?.runDisabledTests, true);
+});
+
+test("parses runtime.maven.args", () => {
+  const def = parseDefinition(FUNCTIONAL.replace(
+    "          tests: all",
+    "          tests: all\n          maven:\n            args:\n              - -Dsome.flag=true",
+  ));
+  assert.deepEqual(def.cycles[0]?.iterations[0]?.runtime.maven?.args, ["-Dsome.flag=true"]);
+});
+
+test("rejects runtime.maven.runDisabledTests that is not a boolean", () => {
+  assert.throws(
+    () =>
+      parseDefinition(FUNCTIONAL.replace(
+        "          tests: all",
+        "          tests: all\n          maven:\n            runDisabledTests: yes-please",
+      )),
+    (err: unknown) => err instanceof InvalidDefinitionError && /runDisabledTests/.test(err.message),
+  );
+});
+
+test("rejects runtime.maven.args that is not a list of strings", () => {
+  assert.throws(
+    () =>
+      parseDefinition(FUNCTIONAL.replace(
+        "          tests: all",
+        "          tests: all\n          maven:\n            args: not-a-list",
+      )),
+    (err: unknown) => err instanceof InvalidDefinitionError && /maven\.args/.test(err.message),
+  );
+});
+
 test("rejects a future version", () => {
   assert.throws(
     () => parseDefinition(FUNCTIONAL.replace("version: 1", "version: 99")),

@@ -22,15 +22,17 @@ import {
 } from "../build-performer/build-performer.js";
 import { performerStatus } from "../check-performer/check-performer.js";
 
-export function performerBuildLogStem(iteration: number, sdk: Sdk, version?: string, gerritRef?: string): string {
+export function performerBuildLogStem(cycleIndex: number, iteration: number, sdk: Sdk, version?: string, gerritRef?: string): string {
   return join(
+    "cycles",
+    String(cycleIndex),
     `it${iteration}`,
     `${sdk.value}-${dockerImageComponent(performerBuildIdentity(version, gerritRef))}-performer-build`,
   );
 }
 
-function performerBuildLogFile(iteration: number, sdk: Sdk, version?: string, gerritRef?: string): string {
-  return createLogFile(performerBuildLogStem(iteration, sdk, version, gerritRef));
+function performerBuildLogFile(cycleIndex: number, iteration: number, sdk: Sdk, version?: string, gerritRef?: string): string {
+  return createLogFile(performerBuildLogStem(cycleIndex, iteration, sdk, version, gerritRef));
 }
 
 /** Check for a performer image and offer to build it if it is missing. */
@@ -38,6 +40,7 @@ export async function checkAndBuildPerformer(
   execution: FitExecutionContext,
   sdk: Sdk,
   version?: string,
+  cycleIndex: number = 0,
   iteration: number = 0,
   gerritRef?: string,
 ): Promise<boolean> {
@@ -62,7 +65,7 @@ export async function checkAndBuildPerformer(
 
   console.log(`The ${sdk.name} performer Docker image ${status.imageName} is not present locally, so fit-cli will build it now.`);
   const args = buildPerformerArgs(execution.rootDir, sdk, version, gerritRef);
-  const logFile = performerBuildLogFile(iteration, sdk, version, gerritRef);
+  const logFile = performerBuildLogFile(cycleIndex, iteration, sdk, version, gerritRef);
   const targetLogFile = execution.targetFilePath(logFile);
   console.log(`\nBuilding performer with:\n  cd ${execution.jenkinsDir} && ./gradlew ${args.join(" ")}\n`);
   console.log(`Streaming performer build output to:\n  ${targetLogFile}\n`);

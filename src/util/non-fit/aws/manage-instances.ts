@@ -49,6 +49,9 @@ export function describeInstanceLine(instance: InstanceInfo): string {
   if (instance.publicIp) {
     parts.push(instance.publicIp);
   }
+  if (instance.creator) {
+    parts.push(`created-by:${instance.creator}`);
+  }
   return parts.join("  ·  ");
 }
 

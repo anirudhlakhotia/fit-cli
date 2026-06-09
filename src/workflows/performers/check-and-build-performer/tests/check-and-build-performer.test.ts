@@ -4,10 +4,10 @@ import type { FitExecutionContext } from "../../../fit-shared/util/remote-fit-ru
 import { sdkByValue } from "../../../../util/sdk/sdks.js";
 import { checkAndBuildPerformer, performerBuildLogStem } from "../check-and-build-performer.js";
 
-test("performerBuildLogStem puts the normalized version under the iteration directory", () => {
+test("performerBuildLogStem puts the normalized version under cycles/N/itM", () => {
   const sdk = sdkByValue("node");
   assert.ok(sdk);
-  assert.equal(performerBuildLogStem(0, sdk, "Release Candidate #1"), "it0/node-release-candidate-1-performer-build");
+  assert.equal(performerBuildLogStem(0, 0, sdk, "Release Candidate #1"), "cycles/0/it0/node-release-candidate-1-performer-build");
 });
 
 test("checkAndBuildPerformer treats a missing local image as informational before building", async () => {

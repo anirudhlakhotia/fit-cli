@@ -43,7 +43,7 @@ export interface FitExecutionContext {
   stageFile(localPath: string, targetPath?: string): Promise<string>;
   collectFile(targetPath: string, localPath: string): Promise<void>;
   removeTree(path: string): Promise<void>;
-  collectJunitArtifacts(sourceDir: string, iteration?: number): Promise<Artifact[]>;
+  collectJunitArtifacts(sourceDir: string, cycleIndex?: number, iteration?: number): Promise<Artifact[]>;
   pathExists(path: string): Promise<boolean>;
   commandAvailable(command: string): Promise<boolean>;
   performerRunArgs(imageName: string, hostPort?: number, dockerNetwork?: string): string[];
@@ -258,7 +258,7 @@ export function createLocalFitExecutionContext(rootDir: string): FitExecutionCon
       rmSync(path, { recursive: true, force: true });
       return Promise.resolve();
     },
-    collectJunitArtifacts: async (_sourceDir, iteration) => await collectJunitArtifacts(rootDir, iteration),
+    collectJunitArtifacts: async (_sourceDir, cycleIndex, iteration) => await collectJunitArtifacts(rootDir, cycleIndex, iteration),
     pathExists: async (path) => target.capture("test", ["-e", path], undefined, { quiet: true }).then(() => true).catch(() => false),
     commandAvailable: async (command) =>
       target
@@ -281,11 +281,11 @@ export async function createFitExecutionContext(
   target: ExecutionTarget,
   rootDir: string,
   sdk: Sdk,
-  options: { skipRemotePreparation?: boolean } = {},
+  options: { skipRemotePreparation?: boolean; cycleIndex?: number } = {},
 ): Promise<FitExecutionContext> {
   return target.kind === "local"
     ? createLocalFitExecutionContext(rootDir)
-    : await createRemoteFitExecutionContext(target, sdk, options.skipRemotePreparation);
+    : await createRemoteFitExecutionContext(target, sdk, options.skipRemotePreparation, options.cycleIndex);
 }
 
 /**

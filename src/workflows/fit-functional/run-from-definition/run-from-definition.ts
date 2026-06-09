@@ -16,11 +16,11 @@
  * workspace, standing up a cluster and building a performer are all slow, so a
  * run can leave them up and a later invocation can `--resume-at` a point to
  * reuse everything up to it instead of redoing the work:
- *   npm run definition <file.yaml>                                    # everything
- *   npm run definition -- --resume-at=after-instance-creation <file>  # reuse instance
- *   npm run definition -- --resume-at=after-remote-preparation <file> # reuse prepared box
- *   npm run definition -- --resume-at=after-cluster-creation <file>   # reuse cluster
- *   npm run definition -- --resume-at=after-performer <file>          # reuse cluster + performer
+ *   npm run definition -- execute <file.yaml>                                          # everything
+ *   npm run definition -- execute --resume-at=after-instance-creation <file>  # reuse instance
+ *   npm run definition -- execute --resume-at=after-remote-preparation <file>  # reuse prepared box
+ *   npm run definition -- execute --resume-at=after-cluster-creation <file>    # reuse cluster
+ *   npm run definition -- execute --resume-at=after-performer <file>           # reuse cluster + performer
  *
  * Run on its own (add --root <dir> to point at another workspace):
  *   npx tsx src/workflows/fit-functional/run-from-definition/run-from-definition.ts <file.yaml>
@@ -30,6 +30,8 @@
  * cbdinocluster plan is allocated during the cluster phase and recorded in the
  * run state so `--resume-at` can pick it back up.
  */
+import { copyFileSync } from "node:fs";
+import { basename, join, resolve } from "node:path";
 import {
   artifactFromPath,
   combineArtifacts,
@@ -41,9 +43,10 @@ import {
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { fitCliError, fitCliWarn } from "../../../util/non-fit/fit-cli-log.js";
 import { createLogFile } from "../../../util/non-fit/proc.js";
+import { cycleRunDir, ensureRunDir } from "../../../util/non-fit/replay.js";
 import { confirm } from "../../../util/non-fit/prompts.js";
 import { rootDirFromArgv } from "../../../util/fit/root.js";
-import { resolveGithubCredentials } from "../../../util/fit/config.js";
+import { resolveGithubCredentials, resolveResultsDbCredentials } from "../../../util/fit/config.js";
 import { terminateInstanceCommand } from "../../../util/fit/aws/lifecycle-warning.js";
 import { resolveRegion } from "../../../util/non-fit/aws/aws-cli.js";
 import { resolveAwsCredentials, type AwsCredentials } from "../../../util/non-fit/aws/identity.js";
@@ -73,6 +76,9 @@ import {
 } from "../../fit-shared/definition/resolve-definition.js";
 import { runTestDriver } from "../../fit-shared/run-test-driver/run-test-driver.js";
 import {
+  buildHostedDatabase,
+  checkResultsDatabaseConnectivity,
+  HOSTED_RESULTS_DB_HOST,
   resolveResultsDatabase,
   SITUATIONAL_RESULTS_URL,
 } from "../../fit-shared/choose-results-database/choose-results-database.js";
@@ -221,6 +227,7 @@ export async function setupCluster(
   execution: ClusterCommandExecutor = localClusterCommandExecutor(),
   setupDeclarativeClusterFn: typeof setupDeclarativeCluster = setupDeclarativeCluster,
   githubCredentials?: { user: string; token: string },
+  cycleIndex: number = 0,
 ): Promise<RunOutput & { cycle: ResolvedFunctionalCycle; clusterState?: ResumeClusterState }> {
   if (cycle.clusterMode === "connection") {
     fitCliWarn("\nsetup-cluster: using the existing cluster from cycle.cluster.connection; nothing to allocate.");
@@ -231,7 +238,7 @@ export async function setupCluster(
     return { cycle, artifacts: [], details: [] };
   }
   if (cycle.cbdinocluster) {
-    const outcome = await setupDeclarativeClusterFn({ ...cycle.cbdinocluster, githubCredentials }, execution);
+    const outcome = await setupDeclarativeClusterFn({ ...cycle.cbdinocluster, githubCredentials }, execution, cycleRunDir(cycleIndex));
     const clusterState: ResumeClusterState | undefined = outcome.cluster
       ? {
           cluster: outcome.cluster,
@@ -256,7 +263,8 @@ async function setupPerformer(
   execution: FitExecutionContext,
   fitPerformerGerritRef: string | undefined,
   iteration: ResolvedIteration,
-  iterationIndex: number,
+  cycleIndex: number,
+  localIterationIndex: number,
 ): Promise<RunningPerformer | undefined> {
   const clusterDockerEnvironment =
     iteration.type === "functional" && iteration.cluster
@@ -278,7 +286,8 @@ async function setupPerformer(
     clusterDockerEnvironment?.networkNames[0],
     iteration.onPortInUse,
     iteration.performerPort,
-    iterationIndex,
+    cycleIndex,
+    localIterationIndex,
     fitPerformerGerritRef,
   );
 }
@@ -296,7 +305,8 @@ export async function runTests(
   clusterMode: ResolvedFunctionalCycle["clusterMode"],
   iteration: ResolvedFunctionalIteration,
   performer: RunningPerformer | undefined,
-  iterationIndex: number,
+  cycleIndex: number,
+  localIterationIndex: number,
   dependencies: RunTestsDependencies = {},
 ): Promise<RunOutput> {
   if (!iteration.cluster) {
@@ -314,7 +324,7 @@ export async function runTests(
   const details: Detail[] = [];
 
   if (!(await runClusterDiagFn(iteration.cluster))) {
-    return { artifacts, details };
+    throwFatalToCycle("Cluster sanity test failed; this cycle cannot continue.");
   }
 
   const fitConfig = generateFitConfigurationFn(
@@ -322,7 +332,8 @@ export async function runTests(
     execution.rootDir,
     iteration.performerPort,
     iteration.fitConfig,
-    iterationIndex,
+    cycleIndex,
+    localIterationIndex,
   );
   artifacts.push(...fitConfig.artifacts);
   details.push(...fitConfig.details);
@@ -341,7 +352,8 @@ export async function runTests(
     iteration.testSelection,
     fitConfig.path,
     iteration.extraMavenArgs,
-    iterationIndex,
+    cycleIndex,
+    localIterationIndex,
   );
   artifacts.push(...testRun.artifacts);
   details.push(...testRun.details);
@@ -358,7 +370,8 @@ export async function runTests(
 export async function runSituationalTests(
   execution: FitExecutionContext,
   iteration: ResolvedSituationalIteration,
-  iterationIndex: number,
+  cycleIndex: number,
+  localIterationIndex: number,
   dependencies: {
     resolveResultsDatabaseFn?: typeof resolveResultsDatabase;
     generateSituationalConfigurationFn?: typeof generateSituationalConfiguration;
@@ -389,7 +402,8 @@ export async function runSituationalTests(
     execution.rootDir,
     iteration.performerPort,
     iteration.fitConfig,
-    iterationIndex,
+    cycleIndex,
+    localIterationIndex,
   );
   artifacts.push(...fitConfig.artifacts);
   details.push(...fitConfig.details);
@@ -399,7 +413,8 @@ export async function runSituationalTests(
     iteration.testSelection,
     fitConfig.path,
     iteration.extraMavenArgs,
-    iterationIndex,
+    cycleIndex,
+    localIterationIndex,
   );
   artifacts.push(...testRun.artifacts);
   details.push(...testRun.details);
@@ -418,12 +433,14 @@ async function resumePerformer(
   execution: FitExecutionContext,
   iteration: ResolvedIteration,
   savedState: RunState | undefined,
-  iterationIndex: number,
+  globalIterationIndex: number,
+  cycleIndex: number,
+  localIterationIndex: number,
 ): Promise<RunningPerformer | undefined> {
-  const saved = savedState?.performers.find((performer) => performer.iterationIndex === iterationIndex);
+  const saved = savedState?.performers.find((performer) => performer.iterationIndex === globalIterationIndex);
   if (!saved?.containerId) {
     fitCliError(
-      `\nresume: the run state has no performer for iteration ${iterationIndex + 1}. ` +
+      `\nresume: the run state has no performer for iteration ${globalIterationIndex + 1}. ` +
         "Re-run with --resume-at=after-cluster-creation to rebuild it.",
     );
     return undefined;
@@ -442,8 +459,8 @@ async function resumePerformer(
     return undefined;
   }
 
-  console.log(`\n→ resume: reusing performer container ${saved.containerId} for iteration ${iterationIndex + 1}.`);
-  const logFile = createLogFile(performerLogStem(iterationIndex, iteration.sdk, iteration.performerVersion));
+  console.log(`\n→ resume: reusing performer container ${saved.containerId} for iteration ${globalIterationIndex + 1}.`);
+  const logFile = createLogFile(performerLogStem(cycleIndex, localIterationIndex, iteration.sdk, iteration.performerVersion));
   return {
     containerId: saved.containerId,
     logFile,
@@ -453,7 +470,7 @@ async function resumePerformer(
 }
 
  function printResumeHint(point: ResumePoint, definitionPath: string): void {
-  console.log(`\n→ Resume from here: npm run definition -- --resume-at=${point} ${definitionPath}`);
+  console.log(`\n→ Resume from here: npm run definition -- execute --resume-at=${point} ${definitionPath}`);
 }
 
 /** Run one iteration: stand up (or reuse) its performer, then run the tests. */
@@ -464,15 +481,17 @@ async function runIteration(
   iteration: ResolvedIteration,
   setupPerformerPhase: boolean,
   savedState: RunState | undefined,
-  iterationIndex: number,
+  cycleIndex: number,
+  localIterationIndex: number,
+  globalIterationIndex: number,
   definitionPath: string,
 ): Promise<{ output: RunOutput; performer?: RunningPerformer }> {
   const artifacts: Artifact[] = [];
   const details: Detail[] = [];
 
   const performer = setupPerformerPhase
-    ? await setupPerformer(execution, fitPerformerGerritRef, iteration, iterationIndex)
-    : await resumePerformer(execution, iteration, savedState, iterationIndex);
+    ? await setupPerformer(execution, fitPerformerGerritRef, iteration, cycleIndex, localIterationIndex)
+    : await resumePerformer(execution, iteration, savedState, globalIterationIndex, cycleIndex, localIterationIndex);
   if (!performer) {
     throwFatalToIteration("The performer isn't ready to run; stopping this iteration.");
   }
@@ -483,10 +502,10 @@ async function runIteration(
 
   let output: RunOutput;
   if (iteration.type === "situational") {
-    output = await runSituationalTests(execution, iteration, iterationIndex);
+    output = await runSituationalTests(execution, iteration, cycleIndex, localIterationIndex);
   } else {
     const clusterMode: ResolvedFunctionalCycle["clusterMode"] = functionalClusterMode ?? "useExisting";
-    output = await runTests(execution, clusterMode, iteration, performer, iterationIndex);
+    output = await runTests(execution, clusterMode, iteration, performer, cycleIndex, localIterationIndex);
   }
   artifacts.push(...output.artifacts);
   details.push(...output.details);
@@ -538,6 +557,8 @@ function targetStateFrom(teardown: ExecutionTargetTeardown): ResumeTargetState {
 interface TeardownInputs {
   definitionPath: string;
   cycleIndex: number;
+  /** Within the active cycle, the iteration that was running at teardown. */
+  iterationIndex: number;
   /** The remote/local context — absent if the run failed before it came up. */
   execution?: FitExecutionContext;
   teardown: ExecutionTargetTeardown;
@@ -579,7 +600,12 @@ function resumeSuggestions(inputs: TeardownInputs): ResumePoint[] {
  * failed before it came up); only the instance is then up to leave or terminate.
  */
 async function teardownRun(inputs: TeardownInputs): Promise<void> {
-  const { definitionPath, cycleIndex, execution, teardown, clusterState, performers, performerStates } = inputs;
+  const { definitionPath, cycleIndex, iterationIndex, execution, teardown, clusterState, performers, performerStates } = inputs;
+
+  const nothingToLeaveUp = !teardown.terminate && !clusterState && performerStates.length === 0;
+  if (nothingToLeaveUp) {
+    return;
+  }
 
   const leaveUp = await confirm({
     promptId: "run-from-definition.teardown.leave-up",
@@ -591,18 +617,36 @@ async function teardownRun(inputs: TeardownInputs): Promise<void> {
     const state: RunState = {
       version: 1,
       cycleIndex,
+      startIterationIndex: iterationIndex,
       target: targetStateFrom(teardown),
       ...(clusterState ? { cluster: clusterState } : {}),
       performers: [...performerStates],
     };
     const path = writeRunState(definitionPath, state);
     console.log(`\n✓ Leaving everything up. Saved run state to:\n  ${path}`);
+
+    // List exactly what's been left running so it's clear what is still costing
+    // money / holding resources and needs cleaning up later.
+    const leftRunning: string[] = [];
+    if (teardown.terminate && teardown.instanceId) {
+      leftRunning.push(`Instance: ${teardown.instanceId}${teardown.address ? ` (${teardown.address})` : ""}`);
+    }
+    if (clusterState) {
+      const clusterId = clusterState.clusterId ?? clusterState.cluster.defaultHostname;
+      leftRunning.push(`Cluster:  ${clusterId}${clusterState.allocated ? " (allocated by this run)" : ""}`);
+    }
+    for (const performer of performerStates) {
+      const version = performer.version ? `@${performer.version}` : "";
+      leftRunning.push(`Performer: ${performer.sdk}${version} — container ${performer.containerId} on port ${performer.port}`);
+    }
+    if (leftRunning.length > 0) {
+      console.log(`\nLeft running:\n${leftRunning.map((line) => `  - ${line}`).join("\n")}`);
+    }
+
     const suggestions = resumeSuggestions(inputs);
-    if (suggestions.length > 0) {
-      console.log("\nResume after a manual fix with, e.g.:");
-      for (const point of suggestions) {
-        console.log(`  npm run definition -- --resume-at=${point} ${definitionPath}`);
-      }
+    const lastSuggestion = suggestions[suggestions.length - 1];
+    if (lastSuggestion) {
+      console.log(`\nResume after a manual fix with:\n  npm run definition -- execute --resume-at=${lastSuggestion} ${definitionPath}`);
     }
     if (teardown.terminate && teardown.instanceId) {
       const region = teardown.region ?? resolveRegion();
@@ -658,6 +702,7 @@ export async function runFromDefinition(
     console.log(`  Resuming at: ${resumeAt}`);
   }
   const startCycleIndex = savedState?.cycleIndex ?? 0;
+  const startIterationIndex = savedState?.startIterationIndex ?? 0;
 
   // Resolve GitHub credentials upfront so we fail before provisioning an instance.
   let githubCredentials: { user: string; token: string } | undefined;
@@ -687,8 +732,44 @@ export async function runFromDefinition(
     awsCredentials = result;
   }
 
+  // Check hosted results-database config and connectivity upfront — fail before
+  // provisioning an instance when the run can't reach the database.
+  const needsHostedDatabase = resolved.cycles
+    .slice(startCycleIndex)
+    .some(
+      (cycle) =>
+        cycle.type === "situational" &&
+        cycle.iterations.some((it) => it.databaseMode === "hosted"),
+    );
+  if (needsHostedDatabase) {
+    const database = buildHostedDatabase(resolveResultsDbCredentials({ env: {} }));
+    if (!database) {
+      fitCliError(
+        `\n✗ The hosted results database needs a readonly password in your fit-cli config.\n` +
+          `  Ask on #the-fit-stop for it, then set it as resultsDb.password in your fit-cli config\n` +
+          `  (~/.fit-cli/config.yaml — run \`npm run init\`).`,
+      );
+      return { artifacts: [], details: [] };
+    }
+    console.log(`\nChecking connectivity to results database at ${HOSTED_RESULTS_DB_HOST}...`);
+    if (!(await checkResultsDatabaseConnectivity())) {
+      fitCliError(
+        `\n✗ Cannot reach the results database at ${HOSTED_RESULTS_DB_HOST}:5432.\n` +
+          `  Make sure you are connected to the vpn-public VPN.`,
+      );
+      return { artifacts: [], details: [] };
+    }
+    console.log(`  ✓ Reached ${HOSTED_RESULTS_DB_HOST}.`);
+  }
+
   const artifacts: Artifact[] = [];
   const details: Detail[] = [];
+
+  const runDir = ensureRunDir();
+  const definitionCopyPath = join(runDir, basename(resolve(definitionPath)));
+  copyFileSync(definitionPath, definitionCopyPath);
+  artifacts.push(artifactFromPath(definitionCopyPath, "Definition file used for this run", runDir));
+
   const executionTarget = savedState
     ? await reconnectExecutionTarget(savedState.target)
     : await selectExecutionTarget();
@@ -703,6 +784,7 @@ export async function runFromDefinition(
 
   let execution: FitExecutionContext | undefined;
   let activeCycleIndex = startCycleIndex;
+  let activeIterationIndex = startIterationIndex;
   let activeClusterState: ResumeClusterState | undefined;
   let activePerformers: RunningPerformer[] = [];
   let activePerformerStates: ResumePerformerState[] = [];
@@ -714,11 +796,24 @@ export async function runFromDefinition(
     const firstIteration = firstCycle.iterations[0];
     execution = await createFitExecutionContext(executionTarget.target, rootDir, firstIteration.sdk, {
       skipRemotePreparation: !phases.prepareRemote,
+      cycleIndex: startCycleIndex,
     });
     artifacts.push(...execution.artifacts);
     details.push(...execution.details);
     if (phases.prepareRemote && executionTarget.teardown.kind === "remote" && executionTarget.teardown.address) {
       printResumeHint("after-remote-preparation", definitionPath);
+    }
+
+    if (needsHostedDatabase && execution.kind === "remote") {
+      console.log(`\nChecking results database connectivity from the remote instance...`);
+      if (!(await checkResultsDatabaseConnectivity((cmd, args) => execution!.capture(cmd, args)))) {
+        fitCliError(
+          `\n✗ The remote instance cannot reach the results database at ${HOSTED_RESULTS_DB_HOST}:5432.\n` +
+            `  Make sure the instance has network access to reach the database (VPN / security-group rules).`,
+        );
+        return finalizeRunFromDefinition(artifacts, details);
+      }
+      console.log(`  ✓ Reached ${HOSTED_RESULTS_DB_HOST} from the remote instance.`);
     }
 
     let globalIterationIndex = resolved.cycles
@@ -727,6 +822,9 @@ export async function runFromDefinition(
 
     for (let cycleIndex = startCycleIndex; cycleIndex < resolved.cycles.length; cycleIndex++) {
       activeCycleIndex = cycleIndex;
+      if (cycleIndex !== startCycleIndex) {
+        activeIterationIndex = 0;
+      }
       const cycle = resolved.cycles[cycleIndex];
       if (!cycle) {
         break;
@@ -746,7 +844,7 @@ export async function runFromDefinition(
             activeCycle = resumed.cycle;
             clusterState = resumed.clusterState;
           } else {
-            const setup = await setupCluster(cycle, execution, setupDeclarativeCluster, githubCredentials);
+            const setup = await setupCluster(cycle, execution, setupDeclarativeCluster, githubCredentials, cycleIndex);
             activeCycle = setup.cycle;
             clusterState = setup.clusterState;
             artifacts.push(...setup.artifacts);
@@ -759,13 +857,19 @@ export async function runFromDefinition(
             }
           }
         } else {
-          await prepareCbdinoclusterConfig(execution, cycle.cbdinoclusterInit.config);
+          await prepareCbdinoclusterConfig(execution, cycle.cbdinoclusterInit.config, undefined, cycleRunDir(cycleIndex));
           if (execution.kind === "remote" && awsCredentials) {
             await uploadRemoteAwsCredentials(execution.target, execution.rootDir, awsCredentials);
           }
         }
 
         for (const [cycleIterationIndex, iteration] of activeCycle.iterations.entries()) {
+          if (cycleIndex === startCycleIndex && cycleIterationIndex < startIterationIndex) {
+            globalIterationIndex++;
+            continue;
+          }
+          activeIterationIndex = cycleIterationIndex;
+          const isLastIteration = cycleIterationIndex === activeCycle.iterations.length - 1;
           announce(
             cycleIndex,
             resolved.cycles.length,
@@ -774,7 +878,8 @@ export async function runFromDefinition(
             resolved.fitPerformerGerritRef,
             iteration,
           );
-          const setupPerformerPhase = cycleIndex === startCycleIndex ? phases.setupPerformer : true;
+          const isStartIteration = cycleIndex === startCycleIndex && cycleIterationIndex === startIterationIndex;
+          const setupPerformerPhase = isStartIteration ? phases.setupPerformer : true;
           try {
             const { output, performer } = await runIteration(
               execution,
@@ -783,21 +888,27 @@ export async function runFromDefinition(
               iteration,
               setupPerformerPhase,
               savedState,
+              cycleIndex,
+              cycleIterationIndex,
               globalIterationIndex,
               definitionPath,
             );
             artifacts.push(...output.artifacts);
             details.push(...output.details);
             if (performer) {
-              cyclePerformers.push(performer);
-              if (performer.containerId) {
-                cyclePerformerStates.push({
-                  iterationIndex: globalIterationIndex,
-                  containerId: performer.containerId,
-                  port: iteration.performerPort,
-                  sdk: iteration.sdk.value,
-                  ...(iteration.performerVersion ? { version: iteration.performerVersion } : {}),
-                });
+              if (isLastIteration) {
+                cyclePerformers.push(performer);
+                if (performer.containerId) {
+                  cyclePerformerStates.push({
+                    iterationIndex: globalIterationIndex,
+                    containerId: performer.containerId,
+                    port: iteration.performerPort,
+                    sdk: iteration.sdk.value,
+                    ...(iteration.performerVersion ? { version: iteration.performerVersion } : {}),
+                  });
+                }
+              } else {
+                await stopManagedPerformer(execution, performer);
               }
             }
           } catch (err) {
@@ -811,8 +922,50 @@ export async function runFromDefinition(
         }
       } catch (err) {
         if (err instanceof ClassifiedFailure && err.classification === "FatalToCycle") {
-          fitCliError(`\n✗ ${err.message} (FatalToCycle — moving to next cycle)`);
+          fitCliError(`\n✗ ${err.message} (FatalToCycle)`);
           globalIterationIndex += activeCycle.iterations.length;
+
+          // On the last (or only) cycle there's no next cycle to continue to, and
+          // asking to keep this cycle's resources would just duplicate teardownRun's
+          // single "leave everything up?" question. Promote the state and let
+          // teardownRun make that one decision.
+          const isLastCycle = cycleIndex === resolved.cycles.length - 1;
+          if (isLastCycle) {
+            activeClusterState = clusterState;
+            activePerformers = cyclePerformers;
+            activePerformerStates = cyclePerformerStates;
+            break;
+          }
+
+          const continueToNextCycle = await confirm({
+            promptId: "run-from-definition.fatal-to-cycle.continue",
+            message: "Continue to the next cycle?",
+            default: true,
+          });
+
+          if (!continueToNextCycle) {
+            // Promote current cycle's state so teardownRun can offer to clean it up.
+            activeClusterState = clusterState;
+            activePerformers = cyclePerformers;
+            activePerformerStates = cyclePerformerStates;
+            break;
+          }
+
+          const keepCycleResources = await confirm({
+            promptId: "run-from-definition.fatal-to-cycle.keep-resources",
+            message: "Keep this cycle's cluster and performers up for debugging?",
+            default: false,
+          });
+
+          if (!keepCycleResources && execution) {
+            for (const performer of cyclePerformers) {
+              await stopManagedPerformer(execution, performer);
+            }
+            if (clusterState?.allocated && clusterState.clusterId && clusterState.cbdinoclusterCommand) {
+              await removeCluster(clusterState.cbdinoclusterCommand, clusterState.clusterId, execution);
+            }
+          }
+
           continue;
         }
         throw err;
@@ -835,11 +988,10 @@ export async function runFromDefinition(
 
     return finalizeRunFromDefinition(artifacts, details);
   } finally {
-    // Always offer to leave things up — even if the context never came up, the
-    // instance is worth keeping so a fix can be tried with --resume-at.
     await teardownRun({
       definitionPath,
       cycleIndex: activeCycleIndex,
+      iterationIndex: activeIterationIndex,
       ...(execution ? { execution } : {}),
       teardown: executionTarget.teardown,
       ...(activeClusterState ? { clusterState: activeClusterState } : {}),
@@ -856,8 +1008,9 @@ if (isMain(import.meta.url)) {
     const [definitionPath, ...extra] = rest;
     if (!definitionPath || extra.length > 0) {
       console.error(
-        "Usage: tsx src/workflows/fit-functional/run-from-definition/run-from-definition.ts <file.yaml> [--resume-at=<point>] [--root <dir>] [--interactive]\n" +
-          "  --resume-at: after-instance-creation | after-remote-preparation | after-cluster-creation | after-performer (reuse what a previous run left up)",
+        "Primary usage: npm run definition -- execute <file.yaml> [--resume-at=<point>] [--root <dir>]\n" +
+          "Direct:        tsx src/workflows/fit-functional/run-from-definition/run-from-definition.ts <file.yaml> [--resume-at=<point>]\n" +
+          "  --resume-at: after-instance-creation | after-remote-preparation | after-cluster-creation | after-performer",
       );
       process.exit(2);
     }

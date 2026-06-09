@@ -25,3 +25,10 @@ test("describeInstanceLine appends name, type and public IP when present", () =>
     "i-bbb  ·  running  ·  fit-runner  ·  t3.medium  ·  1.2.3.4",
   );
 });
+
+test("describeInstanceLine appends creator when present", () => {
+  assert.equal(
+    describeInstanceLine({ instanceId: "i-ccc", state: "running", creator: "alice" }),
+    "i-ccc  ·  running  ·  created-by:alice",
+  );
+});

@@ -4,6 +4,7 @@
  * Run on its own (add --root <dir> to point at another workspace):
  *   npx tsx src/workflows/performers/checkout-fit-gerrit-ref/checkout-fit-gerrit-ref.ts refs/changes/29/246329/1
  */
+import { spawnSync } from "node:child_process";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { fitCliError } from "../../../util/non-fit/fit-cli-log.js";
 import { rootDirFromArgv } from "../../../util/fit/root.js";
@@ -19,14 +20,33 @@ export function resolveFitGerritUser(env: NodeJS.ProcessEnv = process.env): stri
   return trimmed ? trimmed : undefined;
 }
 
-export function fitPerformerGerritUrl(gerritUser: string | undefined = resolveFitGerritUser()): string {
-  return `ssh://${gerritUser ? `${gerritUser}@` : ""}${FIT_GERRIT_HOST}:${FIT_GERRIT_PORT}/${FIT_PERFORMER_GERRIT_REPO}`;
+export function resolveGerritUserFromGitConfig(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  const result = spawnSync("git", ["config", "--global", "github.user"], { env, encoding: "utf8" });
+  if (result.status !== 0 || !result.stdout) {
+    return undefined;
+  }
+  return result.stdout.trim() || undefined;
 }
 
-export function fitPerformerGerritFetchArgs(
-  gerritRef: string,
-  gerritUser: string | undefined = resolveFitGerritUser(),
-): string[] {
+export function requireFitGerritUser(env: NodeJS.ProcessEnv = process.env): string {
+  const fromEnv = resolveFitGerritUser(env);
+  if (fromEnv) {
+    return fromEnv;
+  }
+  const fromGitConfig = resolveGerritUserFromGitConfig(env);
+  if (fromGitConfig) {
+    return fromGitConfig;
+  }
+  throw new Error(
+    "Cannot determine Gerrit username. Set FIT_GERRIT_USER, GERRIT_USER, or run: git config --global github.user <your-username>",
+  );
+}
+
+export function fitPerformerGerritUrl(gerritUser: string): string {
+  return `ssh://${gerritUser}@${FIT_GERRIT_HOST}:${FIT_GERRIT_PORT}/${FIT_PERFORMER_GERRIT_REPO}`;
+}
+
+export function fitPerformerGerritFetchArgs(gerritRef: string, gerritUser: string): string[] {
   return ["fetch", fitPerformerGerritUrl(gerritUser), gerritRef];
 }
 
@@ -45,6 +65,14 @@ export async function checkoutFitGerritRef(
   const trimmedRef = gerritRef.trim();
   if (!trimmedRef) {
     fitCliError("A FIT Gerrit ref was requested, but it was blank.");
+    return false;
+  }
+
+  let gerritUser: string;
+  try {
+    gerritUser = requireFitGerritUser();
+  } catch (err) {
+    fitCliError((err as Error).message);
     return false;
   }
 
@@ -78,21 +106,16 @@ export async function checkoutFitGerritRef(
   }
 
   console.log(
-    `\nFetching FIT Gerrit ref with:\n  git ${fitPerformerGerritFetchArgs(trimmedRef).join(" ")}\n`,
+    `\nFetching FIT Gerrit ref with:\n  git ${fitPerformerGerritFetchArgs(trimmedRef, gerritUser).join(" ")}\n`,
   );
 
   try {
-    await execution.run("git", fitPerformerGerritFetchArgs(trimmedRef), execution.fitPerformerDir);
+    await execution.run("git", fitPerformerGerritFetchArgs(trimmedRef, gerritUser), execution.fitPerformerDir);
     console.log(`\nChecking out fetched FIT Gerrit ref with:\n  git ${checkoutFetchHeadArgs().join(" ")}\n`);
     await execution.run("git", checkoutFetchHeadArgs(), execution.fitPerformerDir);
   } catch (err) {
     const message = (err as Error).message;
     const hints: string[] = [];
-    if (!resolveFitGerritUser()) {
-      hints.push(
-        "Set FIT_GERRIT_USER (or GERRIT_USER) so fit-cli fetches from ssh://<your-user>@review.couchbase.org:29418/....",
-      );
-    }
     if (message.includes("Host key verification failed")) {
       hints.push(`The machine running git does not trust ${FIT_GERRIT_HOST} yet.`);
     }

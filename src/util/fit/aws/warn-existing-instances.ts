@@ -15,12 +15,12 @@
  */
 import { isMain, runCli } from "../../non-fit/cli.js";
 import { logAwsAction, prepareAwsCli, resolveRegion, type AwsOptions } from "../../non-fit/aws/aws-cli.js";
+import { checkCredentials } from "../../non-fit/aws/identity.js";
 import { listInstances, LIVE_STATES } from "../../non-fit/aws/list-instances.js";
-import { describeInstanceLine } from "../../non-fit/aws/manage-instances.js";
 import { type InstanceInfo } from "../../non-fit/aws/parse-instance.js";
 import { fitCliWarn } from "../../non-fit/fit-cli-log.js";
 import { FIT_OWNER_TAG } from "./fit-instance.js";
-import { terminateInstanceCommand } from "./lifecycle-warning.js";
+import { formatExistingInstancesBanner, type InstanceListContext } from "./lifecycle-warning.js";
 
 /**
  * List the fit-owned instances already running in the region and warn about each
@@ -28,25 +28,17 @@ import { terminateInstanceCommand } from "./lifecycle-warning.js";
  * instances found (empty if none), so callers can branch on the result if they
  * want; on its own it only warns and never blocks provisioning.
  */
-export async function warnAboutExistingInstances(options: AwsOptions = {}): Promise<InstanceInfo[]> {
+export async function warnAboutExistingInstances(
+  options: AwsOptions = {},
+  context?: InstanceListContext,
+): Promise<InstanceInfo[]> {
   const region = resolveRegion(options);
   const existing = await listInstances(FIT_OWNER_TAG, { region });
   if (existing.length === 0) {
     return existing;
   }
 
-  const count = existing.length;
-  fitCliWarn(
-    `\n${count} fit-cli EC2 instance${count === 1 ? "" : "s"} already exist${count === 1 ? "s" : ""} ` +
-      `in ${region} — each keeps incurring AWS charges until terminated:`,
-  );
-  for (const instance of existing) {
-    fitCliWarn(`  ${describeInstanceLine(instance)}`);
-  }
-  fitCliWarn(
-    `Terminate one with:\n  ${terminateInstanceCommand("<instance-id>", region)}\n` +
-      `or manage them interactively with:\n  npx tsx src/util/non-fit/aws/manage-instances.ts --region ${region}\n`,
-  );
+  fitCliWarn(`\n${formatExistingInstancesBanner(existing, region, context)}\n`);
   return existing;
 }
 
@@ -57,7 +49,11 @@ if (isMain(import.meta.url)) {
       tag: `${FIT_OWNER_TAG.key}=${FIT_OWNER_TAG.value}`,
       states: LIVE_STATES,
     });
-    const existing = await warnAboutExistingInstances(awsOptions);
+    const creds = await checkCredentials(awsOptions);
+    const context: InstanceListContext | undefined = creds.ok
+      ? { account: creds.identity.account, creator: creds.identity.arn.split("/").at(-1) ?? creds.identity.userId }
+      : undefined;
+    const existing = await warnAboutExistingInstances(awsOptions, context);
     if (existing.length === 0) {
       console.log("No existing fit-cli EC2 instances — clear to provision.");
     }

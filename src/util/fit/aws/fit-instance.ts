@@ -10,7 +10,8 @@
  * terminate it, so you can poke at it; tear it down with the printed command):
  *   npx tsx src/util/fit/aws/fit-instance.ts
  */
-import { writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { artifactFromPath, type Artifact, type Detail } from "../../non-fit/artifacts.js";
 import { isMain, runCli } from "../../non-fit/cli.js";
 import { resolveRegion, type AwsOptions } from "../../non-fit/aws/aws-cli.js";
@@ -24,7 +25,7 @@ import { terminateInstance } from "../../non-fit/aws/terminate-instance.js";
 import { ensureFitCliConfigEnv } from "../config.js";
 import { createKeyPair, deleteKeyPair } from "../../non-fit/aws/key-pair.js";
 import { ensureSecurityGroup } from "../../non-fit/aws/security-group.js";
-import { createRunFilePath } from "../../non-fit/replay.js";
+import { cycleRunDir } from "../../non-fit/replay.js";
 import { waitForSsh, type RemoteHost } from "../../non-fit/ssh.js";
 import { RemoteTarget } from "../../non-fit/remote-target.js";
 import { fitCliWarn } from "../../non-fit/fit-cli-log.js";
@@ -116,11 +117,18 @@ export async function provisionFitInstance(options: ProvisionOptions = {}): Prom
   if (!creds.ok) {
     throw new Error(`AWS credentials are not usable: ${creds.message}`);
   }
+  // Last segment of the ARN is the most readable creator identifier:
+  //   arn:aws:iam::123:user/alice          → alice
+  //   arn:aws:sts::123:assumed-role/R/sess → sess
+  const creatorTag = creds.identity.arn.split("/").at(-1) ?? creds.identity.userId;
 
   // Before launching anything, warn about fit-cli boxes already running in this
   // region (same owner/account, owned-by-fit tag) so a forgotten, still-billing
   // instance is noticed rather than stacked on top of.
-  await warnAboutExistingInstances(awsOptions);
+  const existingInstances = await warnAboutExistingInstances(awsOptions, {
+    account: creds.identity.account,
+    creator: creatorTag,
+  });
 
   const instanceType = options.instanceType ?? defaultInstanceType();
   console.log(`Provisioning a ${instanceType} EC2 instance in ${region}...`);
@@ -132,7 +140,9 @@ export async function provisionFitInstance(options: ProvisionOptions = {}): Prom
   );
 
   const keyName = `fit-cli-${Date.now().toString(36)}`;
-  const keyPath = createRunFilePath(`${keyName}.pem`);
+  const instanceDir = cycleRunDir(0);
+  mkdirSync(instanceDir, { recursive: true, mode: 0o700 });
+  const keyPath = join(instanceDir, `${keyName}.pem`);
   await createKeyPair(keyName, keyPath, awsOptions);
 
   let instanceId: string | undefined;
@@ -143,7 +153,7 @@ export async function provisionFitInstance(options: ProvisionOptions = {}): Prom
         instanceType,
         keyName,
         securityGroupId,
-        tags: { [FIT_OWNER_TAG.key]: FIT_OWNER_TAG.value },
+        tags: { [FIT_OWNER_TAG.key]: FIT_OWNER_TAG.value, "created-by": creatorTag },
         blockDeviceMappings: fitBlockDeviceMappings(),
       },
       awsOptions,
@@ -157,7 +167,7 @@ export async function provisionFitInstance(options: ProvisionOptions = {}): Prom
       throw new Error(`Instance ${instanceId} is running but has no public address.`);
     }
 
-    const host: RemoteHost = { host: address, user: FIT_INSTANCE_USER, identityFile: keyPath };
+    const host: RemoteHost = { host: address, user: FIT_INSTANCE_USER, identityFile: keyPath, agentForwarding: true };
     process.stdout.write("  waiting for SSH...");
     if (!(await waitForSsh(host))) {
       throw new Error(`Timed out waiting for SSH on ${address}.`);
@@ -170,7 +180,7 @@ export async function provisionFitInstance(options: ProvisionOptions = {}): Prom
       await deleteKeyPair(keyName, awsOptions).catch(() => {});
     };
 
-    const infoPath = createRunFilePath("ec2-instance.json");
+    const infoPath = join(instanceDir, "ec2-instance.json");
     writeFileSync(
       infoPath,
       `${JSON.stringify({ instanceId: id, address, region, instanceType, keyPath }, null, 2)}\n`,
@@ -191,7 +201,7 @@ export async function provisionFitInstance(options: ProvisionOptions = {}): Prom
     ];
 
     console.log(`\n✓ EC2 instance ${id} is ready at ${address}`);
-    fitCliWarn(`\n${formatEc2DeletionResponsibilityBanner(id, region, address)}\n`);
+    fitCliWarn(`\n${formatEc2DeletionResponsibilityBanner(id, region, address, existingInstances)}\n`);
     console.log("Debug it directly with:");
     console.log(`  ssh -i ${keyPath} ${FIT_INSTANCE_USER}@${address}`);
     return { instanceId: id, address, keyPath, host, target: new RemoteTarget(host), artifacts, details, terminate };

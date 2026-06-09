@@ -21,7 +21,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { artifactFromPath, type Artifact } from "../../../util/non-fit/artifacts.js";
 import { run } from "../../../util/non-fit/proc.js";
-import { ensureRunDir } from "../../../util/non-fit/replay.js";
+import { posixQuote } from "../../../util/non-fit/remote-target.js";
+import { iterationRunDir } from "../../../util/non-fit/replay.js";
 import type { ExecutionTarget } from "../../../util/non-fit/target.js";
 import { FIT_PERFORMER, repoPath } from "../../../util/fit/repos.js";
 
@@ -110,7 +111,7 @@ async function renderJunitReport(reportsDir: string, runDir: string): Promise<Ar
  * empty list when no reports were produced, and still returns the XML artifact
  * if the HTML render fails.
  */
-export async function collectJunitArtifacts(rootDir: string, iteration: number = 0): Promise<Artifact[]> {
+export async function collectJunitArtifacts(rootDir: string, cycleIndex: number = 0, iteration: number = 0): Promise<Artifact[]> {
   const sourceDir = surefireReportsDir(rootDir);
   const xmlFiles = junitXmlFiles(sourceDir);
   if (xmlFiles.length === 0) {
@@ -118,9 +119,8 @@ export async function collectJunitArtifacts(rootDir: string, iteration: number =
     return [];
   }
 
-  const runDir = ensureRunDir();
-  const iterationDir = join(runDir, `it${iteration}`);
-  const destDir = join(iterationDir, "surefire-reports");
+  const itDir = iterationRunDir(cycleIndex, iteration);
+  const destDir = join(itDir, "surefire-reports");
   mkdirSync(destDir, { recursive: true, mode: 0o700 });
   for (const file of xmlFiles) {
     cpSync(join(sourceDir, file), join(destDir, file));
@@ -130,7 +130,7 @@ export async function collectJunitArtifacts(rootDir: string, iteration: number =
     artifactFromPath(destDir, `JUnit XML reports from the FIT test-driver (${xmlFiles.length} file(s))`),
   ];
 
-  const reportArtifact = await renderJunitReport(destDir, iterationDir);
+  const reportArtifact = await renderJunitReport(destDir, itDir);
   if (reportArtifact) {
     artifacts.push(reportArtifact);
   }
@@ -144,29 +144,37 @@ export async function collectJunitArtifacts(rootDir: string, iteration: number =
 export async function collectJunitArtifactsFromTarget(
   target: ExecutionTarget,
   sourceDir: string,
+  cycleIndex: number = 0,
   iteration: number = 0,
 ): Promise<Artifact[]> {
+  // Guard the find against a missing surefire-reports dir: a test run that
+  // produced no reports (e.g. nothing matched, or the driver bailed early) would
+  // otherwise make `find` exit non-zero and crash the whole run — taking the
+  // end-of-run artifacts table down with it. Mirror the local existsSync guard.
   const xmlFiles = parseJunitXmlFiles(
-    await target.capture("find", [sourceDir, "-maxdepth", "1", "-type", "f", "-name", "TEST-*.xml", "-printf", "%f\n"]),
+    await target.capture("sh", [
+      "-lc",
+      `if [ -d ${posixQuote(sourceDir)} ]; then ` +
+        `find ${posixQuote(sourceDir)} -maxdepth 1 -type f -name 'TEST-*.xml' -printf '%f\\n'; fi`,
+    ]),
   );
   if (xmlFiles.length === 0) {
     console.warn(`\nNo JUnit reports found under ${sourceDir}; skipping JUnit artifacts.`);
     return [];
   }
 
-  const runDir = ensureRunDir();
-  const iterationDir = join(runDir, `it${iteration}`);
-  const destDir = join(iterationDir, "surefire-reports");
+  const itDir = iterationRunDir(cycleIndex, iteration);
+  const destDir = join(itDir, "surefire-reports");
   mkdirSync(destDir, { recursive: true, mode: 0o700 });
   for (const file of xmlFiles) {
     await target.getFile(join(sourceDir, file), join(destDir, file));
   }
 
   const artifacts: Artifact[] = [
-    artifactFromPath(destDir, `JUnit XML reports from the FIT test-driver (${xmlFiles.length} file(s))`, runDir),
+    artifactFromPath(destDir, `JUnit XML reports from the FIT test-driver (${xmlFiles.length} file(s))`),
   ];
 
-  const reportArtifact = await renderJunitReport(destDir, iterationDir);
+  const reportArtifact = await renderJunitReport(destDir, itDir);
   if (reportArtifact) {
     artifacts.push(reportArtifact);
   }

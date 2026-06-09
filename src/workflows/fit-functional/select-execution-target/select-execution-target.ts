@@ -83,7 +83,7 @@ export async function reconnectExecutionTarget(target: ResumeTargetState): Promi
     return { ready: false, artifacts: [], details: [] };
   }
 
-  const remoteHost: RemoteHost = { host: address, user, identityFile };
+  const remoteHost: RemoteHost = { host: address, user, identityFile, agentForwarding: true };
   process.stdout.write(`Reconnecting to ${user}@${address}...`);
   if (!(await waitForSsh(remoteHost))) {
     console.log(" unreachable");
@@ -239,7 +239,7 @@ async function connectExistingInstance(attempt: number): Promise<ExecutionTarget
     validate: (value) => (value.trim().length > 0 ? true : "Enter the path to the private key."),
   }).then((value) => value.trim());
 
-  const remoteHost: RemoteHost = { host, user, identityFile };
+  const remoteHost: RemoteHost = { host, user, identityFile, agentForwarding: true };
 
   process.stdout.write("Checking SSH...");
   if (!(await waitForSsh(remoteHost))) {

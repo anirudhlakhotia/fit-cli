@@ -24,6 +24,8 @@ export interface RemoteHost {
   port?: number;
   /** Per-connection timeout in seconds. Defaults to 10. */
   connectTimeoutSeconds?: number;
+  /** Forward the local SSH agent to the remote host (`-A`). Needed when the remote must authenticate onwards (e.g. Gerrit). */
+  agentForwarding?: boolean;
 }
 
 /** The default login user when a host doesn't specify one. */
@@ -55,6 +57,9 @@ function connectionOptions(host: RemoteHost, scp = false): string[] {
   }
   if (host.port) {
     options.push(scp ? "-P" : "-p", String(host.port));
+  }
+  if (!scp && host.agentForwarding) {
+    options.push("-A");
   }
   return options;
 }

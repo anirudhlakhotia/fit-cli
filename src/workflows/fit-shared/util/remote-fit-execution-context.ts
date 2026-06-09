@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { commandOn, formatCommandLine } from "../../../util/non-fit/fit-cli-log.js";
-import { createRunFilePath } from "../../../util/non-fit/replay.js";
+import { cycleInternalRunDir } from "../../../util/non-fit/replay.js";
 import { posixQuote } from "../../../util/non-fit/remote-target.js";
 import { RemoteTarget } from "../../../util/non-fit/remote-target.js";
 import type { ExecutionTarget } from "../../../util/non-fit/target.js";
@@ -38,6 +38,7 @@ export async function createRemoteFitExecutionContext(
   target: ExecutionTarget,
   sdk: Sdk,
   skipPreparation = false,
+  cycleIndex = 0,
 ): Promise<FitExecutionContext> {
   const rootDir = remoteFitRootDir();
   const binDir = remoteFitBinDir(rootDir);
@@ -70,7 +71,9 @@ export async function createRemoteFitExecutionContext(
   }
 
   await target.run("mkdir", ["-p", binDir]);
-  const localDockerWrapper = createRunFilePath("remote-docker-wrapper.sh");
+  const internalDir = cycleInternalRunDir(cycleIndex);
+  mkdirSync(internalDir, { recursive: true, mode: 0o700 });
+  const localDockerWrapper = join(internalDir, "remote-docker-wrapper.sh");
   writeFileSync(localDockerWrapper, remoteDockerWrapperScript(), { mode: 0o700 });
   await target.putFile(localDockerWrapper, wrapperPath);
   await target.run("chmod", ["755", wrapperPath]);

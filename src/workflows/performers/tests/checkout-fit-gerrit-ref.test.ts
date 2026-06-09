@@ -6,12 +6,25 @@ import {
   fitPerformerGerritFetchArgs,
   gitStatusIsClean,
   resolveFitGerritUser,
+  requireFitGerritUser,
 } from "../checkout-fit-gerrit-ref/checkout-fit-gerrit-ref.js";
 
 test("resolveFitGerritUser prefers FIT_GERRIT_USER then GERRIT_USER", () => {
   assert.equal(resolveFitGerritUser({ FIT_GERRIT_USER: " programmatix " }), "programmatix");
   assert.equal(resolveFitGerritUser({ GERRIT_USER: "programmatix" }), "programmatix");
   assert.equal(resolveFitGerritUser({ FIT_GERRIT_USER: " ", GERRIT_USER: " " }), undefined);
+});
+
+test("requireFitGerritUser resolves from env vars without hitting git config", () => {
+  assert.equal(requireFitGerritUser({ FIT_GERRIT_USER: "programmatix" }), "programmatix");
+  assert.equal(requireFitGerritUser({ GERRIT_USER: "programmatix" }), "programmatix");
+});
+
+test("requireFitGerritUser throws a clear error when no username is available", () => {
+  assert.throws(
+    () => requireFitGerritUser({ HOME: "/nonexistent-home-for-test" }),
+    /FIT_GERRIT_USER|GERRIT_USER|github\.user/,
+  );
 });
 
 test("fitPerformerGerritFetchArgs targets the FIT Gerrit repo with the configured user", () => {

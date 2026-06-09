@@ -1,8 +1,15 @@
 import { spawn } from "node:child_process";
-import { closeSync, createWriteStream, mkdirSync, openSync, writeFileSync } from "node:fs";
+import { closeSync, createWriteStream, mkdirSync, openSync, writeFileSync, type WriteStream } from "node:fs";
 import { dirname } from "node:path";
 import { echoCommand, formatCommandLine, formatTimestampedChunk } from "./fit-cli-log.js";
 import { createRunFilePath } from "./replay.js";
+
+/**
+ * When set, every command's captured stdout/stderr (from `capture()`) is also
+ * written here, giving a complete command I/O transcript alongside the terminal
+ * mirror in session.log. Set by startDebugLog().
+ */
+let currentDebugLog: WriteStream | null = null;
 
 /** Knobs shared by every command-runner for how the command is announced. */
 export interface RunOptions {
@@ -64,6 +71,10 @@ export function run(command: string, args: string[], cwd: string = process.cwd()
  * Rejects (with any stderr included) if the command can't start or exits
  * non-zero. Used when we need to parse a tool's output — e.g. reading the list
  * of clusters out of `cbdinocluster ps` — rather than just show it.
+ *
+ * The captured output is invisible on the terminal but is written to the debug
+ * log (if one has been started) so the full command I/O is available for
+ * post-run diagnosis.
  */
 export function capture(command: string, args: string[], cwd: string = process.cwd(), opts?: RunOptions): Promise<string> {
   announce(command, args, opts);
@@ -75,6 +86,16 @@ export function capture(command: string, args: string[], cwd: string = process.c
     child.stderr.on("data", (chunk) => (stderr += chunk));
     child.on("error", reject);
     child.on("close", (code) => {
+      if (currentDebugLog) {
+        if (stdout) {
+          const normalized = stdout.endsWith("\n") ? stdout : `${stdout}\n`;
+          currentDebugLog.write(formatTimestampedChunk(normalized, true).text);
+        }
+        if (stderr) {
+          const normalized = stderr.endsWith("\n") ? stderr : `${stderr}\n`;
+          currentDebugLog.write(formatTimestampedChunk(normalized, true).text);
+        }
+      }
       if (code === 0) {
         resolve(stdout);
       } else {
@@ -152,6 +173,7 @@ export function startSessionLog(logFile: string): SessionLog {
       const formatted = formatTimestampedChunk(text, logLineStarts.get(stream) ?? true);
       logLineStarts.set(stream, formatted.atLineStart);
       log.write(formatted.text);
+      currentDebugLog?.write(formatted.text);
       return original(...args);
     } as StreamWrite;
   }
@@ -173,6 +195,35 @@ export interface SessionLog {
   path: string;
   /** Flush and close the log stream; resolves once writes have hit disk. */
   flush: () => Promise<void>;
+}
+
+/**
+ * Start the debug log file. Once started, two things write to it:
+ *
+ * 1. Everything written to process.stdout/stderr (same as session.log) — picked
+ *    up by the monkey-patch installed in startSessionLog, so startSessionLog
+ *    must be called in the same session.
+ * 2. The captured stdout/stderr from every capture() call — output that is
+ *    consumed programmatically and never shown on the terminal.
+ *
+ * The result is a superset of session.log: every command echo AND its full
+ * output in one file, useful for diagnosing failures after the fact.
+ */
+export function startDebugLog(logFile: string): SessionLog {
+  mkdirSync(dirname(logFile), { recursive: true, mode: 0o700 });
+  const log = createWriteStream(logFile, { flags: "a", mode: 0o600 });
+  log.write(`# ${new Date().toISOString()} fit-cli debug log\n`);
+  currentDebugLog = log;
+
+  const flush = (): Promise<void> =>
+    new Promise((resolve) => {
+      log.end(() => {
+        currentDebugLog = null;
+        resolve();
+      });
+    });
+
+  return { path: logFile, flush };
 }
 
 /**

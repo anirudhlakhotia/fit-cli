@@ -25,6 +25,8 @@ export interface InstanceInfo {
   instanceType?: string;
   /** Launch time as the ISO string EC2 returns, if present. */
   launchTime?: string;
+  /** Value of the created-by tag (IAM username/role), if present. */
+  creator?: string;
 }
 
 /** A raw EC2 instance entry, as it appears in either response shape. */
@@ -64,15 +66,17 @@ export function parseInstances(response: DescribeInstancesResponse): InstanceInf
     // Keep the new fields conditional so an instance with no tags/type/launch
     // time has exactly the same shape it always did — callers (and tests) that
     // only know about the original fields stay unaffected.
-    const name = instance.Tags?.find((tag) => tag.Key === "Name")?.Value || undefined;
+    const tag = (key: string): string | undefined =>
+      instance.Tags?.find((t) => t.Key === key)?.Value || undefined;
     instances.push({
       instanceId: instance.InstanceId,
       state: instance.State?.Name ?? "unknown",
       publicDns: instance.PublicDnsName || undefined,
       publicIp: instance.PublicIpAddress || undefined,
-      ...(name ? { name } : {}),
+      ...(tag("Name") ? { name: tag("Name") } : {}),
       ...(instance.InstanceType ? { instanceType: instance.InstanceType } : {}),
       ...(instance.LaunchTime ? { launchTime: instance.LaunchTime } : {}),
+      ...(tag("created-by") ? { creator: tag("created-by") } : {}),
     });
   }
   return instances;

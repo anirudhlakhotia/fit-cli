@@ -51,12 +51,12 @@ export interface FitTestDriverSummary {
 
 const JUNIT_ATTRIBUTE_RE = (name: string): RegExp => new RegExp(`\\b${name}="(\\d+)"`);
 
-export function fitTestLogStem(iteration: number): string {
-  return join(`it${iteration}`, "driver");
+export function fitTestLogStem(cycleIndex: number, iteration: number): string {
+  return join("cycles", String(cycleIndex), `it${iteration}`, "driver");
 }
 
-function fitTestLogFile(iteration: number): string {
-  return createLogFile(fitTestLogStem(iteration));
+function fitTestLogFile(cycleIndex: number, iteration: number): string {
+  return createLogFile(fitTestLogStem(cycleIndex, iteration));
 }
 
 function extractJunitAttribute(xml: string, name: string): number | undefined {
@@ -174,6 +174,7 @@ export async function runTestDriver(
   selection: FitTestSelection,
   fitConfigPath?: string,
   extraMavenArgs: readonly string[] = DEFAULT_MAVEN_TEST_ARGS,
+  cycleIndex: number = 0,
   iteration: number = 0,
 ): Promise<TestRunResult> {
   const targetFitConfigPath = fitConfigPath ? await execution.stageFile(fitConfigPath) : undefined;
@@ -187,7 +188,7 @@ export async function runTestDriver(
   // every iteration pay the recompile cost.
   await execution.removeTree(surefireReportsDir(execution.rootDir));
 
-  const logFile = fitTestLogFile(iteration);
+  const logFile = fitTestLogFile(cycleIndex, iteration);
   const targetLogFile = execution.targetFilePath(logFile);
   const logArtifact = artifactFromPath(logFile, "FIT test-driver stdout/stderr captured for this run");
   console.log(`\nRunning FIT test-driver with:\n  cd ${execution.fitPerformerDir} && ./mvnw ${args.join(" ")}\n`);
@@ -208,7 +209,7 @@ export async function runTestDriver(
   await execution.collectFile(targetLogFile, logFile);
   const artifacts = combineArtifacts(
     [logArtifact],
-    await execution.collectJunitArtifacts(surefireReportsDir(execution.rootDir), iteration),
+    await execution.collectJunitArtifacts(surefireReportsDir(execution.rootDir), cycleIndex, iteration),
   );
   const summary = extractFitTestDriverSummaryFromJunitReports(join(dirname(logFile), "surefire-reports"));
   const ok = commandOk && (summary ? didFitTestDriverPass(summary) : true);

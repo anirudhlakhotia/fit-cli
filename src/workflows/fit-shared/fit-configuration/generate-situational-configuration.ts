@@ -30,6 +30,7 @@ export function generateSituationalConfiguration(
   rootDir: string,
   performerPort: number = DEFAULT_PERFORMER_PORT,
   fitConfigPiece?: PieceData,
+  cycleIndex: number = 0,
   iteration: number = 0,
 ): RunOutput & { path: string } {
   const config = buildSituationalConfiguration(database, cbdino, performerPort, fitConfigPiece);
@@ -40,7 +41,7 @@ export function generateSituationalConfiguration(
   );
   // The results-DB password is secret, so don't echo the config verbatim; show
   // it with the password masked while writing the real value to the file.
-  const result = writeFitConfiguration(config, undefined, iteration);
+  const result = writeFitConfiguration(config, undefined, cycleIndex, iteration);
   console.log(`\nWriting ${result.path}:\n`);
   console.log(JSON.stringify(maskDatabasePassword(config), null, 2));
   console.log(`\n✓ Wrote ${result.path}`);

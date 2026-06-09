@@ -1,3 +1,5 @@
+import { type InstanceInfo } from "../../non-fit/aws/parse-instance.js";
+
 function formatBanner(title: string, lines: string[]): string {
   const content = [title, ...lines];
   const width = Math.max(...content.map((line) => line.length), 24) + 4;
@@ -17,8 +19,9 @@ export function formatEc2DeletionResponsibilityBanner(
   instanceId: string,
   region: string,
   address?: string,
+  otherInstances?: InstanceInfo[],
 ): string {
-  return formatBanner("EC2 LIFECYCLE WARNING", [
+  const lines: string[] = [
     `Instance: ${instanceId}${address ? ` (${address})` : ""}`,
     `Region: ${region}`,
     "This instance keeps incurring AWS charges until it is terminated.",
@@ -26,7 +29,66 @@ export function formatEc2DeletionResponsibilityBanner(
     "If you keep it running, or leave before cleanup, you must delete it yourself.",
     "Terminate it with:",
     `  ${terminateInstanceCommand(instanceId, region)}`,
-  ]);
+  ];
+  if (otherInstances && otherInstances.length > 0) {
+    lines.push(
+      "",
+      `Other fit-cli instance${otherInstances.length === 1 ? "" : "s"} you own (same AWS account) also running in ${region}:`,
+    );
+    for (const inst of otherInstances) {
+      const addr = inst.publicDns || inst.publicIp || "";
+      const creator = inst.creator ? `  created-by: ${inst.creator}` : "";
+      lines.push(`  ${inst.instanceId}${addr ? ` (${addr})` : ""}${creator}  →  ${terminateInstanceCommand(inst.instanceId, region)}`);
+    }
+  }
+  return formatBanner("EC2 LIFECYCLE WARNING", lines);
+}
+
+export interface InstanceListContext {
+  account?: string;
+  creator?: string;
+}
+
+/** AWS console URL pre-filtered to the fit-cli tag in the given region. */
+export function awsConsoleInstancesUrl(region: string): string {
+  return (
+    `https://${region}.console.aws.amazon.com/ec2/home` +
+    `?region=${region}#Instances:v=3;tag:fit-cli=owned`
+  );
+}
+
+export function formatExistingInstancesBanner(
+  instances: InstanceInfo[],
+  region: string,
+  context?: InstanceListContext,
+): string {
+  const count = instances.length;
+  const lines: string[] = [`Region: ${region}`];
+  if (context?.account || context?.creator) {
+    const parts: string[] = ["Filter: tag:fit-cli=owned"];
+    if (context.account) parts.push(`account: ${context.account}`);
+    if (context.creator) parts.push(`user: ${context.creator}`);
+    lines.push(parts.join("  ·  "));
+  } else {
+    lines.push("Filter: tag:fit-cli=owned");
+  }
+  lines.push(`Console: ${awsConsoleInstancesUrl(region)}`);
+  lines.push("", `${count} instance${count === 1 ? "" : "s"} already running — each keeps incurring AWS charges:`);
+  for (const inst of instances) {
+    const addr = inst.publicDns || inst.publicIp;
+    const creator = inst.creator ? `  created-by: ${inst.creator}` : "";
+    lines.push(`  ${inst.instanceId}${addr ? ` (${addr})` : ""}${creator}`);
+    lines.push(`    terminate: ${terminateInstanceCommand(inst.instanceId, region)}`);
+  }
+  lines.push(
+    "",
+    `Delete ${count === 1 ? "it" : "them all"} in one shot with:`,
+    `  aws --region ${region} ec2 terminate-instances --instance-ids ${instances.map((inst) => inst.instanceId).join(" ")}`,
+    "",
+    "Or manage them interactively with:",
+    `  npx tsx src/util/non-fit/aws/manage-instances.ts --region ${region}`,
+  );
+  return formatBanner("EXISTING FIT-CLI INSTANCES", lines);
 }
 
 export function formatEc2CleanupPromptBanner(instanceId: string, region: string, address?: string): string {

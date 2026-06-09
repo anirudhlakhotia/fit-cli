@@ -14,7 +14,7 @@
  *   npx tsx src/workflows/cluster/cluster-create/setup-declarative-cluster.ts
  */
 import YAML from "yaml";
-import { writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { type RunOutput } from "../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
@@ -72,9 +72,9 @@ function dockerNetworkFromInitConfig(config: PieceData): string | undefined {
   return typeof docker.network === "string" && docker.network.trim() ? docker.network.trim() : undefined;
 }
 
-async function uploadCbdinoclusterConfig(execution: ClusterCommandExecutor, config: PieceData): Promise<void> {
-  const runDir = ensureRunDir();
-  const localConfigPath = join(runDir, "cbdinocluster-init.yaml");
+async function uploadCbdinoclusterConfig(execution: ClusterCommandExecutor, config: PieceData, cycleDir: string): Promise<void> {
+  mkdirSync(cycleDir, { recursive: true, mode: 0o700 });
+  const localConfigPath = join(cycleDir, "cbdinocluster-init.yaml");
   writeFileSync(localConfigPath, YAML.stringify(config));
   const stagedConfigPath = await execution.stageFile(localConfigPath, execution.targetFilePath(localConfigPath));
   await execution.run("sh", [
@@ -97,6 +97,7 @@ export async function prepareCbdinoclusterConfig(
   execution: ClusterCommandExecutor,
   config: PieceData | undefined,
   githubCredentials?: { user: string; token: string },
+  cycleDir: string = ensureRunDir(),
 ): Promise<void> {
   if (!config || !("kind" in execution) || execution.kind !== "remote") {
     return;
@@ -107,7 +108,7 @@ export async function prepareCbdinoclusterConfig(
   console.log(
     `→ setup-cluster: uploading cbdinocluster config to ${execution.description} as ${CBDINOCLUSTER_DEFAULT_REMOTE_CONFIG_PATH}`,
   );
-  await uploadCbdinoclusterConfig(execution, configToUpload);
+  await uploadCbdinoclusterConfig(execution, configToUpload, cycleDir);
   const network = dockerNetworkFromInitConfig(config);
   if (network) {
     console.log(`→ setup-cluster: ensuring Docker network ${network} exists on ${execution.description}`);
@@ -280,10 +281,11 @@ async function allocate(
   config: CbdinoclusterDef,
   deployer: string | undefined,
   execution: ClusterCommandExecutor,
+  cycleDir: string,
 ): Promise<SetupDeclarativeClusterResult> {
   let allocated;
   try {
-    allocated = await allocateCluster(cbdinocluster, YAML.stringify(config), deployer, execution);
+    allocated = await allocateCluster(cbdinocluster, YAML.stringify(config), deployer, execution, cycleDir);
     console.log("\n✓ setup-cluster: cbdinocluster allocated the cluster");
   } catch (err) {
     console.error(`\n✗ setup-cluster: cbdinocluster failed to allocate the cluster: ${(err as Error).message}`);
@@ -314,7 +316,7 @@ export async function setupDeclarativeCluster(plan: {
   deployer?: string;
   /** GitHub credentials to inject into the uploaded ~/.cbdinocluster (for GHCR image pulls). */
   githubCredentials?: { user: string; token: string };
-}, execution: ClusterCommandExecutor = localClusterCommandExecutor()): Promise<SetupDeclarativeClusterResult> {
+}, execution: ClusterCommandExecutor = localClusterCommandExecutor(), cycleDir: string = ensureRunDir()): Promise<SetupDeclarativeClusterResult> {
   const cbdinocluster = await resolveCbdinoclusterCommand(execution);
   if (!cbdinocluster) {
     console.error(
@@ -324,7 +326,7 @@ export async function setupDeclarativeCluster(plan: {
     return FAILED();
   }
 
-  await prepareCbdinoclusterConfig(execution, plan.init?.config, plan.githubCredentials);
+  await prepareCbdinoclusterConfig(execution, plan.init?.config, plan.githubCredentials, cycleDir);
 
   // `cbdinocluster ps` doubles as a sanity check and the list of what's running.
   const existing = await listExistingClusters(cbdinocluster, execution);
@@ -358,7 +360,7 @@ export async function setupDeclarativeCluster(plan: {
     }
   }
 
-  return allocate(cbdinocluster, plan.config, plan.deployer, execution);
+  return allocate(cbdinocluster, plan.config, plan.deployer, execution, cycleDir);
 }
 
 if (isMain(import.meta.url)) {

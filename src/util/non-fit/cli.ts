@@ -9,7 +9,7 @@ import {
   type RunOutput,
 } from "./artifacts.js";
 import { installFitCliConsoleFormatting } from "./fit-cli-log.js";
-import { startSessionLog } from "./proc.js";
+import { startSessionLog, startDebugLog } from "./proc.js";
 import { ensurePromptSession } from "./replay.js";
 
 /**
@@ -34,16 +34,22 @@ export function runCli(main: () => Promise<void | Partial<RunOutput>>): void {
   installFitCliConsoleFormatting();
   const promptSession = ensurePromptSession(process.argv.slice(2));
   const sessionLog = startSessionLog(join(promptSession.runDir, "session.log"));
+  const debugLog = startDebugLog(join(promptSession.runDir, "debug.log"));
   const sessionLogArtifact = artifactFromPath(
     sessionLog.path,
-    "Full log of this fit-cli session",
+    "Terminal output log for this fit-cli session",
+    promptSession.runDir,
+  );
+  const debugLogArtifact = artifactFromPath(
+    debugLog.path,
+    "Full command I/O log (includes captured stdout/stderr not shown in terminal)",
     promptSession.runDir,
   );
   let summaryOutput: string | undefined;
   Promise.resolve()
     .then(() => main())
     .then((result) => {
-      const output = combineRunOutputs(result ?? undefined, { artifacts: [sessionLogArtifact] });
+      const output = combineRunOutputs(result ?? undefined, { artifacts: [sessionLogArtifact, debugLogArtifact] });
       const sections = [
         formatArtifactsSection(promptSession.runDir, output.artifacts),
         formatDetailsSection(output.details),
@@ -59,13 +65,12 @@ export function runCli(main: () => Promise<void | Partial<RunOutput>>): void {
     .catch(async (err) => {
       if (err instanceof Error && err.name === "ExitPromptError") {
         console.log("\nCancelled.");
-        await sessionLog.flush();
+        await Promise.all([sessionLog.flush(), debugLog.flush()]);
         process.exit(0);
       }
       console.error(err instanceof Error ? err.message : err);
-      // Flush the tee'd log before exiting so the error above is actually
-      // persisted to session.log, not lost to a truncated write buffer.
-      await sessionLog.flush();
+      // Flush tee'd logs before exiting so the final error line is persisted.
+      await Promise.all([sessionLog.flush(), debugLog.flush()]);
       process.exit(1);
     });
 }

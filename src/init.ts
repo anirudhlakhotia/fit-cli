@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import YAML from "yaml";
 import {
   FIT_CLI_CONFIG_VERSION,
   defaultFitCliConfigPath,
@@ -181,12 +182,34 @@ async function promptForConfig(existing?: FitCliConfig): Promise<InitAnswers> {
   };
 }
 
+/** Placeholder shown in place of secrets when echoing the config. */
+const ELIDED = "********";
+
+/**
+ * Render the config as YAML with secrets (the GitHub token and results-DB
+ * password) elided, so the saved config can be echoed to the terminal without
+ * leaking credentials into scrollback or session logs.
+ */
+export function formatConfigForDisplay(config: FitCliConfig): string {
+  const redacted: FitCliConfig = {
+    ...config,
+    ...(config.github
+      ? { github: { ...config.github, ...(config.github.token ? { token: ELIDED } : {}) } }
+      : {}),
+    ...(config.resultsDb
+      ? { resultsDb: { ...config.resultsDb, ...(config.resultsDb.password ? { password: ELIDED } : {}) } }
+      : {}),
+  };
+  return YAML.stringify(redacted).trimEnd();
+}
+
 export async function runInitWorkflow(path: string = defaultFitCliConfigPath()): Promise<string> {
   const existing = loadFitCliConfig(path);
   const answers = await promptForConfig(existing.config);
   const config = initAnswersToConfig(answers, existing.config);
   const savedPath = saveFitCliConfig(config, existing.path);
   console.log(`Saved fit-cli config to ${savedPath}`);
+  console.log(`\nConfig (secrets elided):\n\n${formatConfigForDisplay(config)}\n`);
   return savedPath;
 }
 

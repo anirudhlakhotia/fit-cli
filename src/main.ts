@@ -95,8 +95,33 @@ export async function runWorkflow(choice: WorkflowChoice, rootDir: string, defin
   }
 }
 
+function checkPlatform(): void {
+  const platform = process.platform;
+  if (platform === "win32") {
+    console.error("FIT CLI does not support Windows. Please use Linux or macOS.");
+    process.exit(1);
+  }
+  if (platform === "darwin") {
+    console.warn(
+      "╔══════════════════════════════════════════════════════════════════╗\n" +
+      "║  WARNING: FIT CLI has not been tested on macOS.                  ║\n" +
+      "║  Things may not work as expected. Contributions are welcome!     ║\n" +
+      "╚══════════════════════════════════════════════════════════════════╝\n",
+    );
+  }
+}
+
 export async function main(): Promise<RunOutput> {
+  checkPlatform();
   console.log("FIT CLI — making FIT easier to use, one vibe-coding session at a time.\n");
+  console.log(
+    "This wizard guides you through building a FIT definition file — a single, reusable\n" +
+      "description of the FIT tests you want to run: functional, situational, performance,\n" +
+      "or a mix. Once you have a definition file you can:\n" +
+      "  • test it locally on this machine for a fast inner loop,\n" +
+      "  • test it the way CI will, on a clean cloud (EC2) instance, and\n" +
+      "  • hand the file straight to CI to run there.\n",
+  );
 
   // Load any .env so secrets like the hosted results-DB password are available
   // without being passed on the command line. Real exported vars still win.

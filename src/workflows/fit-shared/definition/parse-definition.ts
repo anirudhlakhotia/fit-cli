@@ -27,6 +27,7 @@ import {
   type FunctionalCycle,
   type FunctionalIteration,
   type IterationSetup,
+  type MavenOptions,
   type PerformerSetup,
   type RuntimeSection,
   type SharedSetup,
@@ -336,6 +337,28 @@ function validateTests(value: unknown): DefinitionTests {
   );
 }
 
+function validateMaven(value: unknown, path: string): MavenOptions {
+  const record = requireRecord(value, path);
+  const maven: MavenOptions = {};
+  if (record.args !== undefined) {
+    if (!isStringArray(record.args)) {
+      throw new InvalidDefinitionError(
+        `"${path}.args" must be a list of strings when present; got ${JSON.stringify(record.args)}`,
+      );
+    }
+    maven.args = record.args;
+  }
+  if (record.runDisabledTests !== undefined) {
+    if (typeof record.runDisabledTests !== "boolean") {
+      throw new InvalidDefinitionError(
+        `"${path}.runDisabledTests" must be a boolean when present; got ${JSON.stringify(record.runDisabledTests)}`,
+      );
+    }
+    maven.runDisabledTests = record.runDisabledTests;
+  }
+  return maven;
+}
+
 function validateRuntime(value: unknown, path: string): RuntimeSection {
   const record = requireRecord(value, path);
   const runtime: RuntimeSection = { tests: validateTests(record.tests) };
@@ -346,6 +369,9 @@ function validateRuntime(value: unknown, path: string): RuntimeSection {
       );
     }
     runtime.excludedGroups = record.excludedGroups;
+  }
+  if (record.maven !== undefined) {
+    runtime.maven = validateMaven(record.maven, `${path}.maven`);
   }
   return runtime;
 }
@@ -536,7 +562,10 @@ export function loadDefinition(path: string): FitDefinition {
 
 const HELP = `Validate a fit definition file and print the parsed result.
 
-Usage:
+Primary usage:
+  npm run definition -- validate <file.yaml>
+
+Direct invocation (for debugging):
   npx tsx src/workflows/fit-shared/definition/parse-definition.ts <file.yaml>
   npx tsx src/workflows/fit-shared/definition/parse-definition.ts --help
 

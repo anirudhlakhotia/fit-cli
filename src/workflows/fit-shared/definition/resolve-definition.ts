@@ -96,18 +96,31 @@ function resolveTestSelection(runtime: RuntimeSection): FitTestSelection {
     : buildFitTestSelectionFromClassNames(runtime.tests);
 }
 
-export function resolveMavenArgs(runtime: RuntimeSection): string[] {
-  if (runtime.excludedGroups === undefined) {
-    return [...DEFAULT_MAVEN_TEST_ARGS];
+const JUNIT_DISABLED_CONDITION = "org.junit.jupiter.api.condition.DisabledCondition";
+
+function resolveMavenSuffix(runtime: RuntimeSection): string[] {
+  const extra: string[] = [];
+  if (runtime.maven?.runDisabledTests) {
+    extra.push(`-Djunit.jupiter.conditions.deactivate=${JUNIT_DISABLED_CONDITION}`);
   }
-  return [`-DexcludedGroups=${runtime.excludedGroups.join(",")}`];
+  if (runtime.maven?.args) {
+    extra.push(...runtime.maven.args);
+  }
+  return extra;
+}
+
+export function resolveMavenArgs(runtime: RuntimeSection): string[] {
+  const base = runtime.excludedGroups === undefined
+    ? [...DEFAULT_MAVEN_TEST_ARGS]
+    : [`-DexcludedGroups=${runtime.excludedGroups.join(",")}`];
+  return [...base, ...resolveMavenSuffix(runtime)];
 }
 
 export function resolveSituationalMavenArgs(runtime: RuntimeSection): string[] {
-  if (runtime.excludedGroups === undefined) {
-    return [...SITUATIONAL_MAVEN_TEST_ARGS];
-  }
-  return [SITUATIONAL_MAVEN_GROUPS_ARG, `-DexcludedGroups=${runtime.excludedGroups.join(",")}`];
+  const base = runtime.excludedGroups === undefined
+    ? [...SITUATIONAL_MAVEN_TEST_ARGS]
+    : [SITUATIONAL_MAVEN_GROUPS_ARG, `-DexcludedGroups=${runtime.excludedGroups.join(",")}`];
+  return [...base, ...resolveMavenSuffix(runtime)];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

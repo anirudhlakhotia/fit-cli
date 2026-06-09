@@ -38,15 +38,17 @@ export interface RunningPerformer extends RunOutput {
   reused?: boolean;
 }
 
-export function performerLogStem(iteration: number, sdk: Sdk, version?: string, gerritRef?: string): string {
+export function performerLogStem(cycleIndex: number, iteration: number, sdk: Sdk, version?: string, gerritRef?: string): string {
   return join(
+    "cycles",
+    String(cycleIndex),
     `it${iteration}`,
     `${sdk.value}-${dockerImageComponent(performerBuildIdentity(version, gerritRef))}-performer`,
   );
 }
 
-function performerLogFile(iteration: number, sdk: Sdk, version?: string, gerritRef?: string): string {
-  return createLogFile(performerLogStem(iteration, sdk, version, gerritRef));
+function performerLogFile(cycleIndex: number, iteration: number, sdk: Sdk, version?: string, gerritRef?: string): string {
+  return createLogFile(performerLogStem(cycleIndex, iteration, sdk, version, gerritRef));
 }
 
 /** Build the docker args needed to run a performer locally for FIT. */
@@ -86,6 +88,7 @@ export async function checkBuildAndRunPerformer(
   dockerNetwork?: string,
   onPortInUse?: PortInUsePolicy,
   hostPort: number = DEFAULT_PERFORMER_PORT,
+  cycleIndex: number = 0,
   iteration: number = 0,
   gerritRef?: string,
 ): Promise<RunningPerformer | undefined> {
@@ -117,7 +120,7 @@ export async function checkBuildAndRunPerformer(
     if (!containerId) {
       return undefined;
     }
-    const logFile = performerLogFile(iteration, sdk, version, gerritRef);
+    const logFile = performerLogFile(cycleIndex, iteration, sdk, version, gerritRef);
     return {
       containerId,
       logFile,
@@ -129,7 +132,7 @@ export async function checkBuildAndRunPerformer(
 
   // We're going to start (or restart) the performer ourselves, so the image
   // must be located and built first.
-  if (!(await checkAndBuildPerformer(execution, sdk, version, iteration, gerritRef))) {
+  if (!(await checkAndBuildPerformer(execution, sdk, version, cycleIndex, iteration, gerritRef))) {
     return undefined;
   }
 
@@ -146,7 +149,7 @@ export async function checkBuildAndRunPerformer(
   try {
     const containerId = (await execution.capture(execution.dockerCommand, args)).trim();
     console.log(`\n✓ Started the ${sdk.name} performer in container ${containerId}`);
-    const logFile = performerLogFile(iteration, sdk, version, gerritRef);
+    const logFile = performerLogFile(cycleIndex, iteration, sdk, version, gerritRef);
     return {
       containerId,
       logFile,
