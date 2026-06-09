@@ -3,13 +3,10 @@ import { test } from "node:test";
 import { sdkByValue } from "../../../../util/sdk/sdks.js";
 import { performerImageInspectArgs, performerPath } from "../check-performer.js";
 
-test("jvm performer paths come from couchbase-jvm-clients", () => {
+test("jvm performer path is undefined (JVM uses prebuilt GHCR containers)", () => {
   const sdk = sdkByValue("java");
   assert.ok(sdk);
-  assert.equal(
-    performerPath(sdk, "/workspace"),
-    "/workspace/couchbase-jvm-clients/java-fit-performer",
-  );
+  assert.equal(performerPath(sdk, "/workspace"), undefined);
 });
 
 test("non-jvm performer paths come from transactions-fit-performer", () => {

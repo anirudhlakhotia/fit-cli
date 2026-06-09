@@ -19,16 +19,16 @@ test("remoteFitRootDir defaults to the ubuntu home directory", () => {
   assert.equal(remoteFitRootDir(), "/home/ubuntu/fit-workspace");
 });
 
-test("remoteFitRepos includes the JVM workspace repo when needed", () => {
+test("remoteFitRepos includes the same repos for JVM and non-JVM SDKs", () => {
   const sdk = sdkByValue("java");
   assert.ok(sdk);
   assert.deepEqual(
     remoteFitRepos(sdk).map((repo) => repo.dir),
-    ["transactions-fit-performer", "jenkins-sdk", "couchbase-jvm-clients"],
+    ["transactions-fit-performer", "jenkins-sdk"],
   );
 });
 
-test("remoteFitRepos skips couchbase-jvm-clients for non-JVM SDKs", () => {
+test("remoteFitRepos is the same for non-JVM SDKs", () => {
   const sdk = sdkByValue("go");
   assert.ok(sdk);
   assert.deepEqual(
@@ -37,12 +37,12 @@ test("remoteFitRepos skips couchbase-jvm-clients for non-JVM SDKs", () => {
   );
 });
 
-test("remoteWorkspaceRepos only includes repos needed before a build", () => {
+test("remoteWorkspaceRepos only includes transactions-fit-performer", () => {
   const sdk = sdkByValue("java");
   assert.ok(sdk);
   assert.deepEqual(
     remoteWorkspaceRepos(sdk).map((repo) => repo.dir),
-    ["transactions-fit-performer", "couchbase-jvm-clients"],
+    ["transactions-fit-performer"],
   );
 });
 

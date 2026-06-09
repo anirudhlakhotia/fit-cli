@@ -1,10 +1,10 @@
 /**
- * Step: make sure a sibling repo (transactions-fit-performer, couchbase-jvm-clients)
+ * Step: make sure a sibling repo (transactions-fit-performer, jenkins-sdk)
  * is present, offering to clone it if it is missing.
  *
  * Run on its own (optionally with --root <dir> to point at another workspace):
  *   npx tsx src/util/fit/ensure-repo.ts transactions-fit-performer
- *   npx tsx src/util/fit/ensure-repo.ts couchbase-jvm-clients --root /some/workspace
+ *   npx tsx src/util/fit/ensure-repo.ts jenkins-sdk --root /some/workspace
  *
  * Exits 0 if the repo is ready, 1 if the user chose to bail or the clone failed.
  */

@@ -2,8 +2,8 @@
  * Step: check that an SDK's performer exists on disk and as a Docker image.
  *
  * Non-JVM SDKs live in transactions-fit-performer/performers/<performer>.
- * JVM SDKs (Java, Kotlin, Scala) live in couchbase-jvm-clients as their own
- * <performer>-fit-performer directory.
+ * JVM SDKs (Java, Kotlin, Scala) use prebuilt GHCR containers; there is no
+ * on-disk source to check.
  *
  * Run on its own (add --root <dir> to point at another workspace):
  *   npx tsx src/workflows/performers/check-performer/check-performer.ts dotnet
@@ -14,24 +14,25 @@
 import { join } from "node:path";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { fitCliError } from "../../../util/non-fit/fit-cli-log.js";
-import { FIT_PERFORMER, JVM_CLIENTS, repoPath } from "../../../util/fit/repos.js";
+import { FIT_PERFORMER, repoPath } from "../../../util/fit/repos.js";
 import { rootDirFromArgv } from "../../../util/fit/root.js";
 import { SDKS, sdkByValue, type Sdk } from "../../../util/sdk/sdks.js";
 import { createLocalFitExecutionContext, type FitExecutionContext } from "../../fit-shared/util/remote-fit-run.js";
 import { buildPerformerImageName } from "../build-performer/build-performer.js";
 
 export interface PerformerStatus {
-  path: string;
+  /** Undefined for JVM SDKs, which use prebuilt GHCR containers with no on-disk source. */
+  path: string | undefined;
   pathExists: boolean;
   imageName: string;
   dockerAvailable: boolean;
   imageExists: boolean;
 }
 
-/** Absolute path to an SDK's performer on disk, under ROOT_DIR. */
-export function performerPath(sdk: Sdk, rootDir: string): string {
+/** Absolute path to an SDK's performer on disk, under ROOT_DIR. Undefined for JVM SDKs. */
+export function performerPath(sdk: Sdk, rootDir: string): string | undefined {
   if (sdk.jvm) {
-    return join(repoPath(JVM_CLIENTS, rootDir), `${sdk.performer}-fit-performer`);
+    return undefined;
   }
   return join(repoPath(FIT_PERFORMER, rootDir), "performers", sdk.performer);
 }
@@ -64,7 +65,7 @@ export async function performerStatus(
 
   return {
     path,
-    pathExists: await execution.pathExists(path),
+    pathExists: path === undefined ? true : await execution.pathExists(path),
     imageName,
     dockerAvailable,
     imageExists,
@@ -80,7 +81,9 @@ export async function checkPerformer(
 ): Promise<boolean> {
   const status = await performerStatus(execution, sdk, version, gerritRef);
 
-  if (status.pathExists) {
+  if (status.path === undefined) {
+    console.log(`✓ ${sdk.name} uses a prebuilt GHCR container (no on-disk source to check)`);
+  } else if (status.pathExists) {
     console.log(`✓ Found the ${sdk.name} performer at ${status.path}`);
   } else {
     fitCliError(`Could not find the ${sdk.name} performer at ${status.path}`);

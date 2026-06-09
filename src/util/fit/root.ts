@@ -1,6 +1,6 @@
 /**
  * ROOT_DIR — the directory everything file-based is resolved against. The FIT
- * repos (transactions-fit-performer, couchbase-jvm-clients) live directly under
+ * repos (transactions-fit-performer, jenkins-sdk) live directly under
  * it, and other workspace-relative paths are resolved from it.
  *
  * Resolution order:

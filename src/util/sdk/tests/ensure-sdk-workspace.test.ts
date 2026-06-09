@@ -7,14 +7,13 @@
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { JVM_CLIENTS } from "../../fit/repos.js";
 import { sdkByValue } from "../sdks.js";
 import { requiredReposForSdk } from "../ensure-sdk-workspace.js";
 
-test("JVM SDKs require couchbase-jvm-clients", () => {
+test("JVM SDKs need no extra workspace repos (they use prebuilt GHCR containers)", () => {
   const sdk = sdkByValue("java");
   assert.ok(sdk);
-  assert.deepEqual(requiredReposForSdk(sdk), [JVM_CLIENTS]);
+  assert.deepEqual(requiredReposForSdk(sdk), []);
 });
 
 test("non-JVM SDKs need no extra workspace repos", () => {

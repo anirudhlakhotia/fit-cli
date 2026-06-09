@@ -1,37 +1,30 @@
 /**
  * Step: make sure any extra workspace repos an SDK needs are present.
  *
- * Right now that only means JVM SDKs, which build their FIT performers out of
- * couchbase-jvm-clients rather than transactions-fit-performer.
+ * JVM SDKs (Java, Kotlin, Scala) now use prebuilt GHCR containers, so no
+ * extra repos are needed for any SDK. This module is kept for forward
+ * compatibility in case new requirements are added.
  *
  * Run on its own (add --root <dir> to point at another workspace):
  *   npx tsx src/util/sdk/ensure-sdk-workspace.ts java
  *
- * Exits 0 if the SDK workspace is ready, 1 if the user chose to bail or the
- * clone failed.
+ * Exits 0 always (no extra repos are required).
  */
 import { isMain, runCli } from "../non-fit/cli.js";
-import { JVM_CLIENTS, type Repo } from "../fit/repos.js";
+import type { Repo } from "../fit/repos.js";
 import { rootDirFromArgv } from "../fit/root.js";
 import { SDKS, sdkByValue, type Sdk } from "./sdks.js";
-import { ensureRepo } from "../fit/ensure-repo.js";
 
 /** Additional repos an SDK needs under ROOT_DIR before FIT commands can run. */
-export function requiredReposForSdk(sdk: Sdk): Repo[] {
-  return sdk.jvm ? [JVM_CLIENTS] : [];
+export function requiredReposForSdk(_sdk: Sdk): Repo[] {
+  return [];
 }
 
 /**
- * @returns true if the SDK's workspace repos are ready, false if the user
- * chose to exit or a clone failed.
+ * @returns true always — JVM SDKs now use prebuilt GHCR containers so no
+ * extra workspace repos are needed.
  */
-export async function ensureSdkWorkspace(sdk: Sdk, rootDir: string): Promise<boolean> {
-  for (const repo of requiredReposForSdk(sdk)) {
-    console.log(`\n${sdk.name} is a JVM SDK, so it needs ${repo.name}.`);
-    if (!(await ensureRepo(repo, rootDir))) {
-      return false;
-    }
-  }
+export async function ensureSdkWorkspace(_sdk: Sdk, _rootDir: string): Promise<boolean> {
   return true;
 }
 
