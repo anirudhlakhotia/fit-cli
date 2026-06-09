@@ -418,7 +418,13 @@ export async function runTests(
     run.extraMavenArgs,
   );
   artifacts.push(...testRun.artifacts);
-  details.push(...testRun.details);
+  const iterationLabel = (label: string) => `Run ${run.path.runIndex ?? 0} ${label}`;
+  details.push(
+    { label: iterationLabel("Details"), value: iterationPathSummary(run.path) },
+    { label: iterationLabel("SDK"), value: run.sdk.name },
+    { label: iterationLabel("Cluster"), value: `${run.cluster.scheme}://${run.cluster.defaultHostname}` },
+    ...testRun.details,
+  );
   return { artifacts, details };
 }
 
@@ -475,7 +481,12 @@ export async function runSituationalTests(
     run.extraMavenArgs,
   );
   artifacts.push(...testRun.artifacts);
-  details.push(...testRun.details);
+  const iterationLabel = (label: string) => `Run ${run.path.runIndex ?? 0} ${label}`;
+  details.push(
+    { label: iterationLabel("Details"), value: iterationPathSummary(run.path) },
+    { label: iterationLabel("SDK"), value: run.sdk.name },
+    ...testRun.details,
+  );
 
   console.log(`\nWhen this run produces data, view it at:\n  ${SITUATIONAL_RESULTS_URL}`);
   details.push({ label: "Results UI", value: SITUATIONAL_RESULTS_URL });
@@ -654,6 +665,13 @@ function describeRunPath(path: DefinitionRunPath): string {
   return path.clusterlessSession
     ? `instance ${path.instanceIndex + 1} / clusterless session ${(path.sessionIndex ?? 0) + 1} / run ${(path.runIndex ?? 0) + 1}`
     : `instance ${path.instanceIndex + 1} / cluster ${(path.clusterIndex ?? 0) + 1} / session ${(path.sessionIndex ?? 0) + 1} / run ${(path.runIndex ?? 0) + 1}`;
+}
+
+/** One-line summary of the instance/cluster/session for the detail table. */
+function iterationPathSummary(path: DefinitionRunPath): string {
+  return path.clusterlessSession
+    ? `Instance ${path.instanceIndex + 1}, Session ${(path.sessionIndex ?? 0) + 1}`
+    : `Instance ${path.instanceIndex + 1}, Cluster ${(path.clusterIndex ?? 0) + 1}, Session ${(path.sessionIndex ?? 0) + 1}`;
 }
 
 interface TeardownInputs {
