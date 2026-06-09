@@ -30,6 +30,7 @@ import { type ExecutionTarget } from "../../../util/non-fit/target.js";
 import { FIT_INSTANCE_USER, provisionFitInstance } from "../../../util/fit/aws/fit-instance.js";
 import { RemoteTarget } from "../../../util/non-fit/remote-target.js";
 import { waitForSsh, type RemoteHost } from "../../../util/non-fit/ssh.js";
+import type { ResolvedInstance } from "../../fit-shared/definition/resolve-definition.js";
 import type { ResumeTargetState } from "../run-from-definition/resume-state.js";
 
 /**
@@ -110,6 +111,61 @@ export async function reconnectExecutionTarget(target: ResumeTargetState): Promi
     artifacts: [],
     details: [{ label: "SSH debug command", value: `ssh -i ${identityFile} ${user}@${address}` }],
   };
+}
+
+/**
+ * Acquire the execution target a single cycle declared in its definition, without
+ * prompting for *which* kind of target to use — that choice lives in the file. A
+ * localhost cycle (or any cycle when `forceLocalhost` is set) runs here on this
+ * machine; an AWS cycle checks credentials and provisions a clean EC2 box whose
+ * key lands under the cycle's run directory. Returns `ready: false` (reason already
+ * printed) if EC2 credentials are unusable or provisioning fails, so the caller can
+ * treat it as fatal to the cycle.
+ */
+export async function resolveCycleExecutionTarget(
+  instance: ResolvedInstance,
+  forceLocalhost: boolean,
+  cycleIndex: number,
+): Promise<ExecutionTargetOutcome> {
+  if (forceLocalhost || instance.kind === "localhost") {
+    return { ready: true, target: new LocalTarget(), teardown: LOCAL_TEARDOWN, artifacts: [], details: [] };
+  }
+
+  // AWS EC2 needs credentials, from the environment or config.yaml.
+  await ensureFitCliConfigEnv({
+    promptId: `execution-target.cycle-${cycleIndex}.config.create`,
+    promptMessage: "No fit-cli config found. Run `npm run init` now before using EC2?",
+  });
+  const creds = await checkCredentials();
+  if (!creds.ok) {
+    fitCliError(`\nCan't use EC2 for this cycle: ${creds.message}`);
+    console.log(
+      "Add your AWS credentials with `npm run init`, or re-run with the localhost override to run everything locally.\n",
+    );
+    return { ready: false, artifacts: [], details: [] };
+  }
+  console.log(`\n✓ Using AWS account ${creds.identity.account} (${creds.identity.arn})`);
+
+  try {
+    const provisioned = await provisionFitInstance({
+      cycleIndex,
+      ...(instance.instanceType ? { instanceType: instance.instanceType } : {}),
+      ...(instance.region ? { region: instance.region } : {}),
+    });
+    const teardown: ExecutionTargetTeardown = {
+      kind: "remote",
+      instanceId: provisioned.instanceId,
+      address: provisioned.address,
+      region: instance.region ?? resolveRegion(),
+      user: FIT_INSTANCE_USER,
+      identityFile: provisioned.keyPath,
+      terminate: provisioned.terminate,
+    };
+    return { ready: true, target: provisioned.target, teardown, artifacts: provisioned.artifacts, details: provisioned.details };
+  } catch (err) {
+    fitCliError(`\n✗ Could not provision an EC2 instance: ${err instanceof Error ? err.message : String(err)}`);
+    return { ready: false, artifacts: [], details: [] };
+  }
 }
 
 /**

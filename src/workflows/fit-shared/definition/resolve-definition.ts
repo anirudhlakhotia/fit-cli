@@ -30,6 +30,7 @@ import { loadDefinition } from "./parse-definition.js";
 import type {
   ClusterSetup,
   ConnectionClusterSetup,
+  CycleExecutionSetup,
   FitCycle,
   FitDefinition,
   FunctionalIteration,
@@ -37,6 +38,24 @@ import type {
   SituationalDatabaseMode,
   SituationalIteration,
 } from "./types.js";
+
+/** Where a resolved cycle executes. */
+export type ResolvedInstance =
+  | { kind: "aws"; instanceType?: string; region?: string }
+  | { kind: "localhost" };
+
+/** Resolve a cycle's `execution` block into a concrete target, defaulting to localhost. */
+export function resolveInstance(execution: CycleExecutionSetup | undefined): ResolvedInstance {
+  const instance = execution?.instance;
+  if (instance && "aws" in instance) {
+    return {
+      kind: "aws",
+      ...(instance.aws.instanceType !== undefined ? { instanceType: instance.aws.instanceType } : {}),
+      ...(instance.aws.region !== undefined ? { region: instance.aws.region } : {}),
+    };
+  }
+  return { kind: "localhost" };
+}
 
 export interface ResolvedIterationCommon {
   sdk: Sdk;
@@ -71,6 +90,8 @@ export interface ResolvedCbdinocluster {
 
 export interface ResolvedFunctionalCycle {
   type: "functional";
+  /** Where this cycle runs. */
+  instance: ResolvedInstance;
   clusterMode: "connection" | "useExisting" | "cbdinocluster";
   cbdinocluster?: ResolvedCbdinocluster;
   iterations: ResolvedFunctionalIteration[];
@@ -78,6 +99,8 @@ export interface ResolvedFunctionalCycle {
 
 export interface ResolvedSituationalCycle {
   type: "situational";
+  /** Where this cycle runs. */
+  instance: ResolvedInstance;
   /** The cbdinocluster init config to upload to the execution target before the test-driver runs. */
   cbdinoclusterInit: { config: PieceData };
   iterations: ResolvedSituationalIteration[];
@@ -267,6 +290,7 @@ export function resolveCycle(cycle: FitCycle): ResolvedCycle {
   if (cycle.type === "situational") {
     return {
       type: "situational",
+      instance: resolveInstance(cycle.execution),
       cbdinoclusterInit: { config: cycle.cbdinocluster.init.config },
       iterations: cycle.iterations.map(resolveSituationalIteration),
     };
@@ -279,6 +303,7 @@ export function resolveCycle(cycle: FitCycle): ResolvedCycle {
 
   return {
     type: "functional",
+    instance: resolveInstance(cycle.execution),
     clusterMode,
     ...(cbdinocluster ? { cbdinocluster } : {}),
     iterations: cycle.iterations.map((iteration) => {

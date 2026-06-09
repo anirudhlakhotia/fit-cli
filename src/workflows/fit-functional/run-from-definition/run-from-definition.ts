@@ -43,7 +43,12 @@ import {
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { fitCliError, fitCliWarn } from "../../../util/non-fit/fit-cli-log.js";
 import { createLogFile } from "../../../util/non-fit/proc.js";
-import { cycleRunDir, ensureRunDir } from "../../../util/non-fit/replay.js";
+import {
+  cycleRunDir,
+  defaultsToNonInteractive,
+  ensureRunDir,
+  extractInteractiveFlag,
+} from "../../../util/non-fit/replay.js";
 import { confirm } from "../../../util/non-fit/prompts.js";
 import { rootDirFromArgv } from "../../../util/fit/root.js";
 import { resolveGithubCredentials, resolveResultsDbCredentials } from "../../../util/fit/config.js";
@@ -89,7 +94,7 @@ import {
 import { writeAgentsGuide } from "../../fit-shared/util/write-agents-guide.js";
 import {
   reconnectExecutionTarget,
-  selectExecutionTarget,
+  resolveCycleExecutionTarget,
   type ExecutionTargetTeardown,
 } from "../select-execution-target/select-execution-target.js";
 import {
@@ -562,9 +567,38 @@ interface TeardownInputs {
   /** The remote/local context — absent if the run failed before it came up. */
   execution?: FitExecutionContext;
   teardown: ExecutionTargetTeardown;
+  /** Whether the run forced every cycle onto localhost; persisted so resume matches. */
+  forceLocalhost: boolean;
   clusterState?: ResumeClusterState;
   performers: readonly RunningPerformer[];
   performerStates: readonly ResumePerformerState[];
+}
+
+/**
+ * Tear down a single cycle's resources without prompting: stop its performers,
+ * remove a cluster it allocated, and terminate an instance fit-cli provisioned for
+ * it. Used at the end of a cycle that completed (or was abandoned) and isn't the
+ * one we might leave up for debugging.
+ */
+async function disposeCycleResources(
+  execution: FitExecutionContext | undefined,
+  teardown: ExecutionTargetTeardown,
+  clusterState: ResumeClusterState | undefined,
+  performers: readonly RunningPerformer[],
+): Promise<void> {
+  if (execution) {
+    for (const performer of performers) {
+      await stopManagedPerformer(execution, performer);
+    }
+    if (clusterState?.allocated && clusterState.clusterId && clusterState.cbdinoclusterCommand) {
+      await removeCluster(clusterState.cbdinoclusterCommand, clusterState.clusterId, execution);
+    }
+  }
+  if (teardown.terminate) {
+    console.log(`\nTerminating instance ${teardown.instanceId ?? ""}...`);
+    await teardown.terminate();
+    console.log("✓ Terminated.");
+  }
 }
 
 /**
@@ -600,7 +634,7 @@ function resumeSuggestions(inputs: TeardownInputs): ResumePoint[] {
  * failed before it came up); only the instance is then up to leave or terminate.
  */
 async function teardownRun(inputs: TeardownInputs): Promise<void> {
-  const { definitionPath, cycleIndex, iterationIndex, execution, teardown, clusterState, performers, performerStates } = inputs;
+  const { definitionPath, cycleIndex, iterationIndex, execution, teardown, forceLocalhost, clusterState, performers, performerStates } = inputs;
 
   const nothingToLeaveUp = !teardown.terminate && !clusterState && performerStates.length === 0;
   if (nothingToLeaveUp) {
@@ -618,6 +652,7 @@ async function teardownRun(inputs: TeardownInputs): Promise<void> {
       version: 1,
       cycleIndex,
       startIterationIndex: iterationIndex,
+      ...(forceLocalhost ? { forceLocalhost } : {}),
       target: targetStateFrom(teardown),
       ...(clusterState ? { cluster: clusterState } : {}),
       performers: [...performerStates],
@@ -673,6 +708,48 @@ async function teardownRun(inputs: TeardownInputs): Promise<void> {
     await teardown.terminate();
     console.log("✓ Terminated.");
   }
+}
+
+/**
+ * Whether this run is interactive (so we can prompt) or running with default
+ * answers (CI). Mirrors how PromptSession decides its mode: the `definition` npm
+ * script and the run-from-definition entrypoint default to non-interactive unless
+ * `--interactive` is passed.
+ */
+function isInteractiveRun(): boolean {
+  const { interactive } = extractInteractiveFlag(process.argv.slice(2));
+  return interactive || !defaultsToNonInteractive();
+}
+
+/**
+ * Decide whether to force every cycle onto localhost, ignoring each cycle's
+ * `instance:` setting. Resuming reuses the earlier run's choice. Otherwise: if no
+ * cycle wants AWS there's nothing to override; interactively we default to honoring
+ * the file (opt in to localhost); non-interactively (CI) we default to localhost so
+ * a CI run never provisions AWS by surprise.
+ */
+async function resolveForceLocalhost(
+  cycles: readonly ResolvedCycle[],
+  savedState: RunState | undefined,
+): Promise<boolean> {
+  if (savedState) {
+    return savedState.forceLocalhost ?? false;
+  }
+  if (!cycles.some((cycle) => cycle.instance.kind === "aws")) {
+    return false;
+  }
+  if (!isInteractiveRun()) {
+    console.log(
+      "\nNon-interactive run: running every cycle on localhost (ignoring AWS instance settings). " +
+        "Use --interactive to provision the instances each cycle asks for.",
+    );
+    return true;
+  }
+  return confirm({
+    promptId: "run-from-definition.force-localhost",
+    message: "Run everything on localhost, ignoring each cycle's instance setting?",
+    default: false,
+  });
 }
 
 export interface RunFromDefinitionOptions {
@@ -770,52 +847,21 @@ export async function runFromDefinition(
   copyFileSync(definitionPath, definitionCopyPath);
   artifacts.push(artifactFromPath(definitionCopyPath, "Definition file used for this run", runDir));
 
-  const executionTarget = savedState
-    ? await reconnectExecutionTarget(savedState.target)
-    : await selectExecutionTarget();
-  artifacts.push(...executionTarget.artifacts);
-  details.push(...executionTarget.details);
-  if (!executionTarget.ready) {
-    return { artifacts: combineArtifacts(artifacts), details: combineDetails(details) };
-  }
-  if (executionTarget.teardown.kind === "remote" && executionTarget.teardown.address) {
-    printResumeHint("after-instance-creation", definitionPath);
-  }
+  // One run-wide choice: force every cycle onto localhost, ignoring each cycle's
+  // declared instance. Each cycle then provisions (or reconnects) its own target.
+  const forceLocalhost = await resolveForceLocalhost(resolved.cycles.slice(startCycleIndex), savedState);
 
-  let execution: FitExecutionContext | undefined;
+  // The "active" set tracks the cycle currently up so the outer finally tears down
+  // (or offers to leave up) the right instance/cluster/performers. Completed,
+  // non-final cycles dispose of their own resources inside the loop.
+  let activeExecution: FitExecutionContext | undefined;
+  let activeTeardown: ExecutionTargetTeardown = { kind: "local" };
   let activeCycleIndex = startCycleIndex;
   let activeIterationIndex = startIterationIndex;
   let activeClusterState: ResumeClusterState | undefined;
   let activePerformers: RunningPerformer[] = [];
   let activePerformerStates: ResumePerformerState[] = [];
   try {
-    const firstCycle = resolved.cycles[startCycleIndex];
-    if (!firstCycle) {
-      return finalizeRunFromDefinition(artifacts, details);
-    }
-    const firstIteration = firstCycle.iterations[0];
-    execution = await createFitExecutionContext(executionTarget.target, rootDir, firstIteration.sdk, {
-      skipRemotePreparation: !phases.prepareRemote,
-      cycleIndex: startCycleIndex,
-    });
-    artifacts.push(...execution.artifacts);
-    details.push(...execution.details);
-    if (phases.prepareRemote && executionTarget.teardown.kind === "remote" && executionTarget.teardown.address) {
-      printResumeHint("after-remote-preparation", definitionPath);
-    }
-
-    if (needsHostedDatabase && execution.kind === "remote") {
-      console.log(`\nChecking results database connectivity from the remote instance...`);
-      if (!(await checkResultsDatabaseConnectivity((cmd, args) => execution!.capture(cmd, args)))) {
-        fitCliError(
-          `\n✗ The remote instance cannot reach the results database at ${HOSTED_RESULTS_DB_HOST}:5432.\n` +
-            `  Make sure the instance has network access to reach the database (VPN / security-group rules).`,
-        );
-        return finalizeRunFromDefinition(artifacts, details);
-      }
-      console.log(`  ✓ Reached ${HOSTED_RESULTS_DB_HOST} from the remote instance.`);
-    }
-
     let globalIterationIndex = resolved.cycles
       .slice(0, startCycleIndex)
       .reduce((total, cycle) => total + cycle.iterations.length, 0);
@@ -830,7 +876,54 @@ export async function runFromDefinition(
         break;
       }
       console.log(`\nCycle ${cycleIndex + 1}/${resolved.cycles.length}: ${cycle.type}`);
+      console.log(`  Execution: ${forceLocalhost ? "localhost (forced)" : cycle.instance.kind}`);
       console.log(`  Cluster: ${clusterLabel(cycle)}`);
+
+      // Acquire this cycle's execution target: reconnect the resumed instance for
+      // the start cycle, otherwise provision (or run locally) per the definition.
+      const isResumeStartCycle = savedState !== undefined && cycleIndex === startCycleIndex;
+      const targetOutcome = isResumeStartCycle
+        ? await reconnectExecutionTarget(savedState.target)
+        : await resolveCycleExecutionTarget(cycle.instance, forceLocalhost, cycleIndex);
+      artifacts.push(...targetOutcome.artifacts);
+      details.push(...targetOutcome.details);
+      if (!targetOutcome.ready) {
+        fitCliError(`\n✗ Could not acquire an execution target for cycle ${cycleIndex + 1}; skipping it.`);
+        globalIterationIndex += cycle.iterations.length;
+        continue;
+      }
+      const cycleTeardown = targetOutcome.teardown;
+      activeTeardown = cycleTeardown;
+      if (cycleTeardown.kind === "remote" && cycleTeardown.address) {
+        printResumeHint("after-instance-creation", definitionPath);
+      }
+
+      const execution = await createFitExecutionContext(targetOutcome.target, rootDir, cycle.iterations[0].sdk, {
+        skipRemotePreparation: isResumeStartCycle && !phases.prepareRemote,
+        cycleIndex,
+      });
+      activeExecution = execution;
+      artifacts.push(...execution.artifacts);
+      details.push(...execution.details);
+      if (phases.prepareRemote && cycleTeardown.kind === "remote" && cycleTeardown.address) {
+        printResumeHint("after-remote-preparation", definitionPath);
+      }
+
+      // This cycle's situational iterations may stream to the hosted DB; if it runs
+      // on a remote box, confirm the box can reach the DB before doing real work.
+      const cycleNeedsHostedDatabase =
+        cycle.type === "situational" && cycle.iterations.some((it) => it.databaseMode === "hosted");
+      if (cycleNeedsHostedDatabase && execution.kind === "remote") {
+        console.log(`\nChecking results database connectivity from the remote instance...`);
+        if (!(await checkResultsDatabaseConnectivity((cmd, args) => execution.capture(cmd, args)))) {
+          fitCliError(
+            `\n✗ The remote instance cannot reach the results database at ${HOSTED_RESULTS_DB_HOST}:5432.\n` +
+              `  Make sure the instance has network access to reach the database (VPN / security-group rules).`,
+          );
+          return finalizeRunFromDefinition(artifacts, details);
+        }
+        console.log(`  ✓ Reached ${HOSTED_RESULTS_DB_HOST} from the remote instance.`);
+      }
 
       let activeCycle = cycle;
       let clusterState: ResumeClusterState | undefined;
@@ -925,47 +1018,35 @@ export async function runFromDefinition(
           fitCliError(`\n✗ ${err.message} (FatalToCycle)`);
           globalIterationIndex += activeCycle.iterations.length;
 
-          // On the last (or only) cycle there's no next cycle to continue to, and
-          // asking to keep this cycle's resources would just duplicate teardownRun's
-          // single "leave everything up?" question. Promote the state and let
-          // teardownRun make that one decision.
+          // Promote this cycle as the active set so that stopping here lets
+          // teardownRun offer to leave its instance/cluster/performers up.
+          activeClusterState = clusterState;
+          activePerformers = cyclePerformers;
+          activePerformerStates = cyclePerformerStates;
+
           const isLastCycle = cycleIndex === resolved.cycles.length - 1;
           if (isLastCycle) {
-            activeClusterState = clusterState;
-            activePerformers = cyclePerformers;
-            activePerformerStates = cyclePerformerStates;
             break;
           }
 
           const continueToNextCycle = await confirm({
             promptId: "run-from-definition.fatal-to-cycle.continue",
-            message: "Continue to the next cycle?",
+            message: "Continue to the next cycle? (this cycle's instance and resources are cleaned up first)",
             default: true,
           });
 
           if (!continueToNextCycle) {
-            // Promote current cycle's state so teardownRun can offer to clean it up.
-            activeClusterState = clusterState;
-            activePerformers = cyclePerformers;
-            activePerformerStates = cyclePerformerStates;
             break;
           }
 
-          const keepCycleResources = await confirm({
-            promptId: "run-from-definition.fatal-to-cycle.keep-resources",
-            message: "Keep this cycle's cluster and performers up for debugging?",
-            default: false,
-          });
-
-          if (!keepCycleResources && execution) {
-            for (const performer of cyclePerformers) {
-              await stopManagedPerformer(execution, performer);
-            }
-            if (clusterState?.allocated && clusterState.clusterId && clusterState.cbdinoclusterCommand) {
-              await removeCluster(clusterState.cbdinoclusterCommand, clusterState.clusterId, execution);
-            }
-          }
-
+          // Continuing: this cycle owns its own instance, so clean it (and the
+          // cluster/performers) up before the next cycle stands up its own.
+          await disposeCycleResources(execution, cycleTeardown, clusterState, cyclePerformers);
+          activeExecution = undefined;
+          activeTeardown = { kind: "local" };
+          activeClusterState = undefined;
+          activePerformers = [];
+          activePerformerStates = [];
           continue;
         }
         throw err;
@@ -977,12 +1058,13 @@ export async function runFromDefinition(
         activePerformers = cyclePerformers;
         activePerformerStates = cyclePerformerStates;
       } else {
-        for (const performer of cyclePerformers) {
-          await stopManagedPerformer(execution, performer);
-        }
-        if (clusterState?.allocated && clusterState.clusterId && clusterState.cbdinoclusterCommand) {
-          await removeCluster(clusterState.cbdinoclusterCommand, clusterState.clusterId, execution);
-        }
+        // A completed, non-final cycle: clean up its own instance/cluster/performers.
+        await disposeCycleResources(execution, cycleTeardown, clusterState, cyclePerformers);
+        activeExecution = undefined;
+        activeTeardown = { kind: "local" };
+        activeClusterState = undefined;
+        activePerformers = [];
+        activePerformerStates = [];
       }
     }
 
@@ -992,8 +1074,9 @@ export async function runFromDefinition(
       definitionPath,
       cycleIndex: activeCycleIndex,
       iterationIndex: activeIterationIndex,
-      ...(execution ? { execution } : {}),
-      teardown: executionTarget.teardown,
+      ...(activeExecution ? { execution: activeExecution } : {}),
+      teardown: activeTeardown,
+      forceLocalhost,
       ...(activeClusterState ? { clusterState: activeClusterState } : {}),
       performers: activePerformers,
       performerStates: activePerformerStates,

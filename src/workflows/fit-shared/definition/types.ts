@@ -65,6 +65,26 @@ export interface ClusterSetup {
   cbdinocluster?: CbdinoclusterSetup;
 }
 
+/** AWS-specific knobs for a cycle that runs on a clean EC2 instance. */
+export interface AwsInstanceSetup {
+  instanceType?: string;
+  region?: string;
+}
+
+/**
+ * Where a cycle's iterations execute. Provide exactly one of:
+ * - `aws` — provision a clean EC2 instance for the cycle, or
+ * - `localhost` — run directly on this machine.
+ */
+export type CycleInstanceSetup =
+  | { aws: AwsInstanceSetup }
+  | { localhost: Record<string, never> };
+
+/** The cycle-level `execution` block: where the cycle runs. */
+export interface CycleExecutionSetup {
+  instance: CycleInstanceSetup;
+}
+
 /** Shared setup applied once for the whole definition. */
 export interface RepoSetup {
   gerritRef?: string;
@@ -147,6 +167,8 @@ export interface SituationalIteration {
 /** A functional cycle owns one cluster lifetime and one or more iterations. */
 export interface FunctionalCycle {
   type: "functional";
+  /** Where this cycle runs. Absent means localhost. */
+  execution?: CycleExecutionSetup;
   cluster: ClusterSetup;
   iterations: FunctionalIteration[];
 }
@@ -154,6 +176,8 @@ export interface FunctionalCycle {
 /** A situational cycle owns no shared cluster and one or more iterations. */
 export interface SituationalCycle {
   type: "situational";
+  /** Where this cycle runs. Absent means localhost. */
+  execution?: CycleExecutionSetup;
   /**
    * Configures cbdinocluster on the execution target before the test-driver
    * runs. Required so the situational test-driver can call cbdinocluster without

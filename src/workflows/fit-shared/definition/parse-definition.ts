@@ -15,11 +15,14 @@ import {
   FIT_CYCLE_TYPES,
   FIT_DEFINITION_TYPE,
   SITUATIONAL_DATABASE_MODES,
+  type AwsInstanceSetup,
   type CbdinoclusterInitSetup,
   type CbdinoclusterSetup,
   type ClusterSetup,
   type ClusterTls,
   type ConnectionClusterSetup,
+  type CycleExecutionSetup,
+  type CycleInstanceSetup,
   type DefinitionTests,
   type FitConfigPiece,
   type FitCycle,
@@ -247,6 +250,61 @@ function validateCluster(value: unknown, path: string): ClusterSetup {
   return cluster;
 }
 
+function validateOptionalString(record: Record<string, unknown>, key: string, path: string): string | undefined {
+  if (record[key] === undefined) {
+    return undefined;
+  }
+  return requireString(record, key, path);
+}
+
+function validateAwsInstance(value: unknown, path: string): AwsInstanceSetup {
+  // Tolerate `aws:` with no body (YAML parses an empty mapping to null).
+  const record = value === null ? {} : requireRecord(value, path);
+  const aws: AwsInstanceSetup = {};
+  const instanceType = validateOptionalString(record, "instanceType", `${path}.instanceType`);
+  if (instanceType !== undefined) {
+    aws.instanceType = instanceType;
+  }
+  const region = validateOptionalString(record, "region", `${path}.region`);
+  if (region !== undefined) {
+    aws.region = region;
+  }
+  return aws;
+}
+
+function validateLocalhostInstance(value: unknown, path: string): Record<string, never> {
+  if (value === null || value === undefined) {
+    return {};
+  }
+  const record = requireRecord(value, path);
+  if (Object.keys(record).length > 0) {
+    throw new InvalidDefinitionError(`"${path}" must be empty; localhost takes no options.`);
+  }
+  return {};
+}
+
+function validateInstance(value: unknown, path: string): CycleInstanceSetup {
+  const record = requireRecord(value, path);
+  const hasAws = record.aws !== undefined;
+  const hasLocalhost = record.localhost !== undefined;
+  if (hasAws === hasLocalhost) {
+    throw new InvalidDefinitionError(
+      `"${path}" must have exactly one of "aws" or "localhost".`,
+    );
+  }
+  return hasAws
+    ? { aws: validateAwsInstance(record.aws, `${path}.aws`) }
+    : { localhost: validateLocalhostInstance(record.localhost, `${path}.localhost`) };
+}
+
+function validateExecution(value: unknown, path: string): CycleExecutionSetup {
+  const record = requireRecord(value, path);
+  if (record.instance === undefined) {
+    throw new InvalidDefinitionError(`Missing required field: ${path}.instance`);
+  }
+  return { instance: validateInstance(record.instance, `${path}.instance`) };
+}
+
 function validateRepos(value: unknown): SharedSetup["repos"] {
   const record = requireRecord(value, "setup.repos");
   const repos: NonNullable<SharedSetup["repos"]> = {};
@@ -452,6 +510,9 @@ function validateFunctionalCycle(record: Record<string, unknown>, path: string):
   }
   return {
     type: "functional",
+    ...(record.execution !== undefined
+      ? { execution: validateExecution(record.execution, `${path}.execution`) }
+      : {}),
     cluster: validateCluster(record.cluster, `${path}.cluster`),
     iterations: record.iterations.map((iteration, index) =>
       validateFunctionalIteration(iteration, `${path}.iterations[${index}]`),
@@ -478,6 +539,9 @@ function validateSituationalCycle(record: Record<string, unknown>, path: string)
   }
   return {
     type: "situational",
+    ...(record.execution !== undefined
+      ? { execution: validateExecution(record.execution, `${path}.execution`) }
+      : {}),
     cbdinocluster: { init: validateCbdinoclusterInit(cbdinoclusterRecord.init, `${path}.cbdinocluster.init`) },
     iterations: record.iterations.map((iteration, index) =>
       validateSituationalIteration(iteration, `${path}.iterations[${index}]`),

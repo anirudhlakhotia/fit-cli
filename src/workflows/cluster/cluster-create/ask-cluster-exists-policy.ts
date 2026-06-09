@@ -24,7 +24,7 @@ export async function askClusterExistsPolicy(): Promise<ClusterExistsPolicy> {
       "If cbdinocluster already has a cluster running when this definition runs, what should happen?",
     choices: [
       {
-        name: "destroyAndRecreate — remove any existing cluster(s) and allocate a fresh one (default - good for clean testing, slower)",
+        name: "destroyAndRecreate — remove any existing cluster(s) and allocate a fresh one (good for clean testing, slower)",
         value: "destroyAndRecreate",
       },
       {

@@ -42,6 +42,14 @@ test("writeRunState then readRunState round-trips the state", () => {
   assert.deepEqual(readRunState(definitionPath), sampleState());
 });
 
+test("round-trips the forceLocalhost flag", () => {
+  const dir = mkdtempSync(join(tmpdir(), "resume-state-"));
+  const definitionPath = join(dir, "fit.yaml");
+  const state: RunState = { ...sampleState(), forceLocalhost: true };
+  writeRunState(definitionPath, state);
+  assert.equal(readRunState(definitionPath)?.forceLocalhost, true);
+});
+
 test("readRunState returns undefined when there is no saved state", () => {
   const dir = mkdtempSync(join(tmpdir(), "resume-state-"));
   assert.equal(readRunState(join(dir, "fit.yaml")), undefined);

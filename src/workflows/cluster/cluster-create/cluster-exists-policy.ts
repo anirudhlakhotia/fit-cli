@@ -21,4 +21,4 @@ export const CLUSTER_EXISTS_POLICIES = ["fail", "useExisting", "destroyAndRecrea
 export type ClusterExistsPolicy = (typeof CLUSTER_EXISTS_POLICIES)[number];
 
 /** The policy applied when a definition's cbdinocluster block doesn't specify one. */
-export const DEFAULT_CLUSTER_EXISTS_POLICY: ClusterExistsPolicy = "destroyAndRecreate";
+export const DEFAULT_CLUSTER_EXISTS_POLICY: ClusterExistsPolicy = "useExisting";

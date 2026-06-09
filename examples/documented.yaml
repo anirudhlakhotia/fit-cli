@@ -22,6 +22,15 @@ setup:
 # most, one cluster lifetime.
 cycles:
   - type: functional
+    # Where this cycle's iterations run. Optional — omit it to run on this machine
+    # (localhost). Provide exactly one of "aws" or "localhost". At run time you can
+    # still override and force every cycle onto localhost.
+    execution:
+      instance:
+        # aws: {}              # provision a clean EC2 box for this cycle
+        #   instanceType: c5.4xlarge   # optional; defaults to the FIT type
+        #   region: us-east-1          # optional; defaults to your AWS region
+        localhost: {}          # ...or run directly on this machine
     # Functional cycles must have a cluster. Every iteration in this cycle tests
     # against it.
     cluster:

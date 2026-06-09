@@ -62,6 +62,8 @@ export interface RunState {
   cycleIndex: number;
   /** Within the cycle at cycleIndex, the first iteration to run. Absent means 0. */
   startIterationIndex?: number;
+  /** Whether the run forced every cycle onto localhost, ignoring instance settings. */
+  forceLocalhost?: boolean;
   target: ResumeTargetState;
   cluster?: ResumeClusterState;
   performers: ResumePerformerState[];

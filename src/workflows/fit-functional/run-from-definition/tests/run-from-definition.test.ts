@@ -20,6 +20,7 @@ function functionalCycle(): ResolvedFunctionalCycle {
   assert.ok(sdk);
   return {
     type: "functional",
+    instance: { kind: "localhost" },
     clusterMode: "cbdinocluster",
     cbdinocluster: {
       config: { nodes: [{ count: 1, version: "8.1.0-2188", services: ["kv"] }] },

@@ -33,6 +33,70 @@ cycles:
           tests: all
 `;
 
+test("parses a cycle execution.instance.aws block", () => {
+  const def = parseDefinition(
+    FUNCTIONAL.replace(
+      "  - type: functional\n",
+      "  - type: functional\n    execution:\n      instance:\n        aws:\n          instanceType: c5.4xlarge\n",
+    ),
+  );
+  assert.deepEqual(def.cycles[0]?.execution, { instance: { aws: { instanceType: "c5.4xlarge" } } });
+});
+
+test("parses a cycle execution.instance.localhost block", () => {
+  const def = parseDefinition(
+    FUNCTIONAL.replace(
+      "  - type: functional\n",
+      "  - type: functional\n    execution:\n      instance:\n        localhost:\n",
+    ),
+  );
+  assert.deepEqual(def.cycles[0]?.execution, { instance: { localhost: {} } });
+});
+
+test("defaults to no execution block when absent", () => {
+  const def = parseDefinition(FUNCTIONAL);
+  assert.equal(def.cycles[0]?.execution, undefined);
+});
+
+test("rejects execution.instance with both aws and localhost", () => {
+  assert.throws(
+    () =>
+      parseDefinition(
+        FUNCTIONAL.replace(
+          "  - type: functional\n",
+          "  - type: functional\n    execution:\n      instance:\n        aws: {}\n        localhost: {}\n",
+        ),
+      ),
+    InvalidDefinitionError,
+  );
+});
+
+test("rejects execution.instance with neither aws nor localhost", () => {
+  assert.throws(
+    () =>
+      parseDefinition(
+        FUNCTIONAL.replace(
+          "  - type: functional\n",
+          "  - type: functional\n    execution:\n      instance: {}\n",
+        ),
+      ),
+    InvalidDefinitionError,
+  );
+});
+
+test("rejects a non-empty localhost instance", () => {
+  assert.throws(
+    () =>
+      parseDefinition(
+        FUNCTIONAL.replace(
+          "  - type: functional\n",
+          "  - type: functional\n    execution:\n      instance:\n        localhost:\n          foo: bar\n",
+        ),
+      ),
+    InvalidDefinitionError,
+  );
+});
+
 test("parses a minimal functional cycle", () => {
   const def = parseDefinition(FUNCTIONAL);
   assert.equal(def.version, CURRENT_FIT_DEFINITION_VERSION);

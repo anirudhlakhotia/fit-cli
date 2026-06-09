@@ -18,6 +18,7 @@ import type { FitTestSelection } from "../../fit-shared/select-fit-tests/select-
 import {
   CURRENT_FIT_DEFINITION_VERSION,
   FIT_DEFINITION_TYPE,
+  type CycleInstanceSetup,
   type FitCycle,
   type FitDefinition,
   type FitConfigPiece,
@@ -47,6 +48,8 @@ export interface DefinitionInputs {
   onClusterExists?: ClusterExistsPolicy;
   onPortInUse?: PortInUsePolicy;
   selection: FitTestSelection;
+  /** Where the cycle runs. Omitted ⇒ no `execution` block (localhost at run time). */
+  instance?: CycleInstanceSetup;
 }
 
 export interface SituationalDefinitionInputs {
@@ -55,6 +58,8 @@ export interface SituationalDefinitionInputs {
   onPortInUse?: PortInUsePolicy;
   selection: FitTestSelection;
   databaseMode: SituationalDatabaseMode;
+  /** Where the cycle runs. Omitted ⇒ no `execution` block (localhost at run time). */
+  instance?: CycleInstanceSetup;
 }
 
 function buildClusterAccessFitConfig(cluster: SelectedCluster): FitConfigPiece {
@@ -127,6 +132,7 @@ export function buildSituationalIterationFrom(inputs: SituationalDefinitionInput
 export function buildFunctionalCycleFrom(inputs: DefinitionInputs & { iterations?: FunctionalIteration[] }): FunctionalCycle {
   return {
     type: "functional",
+    ...(inputs.instance ? { execution: { instance: inputs.instance } } : {}),
     cluster: buildFunctionalCycleCluster(inputs.cluster, inputs.onClusterExists),
     iterations: inputs.iterations ?? [buildFunctionalIterationFrom(inputs)],
   };
@@ -135,6 +141,7 @@ export function buildFunctionalCycleFrom(inputs: DefinitionInputs & { iterations
 export function buildSituationalCycleFrom(inputs: SituationalDefinitionInputs & { iterations?: SituationalIteration[] }): SituationalCycle {
   return {
     type: "situational",
+    ...(inputs.instance ? { execution: { instance: inputs.instance } } : {}),
     cbdinocluster: { init: { config: defaultSituationalCbdinoclusterInitConfig() } },
     iterations: inputs.iterations ?? [buildSituationalIterationFrom(inputs)],
   };

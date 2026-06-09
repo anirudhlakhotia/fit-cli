@@ -33,10 +33,8 @@ export async function askClusterDef(): Promise<ClusterDef> {
     message: "What type of cluster would you like?",
     choices: [
       {
-        name: "Operational (with optional CNG support)",
+        name: "Operational",
         value: "operational",
-        description:
-          "Only operational clusters are supported for now — please feel welcome to add support for other cluster types.",
       },
     ],
   });

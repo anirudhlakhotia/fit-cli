@@ -24,6 +24,8 @@ import {
 } from "../build-performer/build-performer.js";
 import { checkoutFitGerritRef } from "../checkout-fit-gerrit-ref/checkout-fit-gerrit-ref.js";
 import { checkAndBuildPerformer } from "../check-and-build-performer/check-and-build-performer.js";
+import { checkAndPullPerformer } from "../check-and-pull-performer/check-and-pull-performer.js";
+import { performerImageName } from "../util/performer-image.js";
 import { checkRunningPerformer, stopRunningPerformer } from "../check-running-performer/check-running-performer.js";
 export { DEFAULT_PERFORMER_PORT } from "../util/performer-port.js";
 import { DEFAULT_PERFORMER_PORT, type PortInUsePolicy } from "../util/performer-port.js";
@@ -92,18 +94,22 @@ export async function checkBuildAndRunPerformer(
   iteration: number = 0,
   gerritRef?: string,
 ): Promise<RunningPerformer | undefined> {
-  if (!(await execution.ensureWorkspace(sdk))) {
-    return undefined;
-  }
+  // JVM SDKs (Java, Kotlin, Scala) use prebuilt GHCR images; non-JVM SDKs
+  // build from source using jenkins-sdk.
+  if (!sdk.jvm) {
+    if (!(await execution.ensureWorkspace(sdk))) {
+      return undefined;
+    }
 
-  if (gerritRef && !(await checkoutFitGerritRef(execution, gerritRef))) {
-    return undefined;
+    if (gerritRef && !(await checkoutFitGerritRef(execution, gerritRef))) {
+      return undefined;
+    }
   }
 
   // Check what's already running first: if a performer is up (a recognised
   // container, or just something on the port), we can test against it and skip
   // locating and building the image entirely.
-  const runCheck = await checkRunningPerformer(execution, sdk, version, onPortInUse, hostPort, gerritRef);
+  const runCheck = await checkRunningPerformer(execution, sdk, version, onPortInUse, hostPort, sdk.jvm ? undefined : gerritRef);
   if (runCheck.action === "abort") {
     return undefined;
   }
@@ -131,8 +137,11 @@ export async function checkBuildAndRunPerformer(
   }
 
   // We're going to start (or restart) the performer ourselves, so the image
-  // must be located and built first.
-  if (!(await checkAndBuildPerformer(execution, sdk, version, cycleIndex, iteration, gerritRef))) {
+  // must be located first (pulled from GHCR for JVM, built from source for others).
+  const imageReady = sdk.jvm
+    ? await checkAndPullPerformer(execution, sdk, version)
+    : await checkAndBuildPerformer(execution, sdk, version, cycleIndex, iteration, gerritRef);
+  if (!imageReady) {
     return undefined;
   }
 
@@ -140,10 +149,11 @@ export async function checkBuildAndRunPerformer(
     return undefined;
   }
 
+  const imageName = sdk.jvm ? performerImageName(sdk, version) : buildPerformerImageName(sdk, version, gerritRef);
   if (dockerNetwork) {
     console.log(`\n→ Starting the performer on Docker network ${dockerNetwork} so it can reach the cluster container.`);
   }
-  const args = execution.performerRunArgs(buildPerformerImageName(sdk, version, gerritRef), hostPort, dockerNetwork);
+  const args = execution.performerRunArgs(imageName, hostPort, dockerNetwork);
   console.log(`\nStarting performer with:\n  docker ${args.join(" ")}\n`);
 
   try {

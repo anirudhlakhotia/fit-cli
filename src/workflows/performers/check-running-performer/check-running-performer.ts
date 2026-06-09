@@ -12,6 +12,7 @@ import { chooseSdk } from "../../../util/sdk/choose-sdk.js";
 import { createLocalFitExecutionContext, type FitExecutionContext } from "../../fit-shared/util/remote-fit-run.js";
 import { askVersion } from "../build-performer/ask-version.js";
 import { buildPerformerImageName } from "../build-performer/build-performer.js";
+import { performerImageName } from "../util/performer-image.js";
 import { DEFAULT_PERFORMER_PORT, type PortInUsePolicy } from "../util/performer-port.js";
 
 export interface DockerContainerSummary {
@@ -99,7 +100,7 @@ export async function checkRunningPerformer(
   hostPort: number = DEFAULT_PERFORMER_PORT,
   gerritRef?: string,
 ): Promise<PerformerRunCheckResult> {
-  const imageName = buildPerformerImageName(sdk, version, gerritRef);
+  const imageName = sdk.jvm ? performerImageName(sdk, version) : buildPerformerImageName(sdk, version, gerritRef);
   const runningContainers = await runningContainersForImage(execution, imageName);
 
   if (runningContainers && runningContainers.length > 0) {

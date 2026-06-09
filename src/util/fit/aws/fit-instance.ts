@@ -94,6 +94,8 @@ export interface ProvisionedInstance {
 export interface ProvisionOptions {
   instanceType?: string;
   region?: string;
+  /** Cycle this instance belongs to; its key and info land under that cycle's dir. */
+  cycleIndex?: number;
 }
 
 /**
@@ -140,7 +142,7 @@ export async function provisionFitInstance(options: ProvisionOptions = {}): Prom
   );
 
   const keyName = `fit-cli-${Date.now().toString(36)}`;
-  const instanceDir = cycleRunDir(0);
+  const instanceDir = cycleRunDir(options.cycleIndex ?? 0);
   mkdirSync(instanceDir, { recursive: true, mode: 0o700 });
   const keyPath = join(instanceDir, `${keyName}.pem`);
   await createKeyPair(keyName, keyPath, awsOptions);

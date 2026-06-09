@@ -12,4 +12,4 @@ export const PORT_IN_USE_POLICIES = ["fail", "restart", "reuse"] as const;
 export type PortInUsePolicy = (typeof PORT_IN_USE_POLICIES)[number];
 
 /** The policy applied when a definition doesn't specify one. */
-export const DEFAULT_PORT_IN_USE_POLICY: PortInUsePolicy = "restart";
+export const DEFAULT_PORT_IN_USE_POLICY: PortInUsePolicy = "reuse";

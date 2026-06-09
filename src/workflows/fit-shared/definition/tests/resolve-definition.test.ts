@@ -294,3 +294,20 @@ test("rejects a useExisting cycle without fitConfig clusterAccess", () => {
     /fitConfig\.clusterAccess/,
   );
 });
+
+test("defaults a cycle's instance to localhost when execution is absent", () => {
+  const resolved = resolveCycle(functionalCycle());
+  assert.deepEqual(resolved.instance, { kind: "localhost" });
+});
+
+test("resolves an aws execution instance with its options", () => {
+  const resolved = resolveCycle(
+    functionalCycle({ execution: { instance: { aws: { instanceType: "c5.9xlarge", region: "us-east-1" } } } }),
+  );
+  assert.deepEqual(resolved.instance, { kind: "aws", instanceType: "c5.9xlarge", region: "us-east-1" });
+});
+
+test("resolves an explicit localhost execution instance", () => {
+  const resolved = resolveCycle(functionalCycle({ execution: { instance: { localhost: {} } } }));
+  assert.deepEqual(resolved.instance, { kind: "localhost" });
+});

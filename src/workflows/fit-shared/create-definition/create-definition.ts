@@ -30,7 +30,7 @@ import {
   type DefinitionCluster,
   writeFitDefinition,
 } from "../definition/generate-definition.js";
-import type { FitCycle, FunctionalCycle } from "../definition/types.js";
+import type { CycleInstanceSetup, FitCycle, FunctionalCycle } from "../definition/types.js";
 import {
   FUNCTIONAL_TEST_DOMAIN,
   SITUATIONAL_TEST_DOMAIN,
@@ -57,6 +57,26 @@ async function chooseDefinitionBuilderAction(index: number): Promise<DefinitionB
       { name: "I'm done with the FIT definition building", value: "done" },
     ],
   });
+}
+
+/**
+ * Ask where a brand-new cycle's tests should execute. Only asked when a cycle is
+ * first started — every iteration added to that cycle then shares the choice. At
+ * run time the user can still override and force everything onto localhost.
+ */
+async function chooseCycleExecution(promptIdPrefix: string): Promise<CycleInstanceSetup> {
+  const choice = await select<"localhost" | "aws">({
+    promptId: qualifyPromptId("execution.instance", promptIdPrefix),
+    message: "Where should this cycle's tests execute?",
+    choices: [
+      { name: "This machine (localhost)", value: "localhost" },
+      { name: "A clean AWS EC2 instance", value: "aws" },
+    ],
+  });
+  console.log(
+    "  You can override this and run everything on localhost when you execute the definition.",
+  );
+  return choice === "aws" ? { aws: {} } : { localhost: {} };
 }
 
 async function ensureSharedRepoSetup(state: DefinitionBuilderState): Promise<void> {
@@ -105,11 +125,13 @@ async function addFunctionalIteration(
   console.log(
     "\nStarting a new FIT functional cycle. This cycle owns one cluster lifetime, and every functional iteration you add now will share it.",
   );
+  const instance = await chooseCycleExecution(promptIdPrefix);
   const cluster = await chooseDefinitionCluster();
   const onClusterExists = cluster.kind === "cbdinocluster" ? await askClusterExistsPolicy() : undefined;
   state.cycles.push(
     buildFunctionalCycleFrom({
       cluster,
+      instance,
       ...(onClusterExists ? { onClusterExists } : {}),
       sdk,
       ...(version ? { version } : {}),
@@ -202,9 +224,11 @@ async function addSituationalIteration(
   console.log(
     "\nStarting a new FIT situational cycle. Situational cycles do not carry a shared cluster because FIT/SIT creates its own.",
   );
+  const instance = await chooseCycleExecution(promptIdPrefix);
   state.cycles.push(
     buildSituationalCycleFrom({
       sdk,
+      instance,
       ...(version ? { version } : {}),
       onPortInUse,
       databaseMode,
