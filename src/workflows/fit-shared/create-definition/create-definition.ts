@@ -57,7 +57,7 @@ async function chooseDefinitionBuilderAction(index: number): Promise<DefinitionB
       { name: "Add FIT performance testing (coming later!)", value: "performance" },
       { name: "I'm done with the FIT definition building", value: "done" },
     ],
-    default: index > 0 ? "done" : undefined,
+    default: index > 1 ? "done" : undefined,
   });
 }
 
