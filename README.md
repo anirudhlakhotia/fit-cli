@@ -151,6 +151,7 @@ See `examples/documented.yaml` for an annotated example; run one with `npm run d
 - Whenever showing a step is about to run, include (if fairly simple) how that can be repro-ed on the cli using this cli tool.
 - The mini CLI tool should output any final artifacts in a table (see Artifacts section).
 - LLMs: after making changes, if possible give me the mini CLI command to run that step/workflow.
+- For anything that can work on remote instances, make sure they support the `--dir /tmp/fit-cli/20260609-162046/instances/0` syntax.
 
 ### Top-level commands
 These are ones in package.json e.g. `npm run definition [execute|validate]`.

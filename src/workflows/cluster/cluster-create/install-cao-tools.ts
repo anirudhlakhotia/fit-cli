@@ -13,11 +13,15 @@
  *
  * Run on its own:
  *   # Just print the script it would run (no SSH, no AWS):
- *   npx tsx src/workflows/cluster/cluster-create/install-cao-tools.ts --print [--dir <cao-tools-dir>] [--version 2.8.0]
- *   # Install onto an existing EC2 instance over SSH:
+ *   npx tsx src/workflows/cluster/cluster-create/install-cao-tools.ts --print [--cao-dir <path>] [--version 2.8.0]
+ *   # Install using a saved instance dir (reads ec2-instance.json + .pem automatically):
+ *   npx tsx src/workflows/cluster/cluster-create/install-cao-tools.ts --dir /tmp/fit-cli/<run>/instances/0
+ *   # Install with explicit flags:
  *   npx tsx src/workflows/cluster/cluster-create/install-cao-tools.ts \
  *     --instance i-0123456789abcdef0 --key ~/.ssh/my-key.pem [--user ubuntu] [--region eu-west-1] [--version 2.8.0]
  */
+import { readFileSync } from "fs";
+import { join } from "path";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { prepareAwsCli } from "../../../util/non-fit/aws/aws-cli.js";
 import { describeInstance } from "../../../util/non-fit/aws/describe-instance.js";
@@ -132,28 +136,41 @@ if (isMain(import.meta.url)) {
       return;
     }
 
-    const instanceId = flag(argv, "instance");
-    const identityFile = flag(argv, "key");
+    let instanceId = flag(argv, "instance");
+    let identityFile = flag(argv, "key");
+    let address: string | undefined;
     const user = flag(argv, "user") ?? DEFAULT_INSTANCE_USER;
+
+    const instanceDir = flag(argv, "dir");
+    if (instanceDir) {
+      const info = JSON.parse(readFileSync(join(instanceDir, "ec2-instance.json"), "utf8"));
+      instanceId ??= info.instanceId;
+      identityFile ??= info.keyPath;
+      address = info.address;
+    }
+
     if (!instanceId || !identityFile) {
       fitCliError(
         "Usage:\n" +
-          "  install-cao-tools.ts --instance <ec2-id> --key <path.pem> [--user ubuntu] [--region <aws-region>] [--version 2.8.0] [--dir <cao-tools-dir>]\n" +
-          "  install-cao-tools.ts --print [--dir <cao-tools-dir>] [--version 2.8.0]",
+          "  install-cao-tools.ts --dir <instance-dir> [--user ubuntu] [--version 2.8.0] [--cao-dir <cao-tools-dir>]\n" +
+          "  install-cao-tools.ts --instance <ec2-id> --key <path.pem> [--user ubuntu] [--region <aws-region>] [--version 2.8.0] [--cao-dir <cao-tools-dir>]\n" +
+          "  install-cao-tools.ts --print [--cao-dir <cao-tools-dir>] [--version 2.8.0]",
       );
       process.exit(1);
     }
-    const caoToolsDir = flag(argv, "dir") ?? defaultCaoToolsDir(user, version);
+    const caoToolsDir = flag(argv, "cao-dir") ?? defaultCaoToolsDir(user, version);
 
-    const awsOptions = await prepareAwsCli(argv);
-    console.log(`Looking up EC2 instance ${instanceId}...`);
-    const info = await describeInstance(instanceId, awsOptions);
-    if (!info) {
-      throw new Error(`No EC2 instance found with id ${instanceId} (in ${awsOptions.region}).`);
-    }
-    const address = info.publicDns || info.publicIp;
     if (!address) {
-      throw new Error(`Instance ${instanceId} is ${info.state} and has no public address to SSH to.`);
+      const awsOptions = await prepareAwsCli(argv);
+      console.log(`Looking up EC2 instance ${instanceId}...`);
+      const info = await describeInstance(instanceId, awsOptions);
+      if (!info) {
+        throw new Error(`No EC2 instance found with id ${instanceId} (in ${awsOptions.region}).`);
+      }
+      address = info.publicDns || info.publicIp;
+      if (!address) {
+        throw new Error(`Instance ${instanceId} is ${info.state} and has no public address to SSH to.`);
+      }
     }
 
     const host: RemoteHost = { host: address, user, identityFile };

@@ -13,9 +13,14 @@
  *
  * Run on its own against an existing EC2 instance (installs, does not allocate
  * anything):
+ *   # Using a saved instance dir (reads ec2-instance.json + .pem automatically):
+ *   npx tsx src/workflows/cluster/cluster-create/install-cbdinocluster.ts --dir /tmp/fit-cli/<run>/instances/0
+ *   # With explicit flags:
  *   npx tsx src/workflows/cluster/cluster-create/install-cbdinocluster.ts \
  *     --instance i-0123456789abcdef0 --key ~/.ssh/my-key.pem [--user ubuntu] [--region eu-west-1]
  */
+import { readFileSync } from "fs";
+import { join } from "path";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { prepareAwsCli } from "../../../util/non-fit/aws/aws-cli.js";
 import { describeInstance } from "../../../util/non-fit/aws/describe-instance.js";
@@ -109,25 +114,39 @@ function flag(argv: readonly string[], name: string): string | undefined {
 if (isMain(import.meta.url)) {
   runCli(async () => {
     const argv = process.argv.slice(2);
-    const instanceId = flag(argv, "instance");
-    const identityFile = flag(argv, "key");
+    let instanceId = flag(argv, "instance");
+    let identityFile = flag(argv, "key");
+    let address: string | undefined;
     const user = flag(argv, "user") ?? DEFAULT_INSTANCE_USER;
+
+    const instanceDir = flag(argv, "dir");
+    if (instanceDir) {
+      const info = JSON.parse(readFileSync(join(instanceDir, "ec2-instance.json"), "utf8"));
+      instanceId ??= info.instanceId;
+      identityFile ??= info.keyPath;
+      address = info.address;
+    }
+
     if (!instanceId || !identityFile) {
       fitCliError(
-        "Usage: install-cbdinocluster.ts --instance <ec2-id> --key <path.pem> [--user ubuntu] [--region <aws-region>]",
+        "Usage:\n" +
+          "  install-cbdinocluster.ts --dir <instance-dir> [--user ubuntu]\n" +
+          "  install-cbdinocluster.ts --instance <ec2-id> --key <path.pem> [--user ubuntu] [--region <aws-region>]",
       );
       process.exit(1);
     }
 
-    const awsOptions = await prepareAwsCli(argv);
-    console.log(`Looking up EC2 instance ${instanceId}...`);
-    const info = await describeInstance(instanceId, awsOptions);
-    if (!info) {
-      throw new Error(`No EC2 instance found with id ${instanceId} (in ${awsOptions.region}).`);
-    }
-    const address = info.publicDns || info.publicIp;
     if (!address) {
-      throw new Error(`Instance ${instanceId} is ${info.state} and has no public address to SSH to.`);
+      const awsOptions = await prepareAwsCli(argv);
+      console.log(`Looking up EC2 instance ${instanceId}...`);
+      const info = await describeInstance(instanceId, awsOptions);
+      if (!info) {
+        throw new Error(`No EC2 instance found with id ${instanceId} (in ${awsOptions.region}).`);
+      }
+      address = info.publicDns || info.publicIp;
+      if (!address) {
+        throw new Error(`Instance ${instanceId} is ${info.state} and has no public address to SSH to.`);
+      }
     }
 
     const host: RemoteHost = { host: address, user, identityFile };
