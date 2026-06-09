@@ -41,6 +41,10 @@ export interface AskClusterDefOptions {
 
 /** Ask the questions that describe the cluster to allocate. */
 export async function askClusterDef(options: AskClusterDefOptions = {}): Promise<ClusterDef> {
+  if (options.cng) {
+    console.log("\nNote: CNG (Cloud Native Gateway) will be automatically installed as CNG testing was requested.\n");
+  }
+
   // Only one cluster type for now, but we still ask so adding more later is
   // natural — and so the limitation is visible.
   await select({

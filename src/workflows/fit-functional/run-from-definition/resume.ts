@@ -32,6 +32,14 @@ export const RESUME_POINTS = [
 
 export type ResumePoint = (typeof RESUME_POINTS)[number];
 
+export interface ResumeSelector {
+  instance?: number;
+  cluster?: number;
+  clusterlessSession?: number;
+  session?: number;
+  run?: number;
+}
+
 /**
  * Which up-front phases a run executes. The test run itself always executes;
  * a resume point turns off the earlier phases whose output is loaded from the
@@ -77,6 +85,14 @@ export function parseResumePoint(value: string | undefined): ResumePoint | undef
   throw new Error(`Unknown --resume-at point "${value}". Valid points: ${RESUME_POINTS.join(", ")}.`);
 }
 
+function parsePositiveIntFlag(flag: string, value: string | undefined): number {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new Error(`${flag} must be a positive integer.`);
+  }
+  return parsed;
+}
+
 /**
  * Pull `--resume-at=<point>` (or `--resume-at <point>`) out of an argv list,
  * returning the value and the remaining positionals.
@@ -96,6 +112,54 @@ export function extractResumeAt(argv: readonly string[]): { resumeAt?: string; p
     }
   }
   return { ...(resumeAt !== undefined ? { resumeAt } : {}), positionals };
+}
+
+/**
+ * Pull resume-path selectors out of argv, returning them and the remaining
+ * positionals.
+ */
+export function extractResumeSelector(argv: readonly string[]): { selector: ResumeSelector; positionals: string[] } {
+  const positionals: string[] = [];
+  const selector: ResumeSelector = {};
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    const readValue = (flag: string): string | undefined => {
+      if (arg === flag) {
+        i++;
+        return argv[i];
+      }
+      return arg.startsWith(`${flag}=`) ? arg.slice(flag.length + 1) : undefined;
+    };
+
+    const instance = readValue("--resume-instance");
+    if (instance !== undefined) {
+      selector.instance = parsePositiveIntFlag("--resume-instance", instance);
+      continue;
+    }
+    const cluster = readValue("--resume-cluster");
+    if (cluster !== undefined) {
+      selector.cluster = parsePositiveIntFlag("--resume-cluster", cluster);
+      continue;
+    }
+    const clusterlessSession = readValue("--resume-clusterless-session");
+    if (clusterlessSession !== undefined) {
+      selector.clusterlessSession = parsePositiveIntFlag("--resume-clusterless-session", clusterlessSession);
+      continue;
+    }
+    const session = readValue("--resume-session");
+    if (session !== undefined) {
+      selector.session = parsePositiveIntFlag("--resume-session", session);
+      continue;
+    }
+    const run = readValue("--resume-run");
+    if (run !== undefined) {
+      selector.run = parsePositiveIntFlag("--resume-run", run);
+      continue;
+    }
+
+    positionals.push(arg);
+  }
+  return { selector, positionals };
 }
 
 if (isMain(import.meta.url)) {

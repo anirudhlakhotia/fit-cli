@@ -20,26 +20,47 @@ export function formatEc2DeletionResponsibilityBanner(
   region: string,
   address?: string,
   otherInstances?: InstanceInfo[],
+  context?: InstanceListContext,
 ): string {
   const lines: string[] = [
     `Instance: ${instanceId}${address ? ` (${address})` : ""}`,
     `Region: ${region}`,
+  ];
+  if (context?.account || context?.creator) {
+    const parts: string[] = [];
+    if (context.account) parts.push(`account: ${context.account}`);
+    if (context.creator) parts.push(`user: ${context.creator}`);
+    lines.push(parts.join("  ·  "));
+  }
+  lines.push(
+    `Console: ${awsConsoleInstancesUrl(region)}`,
+    "",
     "This instance keeps incurring AWS charges until it is terminated.",
     "fit-cli will offer to delete it at the end of the run.",
     "If you keep it running, or leave before cleanup, you must delete it yourself.",
     "Terminate it with:",
     `  ${terminateInstanceCommand(instanceId, region)}`,
-  ];
+  );
   if (otherInstances && otherInstances.length > 0) {
     lines.push(
       "",
-      `Other fit-cli instance${otherInstances.length === 1 ? "" : "s"} you own (same AWS account) also running in ${region}:`,
+      `${otherInstances.length} other fit-cli instance${otherInstances.length === 1 ? "" : "s"} also running in ${region} — each keeps incurring AWS charges:`,
     );
     for (const inst of otherInstances) {
       const addr = inst.publicDns || inst.publicIp || "";
       const creator = inst.creator ? `  created-by: ${inst.creator}` : "";
-      lines.push(`  ${inst.instanceId}${addr ? ` (${addr})` : ""}${creator}  →  ${terminateInstanceCommand(inst.instanceId, region)}`);
+      lines.push(`  ${inst.instanceId}${addr ? ` (${addr})` : ""}${creator}`);
+      lines.push(`    terminate: ${terminateInstanceCommand(inst.instanceId, region)}`);
     }
+    const allIds = [instanceId, ...otherInstances.map((i) => i.instanceId)];
+    lines.push(
+      "",
+      `Delete all ${allIds.length} in one shot with:`,
+      `  aws --region ${region} ec2 terminate-instances --instance-ids ${allIds.join(" ")}`,
+      "",
+      "Or manage them interactively with:",
+      `  npx tsx src/util/non-fit/aws/manage-instances.ts --region ${region}`,
+    );
   }
   return formatBanner("EC2 LIFECYCLE WARNING", lines);
 }

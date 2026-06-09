@@ -10,6 +10,7 @@ import {
   type ClusterExistsPolicy,
 } from "../../cluster/cluster-create/cluster-exists-policy.js";
 import type { CbdinoclusterDef } from "../../cluster/cluster-create/build-cluster-def.js";
+import { SDKS, type SdkValue } from "../../../util/sdk/sdks.js";
 import {
   CURRENT_FIT_DEFINITION_VERSION,
   FIT_DEFINITION_TYPE,
@@ -271,11 +272,21 @@ function isPortInUsePolicy(value: unknown): value is PortInUsePolicy {
   return isString(value) && (PORT_IN_USE_POLICIES as readonly string[]).includes(value);
 }
 
+const SDK_VALUES = SDKS.map((sdk) => sdk.value);
+
+function isSdkValue(value: unknown): value is SdkValue {
+  return isString(value) && (SDK_VALUES as readonly string[]).includes(value);
+}
+
 function validatePerformer(value: unknown, path: string): PerformerSetup {
   const record = requireRecord(value, path);
-  const performer: PerformerSetup = {
-    sdk: requireString(record, "sdk", `${path}.sdk`) as PerformerSetup["sdk"],
-  };
+  const sdk = requireString(record, "sdk", `${path}.sdk`);
+  if (!isSdkValue(sdk)) {
+    throw new InvalidDefinitionError(
+      `"${path}.sdk" must be one of ${SDK_VALUES.join(", ")}; got ${JSON.stringify(sdk)}`,
+    );
+  }
+  const performer: PerformerSetup = { sdk };
   if (record.port !== undefined) {
     performer.port = requirePositiveInteger(record, "port", `${path}.port`);
   }
@@ -573,7 +584,6 @@ if (isMain(import.meta.url)) {
     console.log(
       `✓ Valid ${FIT_DEFINITION_TYPE} definition (version ${definition.version}, ${definition.instances.length} instance(s), ${countRuns(definition)} run(s)).`,
     );
-    console.log(JSON.stringify(definition, null, 2));
     return Promise.resolve();
   });
 }

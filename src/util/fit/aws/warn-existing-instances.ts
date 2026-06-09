@@ -27,14 +27,18 @@ import { formatExistingInstancesBanner, type InstanceListContext } from "./lifec
  * one, so the user can reap a forgotten box before launching another. Returns the
  * instances found (empty if none), so callers can branch on the result if they
  * want; on its own it only warns and never blocks provisioning.
+ *
+ * Pass `{ warn: false }` to suppress the banner and only return the instance
+ * list (useful when the caller will display its own combined banner).
  */
 export async function warnAboutExistingInstances(
   options: AwsOptions = {},
   context?: InstanceListContext,
+  { warn = true }: { warn?: boolean } = {},
 ): Promise<InstanceInfo[]> {
   const region = resolveRegion(options);
   const existing = await listInstances(FIT_OWNER_TAG, { region });
-  if (existing.length === 0) {
+  if (existing.length === 0 || !warn) {
     return existing;
   }
 

@@ -31,8 +31,8 @@ import {
  * Build a FitExecutionContext that runs against a remote box over SSH. Preparing
  * the box installs the FIT dependencies (git, docker, JDK), wires a passwordless
  * `docker` wrapper, configures git credentials, and clones the FIT repos — unless
- * `skipPreparation` is set, in which case it reuses an already-prepared workspace
- * and only does the cheap, idempotent bin/wrapper/creds setup.
+ * `skipPreparation` is set, in which case the box is assumed to be fully ready
+ * from a previous run and the entire preparation step is skipped.
  */
 export async function createRemoteFitExecutionContext(
   target: ExecutionTarget,
@@ -42,17 +42,13 @@ export async function createRemoteFitExecutionContext(
 ): Promise<FitExecutionContext> {
   const rootDir = remoteFitRootDir();
   const binDir = remoteFitBinDir(rootDir);
-  const wrapperPath = remoteDockerWrapperPath(rootDir);
 
-  console.log(`\nPreparing a remote FIT workspace on ${target.description}...`);
-  await target.run("mkdir", ["-p", rootDir]);
-
-  // Resuming onto a box a previous run already prepared: the slow apt install and
-  // repo clones are done, so skip them. The cheap, idempotent bin/wrapper/creds
-  // setup below still runs so the context is consistent.
   if (skipPreparation) {
-    console.log("→ resume: reusing the already-prepared remote workspace (skipping apt install and repo clones).");
+    console.log(`\n→ resume: reusing existing remote FIT workspace on ${target.description} (skipping preparation).`);
   } else {
+    console.log(`\nPreparing a remote FIT workspace on ${target.description}...`);
+    await target.run("mkdir", ["-p", rootDir]);
+
     console.log("\nInstalling the remote FIT dependencies...");
     // apt-get is noisy; run it quietly (-qq) and hide it until failure so the
     // terminal stays clean — but the captured output is written to session.debug.log
@@ -69,27 +65,26 @@ export async function createRemoteFitExecutionContext(
     // Allow running Docker without sudo
     await target.run("sudo", ["usermod", "-aG", "docker", "ubuntu"]);
     await target.run("sudo", ["-n", "systemctl", "enable", "--now", "docker"]);
-  }
 
-  await target.run("mkdir", ["-p", binDir]);
-  const internalDir = instanceInternalRunDir(instanceIndex);
-  mkdirSync(internalDir, { recursive: true, mode: 0o700 });
-  const localDockerWrapper = join(internalDir, "remote-docker-wrapper.sh");
-  writeFileSync(localDockerWrapper, remoteDockerWrapperScript(), { mode: 0o700 });
-  await target.putFile(localDockerWrapper, wrapperPath);
-  await target.run("chmod", ["755", wrapperPath]);
+    await target.run("mkdir", ["-p", binDir]);
+    const internalDir = instanceInternalRunDir(instanceIndex);
+    mkdirSync(internalDir, { recursive: true, mode: 0o700 });
+    const localDockerWrapper = join(internalDir, "remote-docker-wrapper.sh");
+    writeFileSync(localDockerWrapper, remoteDockerWrapperScript(), { mode: 0o700 });
+    const wrapperPath = remoteDockerWrapperPath(rootDir);
+    await target.putFile(localDockerWrapper, wrapperPath);
+    await target.run("chmod", ["755", wrapperPath]);
 
-  const githubToken = resolveGithubToken();
-  if (githubToken) {
-    await configureRemoteGitCredentials(target, rootDir, githubToken);
-  } else if (!skipPreparation) {
-    console.log(
-      "\n⚠ No GitHub token found — the private FIT repos will fail to clone.\n" +
-        "  Add one with `npm run init`, or set GITHUB_TOKEN / GH_TOKEN, then try again.",
-    );
-  }
+    const githubToken = resolveGithubToken();
+    if (githubToken) {
+      await configureRemoteGitCredentials(target, rootDir, githubToken);
+    } else {
+      console.log(
+        "\n⚠ No GitHub token found — the private FIT repos will fail to clone.\n" +
+          "  Add one with `npm run init`, or set GITHUB_TOKEN / GH_TOKEN, then try again.",
+      );
+    }
 
-  if (!skipPreparation) {
     await ensureRemoteRepos(target, rootDir, remoteFitRepos(sdk));
   }
 

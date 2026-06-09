@@ -81,8 +81,8 @@ test("setupDeclarativeCluster initializes cbdinocluster before retrying ps", asy
       args: ["-lc", `cp ${execution.stagedFiles[0].targetPath} ~/.cbdinocluster && chmod 600 ~/.cbdinocluster`],
     },
     {
-      command: "sh",
-      args: ["-lc", "docker network inspect fit >/dev/null 2>&1 || docker network create fit >/dev/null"],
+      command: "docker",
+      args: ["network", "create", "fit"],
     },
   ]);
   assert.equal(result.allocated, false);

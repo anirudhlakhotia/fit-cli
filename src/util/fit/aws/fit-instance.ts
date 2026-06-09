@@ -124,13 +124,14 @@ export async function provisionFitInstance(options: ProvisionOptions = {}): Prom
   //   arn:aws:sts::123:assumed-role/R/sess → sess
   const creatorTag = creds.identity.arn.split("/").at(-1) ?? creds.identity.userId;
 
-  // Before launching anything, warn about fit-cli boxes already running in this
-  // region (same owner/account, owned-by-fit tag) so a forgotten, still-billing
-  // instance is noticed rather than stacked on top of.
-  const existingInstances = await warnAboutExistingInstances(awsOptions, {
-    account: creds.identity.account,
-    creator: creatorTag,
-  });
+  // Before launching anything, silently fetch fit-cli boxes already running in
+  // this region. We suppress the banner here — it will be shown in the
+  // post-launch lifecycle warning so the user sees everything in one place.
+  const existingInstances = await warnAboutExistingInstances(
+    awsOptions,
+    { account: creds.identity.account, creator: creatorTag },
+    { warn: false },
+  );
 
   const instanceType = options.instanceType ?? defaultInstanceType();
   console.log(`Provisioning a ${instanceType} EC2 instance in ${region}...`);
@@ -203,7 +204,7 @@ export async function provisionFitInstance(options: ProvisionOptions = {}): Prom
     ];
 
     console.log(`\n✓ EC2 instance ${id} is ready at ${address}`);
-    fitCliWarn(`\n${formatEc2DeletionResponsibilityBanner(id, region, address, existingInstances)}\n`);
+    fitCliWarn(`\n${formatEc2DeletionResponsibilityBanner(id, region, address, existingInstances, { account: creds.identity.account, creator: creatorTag })}\n`);
     console.log("Debug it directly with:");
     console.log(`  ssh -i ${keyPath} ${FIT_INSTANCE_USER}@${address}`);
     return { instanceId: id, address, keyPath, host, target: new RemoteTarget(host), artifacts, details, terminate };

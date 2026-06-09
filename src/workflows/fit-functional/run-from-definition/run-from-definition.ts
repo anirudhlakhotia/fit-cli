@@ -49,6 +49,7 @@ import {
   extractInteractiveFlag,
   clusterRunDir,
   instanceRunDir,
+  type DefinitionRunPath,
 } from "../../../util/non-fit/replay.js";
 import { confirm } from "../../../util/non-fit/prompts.js";
 import { rootDirFromArgv } from "../../../util/fit/root.js";
@@ -113,9 +114,11 @@ import {
 } from "../../fit-shared/failure-classification.js";
 import {
   extractResumeAt,
+  extractResumeSelector,
   parseResumePoint,
   phasesForResumePoint,
   type ResumePoint,
+  type ResumeSelector,
 } from "./resume.js";
 import {
   readRunState,
@@ -522,8 +525,8 @@ async function resumePerformer(
   };
 }
 
- function printResumeHint(point: ResumePoint, definitionPath: string): void {
-  console.log(`\n→ Resume from here: npm run definition -- execute --resume-at=${point} ${definitionPath}`);
+ function printResumeHint(point: ResumePoint, definitionPath: string, path: DefinitionRunPath, includeRun: boolean): void {
+  console.log(`\n→ Resume from here: ${formatResumeCommand(point, definitionPath, resumeSelectorFromPath(path, includeRun))}`);
 }
 
 /** Run one iteration: stand up (or reuse) its performer, then run the tests. */
@@ -548,7 +551,7 @@ async function runIteration(
   }
   artifacts.push(...performer.artifacts);
   if (setupPerformerPhase && performer.containerId) {
-    printResumeHint("after-performer", definitionPath);
+    printResumeHint("after-performer", definitionPath, run.path, true);
   }
 
   let output: RunOutput;
@@ -606,11 +609,59 @@ function targetStateFrom(teardown: ExecutionTargetTeardown): ResumeTargetState {
   };
 }
 
+function hasResumeSelector(selector: ResumeSelector): boolean {
+  return Object.values(selector).some((value) => value !== undefined);
+}
+
+function resumeSelectorFromPath(path: DefinitionRunPath, includeRun: boolean): ResumeSelector {
+  return {
+    instance: path.instanceIndex + 1,
+    ...(!path.clusterlessSession && path.clusterIndex !== undefined ? { cluster: path.clusterIndex + 1 } : {}),
+    ...(path.clusterlessSession && includeRun && path.sessionIndex !== undefined
+      ? { clusterlessSession: path.sessionIndex + 1 }
+      : {}),
+    ...(!path.clusterlessSession && includeRun && path.sessionIndex !== undefined ? { session: path.sessionIndex + 1 } : {}),
+    ...(includeRun && path.runIndex !== undefined ? { run: path.runIndex + 1 } : {}),
+  };
+}
+
+function resumeSelectorFlags(selector: ResumeSelector): string[] {
+  return [
+    ...(selector.instance !== undefined ? [`--resume-instance=${selector.instance}`] : []),
+    ...(selector.cluster !== undefined ? [`--resume-cluster=${selector.cluster}`] : []),
+    ...(selector.clusterlessSession !== undefined ? [`--resume-clusterless-session=${selector.clusterlessSession}`] : []),
+    ...(selector.session !== undefined ? [`--resume-session=${selector.session}`] : []),
+    ...(selector.run !== undefined ? [`--resume-run=${selector.run}`] : []),
+  ];
+}
+
+function formatResumeCommand(point: ResumePoint, definitionPath: string, selector: ResumeSelector): string {
+  return `npm run definition -- execute --resume-at=${point} ${resumeSelectorFlags(selector).join(" ")} ${definitionPath}`.replace(/\s+/g, " ").trim();
+}
+
+function resumeSelectorMatchesPath(selector: ResumeSelector, path: DefinitionRunPath): boolean {
+  const clusterlessSession = path.clusterlessSession === true;
+  return (
+    (selector.instance === undefined || selector.instance === path.instanceIndex + 1) &&
+    (selector.cluster === undefined || (!clusterlessSession && selector.cluster === (path.clusterIndex ?? 0) + 1)) &&
+    (selector.clusterlessSession === undefined || (clusterlessSession && selector.clusterlessSession === (path.sessionIndex ?? 0) + 1)) &&
+    (selector.session === undefined || (!clusterlessSession && selector.session === (path.sessionIndex ?? 0) + 1)) &&
+    (selector.run === undefined || selector.run === (path.runIndex ?? 0) + 1)
+  );
+}
+
+function describeRunPath(path: DefinitionRunPath): string {
+  return path.clusterlessSession
+    ? `instance ${path.instanceIndex + 1} / clusterless session ${(path.sessionIndex ?? 0) + 1} / run ${(path.runIndex ?? 0) + 1}`
+    : `instance ${path.instanceIndex + 1} / cluster ${(path.clusterIndex ?? 0) + 1} / session ${(path.sessionIndex ?? 0) + 1} / run ${(path.runIndex ?? 0) + 1}`;
+}
+
 interface TeardownInputs {
   definitionPath: string;
   executionGroupIndex: number;
   /** Within the active execution group, the run that was active at teardown. */
   runIndex: number;
+  resumePath?: DefinitionRunPath;
   /** The remote/local context — absent if the run failed before it came up. */
   execution?: FitExecutionContext;
   teardown: ExecutionTargetTeardown;
@@ -681,7 +732,7 @@ function resumeSuggestions(inputs: TeardownInputs): ResumePoint[] {
  * failed before it came up); only the instance is then up to leave or terminate.
  */
 async function teardownRun(inputs: TeardownInputs): Promise<void> {
-  const { definitionPath, executionGroupIndex, runIndex, execution, teardown, forceLocalhost, clusterState, performers, performerStates } = inputs;
+  const { definitionPath, executionGroupIndex, runIndex, resumePath, execution, teardown, forceLocalhost, clusterState, performers, performerStates } = inputs;
 
   const nothingToLeaveUp = !teardown.terminate && !clusterState && performerStates.length === 0;
   if (nothingToLeaveUp) {
@@ -727,8 +778,10 @@ async function teardownRun(inputs: TeardownInputs): Promise<void> {
 
     const suggestions = resumeSuggestions(inputs);
     const lastSuggestion = suggestions[suggestions.length - 1];
-    if (lastSuggestion) {
-      console.log(`\nResume after a manual fix with:\n  npm run definition -- execute --resume-at=${lastSuggestion} ${definitionPath}`);
+    if (lastSuggestion && resumePath) {
+      console.log(
+        `\nResume after a manual fix with:\n  ${formatResumeCommand(lastSuggestion, definitionPath, resumeSelectorFromPath(resumePath, true))}`,
+      );
     }
     if (teardown.terminate && teardown.instanceId) {
       const region = teardown.region ?? resolveRegion();
@@ -771,9 +824,9 @@ function isInteractiveRun(): boolean {
 /**
  * Decide whether to force every execution group onto localhost, ignoring each group's
  * `instance:` setting. Resuming reuses the earlier run's choice. Otherwise: if no
- * execution group wants AWS there's nothing to override; interactively we default to honoring
- * the file (opt in to localhost); non-interactively (CI) we default to localhost so
- * a CI run never provisions AWS by surprise.
+ * execution group wants AWS there's nothing to override; interactively we prompt (defaulting
+ * to honoring the file); non-interactively we default to honoring the definition file so a
+ * CI run provisions whatever the file asks for.
  */
 async function resolveForceLocalhost(
   groups: readonly ResolvedExecutionGroup[],
@@ -786,21 +839,18 @@ async function resolveForceLocalhost(
     return false;
   }
   if (!isInteractiveRun()) {
-    console.log(
-      "\nNon-interactive run: running every cycle on localhost (ignoring AWS instance settings). " +
-        "Use --interactive to provision the instances each execution group asks for.",
-    );
-    return true;
+    return false;
   }
   return confirm({
     promptId: "run-from-definition.force-localhost",
-    message: "Run everything on localhost, ignoring each execution group's instance setting?",
+    message: "Run everything directly on localhost overriding where the definition says?  (Good for testing and local development)",
     default: false,
   });
 }
 
 export interface RunFromDefinitionOptions {
   resumeAt?: ResumePoint;
+  resumeSelector?: ResumeSelector;
 }
 
 /** Run FIT functional tests as described by the definition file at `definitionPath`. */
@@ -809,7 +859,7 @@ export async function runFromDefinition(
   rootDir: string,
   options: RunFromDefinitionOptions = {},
 ): Promise<RunOutput> {
-  const { resumeAt } = options;
+  const { resumeAt, resumeSelector = {} } = options;
   const phases = phasesForResumePoint(resumeAt);
   const resolved = resolveDefinition(loadDefinition(definitionPath));
   const executionGroups = buildExecutionGroups(resolved.instances);
@@ -828,6 +878,21 @@ export async function runFromDefinition(
   }
   const startCycleIndex = savedState?.executionGroupIndex ?? 0;
   const startIterationIndex = savedState?.startRunIndex ?? 0;
+  const expectedResumePath = executionGroups[startCycleIndex]?.runs[startIterationIndex]?.path;
+  if (resumeAt && hasResumeSelector(resumeSelector)) {
+    if (!expectedResumePath) {
+      fitCliError("\nresume: the saved run state points at a run that no longer exists in this definition.");
+      return { artifacts: [], details: [] };
+    }
+    if (!resumeSelectorMatchesPath(resumeSelector, expectedResumePath)) {
+      fitCliError(
+        `\nresume: the requested path does not match the saved run state.\n` +
+          `  Requested: ${resumeSelectorFlags(resumeSelector).join(" ")}\n` +
+          `  Saved:     ${describeRunPath(expectedResumePath)}`,
+      );
+      return { artifacts: [], details: [] };
+    }
+  }
 
   // Resolve GitHub credentials upfront so we fail before provisioning an instance.
   let githubCredentials: { user: string; token: string } | undefined;
@@ -906,6 +971,7 @@ export async function runFromDefinition(
   let activeTeardown: ExecutionTargetTeardown = { kind: "local" };
   let activeCycleIndex = startCycleIndex;
   let activeIterationIndex = startIterationIndex;
+  let activeResumePath: DefinitionRunPath | undefined = expectedResumePath;
   let activeClusterState: ResumeClusterState | undefined;
   let activePerformers: RunningPerformer[] = [];
   let activePerformerStates: ResumePerformerState[] = [];
@@ -923,6 +989,7 @@ export async function runFromDefinition(
       if (!group) {
         break;
       }
+      activeResumePath = group.path;
       console.log(`\nExecution group ${cycleIndex + 1}/${executionGroups.length}: ${group.type}`);
       console.log(`  Execution: ${forceLocalhost ? "localhost (forced)" : group.instance.kind}`);
       console.log(`  Cluster: ${clusterLabel(group)}`);
@@ -943,7 +1010,7 @@ export async function runFromDefinition(
       const cycleTeardown = targetOutcome.teardown;
       activeTeardown = cycleTeardown;
       if (cycleTeardown.kind === "remote" && cycleTeardown.address) {
-        printResumeHint("after-instance-creation", definitionPath);
+        printResumeHint("after-instance-creation", definitionPath, group.path, false);
       }
 
       const execution = await createFitExecutionContext(targetOutcome.target, rootDir, group.runs[0].sdk, {
@@ -954,7 +1021,7 @@ export async function runFromDefinition(
       artifacts.push(...execution.artifacts);
       details.push(...execution.details);
       if (phases.prepareRemote && cycleTeardown.kind === "remote" && cycleTeardown.address) {
-        printResumeHint("after-remote-preparation", definitionPath);
+        printResumeHint("after-remote-preparation", definitionPath, group.path, false);
       }
 
       // This cycle's situational iterations may stream to the hosted DB; if it runs
@@ -998,7 +1065,7 @@ export async function runFromDefinition(
               throwFatalToCycle("setup-cluster didn't produce a cluster, so this execution group can't continue.");
             }
             if (clusterState) {
-              printResumeHint("after-cluster-creation", definitionPath);
+              printResumeHint("after-cluster-creation", definitionPath, activeCycle.path, false);
             }
           }
         } else {
@@ -1019,6 +1086,7 @@ export async function runFromDefinition(
             continue;
           }
           activeIterationIndex = cycleIterationIndex;
+          activeResumePath = iteration.path;
           const isLastIteration = cycleIterationIndex === activeCycle.runs.length - 1;
           announce(activeCycle, iteration, resolved.fitPerformerGerritRef);
           const isStartIteration = cycleIndex === startCycleIndex && cycleIterationIndex === startIterationIndex;
@@ -1122,6 +1190,7 @@ export async function runFromDefinition(
       definitionPath,
       executionGroupIndex: activeCycleIndex,
       runIndex: activeIterationIndex,
+      ...(activeResumePath ? { resumePath: activeResumePath } : {}),
       ...(activeExecution ? { execution: activeExecution } : {}),
       teardown: activeTeardown,
       forceLocalhost,
@@ -1135,12 +1204,13 @@ export async function runFromDefinition(
 if (isMain(import.meta.url)) {
   runCli(async () => {
     const { rootDir, positionals } = rootDirFromArgv(process.argv.slice(2));
-    const { resumeAt, positionals: rest } = extractResumeAt(positionals);
+    const { resumeAt, positionals: resumeRest } = extractResumeAt(positionals);
+    const { selector: resumeSelector, positionals: rest } = extractResumeSelector(resumeRest);
     const [definitionPath, ...extra] = rest;
     if (!definitionPath || extra.length > 0) {
       console.error(
-        "Primary usage: npm run definition -- execute <file.yaml> [--resume-at=<point>] [--root <dir>]\n" +
-          "Direct:        tsx src/workflows/fit-functional/run-from-definition/run-from-definition.ts <file.yaml> [--resume-at=<point>]\n" +
+        "Primary usage: npm run definition -- execute <file.yaml> [--resume-at=<point>] [--resume-instance=<n>] [--resume-cluster=<n>] [--resume-session=<n>] [--resume-clusterless-session=<n>] [--resume-run=<n>] [--root <dir>]\n" +
+          "Direct:        tsx src/workflows/fit-functional/run-from-definition/run-from-definition.ts <file.yaml> [--resume-at=<point>] [resume selectors]\n" +
           "  --resume-at: after-instance-creation | after-remote-preparation | after-cluster-creation | after-performer",
       );
       process.exit(2);
@@ -1152,6 +1222,9 @@ if (isMain(import.meta.url)) {
       console.error((err as Error).message);
       process.exit(2);
     }
-    return runFromDefinition(definitionPath, rootDir, { ...(resumePoint ? { resumeAt: resumePoint } : {}) });
+    return runFromDefinition(definitionPath, rootDir, {
+      ...(resumePoint ? { resumeAt: resumePoint } : {}),
+      ...(hasResumeSelector(resumeSelector) ? { resumeSelector } : {}),
+    });
   });
 }

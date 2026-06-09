@@ -90,7 +90,6 @@ if (isMain(import.meta.url)) {
         `✓ Valid ${FIT_DEFINITION_TYPE} definition (version ${definition.version}, ` +
           `${definition.instances.length} instance(s), ${countRuns(definition)} run(s)).`,
       );
-      console.log(JSON.stringify(definition, null, 2));
       return;
     }
 
@@ -114,6 +113,11 @@ if (isMain(import.meta.url)) {
       console.error((err as Error).message);
       process.exit(2);
     }
+    const definition = loadDefinition(definitionPath);
+    console.log(
+      `✓ Valid ${FIT_DEFINITION_TYPE} definition (version ${definition.version}, ` +
+        `${definition.instances.length} instance(s), ${countRuns(definition)} run(s)).`,
+    );
     return runFromDefinition(definitionPath, rootDir, { ...(resumePoint ? { resumeAt: resumePoint } : {}) });
   });
 }

@@ -104,6 +104,17 @@ test("filterFitTests matches case-insensitively on file name or path", () => {
   assert.deepEqual(filterFitTests(SAMPLE_TESTS, "nope"), []);
 });
 
+test("filterFitTests matches on fully-qualified class name", () => {
+  assert.deepEqual(
+    filterFitTests(SAMPLE_TESTS, "com.couchbase.transactions.StandardTest"),
+    [SAMPLE_TESTS[1]],
+  );
+  assert.deepEqual(
+    filterFitTests(SAMPLE_TESTS, "com.couchbase.client.analytics"),
+    [SAMPLE_TESTS[0]],
+  );
+});
+
 test("fitTestSearchSource maps filtered tests into search choices", () => {
   assert.deepEqual(fitTestSearchSource(SAMPLE_TESTS)("standard"), [
     {
@@ -112,6 +123,18 @@ test("fitTestSearchSource maps filtered tests into search choices", () => {
       value: "com.couchbase.transactions.StandardTest",
     },
   ]);
+});
+
+test("fitTestSearchSource offers a free-form entry when no tests match", () => {
+  const result = fitTestSearchSource(SAMPLE_TESTS)("com.example.NonExistentTest");
+  assert.equal(result.length, 1);
+  assert.equal(result[0].value, "com.example.NonExistentTest");
+  assert.equal(result[0].short, "com.example.NonExistentTest");
+});
+
+test("fitTestSearchSource returns no free-form entry for a blank term", () => {
+  const result = fitTestSearchSource([])("");
+  assert.deepEqual(result, []);
 });
 
 test("buildFitTestChoices shows relative paths while keeping short labels concise", () => {

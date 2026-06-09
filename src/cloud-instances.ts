@@ -3,6 +3,7 @@
  * Top-level entry for managing fit-cli EC2 instances.
  *
  * npm run cloud-instances -- list   [--region <r>]
+ * npm run cloud-instances -- manage [--region <r>] [--tag key=value] [--key <key-name>]
  * npm run cloud-instances -- delete <instance-id> [--region <r>] [--force]
  * npm run cloud-instances -- --help
  */
@@ -20,16 +21,19 @@ import {
   terminateInstanceCommand,
   type InstanceListContext,
 } from "./util/fit/aws/lifecycle-warning.js";
+import { manageInstances, type InstanceQuery } from "./util/non-fit/aws/manage-instances.js";
 
 const HELP = `Manage fit-cli EC2 instances.
 
 Usage:
   npm run cloud-instances -- list   [--region <region>]
+  npm run cloud-instances -- manage [--region <region>] [--tag key=value] [--key <key-name>]
   npm run cloud-instances -- delete <instance-id> [--region <region>] [--force]
   npm run cloud-instances -- --help
 
 Subcommands:
   list    Show all fit-cli instances in the region with their status and cost context.
+  manage  Interactively browse and act on instances (terminate, view details).
   delete  Terminate an instance by id (prompts for confirmation unless --force).`;
 
 async function cmdList(argv: string[]): Promise<void> {
@@ -58,6 +62,37 @@ async function cmdList(argv: string[]): Promise<void> {
   }
 
   console.log(formatExistingInstancesBanner(instances, region, context));
+}
+
+async function cmdManage(argv: string[]): Promise<void> {
+  const awsOptions = await prepareAwsCli(argv);
+
+  const flag = (name: string): string | undefined => {
+    const index = argv.indexOf(`--${name}`);
+    return index !== -1 ? argv[index + 1] : undefined;
+  };
+
+  let query: InstanceQuery;
+  const key = flag("key");
+  if (key) {
+    query = { kind: "key", keyName: key };
+  } else {
+    const tag = flag("tag");
+    query = {
+      kind: "tag",
+      tag: tag ? { key: tag.split("=")[0], value: tag.split("=")[1] ?? "" } : undefined,
+    };
+  }
+
+  logAwsAction(
+    "Managing EC2 instances",
+    awsOptions,
+    query.kind === "key"
+      ? { keyName: query.keyName, states: LIVE_STATES }
+      : { tag: query.tag ? `${query.tag.key}=${query.tag.value}` : "fit-cli=owned", states: LIVE_STATES },
+  );
+
+  await manageInstances(query, awsOptions);
 }
 
 async function cmdDelete(argv: string[]): Promise<void> {
@@ -115,6 +150,11 @@ if (isMain(import.meta.url)) {
 
     if (subcommand === "list") {
       await cmdList(rest);
+      return;
+    }
+
+    if (subcommand === "manage") {
+      await cmdManage(rest);
       return;
     }
 

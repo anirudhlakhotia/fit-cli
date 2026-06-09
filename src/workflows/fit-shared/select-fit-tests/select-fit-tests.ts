@@ -264,7 +264,7 @@ export function buildFitTestChoices(tests: readonly FitTestCase[]) {
   }));
 }
 
-/** Filter tests for the single-test search box by file name or path. */
+/** Filter tests for the single-test search box by file name, path, or class name. */
 export function filterFitTests(tests: readonly FitTestCase[], term: string | undefined): FitTestCase[] {
   const needle = (term ?? "").trim().toLowerCase();
   if (needle.length === 0) {
@@ -273,18 +273,27 @@ export function filterFitTests(tests: readonly FitTestCase[], term: string | und
   return tests.filter(
     (test) =>
       test.fileName.toLowerCase().includes(needle) ||
-      test.relativePath.toLowerCase().includes(needle),
+      test.relativePath.toLowerCase().includes(needle) ||
+      test.className.toLowerCase().includes(needle),
   );
 }
 
 /** Build a `source` callback for the single-test {@link search} prompt. */
 export function fitTestSearchSource(tests: readonly FitTestCase[]) {
-  return (term: string | undefined) =>
-    filterFitTests(tests, term).map((test) => ({
+  return (term: string | undefined) => {
+    const results = filterFitTests(tests, term).map((test) => ({
       name: test.relativePath,
       short: test.fileName,
       value: test.className,
     }));
+
+    const needle = (term ?? "").trim();
+    if (needle.length > 0 && results.length === 0) {
+      return [{ name: `Use "${needle}" directly (not found in discovered tests)`, short: needle, value: needle }];
+    }
+
+    return results;
+  };
 }
 
 function isStringArray(value: unknown): value is string[] {

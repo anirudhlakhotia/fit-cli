@@ -59,7 +59,7 @@ export async function runClusterDiag(cluster: SelectedCluster, opts?: ClusterDia
       await captureCommand(
         "curl",
         ["-k", "-u", `${cluster.credentials.username}:${cluster.credentials.password}`, "-X", "GET", url],
-        process.cwd(),
+        undefined,
         attempt > 0 ? { quiet: true } : undefined,
       );
       console.log(`\n✓ Cluster sanity test succeeded with:\n  ${command}`);

@@ -87,10 +87,17 @@ async function ensureDockerNetwork(execution: ClusterCommandExecutor, network: s
   if (["bridge", "host", "none"].includes(network)) {
     return;
   }
-  await execution.run("sh", [
+  // Probe silently (we only need the exit code), then create only if absent so
+  // the creation output flows through run() and into session.debug.log.
+  const exists = await execution.capture("sh", [
     "-lc",
-    `docker network inspect ${posixQuote(network)} >/dev/null 2>&1 || docker network create ${posixQuote(network)} >/dev/null`,
-  ], undefined, { display: `docker network create ${network} (if absent)` });
+    `docker network inspect ${posixQuote(network)} >/dev/null 2>&1 && printf yes || printf no`,
+  ], undefined, { quiet: true }).then((out) => out.trim() === "yes").catch(() => false);
+  if (!exists) {
+    await execution.run("docker", ["network", "create", network], undefined, {
+      display: `docker network create ${network}`,
+    });
+  }
 }
 
 export async function prepareCbdinoclusterConfig(

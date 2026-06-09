@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   extractResumeAt,
+  extractResumeSelector,
   parseResumePoint,
   phasesForResumePoint,
 } from "../resume.js";
@@ -70,4 +71,36 @@ test("extractResumeAt accepts the space-separated form", () => {
 
 test("extractResumeAt leaves the positionals untouched when absent", () => {
   assert.deepEqual(extractResumeAt(["/tmp/fit.yaml"]), { positionals: ["/tmp/fit.yaml"] });
+});
+
+test("extractResumeSelector pulls the nested resume path selectors out of argv", () => {
+  assert.deepEqual(
+    extractResumeSelector([
+      "--resume-instance=1",
+      "--resume-cluster",
+      "2",
+      "--resume-session=3",
+      "--resume-run",
+      "4",
+      "/tmp/fit.yaml",
+    ]),
+    {
+      selector: { instance: 1, cluster: 2, session: 3, run: 4 },
+      positionals: ["/tmp/fit.yaml"],
+    },
+  );
+});
+
+test("extractResumeSelector supports clusterless sessions", () => {
+  assert.deepEqual(
+    extractResumeSelector(["--resume-instance=2", "--resume-clusterless-session=1", "--resume-run=5", "/tmp/fit.yaml"]),
+    {
+      selector: { instance: 2, clusterlessSession: 1, run: 5 },
+      positionals: ["/tmp/fit.yaml"],
+    },
+  );
+});
+
+test("extractResumeSelector rejects non-positive values", () => {
+  assert.throws(() => extractResumeSelector(["--resume-run=0"]), /--resume-run must be a positive integer/);
 });
