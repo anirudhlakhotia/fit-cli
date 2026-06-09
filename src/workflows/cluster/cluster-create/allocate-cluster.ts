@@ -15,7 +15,7 @@ import { artifactFromPath, type RunOutput, type Artifact } from "../../../util/n
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { input } from "../../../util/non-fit/prompts.js";
 import { formatCommandLine } from "../../../util/non-fit/fit-cli-log.js";
-import { capture, run, type RunOptions } from "../../../util/non-fit/proc.js";
+import { capture, run, writeToDebugLog, type RunOptions } from "../../../util/non-fit/proc.js";
 import { ensureRunDir } from "../../../util/non-fit/replay.js";
 import { posixQuote } from "../../../util/non-fit/remote-target.js";
 import { findOnPath } from "../../../util/non-fit/which.js";
@@ -131,7 +131,9 @@ export async function allocateCluster(
   const targetOutputFile = execution.targetFilePath(localOutputFile);
   await execution.runToFile(cbdinocluster, args, targetOutputFile);
   await execution.collectFile(targetOutputFile, localOutputFile);
-  const clusterId = parseAllocatedId(readFileSync(localOutputFile, "utf8"));
+  const localOutput = readFileSync(localOutputFile, "utf8");
+  writeToDebugLog(localOutput);
+  const clusterId = parseAllocatedId(localOutput);
   if (!clusterId) {
     throw new Error("cbdinocluster allocate didn't print a cluster id");
   }

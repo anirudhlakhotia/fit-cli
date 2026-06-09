@@ -227,6 +227,20 @@ export function startDebugLog(logFile: string): SessionLog {
 }
 
 /**
+ * Write content to the current debug log (if one has been started). Used to
+ * surface captured file output — e.g. the cbdinocluster allocate stdout
+ * collected from a remote machine — so the full command I/O ends up in one
+ * place even when it couldn't flow through process.stdout/stderr.
+ */
+export function writeToDebugLog(content: string): void {
+  if (!currentDebugLog || !content) {
+    return;
+  }
+  const normalized = content.endsWith("\n") ? content : `${content}\n`;
+  currentDebugLog.write(formatTimestampedChunk(normalized, true).text);
+}
+
+/**
  * Run a command, capturing stdout and stderr into a buffer without showing it on
  * the terminal. On success the buffer is discarded silently; on failure the
  * buffer is dumped to stderr before rejecting. In both cases the captured output
