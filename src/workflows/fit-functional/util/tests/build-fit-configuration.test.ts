@@ -10,6 +10,7 @@ import { test } from "node:test";
 import {
   AUTO_GENERATED_MARKER,
   buildFitConfiguration,
+  firstHostname,
 } from "../build-fit-configuration.js";
 
 const credentials = { username: "Administrator", password: "password" };
@@ -48,7 +49,7 @@ test("a self-managed cluster uses the localhost layout", () => {
 
   const access = config.clusterAccess as Record<string, unknown>;
   assert.equal(access.connectionString, "couchbase://${defaultHostname}");
-  assert.deepEqual(access.rest, { hostname: "${defaultHostname}", resolveDnsSrv: false });
+  assert.deepEqual(access.rest, { hostname: "localhost", resolveDnsSrv: false });
   assert.deepEqual(access.proxy, {
     "//": "The performer is running in Docker and needs to be able to connect to the FIT proxy (the test-driver) running on the host machine",
     hostname: "host.docker.internal",
@@ -109,7 +110,7 @@ test("a CNG cluster splits clusterAccess into classic driver and couchbase2 perf
   });
   // The FIT proxy doesn't support couchbase2 yet, and DNS SRV is off for CNG.
   assert.equal(access.proxy, null);
-  assert.deepEqual(access.rest, { hostname: "${defaultHostname}", resolveDnsSrv: false });
+  assert.deepEqual(access.rest, { hostname: "172.19.0.2", resolveDnsSrv: false });
   assert.equal(config["//"], AUTO_GENERATED_MARKER);
   assert.deepEqual(config.excludeTests, ["situational"]);
   // A plain operational connectionString must NOT be emitted for CNG.
@@ -144,4 +145,25 @@ test("a definition fitConfig piece can override defaults while runtime fields st
   assert.equal(access.username, "custom-user");
   assert.equal(access.password, "custom-password");
   assert.equal(access.defaultHostname, "actual-host");
+});
+
+test("a multi-node self-managed cluster uses only the first IP for rest.hostname", () => {
+  const config = buildFitConfiguration({
+    scheme: "couchbase",
+    defaultHostname: "172.18.0.2,172.18.0.4,172.18.0.3",
+    flavour: "self-managed",
+    credentials,
+    tls: null,
+  });
+
+  const access = config.clusterAccess as Record<string, unknown>;
+  assert.equal(access.defaultHostname, "172.18.0.2,172.18.0.4,172.18.0.3");
+  assert.equal(access.connectionString, "couchbase://${defaultHostname}");
+  assert.deepEqual(access.rest, { hostname: "172.18.0.2", resolveDnsSrv: false });
+});
+
+test("firstHostname extracts the first host from a comma-separated list", () => {
+  assert.equal(firstHostname("172.18.0.2,172.18.0.4,172.18.0.3"), "172.18.0.2");
+  assert.equal(firstHostname("localhost"), "localhost");
+  assert.equal(firstHostname("  host1 , host2 "), "host1");
 });
