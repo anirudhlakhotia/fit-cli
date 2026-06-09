@@ -86,12 +86,12 @@ export async function createFitFunctionalDefinition(rootDir: string): Promise<Ru
   const sdk = await chooseSdk();
   const version = await askVersion();
   const onPortInUse = await askPortInUsePolicy();
-  const gerritRef = await askFitGerritRef();
 
   // Listing tests needs the test-driver checkout; selectFitTests falls back to
   // "all" (with a warning) if it isn't present, which is fine here — we're only
   // recording the choice, not running anything.
   const selection = await selectFitTests(createLocalFitExecutionContext(rootDir));
+  const gerritRef = await askFitGerritRef();
 
   const definition = buildFitFunctionalDefinitionFrom({
     cluster,
