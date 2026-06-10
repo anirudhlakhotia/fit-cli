@@ -84,7 +84,7 @@ test("buildAutoConfig: missing optional fields are omitted gracefully", () => {
   const { config } = buildAutoConfig({ args: baseArgs(), env });
 
   // aws gets defaults for region and instanceType, so it's present
-  assert.equal(config.aws?.region, "us-east-1");
+  assert.equal(config.aws?.region, "us-west-2");
   assert.equal(config.aws?.instanceType, "c5.xlarge");
   assert.equal(config.aws?.profile, undefined);
   // github and resultsDb have no defaults, so they're omitted

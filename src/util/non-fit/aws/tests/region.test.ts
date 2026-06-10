@@ -21,7 +21,7 @@ test("resolveAwsRegion falls back to the environment", () => {
   });
 });
 
-test("resolveAwsRegion defaults to us-east-1 when nothing is set", () => {
+test("resolveAwsRegion defaults to us-west-2 when nothing is set", () => {
   assert.deepEqual(resolveAwsRegion({ env: {} }), {
     region: DEFAULT_AWS_REGION,
     source: "default",
@@ -29,7 +29,7 @@ test("resolveAwsRegion defaults to us-east-1 when nothing is set", () => {
 });
 
 test("region guidance mentions how to override the default", () => {
-  assert.match(defaultAwsRegionMessage(), /defaulting to us-east-1/);
+  assert.match(defaultAwsRegionMessage(), /defaulting to us-west-2/);
   assert.match(defaultAwsRegionMessage(), /AWS_REGION/);
   assert.match(defaultAwsRegionMessage(), /npm run init/);
   assert.match(awsRegionPromptMessage("eu-west-1"), /default: eu-west-1/);

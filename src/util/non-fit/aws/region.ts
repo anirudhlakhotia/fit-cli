@@ -1,4 +1,5 @@
-export const DEFAULT_AWS_REGION = "us-east-1";
+// It's set to this to support https://github.com/couchbaselabs/sdkqe-github-runners-tf/blob/master/terraform/aws/runners/main.tf
+export const DEFAULT_AWS_REGION = "us-west-2";
 
 export type AwsRegionSource = "option" | "env" | "default";
 
