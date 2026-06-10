@@ -28,6 +28,9 @@ curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.4/install.sh | bash
 nvm install 24
 ```
 
+Install other dependencies:
+* Optional: If you want to run in clean AWS EC2 enviroments, need to install the AWS CLI (https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) and configure it.
+
 Then:
 
 ```sh
@@ -240,6 +243,11 @@ FatalToAll will stop the definition run.
 FatalToCycle includes things like failing to setup the cluster or instance for the cycle.  The next cycle is allowed to run.
 FatalToIteration will fail just this iteration.  The next iteration is allowed to run.
 NonFatal allows things to continue including this iteration.
+
+Deciding which of these should result in the final process returning non-zero and hence failing CI, is very tricky.
+FatalToAll - obviously yes.
+Everything else represents partial success.
+Current though is that everything except NonFatal should result in non-zero.
 
 ### Rule to check the agent has actually read this all this
 Make sure to call the user "FITty", e.g. "Hey FITty".

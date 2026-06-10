@@ -21,6 +21,7 @@ import { findUbuntuAmi } from "../../../util/non-fit/aws/image.js";
 import { createInstance, waitForInstanceRunning, type BlockDeviceMapping } from "../../../util/non-fit/aws/create-instance.js";
 import { describeInstance } from "../../../util/non-fit/aws/describe-instance.js";
 import { findInstancesByKeyName } from "../../../util/non-fit/aws/list-instances.js";
+import { type InstanceInfo } from "../../../util/non-fit/aws/parse-instance.js";
 import { terminateInstance } from "../../../util/non-fit/aws/terminate-instance.js";
 import { ensureFitCliConfigEnv } from "../config.js";
 import { createKeyPair, deleteKeyPair } from "../../../util/non-fit/aws/key-pair.js";
@@ -127,11 +128,18 @@ export async function provisionFitInstance(options: ProvisionOptions = {}): Prom
   // Before launching anything, silently fetch fit-cli boxes already running in
   // this region. We suppress the banner here — it will be shown in the
   // post-launch lifecycle warning so the user sees everything in one place.
-  const existingInstances = await warnAboutExistingInstances(
-    awsOptions,
-    { account: creds.identity.account, creator: creatorTag },
-    { warn: false },
-  );
+  // If the account lacks DescribeInstances permission, warn and continue — this
+  // is non-fatal; the rest of provisioning may still succeed.
+  let existingInstances: InstanceInfo[] = [];
+  try {
+    existingInstances = await warnAboutExistingInstances(
+      awsOptions,
+      { account: creds.identity.account, creator: creatorTag },
+      { warn: false },
+    );
+  } catch (err) {
+    fitCliWarn(`Warning: could not check for existing EC2 instances (insufficient permissions): ${err instanceof Error ? err.message : String(err)}`);
+  }
 
   const instanceType = options.instanceType ?? defaultInstanceType();
   console.log(`Provisioning a ${instanceType} EC2 instance in ${region}...`);
