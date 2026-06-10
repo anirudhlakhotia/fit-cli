@@ -12,6 +12,7 @@ import type { PieceData } from "../../../util/non-fit/config-pieces.js";
 import type { Sdk } from "../../../util/sdk/sdks.js";
 import { buildClusterDefObject, type ClusterDef } from "../../../cluster/cluster-create/build-cluster-def.js";
 import {
+  defaultCbdinoclusterInitArgs,
   defaultCbdinoclusterInitConfig,
   defaultSituationalCbdinoclusterInitConfig,
 } from "../../../cluster/cluster-create/default-cbdinocluster-init-config.js";
@@ -24,6 +25,7 @@ import type { FitTestSelection } from "../select-fit-tests/select-fit-tests.js";
 import {
   CURRENT_FIT_DEFINITION_VERSION,
   FIT_DEFINITION_TYPE,
+  type CbdinoclusterInitSetup,
   type ClusterConfigRef,
   type FitConfigPiece,
   type FitConfigRef,
@@ -132,20 +134,27 @@ function buildCbdinoclusterFitConfig(cng: boolean): FitConfigPiece {
 }
 
 /**
- * Build the cbdinocluster init config for a definition. For CNG, includes the
- * k8s block (enabled + context — cao-tools and kubeconfig are CSP-dependent and
- * added at runtime) and optionally the github block (token added at runtime).
+ * Build the cbdinocluster init setup for a definition.
+ *
+ * The docker path carries an editable `cbdinocluster init` args string; fit-cli
+ * appends the GitHub credentials at runtime, so `githubUser` isn't baked in here.
+ *
+ * CNG still carries a `config` object uploaded as `~/.cbdinocluster`: it includes
+ * the k8s block (enabled + context — cao-tools and kubeconfig are CSP-dependent
+ * and added at runtime) and optionally the github block (token added at runtime).
  */
-function buildCbdinoclusterInitConfig(cng: boolean, githubUser?: string): PieceData {
-  const base = defaultCbdinoclusterInitConfig();
+function buildCbdinoclusterInit(cng: boolean, githubUser?: string): CbdinoclusterInitSetup {
   if (!cng) {
-    return githubUser ? { ...base, github: { enabled: "true", user: githubUser } } : base;
+    return { args: defaultCbdinoclusterInitArgs() };
   }
+  const base = defaultCbdinoclusterInitConfig();
   return {
-    ...base,
-    // cao-tools and kubeconfig paths are added at runtime (CSP-dependent).
-    k8s: { enabled: "true", context: CNG_K3D_CONTEXT },
-    ...(githubUser ? { github: { enabled: "true", user: githubUser } } : {}),
+    config: {
+      ...base,
+      // cao-tools and kubeconfig paths are added at runtime (CSP-dependent).
+      k8s: { enabled: "true", context: CNG_K3D_CONTEXT },
+      ...(githubUser ? { github: { enabled: "true", user: githubUser } } : {}),
+    },
   };
 }
 
@@ -192,7 +201,7 @@ function buildFunctionalInstance(inputs: DefinitionInputs): BuiltFunctionalInsta
     : {
         id: CLUSTER_CONFIG_ID,
         cbdinocluster: {
-          init: { config: buildCbdinoclusterInitConfig(cng, inputs.githubUser) },
+          init: buildCbdinoclusterInit(cng, inputs.githubUser),
           config: buildClusterDefObject(inputs.cluster.def),
           ...(inputs.onClusterExists ? { onClusterExists: inputs.onClusterExists } : {}),
         },
@@ -297,6 +306,9 @@ function formatFitDefinitionYaml(definition: FitDefinition): string {
   text = text.replace(/(^\s*init:\n)(\s*)config:$/gm, (_match, initLine: string, indent: string) =>
     `${initLine}${indent}# This file will be uploaded verbatim into clean environments as ~/.cbdinocluster\n${indent}config:`
   );
+  text = text.replace(/(^\s*init:\n)(\s*)args:/gm, (_match, initLine: string, indent: string) =>
+    `${initLine}${indent}# Passed to \`cbdinocluster init\` on clean environments to set up ~/.cbdinocluster.\n${indent}# Edit to taste; fit-cli appends your GitHub credentials at runtime.\n${indent}args:`
+  );
   text = text.replace(
     /^fitConfigs:$/gm,
     [
@@ -330,6 +342,10 @@ function formatFitDefinitionJson5(definition: FitDefinition): string {
   // Insert comment before `config:` inside every `init: {` block
   text = text.replace(/^(\s*)(init: \{)\n(\s*)(config:)/gm, (_, ind1: string, initBrace: string, ind2: string, configKey: string) =>
     `${ind1}${initBrace}\n${ind2}// This file will be uploaded verbatim into clean environments as ~/.cbdinocluster\n${ind2}${configKey}`,
+  );
+  // Insert comment before `args:` inside every `init: {` block (the docker path)
+  text = text.replace(/^(\s*)(init: \{)\n(\s*)(args:)/gm, (_, ind1: string, initBrace: string, ind2: string, argsKey: string) =>
+    `${ind1}${initBrace}\n${ind2}// Passed to \`cbdinocluster init\` on clean environments to set up ~/.cbdinocluster.\n${ind2}// Edit to taste; fit-cli appends your GitHub credentials at runtime.\n${ind2}${argsKey}`,
   );
   // Insert comments before `fitConfigs:`
   text = text.replace(/^(\s*)(fitConfigs: \[)/gm, (_match: string, ind: string, fitConfigsKey: string) =>

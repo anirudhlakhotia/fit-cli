@@ -59,6 +59,14 @@ test("buildFitFunctionalDefinitionFrom records a cbdinocluster in clusterConfigs
   assert.equal(definition.clusterConfigs?.[0]?.id, "cluster-0");
   assert.equal(definition.clusterConfigs?.[0]?.cbdinocluster?.config.nodes[0]?.count, 2);
 
+  // The docker path carries an editable `cbdinocluster init` args string, not a config object.
+  const init = definition.clusterConfigs?.[0]?.cbdinocluster?.init;
+  assert.equal(init?.config, undefined);
+  assert.match(init?.args ?? "", /^--auto\b/);
+  assert.match(init?.args ?? "", /--docker-network fit/);
+  // Credentials are appended at runtime, never baked into the definition.
+  assert.doesNotMatch(init?.args ?? "", /--github-token/);
+
   // Run uses a ref, not an inline fitConfig object
   assert.equal(definition.instances[0]?.clusters[0]?.sessions[0]?.runs[0]?.fitConfig, "fit-config-0");
 

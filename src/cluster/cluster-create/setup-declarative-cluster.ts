@@ -106,6 +106,61 @@ async function ensureDockerNetwork(execution: ClusterCommandExecutor, network: s
   }
 }
 
+/** Parse `--docker-network <name>` (or `--docker-network=<name>`) out of an init args string. */
+export function dockerNetworkFromInitArgs(args: string): string | undefined {
+  const tokens = args.trim().split(/\s+/).filter(Boolean);
+  for (let i = 0; i < tokens.length; i++) {
+    if (tokens[i] === "--docker-network" && tokens[i + 1]) {
+      return tokens[i + 1];
+    }
+    const inline = tokens[i].match(/^--docker-network=(.+)$/);
+    if (inline) {
+      return inline[1];
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Prepare `~/.cbdinocluster` on a clean box by running `cbdinocluster init <args>`,
+ * letting cbdinocluster self-install its config (the docker path). `args` is the
+ * editable string from the definition; the GitHub credentials are appended here so
+ * they never live in the definition file — with creds we pass
+ * `--github-user/--github-token` (which enables GitHub), without them
+ * `--disable-github`. Afterwards the docker network the args name is created if it
+ * isn't a built-in (cbdinocluster init records the network but doesn't create it).
+ *
+ * Only runs on a remote box; on this machine we leave the operator's own
+ * `~/.cbdinocluster` (and its clusters) alone, mirroring
+ * {@link prepareCbdinoclusterConfig}.
+ */
+export async function runCbdinoclusterInit(
+  execution: ClusterCommandExecutor,
+  cbdinocluster: string,
+  args: string,
+  githubCredentials?: { user: string; token: string },
+): Promise<void> {
+  if (!("kind" in execution) || execution.kind !== "remote") {
+    return;
+  }
+  const initArgs = args.trim().split(/\s+/).filter(Boolean);
+  const credArgs = githubCredentials
+    ? ["--github-user", githubCredentials.user, "--github-token", githubCredentials.token]
+    : ["--disable-github"];
+  console.log(
+    `→ setup-cluster: initializing cbdinocluster on ${execution.description} with \`cbdinocluster init ${args}\``,
+  );
+  // The credentials are kept out of the echoed command via `display`.
+  await execution.run(cbdinocluster, ["init", ...initArgs, ...credArgs], undefined, {
+    display: `cbdinocluster init ${args}`,
+  });
+  const network = dockerNetworkFromInitArgs(args);
+  if (network) {
+    console.log(`→ setup-cluster: ensuring Docker network ${network} exists on ${execution.description}`);
+    await ensureDockerNetwork(execution, network);
+  }
+}
+
 export async function prepareCbdinoclusterConfig(
   execution: ClusterCommandExecutor,
   config: PieceData | undefined,
@@ -362,7 +417,7 @@ async function allocate(
  * result with `cluster: undefined` rather than thrown.
  */
 export async function setupDeclarativeCluster(plan: {
-  init?: { config: PieceData };
+  init?: { args?: string; config?: PieceData };
   config: CbdinoclusterDef;
   onClusterExists: ClusterExistsPolicy;
   deployer?: string;
@@ -381,7 +436,14 @@ export async function setupDeclarativeCluster(plan: {
     return FAILED();
   }
 
-  await prepareCbdinoclusterConfig(execution, plan.init?.config, plan.githubCredentials, cycleDir);
+  // The docker path carries an editable `cbdinocluster init` args string: run it
+  // on the box to self-install ~/.cbdinocluster. The CNG/situational paths still
+  // upload a config object verbatim.
+  if (plan.init?.args !== undefined) {
+    await runCbdinoclusterInit(execution, cbdinocluster, plan.init.args, plan.githubCredentials);
+  } else {
+    await prepareCbdinoclusterConfig(execution, plan.init?.config, plan.githubCredentials, cycleDir);
+  }
 
   // CNG on a clean box: the k3d cluster is up (provisionRemoteK3d) and the config
   // is now uploaded, so install the Couchbase CRDs + admission controller the cao

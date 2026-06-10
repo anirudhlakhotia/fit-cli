@@ -184,10 +184,18 @@ function validateCbdinoclusterDef(value: unknown, path: string): CbdinoclusterDe
 
 function validateCbdinoclusterInit(value: unknown, path: string): CbdinoclusterInitSetup {
   const record = requireRecord(value, path);
-  if (record.config === undefined) {
-    throw new InvalidDefinitionError(`Missing required field: ${path}.config`);
+  const hasArgs = record.args !== undefined;
+  const hasConfig = record.config !== undefined;
+  if (hasArgs && hasConfig) {
+    throw new InvalidDefinitionError(`"${path}" must have exactly one of "args" or "config", not both.`);
   }
-  return { config: validateFitConfig(record.config, `${path}.config`) };
+  if (hasArgs) {
+    return { args: requireString(record, "args", `${path}.args`) };
+  }
+  if (hasConfig) {
+    return { config: validateFitConfig(record.config, `${path}.config`) };
+  }
+  throw new InvalidDefinitionError(`Missing required field: ${path}.args (or ${path}.config)`);
 }
 
 function validateCbdinocluster(value: unknown, path: string): CbdinoclusterSetup {

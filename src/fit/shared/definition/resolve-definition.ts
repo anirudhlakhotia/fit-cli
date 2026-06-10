@@ -83,7 +83,7 @@ export interface ResolvedSessionPlan {
 }
 
 export interface ResolvedCbdinocluster {
-  init?: { config: PieceData };
+  init?: { args?: string; config?: PieceData };
   config: CbdinoclusterDef;
   onClusterExists: ClusterExistsPolicy;
   deployer?: string;
@@ -102,7 +102,7 @@ export interface ResolvedInstancePlan {
   path: DefinitionRunPath;
   instance: ResolvedInstance;
   clusters: ResolvedClusterPlan[];
-  cbdinoclusterInit?: { config: PieceData };
+  cbdinoclusterInit?: { args?: string; config?: PieceData };
   clusterlessSessions: ResolvedSessionPlan[];
 }
 
@@ -145,7 +145,7 @@ export interface ResolvedSituationalExecutionGroup {
   type: "situational";
   path: DefinitionRunPath;
   instance: ResolvedInstance;
-  cbdinoclusterInit: { config: PieceData };
+  cbdinoclusterInit: { args?: string; config?: PieceData };
   runs: ResolvedSituationalExecutionRun[];
 }
 
@@ -328,7 +328,7 @@ export function resolveCbdinocluster(cluster: ClusterLifetime): ResolvedCbdinocl
   return {
     config: cluster.cbdinocluster.config,
     onClusterExists: cluster.cbdinocluster.onClusterExists ?? DEFAULT_CLUSTER_EXISTS_POLICY,
-    ...(cluster.cbdinocluster.init !== undefined ? { init: { config: cluster.cbdinocluster.init.config } } : {}),
+    ...(cluster.cbdinocluster.init !== undefined ? { init: { ...cluster.cbdinocluster.init } } : {}),
     ...(cluster.cbdinocluster.deployer !== undefined ? { deployer: cluster.cbdinocluster.deployer } : {}),
   };
 }
@@ -413,7 +413,7 @@ export function resolveInstancePlan(instance: InstanceLifetime, instanceIndex: n
     path,
     instance: resolveInstance(instance),
     clusters: instance.clusters.map((cluster, clusterIndex) => resolveCluster(cluster, { instanceIndex, clusterIndex })),
-    ...(instance.cbdinocluster !== undefined ? { cbdinoclusterInit: { config: instance.cbdinocluster.init.config } } : {}),
+    ...(instance.cbdinocluster !== undefined ? { cbdinoclusterInit: { ...instance.cbdinocluster.init } } : {}),
     clusterlessSessions: (instance.clusterlessSessions ?? []).map((session, sessionIndex) =>
       resolveSession(session, { instanceIndex, sessionIndex, clusterlessSession: true }, false)),
   };

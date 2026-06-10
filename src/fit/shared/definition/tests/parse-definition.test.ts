@@ -69,6 +69,97 @@ instances:
   assert.equal(def.instances[0]?.clusterlessSessions?.[0]?.runs[0]?.type, "situational");
 });
 
+const FUNCTIONAL_WITH_INIT_ARGS = `
+version: 1
+type: fit
+instances:
+  - aws: {}
+    clusters:
+      - cbdinocluster:
+          init:
+            args: "--auto --disable-k8s --docker-network fit"
+          config:
+            nodes:
+              - count: 1
+                version: "8.1.0"
+                services: [kv]
+        sessions:
+          - performer:
+              sdk: java
+            runs:
+              - type: functional
+                tests:
+                  run: all
+`;
+
+test("parses a cbdinocluster init args string", () => {
+  const def = parseDefinition(FUNCTIONAL_WITH_INIT_ARGS);
+  assert.equal(
+    def.instances[0]?.clusters[0]?.cbdinocluster?.init?.args,
+    "--auto --disable-k8s --docker-network fit",
+  );
+  assert.equal(def.instances[0]?.clusters[0]?.cbdinocluster?.init?.config, undefined);
+});
+
+test("rejects a cbdinocluster init with both args and config", () => {
+  assert.throws(
+    () =>
+      parseDefinition(`
+version: 1
+type: fit
+instances:
+  - aws: {}
+    clusters:
+      - cbdinocluster:
+          init:
+            args: "--auto"
+            config:
+              version: 6
+          config:
+            nodes:
+              - count: 1
+                version: "8.1.0"
+                services: [kv]
+        sessions:
+          - performer:
+              sdk: java
+            runs:
+              - type: functional
+                tests:
+                  run: all
+`),
+    (err: unknown) => err instanceof InvalidDefinitionError && /exactly one of "args" or "config"/.test(err.message),
+  );
+});
+
+test("rejects a cbdinocluster init with neither args nor config", () => {
+  assert.throws(
+    () =>
+      parseDefinition(`
+version: 1
+type: fit
+instances:
+  - aws: {}
+    clusters:
+      - cbdinocluster:
+          init: {}
+          config:
+            nodes:
+              - count: 1
+                version: "8.1.0"
+                services: [kv]
+        sessions:
+          - performer:
+              sdk: java
+            runs:
+              - type: functional
+                tests:
+                  run: all
+`),
+    (err: unknown) => err instanceof InvalidDefinitionError && /args/.test(err.message),
+  );
+});
+
 test("rejects missing instances in the new schema", () => {
   assert.throws(
     () => parseDefinition("version: 1\ntype: fit\n"),

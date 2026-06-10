@@ -24,8 +24,19 @@ export interface ConnectionClusterSetup {
 
 export type UseExistingClusterSetup = Record<string, never>;
 
+/**
+ * How to prepare `~/.cbdinocluster` on the box before allocating.
+ *
+ * The docker path carries an editable `args` string — the arguments passed to
+ * `cbdinocluster init` (e.g. `--auto --disable-k8s --docker-network fit`) so the
+ * box self-installs its config. fit-cli appends the GitHub credentials at runtime
+ * (kept out of the definition file). The CNG/situational paths still carry a
+ * `config` object that gets uploaded verbatim as `~/.cbdinocluster`. Exactly one
+ * of `args`/`config` is present.
+ */
 export interface CbdinoclusterInitSetup {
-  config: PieceData;
+  args?: string;
+  config?: PieceData;
 }
 
 export interface CbdinoclusterSetup {

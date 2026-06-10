@@ -1,16 +1,48 @@
 import type { PieceData } from "../../util/non-fit/config-pieces.js";
 
+/** The docker network clean FIT environments allocate their clusters on. */
+export const DEFAULT_CBDINOCLUSTER_DOCKER_NETWORK = "fit";
+
+/**
+ * The default `cbdinocluster init` arguments for a clean remote FIT environment:
+ * docker-only, on a dedicated `fit` network, with everything else disabled. This
+ * is the editable string carried in the definition file's
+ * `cbdinocluster.init.args`; fit-cli runs `cbdinocluster init <args>` on the box
+ * and appends the GitHub credentials at runtime (so they stay out of the file).
+ *
+ * GitHub is intentionally left unmentioned here — fit-cli appends
+ * `--github-user/--github-token` when it has credentials, or `--disable-github`
+ * when it doesn't, rather than baking either choice into the definition.
+ */
+export function defaultCbdinoclusterInitArgs(
+  dockerNetwork: string = DEFAULT_CBDINOCLUSTER_DOCKER_NETWORK,
+): string {
+  return [
+    "--auto",
+    "--disable-aws",
+    "--disable-azure",
+    "--disable-capella",
+    "--disable-gcp",
+    "--disable-k8s",
+    "--disable-dns",
+    `--docker-network ${dockerNetwork}`,
+  ].join(" ");
+}
+
 /**
  * A conservative cbdinocluster config for clean remote FIT environments:
  * docker-only, on a dedicated `fit` network, with the rest disabled unless the
  * user edits the definition.
+ *
+ * Still used by the CNG path (which uploads a `~/.cbdinocluster` config and adds
+ * a `k8s` block) — the docker path now uses {@link defaultCbdinoclusterInitArgs}.
  */
 export function defaultCbdinoclusterInitConfig(): PieceData {
   return {
     version: 6,
     docker: {
       enabled: true,
-      network: "fit",
+      network: DEFAULT_CBDINOCLUSTER_DOCKER_NETWORK,
       host: "unix:///var/run/docker.sock"
     },
   };
