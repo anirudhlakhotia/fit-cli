@@ -270,6 +270,8 @@ export interface ResolutionEntry {
   source: string;
   found: boolean;
   value?: string;
+  /** If true, this entry is a diagnostic-only env check — not written to config. */
+  diagnosticOnly?: boolean;
 }
 
 export interface AutoInitOptions {
@@ -323,23 +325,73 @@ function mask(value: string | undefined): string {
 
 const SECRET_FIELDS = new Set(["github.token", "resultsDb.password"]);
 
+/** Check whether a diagnostic-only env var is present, appending an entry to the log. */
+function checkDiagnosticVar(log: ResolutionEntry[], envName: string, value: string | undefined): void {
+  const found = value !== undefined && value !== "";
+  log.push({ field: `$${envName}`, source: `$${envName}`, found, ...(found ? { value } : {}), diagnosticOnly: true });
+}
+
 /**
- * Print the resolution log as a table showing what was checked and found.
+ * Print the resolution log as a compact table: one row per config field with
+ * one cell per source checked (CLI arg, env vars, default), plus a separate
+ * diagnostic section for env-only checks that are not written to the config.
  */
 export function printResolutionLog(log: ResolutionEntry[]): void {
   console.log("\nConfiguration resolution:\n");
 
-  const col = (s: string, width: number) => s.padEnd(width);
+  const regularEntries = log.filter((e) => !e.diagnosticOnly);
+  const diagnosticEntries = log.filter((e) => e.diagnosticOnly);
 
-  console.log(`  ${col("Field", 22)} ${col("Source", 24)} ${col("Found", 8)} Value`);
-  console.log(`  ${col("─".repeat(22), 22)} ${col("─".repeat(24), 24)} ${col("─".repeat(8), 8)} ${"─".repeat(20)}`);
-  for (const entry of log) {
-    const displayValue = entry.found
-      ? SECRET_FIELDS.has(entry.field) ? mask(entry.value) : (entry.value ?? "")
-      : "";
-    const marker = entry.found ? "✓" : "·";
-    console.log(`  ${col(entry.field, 22)} ${col(entry.source, 24)} ${col(marker, 8)} ${displayValue}`);
+  // Group regular entries by field, preserving insertion order
+  const fieldGroups = new Map<string, ResolutionEntry[]>();
+  for (const entry of regularEntries) {
+    if (!fieldGroups.has(entry.field)) fieldGroups.set(entry.field, []);
+    fieldGroups.get(entry.field)!.push(entry);
   }
+
+  // One column per source position; width = longest source name at that position + 2 (for "✓ " / "· ")
+  const maxSources = Math.max(...[...fieldGroups.values()].map((g) => g.length), 0);
+  const srcWidths: number[] = [];
+  for (let i = 0; i < maxSources; i++) {
+    let w = 0;
+    for (const group of fieldGroups.values()) {
+      if (i < group.length) w = Math.max(w, group[i].source.length + 2);
+    }
+    srcWidths.push(w);
+  }
+
+  const fieldWidth = Math.max(...[...fieldGroups.keys()].map((k) => k.length), 5);
+  const srcTotalWidth = srcWidths.length > 0 ? srcWidths.reduce((s, w) => s + w + 2, 0) - 2 : 0;
+  const col = (s: string, w: number) => s.padEnd(w);
+
+  console.log(`  ${col("Field", fieldWidth)}  ${col("Sources", srcTotalWidth)}  Value`);
+  console.log(`  ${"─".repeat(fieldWidth)}  ${"─".repeat(srcTotalWidth)}  ${"─".repeat(20)}`);
+
+  for (const [field, entries] of fieldGroups) {
+    const cells = entries.map((e, i) => col(`${e.found ? "✓" : "·"} ${e.source}`, srcWidths[i]));
+    for (let i = entries.length; i < maxSources; i++) cells.push(col("", srcWidths[i]));
+
+    const resolved = entries.find((e) => e.found);
+    const finalValue = resolved
+      ? SECRET_FIELDS.has(field) ? mask(resolved.value) : (resolved.value ?? "")
+      : "";
+
+    console.log(`  ${col(field, fieldWidth)}  ${cells.join("  ")}  ${finalValue}`);
+  }
+
+  if (diagnosticEntries.length > 0) {
+    const diagLabel = "─── env-only (not saved to config) ";
+    const diagWidth = Math.max(...diagnosticEntries.map((e) => e.source.length));
+    const divWidth = fieldWidth + 2 + srcTotalWidth + 2 + 20;
+    console.log();
+    console.log(`  ${diagLabel}${"─".repeat(Math.max(0, divWidth - diagLabel.length))}`);
+    for (const entry of diagnosticEntries) {
+      const marker = entry.found ? "~" : "✗";
+      const displayValue = entry.found ? mask(entry.value) : "";
+      console.log(`  ${col(entry.source, diagWidth)}  ${marker}  ${displayValue}`);
+    }
+  }
+
   console.log();
 }
 
@@ -373,6 +425,11 @@ export function buildAutoConfig(
       ...(instanceType ? { instanceType } : {}),
     };
     if (Object.keys(parts).length > 0) aws = parts;
+
+    // Diagnostic: AWS credentials (must be set in env; not written to config)
+    checkDiagnosticVar(log, "AWS_ACCESS_KEY_ID", env.AWS_ACCESS_KEY_ID);
+    checkDiagnosticVar(log, "AWS_SECRET_ACCESS_KEY", env.AWS_SECRET_ACCESS_KEY);
+    checkDiagnosticVar(log, "AWS_SESSION_TOKEN", env.AWS_SESSION_TOKEN);
   } else {
     log.push({ field: "aws.*", source: "--disable-aws", found: false });
   }
