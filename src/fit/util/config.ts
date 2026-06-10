@@ -380,8 +380,8 @@ export function saveFitCliConfig(config: FitCliConfig, path: string = defaultFit
 }
 
 async function defaultRunInitWorkflow(path: string): Promise<void> {
-  const { runInitWorkflow } = await import("../init/init.js");
-  await runInitWorkflow(path);
+  const { runEditWorkflow } = await import("../config/edit.js");
+  await runEditWorkflow(path);
 }
 
 export async function ensureFitCliConfigEnv(

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { FIT_CLI_CONFIG_VERSION, type FitCliConfig } from "../../util/config.js";
-import { initAnswersToConfig, initDefaultsFromConfig, initDefaultsFromEnv } from "../init.js";
+import { initAnswersToConfig, initDefaultsFromConfig, initDefaultsFromEnv } from "../edit.js";
 
 test("init defaults reuse saved AWS settings", () => {
   const config: FitCliConfig = {

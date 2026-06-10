@@ -2,27 +2,30 @@
 /**
  * Top-level dispatcher for the `config` npm script.
  *
- * npm run config -- init [--auto] [--dry-run] [--disable-aws] [--disable-github] [--disable-results-db]
+ * npm run config -- edit [--auto] [--dry-run] [--disable-aws] [--disable-github] [--disable-results-db]
  *                        [--aws-region <r>] [--aws-profile <p>] [--aws-instance-type <t>]
  *                        [--github-user <u>] [--github-token <t>]
  *                        [--results-db-password <p>] [--results-db-username <u>]
  *                        [--config-path <path>]
+ * npm run config -- show [--config-path <path>]
  * npm run config -- --help
  */
 import { isMain, runCli } from "../../util/non-fit/cli.js";
-import { runAutoInit, runInitWorkflow } from "../init/init.js";
-import { defaultFitCliConfigPath } from "../util/config.js";
+import { runAutoEdit, runEditWorkflow, formatConfigForDisplay } from "./edit.js";
+import { defaultFitCliConfigPath, loadFitCliConfig } from "../util/config.js";
 
 const HELP = `Manage fit-cli configuration.
 
 Usage:
-  npm run config -- init [options]
+  npm run config -- edit [options]
+  npm run config -- show [--config-path <path>]
   npm run config -- --help
 
 Subcommands:
-  init   Create or update the fit-cli config file.
+  edit   Create or update the fit-cli config file (interactive by default).
+  show   Print the current config with secrets elided.
 
-Init options:
+Edit options:
   --auto                 Non-interactive mode. Reads from env vars and CLI args only.
   --dry-run              Show what would be written without touching the config file.
   --disable-aws          Skip writing the aws section.
@@ -79,7 +82,7 @@ function consumeValue(args: string[], flag: string): string | undefined {
   return value;
 }
 
-export function parseInitArgs(argv: string[]): AutoInitCliArgs {
+export function parseEditArgs(argv: string[]): AutoInitCliArgs {
   const args = [...argv];
 
   const auto = consumeFlag(args, "--auto");
@@ -139,24 +142,35 @@ if (isMain(import.meta.url)) {
       return;
     }
 
-    if (subcommand !== "init") {
+    if (subcommand === "show") {
+      const configPath = consumeValue([...rest], "--config-path") ?? defaultFitCliConfigPath();
+      const { config } = loadFitCliConfig(configPath);
+      if (!config) {
+        console.error(`No config found at ${configPath}`);
+        process.exit(1);
+      }
+      console.log(formatConfigForDisplay(config));
+      return;
+    }
+
+    if (subcommand !== "edit") {
       console.error(`Unknown subcommand: ${subcommand}\n`);
       console.error(HELP);
       process.exit(2);
     }
 
-    // init subcommand
+    // edit subcommand
     if (rest.includes("--help") || rest.includes("-h")) {
       console.log(HELP);
       return;
     }
 
-    const args = parseInitArgs(rest);
+    const args = parseEditArgs(rest);
 
     if (args.auto) {
-      await runAutoInit(args);
+      await runAutoEdit(args);
     } else {
-      await runInitWorkflow(args.configPath);
+      await runEditWorkflow(args.configPath);
     }
   });
 }

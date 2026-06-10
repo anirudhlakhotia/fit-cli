@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 import JSON5 from "json5";
 import {
   FIT_CLI_CONFIG_VERSION,
@@ -9,9 +8,8 @@ import {
   type FitCliConfig,
 } from "../util/config.js";
 import { DEFAULT_AWS_REGION, awsRegionPromptMessage } from "../../util/non-fit/aws/region.js";
-import { isMain, runCli } from "../../util/non-fit/cli.js";
 import { confirm, input, password } from "../../util/non-fit/prompts.js";
-import type { AutoInitCliArgs } from "../config/config.js";
+import type { AutoInitCliArgs } from "./config.js";
 
 const DEFAULT_EC2_INSTANCE_TYPE = "c5.xlarge";
 
@@ -74,7 +72,7 @@ function awsAnswersToConfig(answers: AwsInitAnswers): FitCliConfig["aws"] {
 
 export function initAnswersToConfig(answers: InitAnswers, existing?: FitCliConfig): FitCliConfig {
   // Declining the AWS prompt leaves any saved AWS settings untouched rather
-  // than wiping them, so re-running init to update the token is non-destructive.
+  // than wiping them, so re-running edit is non-destructive.
   const aws =
     answers.configureAws && answers.aws ? awsAnswersToConfig(answers.aws) : existing?.aws;
   const user = trimOptional(answers.githubUser) ?? existing?.github?.user;
@@ -82,7 +80,7 @@ export function initAnswersToConfig(answers: InitAnswers, existing?: FitCliConfi
   const github = user || token
     ? { ...(user ? { user } : {}), ...(token ? { token } : {}) }
     : undefined;
-  // Preserve a hand-set username; init only prompts for the password.
+  // Preserve a hand-set username; edit only prompts for the password.
   const resultsDbPassword = trimOptional(answers.resultsDbPassword);
   const resultsDbUsername = existing?.resultsDb?.username;
   const resultsDb =
@@ -137,7 +135,7 @@ async function promptForGithubToken(existing?: FitCliConfig): Promise<string | u
       : "GitHub PAT (for cloning FIT repos and pulling GHCR images — leave blank to skip):",
     mask: "*",
   });
-  // A blank entry keeps whatever is already configured, so re-running init
+  // A blank entry keeps whatever is already configured, so re-running edit
   // doesn't force the user to retype the token.
   return trimOptional(entered) ?? existingToken;
 }
@@ -250,7 +248,7 @@ export function formatConfigForDisplay(config: FitCliConfig): string {
   return JSON5.stringify(redacted, null, 2).trimEnd();
 }
 
-export async function runInitWorkflow(path: string = defaultFitCliConfigPath()): Promise<string> {
+export async function runEditWorkflow(path: string = defaultFitCliConfigPath()): Promise<string> {
   const existing = loadFitCliConfig(path);
   const answers = await promptForConfig(existing.config);
   const config = initAnswersToConfig(answers, existing.config);
@@ -260,7 +258,7 @@ export async function runInitWorkflow(path: string = defaultFitCliConfigPath()):
   return savedPath;
 }
 
-// ─── Auto (non-interactive) init ────────────────────────────────────────────
+// ─── Auto (non-interactive) edit ────────────────────────────────────────────
 
 /**
  * Describes a single resolution attempt: where we looked and what we found.
@@ -505,10 +503,10 @@ export function buildAutoConfig(
 }
 
 /**
- * Run the non-interactive auto-init flow: resolve config, display resolution
+ * Run the non-interactive auto-edit flow: resolve config, display resolution
  * table, and write the config file (unless --dry-run).
  */
-export async function runAutoInit(args: AutoInitCliArgs): Promise<void> {
+export async function runAutoEdit(args: AutoInitCliArgs): Promise<void> {
   const { config, log } = buildAutoConfig({ args, env: process.env });
 
   printResolutionLog(log);
@@ -525,12 +523,4 @@ export async function runAutoInit(args: AutoInitCliArgs): Promise<void> {
 
   const savedPath = saveFitCliConfig(config, args.configPath);
   console.log(`Saved fit-cli config to ${savedPath}`);
-}
-
-export async function main(): Promise<void> {
-  await runInitWorkflow();
-}
-
-if (isMain(import.meta.url)) {
-  runCli(main);
 }
