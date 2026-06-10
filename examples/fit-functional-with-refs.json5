@@ -70,15 +70,9 @@
       id: 'cluster-aws',
       cbdinocluster: {
         init: {
-          // This file will be uploaded verbatim into clean environments as ~/.cbdinocluster
-          config: {
-            version: 6,
-            docker: {
-              enabled: true,
-              network: 'fit',
-              host: 'unix:///var/run/docker.sock',
-            },
-          },
+          // Passed to `cbdinocluster init` on clean environments to set up ~/.cbdinocluster.
+          // Edit to taste; fit-cli appends your GitHub credentials at runtime.
+          args: '--auto --disable-aws --disable-azure --disable-capella --disable-gcp --disable-k8s --disable-dns --docker-network fit',
         },
         config: {
           nodes: [

@@ -189,8 +189,10 @@ Associate each user prompt with a unique id.  Save the prompt id and the user's 
 The user can replay that with `npm run replay <logfile>`.
 Note that replays are inherently less reliable than definition files, since workflows change, and should be regarded as somewhat experimental and perhaps buggy at present.  So definition files are recommended usually.
 
-### yaml
-Use this sort of casing for multi-word field: gerritRef.  With a handful of exceptions like "transactions-fit-performer" for names.
+### yaml and json5
+We support both as input and output formats.  YAML is a little more concise, JSON5 is easier to read (IMO).  Users: use whichever you prefer.
+Follow these rules on output regardless:
+- Use this sort of casing for multi-word field: gerritRef.  With a handful of exceptions like "transactions-fit-performer" for names.
 
 ### Iteration
 Reproducibility is crucial - see above.
