@@ -94,14 +94,16 @@ export async function checkBuildAndRunPerformer(
 ): Promise<RunningPerformer | undefined> {
   // JVM SDKs (Java, Kotlin, Scala) use prebuilt GHCR images; non-JVM SDKs
   // build from source using jenkins-sdk.
-  if (!sdk.jvm) {
+  // When a Gerrit ref is set, the FIT performer repo must be present even for JVM SDKs so we can
+  // check it out to the requested ref.
+  if (!sdk.jvm || gerritRef) {
     if (!(await execution.ensureWorkspace(sdk))) {
       return undefined;
     }
+  }
 
-    if (gerritRef && !(await checkoutFitGerritRef(execution, gerritRef))) {
-      return undefined;
-    }
+  if (gerritRef && !(await checkoutFitGerritRef(execution, gerritRef))) {
+    return undefined;
   }
 
   // Check what's already running first: if a performer is up (a recognised

@@ -102,23 +102,23 @@ test("fitTestDriverSummaryDetails formats the parsed summary for the CLI table",
     ),
     [
       {
-        label: "run 0 Result",
+        label: "Run 0 Result",
         value: "FAIL",
       },
       {
-        label: "run 0 Tests run",
+        label: "Run 0 Tests run",
         value: "13",
       },
       {
-        label: "run 0 Failures",
+        label: "Run 0 Failures",
         value: "7",
       },
       {
-        label: "run 0 Errors",
+        label: "Run 0 Errors",
         value: "0",
       },
       {
-        label: "run 0 Skipped",
+        label: "Run 0 Skipped",
         value: "2",
       },
     ],
