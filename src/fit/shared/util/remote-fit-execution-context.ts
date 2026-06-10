@@ -53,17 +53,20 @@ export async function createRemoteFitExecutionContext(
     await target.run("mkdir", ["-p", rootDir]);
 
     console.log("\nInstalling the remote FIT dependencies...");
-    // apt-get is noisy; run it quietly (-qq) and hide it until failure so the
-    // terminal stays clean — but the captured output is written to session.debug.log
-    // so it's available for post-run diagnosis. DEBIAN_FRONTEND avoids interactive prompts.
+    // DEBIAN_FRONTEND avoids interactive prompts during package installation.
     const aptEnv = "DEBIAN_FRONTEND=noninteractive";
-    await target.runHiddenUntilFailure("sh", ["-lc", `sudo -n ${aptEnv} apt-get -qq update`], undefined, {
+    // Clear stale/corrupt apt lists baked into the AMI before updating — a malformed
+    // InRelease file causes GPG signature splitting to fail even on a fresh instance.
+    await target.runHiddenUntilFailure("sh", ["-lc", `sudo -n rm -rf /var/lib/apt/lists/*`], undefined, {
+      display: "rm -rf /var/lib/apt/lists/*",
+    });
+    await target.runHiddenUntilFailure("sh", ["-lc", `sudo -n ${aptEnv} apt-get update`], undefined, {
       display: "apt-get update",
     });
     await target.runHiddenUntilFailure("sh", [
       "-lc",
       // JDK 17+ needed for jenkins-sdk ./gradlew
-      `sudo -n ${aptEnv} apt-get -qq install -y git docker.io openjdk-17-jdk-headless lsof`,
+      `sudo -n ${aptEnv} apt-get install -y git docker.io openjdk-17-jdk-headless lsof`,
     ], undefined, { display: "apt-get install git docker.io openjdk-17-jdk-headless lsof" });
     // Allow running Docker without sudo
     await target.run("sudo", ["usermod", "-aG", "docker", "ubuntu"]);

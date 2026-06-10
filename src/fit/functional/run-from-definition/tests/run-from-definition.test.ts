@@ -239,6 +239,18 @@ const READY_DATABASE = {
   details: [],
 };
 
+test("runSituationalTests throws FatalToIteration when the test driver reports failure", async () => {
+  await assert.rejects(
+    () =>
+      runSituationalTests(fitExecutionContext(), situationalIteration(), {
+        resolveResultsDatabaseFn: () => Promise.resolve(READY_DATABASE),
+        generateSituationalConfigurationFn: () => ({ path: "/tmp/fit.json", artifacts: [], details: [] }),
+        runTestDriverFn: () => Promise.resolve({ ok: false, logFile: "/tmp/driver.log", artifacts: [], details: [] }),
+      }),
+    { message: "FIT tests failed — check the test-driver log for details." },
+  );
+});
+
 test("runSituationalTests stops before generating a config when the database isn't ready", async () => {
   let generatedConfig = false;
   let ranDriver = false;
@@ -258,6 +270,32 @@ test("runSituationalTests stops before generating a config when the database isn
   assert.deepEqual(result, { artifacts: [], details: [] });
   assert.equal(generatedConfig, false);
   assert.equal(ranDriver, false);
+});
+
+test("runTests throws FatalToIteration when the test driver reports failure", async () => {
+  await assert.rejects(
+    () =>
+      runTests(fitExecutionContext(), "connection", iteration(), undefined, {
+        runClusterDiagFn: () => Promise.resolve(true),
+        generateFitConfigurationFn: () => ({ path: "/tmp/fit.json", artifacts: [], details: [] }),
+        runPerformerClusterSanityCheckFn: () => Promise.resolve({ ok: true, artifacts: [], details: [] }),
+        runTestDriverFn: () => Promise.resolve({ ok: false, logFile: "/tmp/driver.log", artifacts: [], details: [] }),
+      }),
+    { message: "FIT tests failed — check the test-driver log for details." },
+  );
+});
+
+test("runTests throws FatalToIteration when performer sanity fails", async () => {
+  await assert.rejects(
+    () =>
+      runTests(fitExecutionContext(), "connection", iteration(), undefined, {
+        runClusterDiagFn: () => Promise.resolve(true),
+        generateFitConfigurationFn: () => ({ path: "/tmp/fit.json", artifacts: [], details: [] }),
+        runPerformerClusterSanityCheckFn: () => Promise.resolve({ ok: false, artifacts: [], details: [] }),
+        runTestDriverFn: () => Promise.resolve({ ok: true, logFile: "/tmp/driver.log", artifacts: [], details: [] }),
+      }),
+    { message: "Performer cluster sanity check failed; stopping this iteration." },
+  );
 });
 
 test("runSituationalTests generates the situational config then runs the driver", async () => {
