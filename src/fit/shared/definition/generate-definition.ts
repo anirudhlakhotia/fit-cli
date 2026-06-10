@@ -20,6 +20,8 @@ import { CNG_K3D_CONTEXT } from "../../../cluster/cluster-create/cng-kubernetes.
 import type { ClusterExistsPolicy } from "../../../cluster/cluster-create/cluster-exists-policy.js";
 import { DEFAULT_CREDENTIALS } from "../../../cluster/cluster-select/ask-credentials.js";
 import type { SelectedCluster } from "../../../cluster/cluster-select/cluster-select.js";
+import { DEFAULT_CBDINO_SETTINGS } from "../../situational/configuration/build-situational-configuration.js";
+import { localDatabaseConnection } from "../../situational/setup-local-database/setup-local-database.js";
 import type { PortInUsePolicy } from "../../performers/util/performer-port.js";
 import type { FitTestSelection } from "../select-fit-tests/select-fit-tests.js";
 import {
@@ -235,6 +237,27 @@ function buildFunctionalInstance(inputs: DefinitionInputs): BuiltFunctionalInsta
   return { instance, clusterConfigRef, fitConfigRef };
 }
 
+function buildSituationalFitConfig(databaseMode: SituationalDatabaseMode): FitConfigPiece {
+  return {
+    clusterAccess: {
+      defaultHostname: "localhost",
+      username: DEFAULT_CREDENTIALS.username,
+      password: DEFAULT_CREDENTIALS.password,
+    },
+    excludeTests: [],
+    situational: {
+      cbdino: {
+        version: DEFAULT_CBDINO_SETTINGS.version,
+        cbDinoClusterAppPath: DEFAULT_CBDINO_SETTINGS.cbDinoClusterAppPath,
+        enablePrivateEndpoint: DEFAULT_CBDINO_SETTINGS.enablePrivateEndpoint,
+      },
+      ...(databaseMode === "local"
+        ? (({ jdbc, username, password }) => ({ database: { jdbc, username, password } }))(localDatabaseConnection())
+        : {}),
+    },
+  };
+}
+
 function buildSituationalInstance(inputs: SituationalDefinitionInputs): InstanceLifetime {
   return {
     ...(inputs.instance ?? { localhost: {} }),
@@ -246,6 +269,7 @@ function buildSituationalInstance(inputs: SituationalDefinitionInputs): Instance
         runs: [
           {
             type: "situational",
+            fitConfig: FIT_CONFIG_ID,
             tests: buildTests(inputs.selection),
             situational: {
               database: { mode: inputs.databaseMode },
@@ -287,9 +311,14 @@ export function buildFitFunctionalDefinitionFrom(inputs: DefinitionInputs): FitD
 }
 
 export function buildFitSituationalDefinitionFrom(inputs: SituationalDefinitionInputs): FitDefinition {
+  const fitConfigRef: FitConfigRef = {
+    id: FIT_CONFIG_ID,
+    config: buildSituationalFitConfig(inputs.databaseMode),
+  };
   return buildFitDefinition({
     ...(inputs.gerritRef ? { gerritRef: inputs.gerritRef } : {}),
     instances: [buildSituationalInstance(inputs)],
+    fitConfigs: [fitConfigRef],
   });
 }
 
@@ -334,6 +363,16 @@ function formatFitSituationalDefinitionYaml(definition: FitDefinition): string {
     /^(\s*)clusterlessSessions:$/gm,
     "$1# Sessions not tied to any particular cluster (the name distinguishes these from sessions nested under clusters:)\n$1clusterlessSessions:",
   );
+  // Comment on the situational fitConfig's clusterAccess placeholder.
+  text = text.replace(
+    /^(\s*)(clusterAccess:)\n(\s+defaultHostname:)/gm,
+    "$1# Ignored for situational-only runs — cbdino creates and manages the cluster.\n$1$2\n$3",
+  );
+  // Note that fit-cli injects performerPorts (and, for hosted mode, situational.database) at runtime.
+  text = text.replace(
+    /^(\s*)(excludeTests: \[\])/gm,
+    "$1# fit-cli will inject performerPorts at runtime.\n$1$2",
+  );
   return text;
 }
 
@@ -365,6 +404,18 @@ function formatFitSituationalDefinitionJson5(definition: FitDefinition): string 
   );
   text = text.replace(/^(\s*)(clusterlessSessions: \[)/gm, (_match: string, ind: string, clKey: string) =>
     `${ind}// Sessions not tied to any particular cluster (the name distinguishes these from sessions nested under clusters:)\n${ind}${clKey}`,
+  );
+  // Comment on the situational fitConfig's clusterAccess placeholder.
+  text = text.replace(
+    /^(\s*)(clusterAccess: \{)\n(\s+defaultHostname:)/gm,
+    (_match: string, ind: string, key: string, nextLine: string) =>
+      `${ind}// Ignored for situational-only runs — cbdino creates and manages the cluster.\n${ind}${key}\n${nextLine}`,
+  );
+  // Note that fit-cli injects performerPorts (and, for hosted mode, situational.database) at runtime.
+  text = text.replace(
+    /^(\s*)(excludeTests: \[\])/gm,
+    (_match: string, ind: string, key: string) =>
+      `${ind}// fit-cli will inject performerPorts at runtime.\n${ind}${key}`,
   );
   return text;
 }

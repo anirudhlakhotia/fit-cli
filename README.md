@@ -7,6 +7,14 @@ This is a CLI tool to help make FIT easier to use.  It lets you:
 
 If you're new to FIT in general see https://github.com/couchbaselabs/transactions-fit-performer/blob/master/README.md for an intro.
 
+Currently not supported (but we want to get working):
+
+* CNG testing.
+* Performance testing.
+* Analytics testing.
+
+Everything else is expected to work, bugs excepted.
+
 
 ## Getting started
 

@@ -28,6 +28,14 @@ export function resolveGerritUserFromGitConfig(env: NodeJS.ProcessEnv = process.
   return result.stdout.trim() || undefined;
 }
 
+export function resolveGerritUserFromGhCli(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  const result = spawnSync("gh", ["config", "get", "user", "-h", "github.com"], { env, encoding: "utf8" });
+  if (result.status !== 0 || !result.stdout) {
+    return undefined;
+  }
+  return result.stdout.trim() || undefined;
+}
+
 export function requireFitGerritUser(env: NodeJS.ProcessEnv = process.env): string {
   const fromEnv = resolveFitGerritUser(env);
   if (fromEnv) {
@@ -36,6 +44,10 @@ export function requireFitGerritUser(env: NodeJS.ProcessEnv = process.env): stri
   const fromGitConfig = resolveGerritUserFromGitConfig(env);
   if (fromGitConfig) {
     return fromGitConfig;
+  }
+  const fromGhCli = resolveGerritUserFromGhCli(env);
+  if (fromGhCli) {
+    return fromGhCli;
   }
   throw new Error(
     "Cannot determine Gerrit username. Set FIT_GERRIT_USER, GERRIT_USER, or run: git config --global github.user <your-username>",
