@@ -108,7 +108,7 @@ export interface ProvisionOptions {
 export async function provisionFitInstance(options: ProvisionOptions = {}): Promise<ProvisionedInstance> {
   await ensureFitCliConfigEnv({
     promptId: "fit-instance.config.create",
-    promptMessage: "No fit-cli config found. Run `npm run init` now before provisioning an EC2 instance?",
+    promptMessage: "No fit-cli config found. Run `npm run config -- edit` now before provisioning an EC2 instance?",
   });
   const { region, source } = resolveAwsRegion({ region: options.region });
   if (source === "default") {

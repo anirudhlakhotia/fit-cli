@@ -41,6 +41,8 @@ export const SITUATIONAL_MAVEN_TEST_ARGS = [
 export interface TestRunResult extends RunOutput {
   ok: boolean;
   logFile: string;
+  /** Parsed JUnit counts for this run, when the test-driver produced reports. */
+  summary?: FitTestDriverSummary;
 }
 
 export interface FitTestDriverSummary {
@@ -216,7 +218,13 @@ export async function runTestDriver(
   );
   const summary = extractFitTestDriverSummaryFromJunitReports(join(dirname(logFile), "surefire-reports"));
   const ok = commandOk && (summary ? didFitTestDriverPass(summary) : true);
-  return { ok, logFile, artifacts, details: summary ? fitTestDriverSummaryDetails(summary, path) : [] };
+  return {
+    ok,
+    logFile,
+    artifacts,
+    details: summary ? fitTestDriverSummaryDetails(summary, path) : [],
+    ...(summary ? { summary } : {}),
+  };
 }
 
 if (isMain(import.meta.url)) {

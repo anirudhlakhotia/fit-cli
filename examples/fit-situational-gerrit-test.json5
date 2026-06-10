@@ -1,4 +1,6 @@
-// Test checking out from gerrit
+// Test checking out from gerrit.
+// Run with:
+//   npm run definition -- execute --interactive examples/fit-situational-gerrit-test.json5
 {
   version: 1,
   type: 'fit',

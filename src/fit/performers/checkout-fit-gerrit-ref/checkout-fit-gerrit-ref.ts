@@ -80,7 +80,7 @@ export function requireGerritUser(): string {
     return fromGhCli;
   }
   throw new Error(
-    "Cannot determine Gerrit username. Set gerrit.user in ~/.fit-cli/config.json5 (npm run init), or set FIT_GERRIT_USER / GERRIT_USER.",
+    "Cannot determine Gerrit username. Set gerrit.user in ~/.fit-cli/config.json5 (npm run config -- edit), or set FIT_GERRIT_USER / GERRIT_USER.",
   );
 }
 

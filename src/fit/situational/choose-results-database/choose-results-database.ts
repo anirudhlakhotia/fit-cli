@@ -4,7 +4,7 @@
  * or results UI to run); the alternative is a local Docker database, which this
  * workflow can set up via ../setup-local-database.
  *
- * The hosted database's readonly password is secret, so it's taken from the
+ * The hosted database's password is secret, so it's taken from the
  * fit-cli config (`resultsDb.password` in ~/.fit-cli/config.json5), falling back
  * to the FIT_RESULTS_DB_PASSWORD environment variable (a `.env` file is loaded
  * automatically) rather than prompted for and logged. Ask on #the-fit-stop for
@@ -76,6 +76,21 @@ export async function checkResultsDatabaseConnectivity(
   }
 }
 
+/**
+ * The single message shown whenever the hosted results database password is
+ * missing, so every caller fails the same way. Kept deliberately short: where
+ * the password lives in the config file is an implementation detail — the user
+ * just needs to know who to ask and which command to run.
+ */
+export function missingResultsDbPasswordMessage(): string {
+  return (
+    `\n✗ The hosted results database on ${HOSTED_RESULTS_DB_HOST} needs a password.\n` +
+    "  Ask on #the-fit-stop for it, then run `npm run config -- edit` inside the fit-cli dir\n" +
+    "  to set up your config file (~/.fit-cli/config.json5).\n" +
+    `  You must also be on the vpn-public VPN to reach ${HOSTED_RESULTS_DB_HOST}.`
+  );
+}
+
 export async function chooseResultsDatabaseMode(promptIdPrefix?: string): Promise<ResultsDatabaseMode> {
   return select<ResultsDatabaseMode>({
     promptId: qualifyPromptId("situational.database.mode", promptIdPrefix),
@@ -96,12 +111,7 @@ function resolveHostedDatabase(): ResultsDatabaseOutcome {
   loadDotenv();
   const database = buildHostedDatabase(resolveResultsDbCredentials());
   if (!database) {
-    fitCliError(
-      `\n✗ The hosted results database needs a readonly password.\n` +
-        `  Ask on #the-fit-stop for it, then set it as resultsDb.password in your fit-cli config\n` +
-        `  (~/.fit-cli/config.json5 — run \`npm run init\`) or ${RESULTS_DB_PASSWORD_ENV} in your .env (see .env.example).\n` +
-        `  You must also be on the vpn-public VPN to reach ${HOSTED_RESULTS_DB_HOST}.`,
-    );
+    fitCliError(missingResultsDbPasswordMessage());
     return { ready: false, artifacts: [], details: [] };
   }
   console.log(`\n✓ Using the hosted results database at ${HOSTED_RESULTS_DB_HOST}.`);
@@ -121,12 +131,7 @@ function resolveHostedDatabase(): ResultsDatabaseOutcome {
 function resolveHostedDatabaseFromConfig(): ResultsDatabaseOutcome {
   const database = buildHostedDatabase(resolveResultsDbCredentials({ env: {} }));
   if (!database) {
-    fitCliError(
-      `\n✗ The hosted results database needs a readonly password in your fit-cli config.\n` +
-        `  Ask on #the-fit-stop for it, then set it as resultsDb.password in your fit-cli config\n` +
-        `  (~/.fit-cli/config.json5 — run \`npm run init\`).\n` +
-        `  You must also be on the vpn-public VPN to reach ${HOSTED_RESULTS_DB_HOST}.`,
-    );
+    fitCliError(missingResultsDbPasswordMessage());
     return { ready: false, artifacts: [], details: [] };
   }
   console.log(`\n✓ Using the hosted results database at ${HOSTED_RESULTS_DB_HOST}.`);

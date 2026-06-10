@@ -36,6 +36,7 @@ import {
   artifactFromPath,
   combineArtifacts,
   combineDetails,
+  formatDetailsSection,
   type Artifact,
   type Detail,
   type RecordedFailure,
@@ -52,7 +53,7 @@ import {
   instanceRunDir,
   type DefinitionRunPath,
 } from "../../../util/non-fit/replay.js";
-import { confirm } from "../../../util/non-fit/prompts.js";
+import { confirm, select } from "../../../util/non-fit/prompts.js";
 import { rootDirFromArgv } from "../../util/root.js";
 import { resolveGithubCredentials, resolveResultsDbCredentials } from "../../util/config.js";
 import { terminateInstanceCommand } from "../../util/aws/lifecycle-warning.js";
@@ -91,11 +92,12 @@ import {
   type ResolvedFunctionalExecutionRun,
   type ResolvedSituationalExecutionRun,
 } from "../../shared/definition/resolve-definition.js";
-import { runTestDriver } from "../../shared/run-test-driver/run-test-driver.js";
+import { runTestDriver, type FitTestDriverSummary } from "../../shared/run-test-driver/run-test-driver.js";
 import {
   buildHostedDatabase,
   checkResultsDatabaseConnectivity,
   HOSTED_RESULTS_DB_HOST,
+  missingResultsDbPasswordMessage,
   resolveResultsDatabase,
   SITUATIONAL_RESULTS_URL,
 } from "../../situational/choose-results-database/choose-results-database.js";
@@ -107,6 +109,8 @@ import { writeAgentsGuide } from "../../shared/util/write-agents-guide.js";
 import {
   reconnectExecutionTarget,
   resolveExecutionGroupTarget,
+  selectExistingInstanceForOverride,
+  type ExecutionOverride,
   type ExecutionTargetTeardown,
 } from "../select-execution-target/select-execution-target.js";
 import {
@@ -367,12 +371,29 @@ async function setupPerformer(
   );
 }
 
+/**
+ * The pass/fail outcome of a single run's test-driver invocation, collected even
+ * when the run fails (so the end-of-run summary can show failures, which are the
+ * ones most worth leaving resources up to debug).
+ */
+export interface RunResultSummary {
+  path: DefinitionRunPath;
+  sdk: string;
+  type: ResolvedExecutionRun["type"];
+  ok: boolean;
+  summary?: FitTestDriverSummary;
+}
+
+/** Sink the run loop passes down so each run records its result as it finishes. */
+type RecordRunResult = (result: RunResultSummary) => void;
+
 /** The run step: generate a FITConfiguration, sanity-check, and run the test driver. */
 interface RunTestsDependencies {
   runClusterDiagFn?: typeof runClusterDiag;
   generateFitConfigurationFn?: typeof generateFitConfiguration;
   runPerformerClusterSanityCheckFn?: typeof runPerformerClusterSanityCheck;
   runTestDriverFn?: typeof runTestDriver;
+  recordResult?: RecordRunResult;
 }
 
 export async function runTests(
@@ -434,6 +455,13 @@ export async function runTests(
     { label: iterationLabel("Cluster"), value: `${run.cluster.scheme}://${run.cluster.defaultHostname}` },
     ...testRun.details,
   );
+  dependencies.recordResult?.({
+    path: run.path,
+    sdk: run.sdk.name,
+    type: run.type,
+    ok: testRun.ok,
+    ...(testRun.summary ? { summary: testRun.summary } : {}),
+  });
   if (!testRun.ok) {
     throwFatalToIteration("FIT tests failed — check the test-driver log for details.");
   }
@@ -454,6 +482,7 @@ export async function runSituationalTests(
     resolveResultsDatabaseFn?: typeof resolveResultsDatabase;
     generateSituationalConfigurationFn?: typeof generateSituationalConfiguration;
     runTestDriverFn?: typeof runTestDriver;
+    recordResult?: RecordRunResult;
   } = {},
 ): Promise<RunOutput> {
   const resolveResultsDatabaseFn = dependencies.resolveResultsDatabaseFn ?? resolveResultsDatabase;
@@ -502,6 +531,13 @@ export async function runSituationalTests(
 
   console.log(`\nWhen this run produces data, view it at:\n  ${SITUATIONAL_RESULTS_URL}`);
   details.push({ label: "Results UI", value: SITUATIONAL_RESULTS_URL });
+  dependencies.recordResult?.({
+    path: run.path,
+    sdk: run.sdk.name,
+    type: run.type,
+    ok: testRun.ok,
+    ...(testRun.summary ? { summary: testRun.summary } : {}),
+  });
   if (!testRun.ok) {
     throwFatalToIteration("FIT tests failed — check the test-driver log for details.");
   }
@@ -565,6 +601,7 @@ async function runIteration(
   savedState: RunState | undefined,
   globalIterationIndex: number,
   definitionPath: string,
+  recordResult: RecordRunResult,
 ): Promise<{ output: RunOutput; performer?: RunningPerformer }> {
   const artifacts: Artifact[] = [];
   const details: Detail[] = [];
@@ -582,10 +619,10 @@ async function runIteration(
 
   let output: RunOutput;
   if (run.type === "situational") {
-    output = await runSituationalTests(execution, run);
+    output = await runSituationalTests(execution, run, { recordResult });
   } else {
     const clusterMode: ResolvedFunctionalExecutionGroup["clusterMode"] = functionalClusterMode ?? "useExisting";
-    output = await runTests(execution, clusterMode, run, performer);
+    output = await runTests(execution, clusterMode, run, performer, { recordResult });
   }
   artifacts.push(...output.artifacts);
   details.push(...output.details);
@@ -705,6 +742,8 @@ interface TeardownInputs {
   clusterState?: ResumeClusterState;
   performers: readonly RunningPerformer[];
   performerStates: readonly ResumePerformerState[];
+  /** Per-run pass/fail outcomes so far, shown as a summary before the leave-up prompt. */
+  results: readonly RunResultSummary[];
 }
 
 /**
@@ -760,6 +799,28 @@ function resumeSuggestions(inputs: TeardownInputs): ResumePoint[] {
 }
 
 /**
+ * A compact pass/fail line for every run that produced a result, rendered as a
+ * label/value table. Shown before the leave-up prompt so the user can judge from
+ * the failures (if any) whether it's worth keeping resources up to debug.
+ */
+function formatRunResultsSummary(results: readonly RunResultSummary[]): string | undefined {
+  if (results.length === 0) {
+    return undefined;
+  }
+  const rows: Detail[] = results.map((result) => {
+    const counts = result.summary
+      ? ` — ${result.summary.testsRun} run, ${result.summary.failures} failed, ` +
+        `${result.summary.errors} errors, ${result.summary.skipped} skipped`
+      : "";
+    return {
+      label: `${describeRunPath(result.path)} (${result.sdk})`,
+      value: `${result.ok ? "PASS" : "FAIL"}${counts}`,
+    };
+  });
+  return formatDetailsSection(rows);
+}
+
+/**
  * Ask once whether to leave everything up for debugging and resuming. If so,
  * record the run state and leave the instance, cluster and performers running;
  * otherwise stop the performers, remove an allocated cluster, and terminate an
@@ -767,11 +828,21 @@ function resumeSuggestions(inputs: TeardownInputs): ResumePoint[] {
  * failed before it came up); only the instance is then up to leave or terminate.
  */
 async function teardownRun(inputs: TeardownInputs): Promise<void> {
-  const { definitionPath, runDir, executionGroupIndex, runIndex, resumePath, execution, teardown, forceLocalhost, clusterState, performers, performerStates } = inputs;
+  const { definitionPath, runDir, executionGroupIndex, runIndex, resumePath, execution, teardown, forceLocalhost, clusterState, performers, performerStates, results } = inputs;
 
   const nothingToLeaveUp = !teardown.terminate && !clusterState && performerStates.length === 0;
   if (nothingToLeaveUp) {
     return;
+  }
+
+  // The run is over (this is the only teardown, run from the outer finally). Make
+  // that explicit — the leave-up prompt that follows used to appear right after a
+  // "moving to next iteration" line, which read as if more was still to come — then
+  // show how each run did so the leave-up choice is informed.
+  console.log("\n── Run finished — no more iterations, clusters or instances to run. ──");
+  const resultsSummary = formatRunResultsSummary(results);
+  if (resultsSummary) {
+    console.log(`\nResults summary:\n${resultsSummary}`);
   }
 
   const leaveUp = await confirm({
@@ -858,30 +929,58 @@ function isInteractiveRun(): boolean {
 }
 
 /**
- * Decide whether to force every execution group onto localhost, ignoring each group's
- * `instance:` setting. Resuming reuses the earlier run's choice. Otherwise: if no
- * execution group wants AWS there's nothing to override; interactively we prompt (defaulting
- * to honoring the file); non-interactively we default to honoring the definition file so a
- * CI run provisions whatever the file asks for.
+ * Decide the run-wide override for where every execution group runs, ignoring each
+ * group's `instance:` setting. Resuming reuses the earlier run's choice. Otherwise:
+ * if no execution group wants AWS there's nothing to override; interactively we ask
+ * whether to honour the file (default), force everything onto localhost, or run every
+ * group on one existing EC2 instance; non-interactively we honour the definition file
+ * so a CI run provisions whatever the file asks for.
  */
-async function resolveForceLocalhost(
+async function resolveExecutionOverride(
   groups: readonly ResolvedExecutionGroup[],
   savedState: RunState | undefined,
-): Promise<boolean> {
+): Promise<ExecutionOverride> {
   if (savedState) {
-    return savedState.forceLocalhost ?? false;
+    return { kind: savedState.forceLocalhost ? "localhost" : "definition" };
   }
   if (!groups.some((group) => group.instance.kind === "aws")) {
-    return false;
+    return { kind: "definition" };
   }
   if (!isInteractiveRun()) {
-    return false;
+    return { kind: "definition" };
   }
-  return confirm({
-    promptId: "run-from-definition.force-localhost",
-    message: "Run everything directly on localhost overriding where the definition says?  (Good for testing and local development)",
-    default: false,
-  });
+  for (let attempt = 1; ; attempt++) {
+    const choice = await select<ExecutionOverride["kind"]>({
+      promptId: `run-from-definition.execution-override.attempt-${attempt}`,
+      message: "Where should this run execute?",
+      default: "definition",
+      choices: [
+        { name: "Where the definition says (the default)", value: "definition" },
+        { name: "Everything on localhost (good for testing and local development)", value: "localhost" },
+        { name: "Everything on an existing EC2 instance (good for rapid iteration)", value: "existing" },
+      ],
+    });
+    if (choice !== "existing") {
+      return { kind: choice };
+    }
+    const existing = await selectExistingInstanceForOverride(attempt);
+    if (existing !== "back") {
+      return { kind: "existing", existing };
+    }
+    // Couldn't connect to an existing instance; loop back to the choice.
+  }
+}
+
+/** One-line description of where a group will run, given the run-wide override. */
+function describeExecutionOverride(override: ExecutionOverride, declaredKind: string): string {
+  switch (override.kind) {
+    case "localhost":
+      return "localhost (forced)";
+    case "existing":
+      return `existing EC2 instance ${override.existing.host} (forced)`;
+    default:
+      return declaredKind;
+  }
 }
 
 export interface RunFromDefinitionOptions {
@@ -977,11 +1076,7 @@ export async function runFromDefinition(
   if (needsHostedDatabase) {
     const database = buildHostedDatabase(resolveResultsDbCredentials({ env: {} }));
     if (!database) {
-      fitCliError(
-        `\n✗ The hosted results database needs a readonly password in your fit-cli config.\n` +
-          `  Ask on #the-fit-stop for it, then set it as resultsDb.password in your fit-cli config\n` +
-          `  (~/.fit-cli/config.json5 — run \`npm run init\`).`,
-      );
+      fitCliError(missingResultsDbPasswordMessage());
       tracker.record("FatalToAll", "Missing results database password in fit-cli config", preconditionCtx);
       return finalizeRunFromDefinition([], [], undefined, tracker.worst, tracker.failureCount);
     }
@@ -999,15 +1094,22 @@ export async function runFromDefinition(
 
   const artifacts: Artifact[] = [];
   const details: Detail[] = [];
+  // Per-run pass/fail outcomes, collected as the loop runs (even for runs that
+  // fail) so teardown can show a results summary before asking to leave up.
+  const runResults: RunResultSummary[] = [];
+  const recordResult: RecordRunResult = (result) => runResults.push(result);
 
   const runDir = ensureRunDir();
   const definitionCopyPath = join(runDir, basename(resolve(definitionPath)));
   copyFileSync(definitionPath, definitionCopyPath);
   artifacts.push(artifactFromPath(definitionCopyPath, "Definition file used for this run", runDir));
 
-  // One run-wide choice: force every execution group onto localhost, ignoring each group's
-  // declared instance. Each execution group then provisions (or reconnects) its own target.
-  const forceLocalhost = await resolveForceLocalhost(executionGroups.slice(startCycleIndex), savedState);
+  // One run-wide choice over where every execution group runs: honour the file, force
+  // localhost, or run all groups on one existing EC2 instance. Each group then provisions
+  // (or reconnects) its own target accordingly. `forceLocalhost` is the part we persist for
+  // resume; the existing-instance override is a within-run convenience and isn't saved.
+  const executionOverride = await resolveExecutionOverride(executionGroups.slice(startCycleIndex), savedState);
+  const forceLocalhost = executionOverride.kind === "localhost";
 
   // The "active" set tracks the cycle currently up so the outer finally tears down
   // (or offers to leave up) the right instance/cluster/performers. Completed,
@@ -1037,7 +1139,7 @@ export async function runFromDefinition(
       }
       activeResumePath = group.path;
       console.log(`\nExecution group ${cycleIndex + 1}/${executionGroups.length}: ${group.type}`);
-      console.log(`  Execution: ${forceLocalhost ? "localhost (forced)" : group.instance.kind}`);
+      console.log(`  Execution: ${describeExecutionOverride(executionOverride, group.instance.kind)}`);
       console.log(`  Cluster: ${clusterLabel(group)}`);
 
       // Acquire this cycle's execution target: reconnect the resumed instance for
@@ -1045,7 +1147,7 @@ export async function runFromDefinition(
       const isResumeStartCycle = savedState !== undefined && cycleIndex === startCycleIndex;
       const targetOutcome = isResumeStartCycle
         ? await reconnectExecutionTarget(savedState.target)
-        : await resolveExecutionGroupTarget(group.instance, forceLocalhost, cycleIndex);
+        : await resolveExecutionGroupTarget(group.instance, executionOverride, cycleIndex);
       artifacts.push(...targetOutcome.artifacts);
       details.push(...targetOutcome.details);
       if (!targetOutcome.ready) {
@@ -1153,6 +1255,7 @@ export async function runFromDefinition(
               savedState,
               globalIterationIndex,
               definitionPath,
+              recordResult,
             );
             artifacts.push(...output.artifacts);
             details.push(...output.details);
@@ -1174,7 +1277,10 @@ export async function runFromDefinition(
             }
           } catch (err) {
             if (err instanceof ClassifiedFailure && err.classification === "FatalToIteration") {
-              fitCliError(`\n✗ ${err.message} (FatalToIteration — moving to next iteration)`);
+              const nextStep = isLastIteration
+                ? "no more iterations in this execution group"
+                : "moving to the next iteration";
+              fitCliError(`\n✗ ${err.message} (FatalToIteration — ${nextStep})`);
               tracker.record("FatalToIteration", err.message, { instanceIndex: group.path.instanceIndex, cycleIndex, iterationIndex: cycleIterationIndex });
             } else {
               throw err;
@@ -1260,6 +1366,7 @@ export async function runFromDefinition(
       ...(activeClusterState ? { clusterState: activeClusterState } : {}),
       performers: activePerformers,
       performerStates: activePerformerStates,
+      results: runResults,
     });
   }
 }

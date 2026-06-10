@@ -59,6 +59,23 @@ export type ExecutionTargetOutcome =
 
 type TargetChoice = "local" | "ec2" | "existing";
 
+/** The connection details for a user-brought EC2 instance, reused across a run. */
+export interface ExistingInstanceConnection {
+  host: string;
+  user: string;
+  identityFile: string;
+}
+
+/**
+ * The run-wide choice over where a definition's execution groups run: honour the
+ * file ("definition"), force everything onto localhost, or run every group on one
+ * existing EC2 instance the user picked up front (good for rapid iteration).
+ */
+export type ExecutionOverride =
+  | { kind: "definition" }
+  | { kind: "localhost" }
+  | { kind: "existing"; existing: ExistingInstanceConnection };
+
 /** Sentinel value for the "type the connection details myself" choice. */
 const MANUAL_INSTANCE = "__manual__";
 
@@ -115,32 +132,48 @@ export async function reconnectExecutionTarget(target: ResumeTargetState): Promi
 
 /**
  * Acquire the execution target a single execution group declared in its definition, without
- * prompting for *which* kind of target to use — that choice lives in the file. A
- * localhost execution group (or any execution group when `forceLocalhost` is set) runs here on this
- * machine; an AWS execution group checks credentials and provisions a clean EC2 box whose
- * key lands under the instance's run directory. Returns `ready: false` (reason already
- * printed) if EC2 credentials are unusable or provisioning fails, so the caller can
- * treat it as fatal to the execution group.
+ * prompting for *which* kind of target to use — that choice lives in the file (or in the
+ * run-wide `override`). A localhost execution group (or any execution group under the
+ * localhost override) runs here on this machine; under the "existing" override every group
+ * runs on the one user-brought EC2 instance (nothing to provision or tear down); otherwise
+ * an AWS execution group checks credentials and provisions a clean EC2 box whose key lands
+ * under the instance's run directory. Returns `ready: false` (reason already printed) if EC2
+ * credentials are unusable or provisioning fails, so the caller can treat it as fatal to the
+ * execution group.
  */
 export async function resolveExecutionGroupTarget(
   instance: ResolvedInstance,
-  forceLocalhost: boolean,
+  override: ExecutionOverride,
   executionGroupIndex: number,
 ): Promise<ExecutionTargetOutcome> {
-  if (forceLocalhost || instance.kind === "localhost") {
+  // The run-wide "existing EC2 instance" override: every group runs on the box
+  // the user picked up front. They brought it, so cleanup is a no-op.
+  if (override.kind === "existing") {
+    const { host, user, identityFile } = override.existing;
+    const remoteHost: RemoteHost = { host, user, identityFile, agentForwarding: true };
+    return {
+      ready: true,
+      target: new RemoteTarget(remoteHost),
+      teardown: { kind: "remote", address: host, user, identityFile },
+      artifacts: [],
+      details: [{ label: "SSH debug command", value: `ssh -i ${identityFile} ${user}@${host}` }],
+    };
+  }
+
+  if (override.kind === "localhost" || instance.kind === "localhost") {
     return { ready: true, target: new LocalTarget(), teardown: LOCAL_TEARDOWN, artifacts: [], details: [] };
   }
 
   // AWS EC2 needs credentials, from the environment or fit-cli config.
   await ensureFitCliConfigEnv({
     promptId: `execution-target.execution-group-${executionGroupIndex}.config.create`,
-    promptMessage: "No fit-cli config found. Run `npm run init` now before using EC2?",
+    promptMessage: "No fit-cli config found. Run `npm run config -- edit` now before using EC2?",
   });
   const creds = await checkCredentials();
   if (!creds.ok) {
     fitCliError(`\nCan't use EC2 for this execution group: ${creds.message}`);
     console.log(
-      "Add your AWS credentials with `npm run init`, or re-run with the localhost override to run everything locally.\n",
+      "Add your AWS credentials with `npm run config -- edit`, or re-run with the localhost override to run everything locally.\n",
     );
     return { ready: false, artifacts: [], details: [] };
   }
@@ -195,12 +228,12 @@ export async function selectExecutionTarget(): Promise<ExecutionTargetOutcome> {
     // Both EC2 paths need credentials, from the environment or fit-cli config.
     await ensureFitCliConfigEnv({
       promptId: promptId(attempt, "config.create"),
-      promptMessage: "No fit-cli config found. Run `npm run init` now before using EC2?",
+      promptMessage: "No fit-cli config found. Run `npm run config -- edit` now before using EC2?",
     });
     const creds = await checkCredentials();
     if (!creds.ok) {
       fitCliError(`\nCan't use EC2: ${creds.message}`);
-      console.log("Add your AWS credentials with `npm run init`, or use your normal AWS environment/config, then choose again.\n");
+      console.log("Add your AWS credentials with `npm run config -- edit`, or use your normal AWS environment/config, then choose again.\n");
       attempt += 1;
       continue; // back to the target prompt
     }
@@ -314,6 +347,39 @@ async function connectExistingInstance(attempt: number): Promise<ExecutionTarget
     artifacts: [],
     details: [{ label: "SSH debug command", value: `ssh -i ${identityFile} ${user}@${host}` }],
   };
+}
+
+/**
+ * For the run-wide "existing EC2 instance" override: check AWS credentials, then
+ * connect to an instance the user picks, returning just the connection details so
+ * the caller can run every execution group on it. Returns "back" (reason already
+ * printed) when the user should be re-prompted — missing credentials, no running
+ * instances, or an unreachable box.
+ */
+export async function selectExistingInstanceForOverride(
+  attempt: number,
+): Promise<ExistingInstanceConnection | "back"> {
+  await ensureFitCliConfigEnv({
+    promptId: promptId(attempt, "config.create"),
+    promptMessage: "No fit-cli config found. Run `npm run config -- edit` now before using EC2?",
+  });
+  const creds = await checkCredentials();
+  if (!creds.ok) {
+    fitCliError(`\nCan't use an existing EC2 instance: ${creds.message}`);
+    console.log("Add your AWS credentials with `npm run config -- edit`, or use your normal AWS environment/config, then choose again.\n");
+    return "back";
+  }
+  console.log(`\n✓ Using AWS account ${creds.identity.account} (${creds.identity.arn})`);
+
+  const outcome = await connectExistingInstance(attempt);
+  if (outcome === "back" || !outcome.ready) {
+    return "back";
+  }
+  const { address, user, identityFile } = outcome.teardown;
+  if (!address || !user || !identityFile) {
+    return "back";
+  }
+  return { host: address, user, identityFile };
 }
 
 if (isMain(import.meta.url)) {

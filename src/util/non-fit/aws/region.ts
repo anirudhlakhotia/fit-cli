@@ -34,7 +34,7 @@ export function resolveAwsRegion(options: ResolveAwsRegionOptions = {}): Resolve
 }
 
 export function awsRegionOverrideHelp(): string {
-  return "Override with AWS_REGION or AWS_DEFAULT_REGION, pass `--region`, or save a different default with `npm run init`.";
+  return "Override with AWS_REGION or AWS_DEFAULT_REGION, pass `--region`, or save a different default with `npm run config -- edit`.";
 }
 
 export function defaultAwsRegionMessage(region: string = DEFAULT_AWS_REGION): string {

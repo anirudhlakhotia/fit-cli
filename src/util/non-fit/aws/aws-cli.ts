@@ -50,7 +50,7 @@ export function regionFromArgv(argv: readonly string[]): string | undefined {
 export async function prepareAwsCli(argv: readonly string[]): Promise<AwsOptions> {
   await ensureFitCliConfigEnv({
     promptId: "aws.config.create",
-    promptMessage: "No fit-cli config found. Run `npm run init` now before continuing with this AWS command?",
+    promptMessage: "No fit-cli config found. Run `npm run config -- edit` now before continuing with this AWS command?",
   });
   return { region: regionFromArgv(argv) };
 }

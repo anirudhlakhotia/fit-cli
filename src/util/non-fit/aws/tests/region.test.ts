@@ -31,7 +31,7 @@ test("resolveAwsRegion defaults to us-west-2 when nothing is set", () => {
 test("region guidance mentions how to override the default", () => {
   assert.match(defaultAwsRegionMessage(), /defaulting to us-west-2/);
   assert.match(defaultAwsRegionMessage(), /AWS_REGION/);
-  assert.match(defaultAwsRegionMessage(), /npm run init/);
+  assert.match(defaultAwsRegionMessage(), /npm run config -- edit/);
   assert.match(awsRegionPromptMessage("eu-west-1"), /default: eu-west-1/);
   assert.match(awsRegionPromptMessage("eu-west-1"), /--region/);
 });

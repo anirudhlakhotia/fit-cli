@@ -44,6 +44,9 @@ npm run config -- edit
 
 # Start the interactive wizard
 npm start
+
+# Or to see all commands
+npm help 
 ```
 The interactive wizard will guide you through the available options in a (crosses fingers) self-documenting way.
 
