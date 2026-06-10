@@ -5,14 +5,40 @@
  *   npx tsx src/fit/performers/checkout-fit-gerrit-ref/checkout-fit-gerrit-ref.ts refs/changes/29/246329/1
  */
 import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { fitCliError } from "../../../util/non-fit/fit-cli-log.js";
+import { posixQuote } from "../../../util/non-fit/remote-target.js";
 import { rootDirFromArgv } from "../../util/root.js";
 import { createLocalFitExecutionContext, type FitExecutionContext } from "../../shared/util/remote-fit-run.js";
 
 export const FIT_GERRIT_HOST = "review.couchbase.org";
 export const FIT_GERRIT_PORT = 29418;
 export const FIT_PERFORMER_GERRIT_REPO = "transactions-fit-performer";
+
+/**
+ * Resolve the SSH private key to use for Gerrit.
+ * Checks FIT_GERRIT_KEY, then GERRIT_SSH_KEY, then auto-detects from common ~/.ssh locations.
+ * Returns undefined if no key is found.
+ */
+export function resolveFitGerritKey(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  const configured = env.FIT_GERRIT_KEY ?? env.GERRIT_SSH_KEY;
+  const trimmed = configured?.trim();
+  if (trimmed) return trimmed;
+  const home = env.HOME ?? homedir();
+  for (const name of ["id_rsa", "id_ed25519", "id_ecdsa"]) {
+    const candidate = join(home, ".ssh", name);
+    if (existsSync(candidate)) return candidate;
+  }
+  return undefined;
+}
+
+/** Build the GIT_SSH_COMMAND value for authenticating to Gerrit with a specific key. */
+export function gerritSshCommand(keyPath: string): string {
+  return `ssh -i ${keyPath} -o StrictHostKeyChecking=no -o IdentitiesOnly=yes`;
+}
 
 export function resolveFitGerritUser(env: NodeJS.ProcessEnv = process.env): string | undefined {
   const configured = env.FIT_GERRIT_USER ?? env.GERRIT_USER;
@@ -105,24 +131,33 @@ export async function checkoutFitGerritRef(
     return false;
   }
 
-  console.log(
-    `\nAdding ${FIT_GERRIT_HOST} to known_hosts with:\n  ssh-keyscan -p ${FIT_GERRIT_PORT} ${FIT_GERRIT_HOST} >> ~/.ssh/known_hosts\n`,
-  );
-  try {
-    await execution.run("sh", [
-      "-c",
-      `mkdir -p ~/.ssh && chmod 700 ~/.ssh && ssh-keyscan -p ${FIT_GERRIT_PORT} ${FIT_GERRIT_HOST} >> ~/.ssh/known_hosts`,
-    ]);
-  } catch (err) {
-    console.warn(`Warning: could not pre-seed known_hosts for ${FIT_GERRIT_HOST}: ${(err as Error).message}`);
-  }
-
-  console.log(
-    `\nFetching FIT Gerrit ref with:\n  git ${fitPerformerGerritFetchArgs(trimmedRef, gerritUser).join(" ")}\n`,
-  );
+  const fetchArgs = fitPerformerGerritFetchArgs(trimmedRef, gerritUser);
+  const sshKeyPath = execution.gerritSshKeyPath;
 
   try {
-    await execution.run("git", fitPerformerGerritFetchArgs(trimmedRef, gerritUser), execution.fitPerformerDir);
+    if (sshKeyPath) {
+      const sshCmd = gerritSshCommand(sshKeyPath);
+      const shScript = `GIT_SSH_COMMAND=${posixQuote(sshCmd)} git ${fetchArgs.map(posixQuote).join(" ")}`;
+      console.log(`\nFetching FIT Gerrit ref with:\n  GIT_SSH_COMMAND=${posixQuote(sshCmd)} git ${fetchArgs.join(" ")}\n`);
+      await execution.run("sh", ["-c", shScript], execution.fitPerformerDir, {
+        display: `GIT_SSH_COMMAND=<gerrit-key> git ${fetchArgs.join(" ")}`,
+      });
+    } else {
+      console.log(
+        `\nAdding ${FIT_GERRIT_HOST} to known_hosts with:\n  ssh-keyscan -p ${FIT_GERRIT_PORT} ${FIT_GERRIT_HOST} >> ~/.ssh/known_hosts\n`,
+      );
+      try {
+        await execution.run("sh", [
+          "-c",
+          `mkdir -p ~/.ssh && chmod 700 ~/.ssh && ssh-keyscan -p ${FIT_GERRIT_PORT} ${FIT_GERRIT_HOST} >> ~/.ssh/known_hosts`,
+        ]);
+      } catch (err) {
+        console.warn(`Warning: could not pre-seed known_hosts for ${FIT_GERRIT_HOST}: ${(err as Error).message}`);
+      }
+      console.log(`\nFetching FIT Gerrit ref with:\n  git ${fetchArgs.join(" ")}\n`);
+      await execution.run("git", fetchArgs, execution.fitPerformerDir);
+    }
+
     console.log(`\nChecking out fetched FIT Gerrit ref with:\n  git ${checkoutFetchHeadArgs().join(" ")}\n`);
     await execution.run("git", checkoutFetchHeadArgs(), execution.fitPerformerDir);
   } catch (err) {
@@ -131,8 +166,12 @@ export async function checkoutFitGerritRef(
     if (message.includes("Host key verification failed")) {
       hints.push(`The machine running git does not trust ${FIT_GERRIT_HOST} yet.`);
     }
-    if (execution.kind === "remote") {
-      hints.push("A clean remote box also needs Gerrit SSH credentials (for example agent forwarding or a key already uploaded in Gerrit).");
+    if (!sshKeyPath) {
+      hints.push(
+        execution.kind === "remote"
+          ? "Set FIT_GERRIT_KEY to a private key registered with Gerrit, or GERRIT_SSH_KEY."
+          : "Set FIT_GERRIT_KEY or GERRIT_SSH_KEY, or ensure your SSH agent has a key registered with Gerrit.",
+      );
     }
     fitCliError(
       `Failed to checkout FIT Gerrit ref ${trimmedRef}: ${message}${hints.length > 0 ? ` ${hints.join(" ")}` : ""}`,

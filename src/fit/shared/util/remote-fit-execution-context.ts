@@ -22,10 +22,13 @@ import {
   remoteFitBinDir,
   remoteFitRepos,
   remoteFitRootDir,
+  remoteGerritSshKeyPath,
   remotePerformerArgs,
   remoteWorkspaceRepos,
+  stageGerritSshKey,
   type FitExecutionContext,
 } from "./remote-fit-run.js";
+import { resolveFitGerritKey } from "../../performers/checkout-fit-gerrit-ref/checkout-fit-gerrit-ref.js";
 
 /**
  * Build a FitExecutionContext that runs against a remote box over SSH. Preparing
@@ -86,7 +89,15 @@ export async function createRemoteFitExecutionContext(
     }
 
     await ensureRemoteRepos(target, rootDir, remoteFitRepos(sdk));
+
+    const localGerritKey = resolveFitGerritKey();
+    if (localGerritKey) {
+      console.log(`\n→ Staging Gerrit SSH key to remote instance...`);
+      await stageGerritSshKey(target, rootDir, localGerritKey);
+    }
   }
+
+  const gerritSshKeyPath = resolveFitGerritKey() ? remoteGerritSshKeyPath(rootDir) : undefined;
 
   return {
     kind: "remote",
@@ -98,6 +109,7 @@ export async function createRemoteFitExecutionContext(
     dockerCommand: "docker",
     artifacts: [],
     details: [{ label: "Remote workspace", value: rootDir }],
+    gerritSshKeyPath,
     ensureWorkspace: async (sdk) => {
       await ensureRemoteRepos(target, rootDir, remoteWorkspaceRepos(sdk));
       return true;

@@ -4,7 +4,9 @@ import {
   checkoutFetchHeadArgs,
   fitPerformerGerritUrl,
   fitPerformerGerritFetchArgs,
+  gerritSshCommand,
   gitStatusIsClean,
+  resolveFitGerritKey,
   resolveFitGerritUser,
   resolveGerritUserFromGhCli,
   requireFitGerritUser,
@@ -49,4 +51,21 @@ test("gitStatusIsClean accepts only empty porcelain output", () => {
   assert.equal(gitStatusIsClean(""), true);
   assert.equal(gitStatusIsClean("\n"), true);
   assert.equal(gitStatusIsClean(" M performers/node"), false);
+});
+
+test("resolveFitGerritKey prefers FIT_GERRIT_KEY then GERRIT_SSH_KEY", () => {
+  assert.equal(resolveFitGerritKey({ FIT_GERRIT_KEY: "/path/to/key" }), "/path/to/key");
+  assert.equal(resolveFitGerritKey({ GERRIT_SSH_KEY: "/path/to/key" }), "/path/to/key");
+  assert.equal(resolveFitGerritKey({ FIT_GERRIT_KEY: "  /trimmed  " }), "/trimmed");
+});
+
+test("resolveFitGerritKey returns undefined when no env var and no default keys exist", () => {
+  assert.equal(resolveFitGerritKey({ HOME: "/nonexistent-home-for-test" }), undefined);
+});
+
+test("gerritSshCommand includes key path and disables host-key checking", () => {
+  const cmd = gerritSshCommand("/home/user/.ssh/id_rsa");
+  assert.ok(cmd.includes("-i /home/user/.ssh/id_rsa"), "should include -i with key path");
+  assert.ok(cmd.includes("StrictHostKeyChecking=no"), "should disable host key checking");
+  assert.ok(cmd.includes("IdentitiesOnly=yes"), "should restrict to specified identity");
 });

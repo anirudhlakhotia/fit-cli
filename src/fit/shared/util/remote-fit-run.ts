@@ -18,6 +18,7 @@ import type { Sdk } from "../../../util/sdk/sdks.js";
 import type { AwsCredentials } from "../../../util/non-fit/aws/identity.js";
 import { DEFAULT_PERFORMER_PORT } from "../../performers/util/performer-port.js";
 import { createRemoteFitExecutionContext } from "./remote-fit-execution-context.js";
+import { resolveFitGerritKey } from "../../performers/checkout-fit-gerrit-ref/checkout-fit-gerrit-ref.js";
 
 const REMOTE_FIT_WORKSPACE_DIR = "fit-workspace";
 const REMOTE_DOCKER_WRAPPER_FILE = "docker";
@@ -33,6 +34,12 @@ export interface FitExecutionContext {
   readonly dockerCommand: string;
   readonly artifacts: Artifact[];
   details: Detail[];
+  /**
+   * Path (on the execution target) to the SSH private key for Gerrit, or undefined
+   * if none was configured. Set on local contexts from resolveFitGerritKey(); set on
+   * remote contexts after the key has been staged to the remote machine.
+   */
+  gerritSshKeyPath?: string;
 
   ensureWorkspace(sdk: Sdk): Promise<boolean>;
   ensureBuildWorkspace(sdk: Sdk): Promise<boolean>;
@@ -134,6 +141,27 @@ export async function configureRemoteGitCredentials(
   rmSync(localCredentials, { force: true });
 }
 
+const REMOTE_GERRIT_SSH_KEY_FILENAME = "gerrit-ssh-key";
+
+export function remoteGerritSshKeyPath(rootDir: string): string {
+  return join(rootDir, REMOTE_GERRIT_SSH_KEY_FILENAME);
+}
+
+/**
+ * Copy the local Gerrit SSH private key to the remote instance with chmod 600.
+ * Returns the path on the remote machine where the key was written.
+ */
+export async function stageGerritSshKey(
+  target: ExecutionTarget,
+  rootDir: string,
+  localKeyPath: string,
+): Promise<string> {
+  const remotePath = remoteGerritSshKeyPath(rootDir);
+  await target.putFile(localKeyPath, remotePath);
+  await target.run("chmod", ["600", remotePath]);
+  return remotePath;
+}
+
 const REMOTE_AWS_CREDENTIALS_FILENAME = "fit-aws-credentials.sh";
 
 function remoteAwsCredentialsPath(rootDir: string): string {
@@ -225,6 +253,7 @@ export function createLocalFitExecutionContext(rootDir: string): FitExecutionCon
     dockerCommand: "docker",
     artifacts: [],
     details: [],
+    gerritSshKeyPath: resolveFitGerritKey(),
     ensureWorkspace: async (sdk: Sdk): Promise<boolean> => {
       if (!(await ensureRepo(FIT_PERFORMER, rootDir))) {
         console.log("\nOnce transactions-fit-performer is in place, run fit-cli again.");
