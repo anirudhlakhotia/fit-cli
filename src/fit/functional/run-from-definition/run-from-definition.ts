@@ -31,7 +31,7 @@
  * run state so `--resume-at` can pick it back up.
  */
 import { copyFileSync } from "node:fs";
-import { basename, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import {
   artifactFromPath,
   combineArtifacts,
@@ -676,6 +676,8 @@ function iterationPathSummary(path: DefinitionRunPath): string {
 
 interface TeardownInputs {
   definitionPath: string;
+  /** Artifact directory for this run; undefined if the run failed before it was created. */
+  runDir?: string;
   executionGroupIndex: number;
   /** Within the active execution group, the run that was active at teardown. */
   runIndex: number;
@@ -750,7 +752,7 @@ function resumeSuggestions(inputs: TeardownInputs): ResumePoint[] {
  * failed before it came up); only the instance is then up to leave or terminate.
  */
 async function teardownRun(inputs: TeardownInputs): Promise<void> {
-  const { definitionPath, executionGroupIndex, runIndex, resumePath, execution, teardown, forceLocalhost, clusterState, performers, performerStates } = inputs;
+  const { definitionPath, runDir, executionGroupIndex, runIndex, resumePath, execution, teardown, forceLocalhost, clusterState, performers, performerStates } = inputs;
 
   const nothingToLeaveUp = !teardown.terminate && !clusterState && performerStates.length === 0;
   if (nothingToLeaveUp) {
@@ -773,8 +775,8 @@ async function teardownRun(inputs: TeardownInputs): Promise<void> {
       ...(clusterState ? { cluster: clusterState } : {}),
       performers: [...performerStates],
     };
-    const path = writeRunState(definitionPath, state);
-    console.log(`\n✓ Leaving everything up. Saved run state to:\n  ${path}`);
+    const path = runDir ? writeRunState(runDir, state) : undefined;
+    console.log(`\n✓ Leaving everything up.${path ? ` Saved run state to:\n  ${path}` : ""}`);
 
     // List exactly what's been left running so it's clear what is still costing
     // money / holding resources and needs cleaning up later.
@@ -796,9 +798,10 @@ async function teardownRun(inputs: TeardownInputs): Promise<void> {
 
     const suggestions = resumeSuggestions(inputs);
     const lastSuggestion = suggestions[suggestions.length - 1];
+    const resumeDefinitionPath = runDir ? join(runDir, basename(resolve(definitionPath))) : definitionPath;
     if (lastSuggestion && resumePath) {
       console.log(
-        `\nResume after a manual fix with:\n  ${formatResumeCommand(lastSuggestion, definitionPath, resumeSelectorFromPath(resumePath, true))}`,
+        `\nResume after a manual fix with:\n  ${formatResumeCommand(lastSuggestion, resumeDefinitionPath, resumeSelectorFromPath(resumePath, true))}`,
       );
     }
     if (teardown.terminate && teardown.instanceId) {
@@ -883,7 +886,7 @@ export async function runFromDefinition(
   const executionGroups = buildExecutionGroups(resolved.instances);
   console.log(`\nRunning FIT tests from definition:\n  ${definitionPath}`);
 
-  const savedState = resumeAt ? readRunState(definitionPath) : undefined;
+  const savedState = resumeAt ? readRunState(dirname(resolve(definitionPath))) : undefined;
   if (resumeAt) {
     if (!savedState) {
       fitCliError(
@@ -1028,7 +1031,7 @@ export async function runFromDefinition(
       const cycleTeardown = targetOutcome.teardown;
       activeTeardown = cycleTeardown;
       if (cycleTeardown.kind === "remote" && cycleTeardown.address) {
-        printResumeHint("after-instance-creation", definitionPath, group.path, false);
+        printResumeHint("after-instance-creation", definitionCopyPath, group.path, false);
       }
 
       const execution = await createFitExecutionContext(targetOutcome.target, rootDir, group.runs[0].sdk, {
@@ -1039,7 +1042,7 @@ export async function runFromDefinition(
       artifacts.push(...execution.artifacts);
       details.push(...execution.details);
       if (phases.prepareRemote && cycleTeardown.kind === "remote" && cycleTeardown.address) {
-        printResumeHint("after-remote-preparation", definitionPath, group.path, false);
+        printResumeHint("after-remote-preparation", definitionCopyPath, group.path, false);
       }
 
       // This cycle's situational iterations may stream to the hosted DB; if it runs
@@ -1083,7 +1086,7 @@ export async function runFromDefinition(
               throwFatalToCycle("setup-cluster didn't produce a cluster, so this execution group can't continue.");
             }
             if (clusterState) {
-              printResumeHint("after-cluster-creation", definitionPath, activeCycle.path, false);
+              printResumeHint("after-cluster-creation", definitionCopyPath, activeCycle.path, false);
             }
           }
         } else {
@@ -1206,6 +1209,7 @@ export async function runFromDefinition(
   } finally {
     await teardownRun({
       definitionPath,
+      runDir,
       executionGroupIndex: activeCycleIndex,
       runIndex: activeIterationIndex,
       ...(activeResumePath ? { resumePath: activeResumePath } : {}),

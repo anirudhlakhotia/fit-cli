@@ -27,37 +27,34 @@ function sampleState(): RunState {
   };
 }
 
-test("runStatePath puts the state under instances/0/_internal next to the definition", () => {
+test("runStatePath puts the state under instances/0/_internal inside the run dir", () => {
   assert.equal(
-    runStatePath("/tmp/fit-cli/20260605-142043/fit.yaml"),
+    runStatePath("/tmp/fit-cli/20260605-142043"),
     "/tmp/fit-cli/20260605-142043/instances/0/_internal/run-state.json",
   );
 });
 
 test("writeRunState then readRunState round-trips the state", () => {
-  const dir = mkdtempSync(join(tmpdir(), "resume-state-"));
-  const definitionPath = join(dir, "fit.yaml");
-  const written = writeRunState(definitionPath, sampleState());
-  assert.equal(written, runStatePath(definitionPath));
-  assert.deepEqual(readRunState(definitionPath), sampleState());
+  const runDir = mkdtempSync(join(tmpdir(), "resume-state-"));
+  const written = writeRunState(runDir, sampleState());
+  assert.equal(written, runStatePath(runDir));
+  assert.deepEqual(readRunState(runDir), sampleState());
 });
 
 test("round-trips the forceLocalhost flag", () => {
-  const dir = mkdtempSync(join(tmpdir(), "resume-state-"));
-  const definitionPath = join(dir, "fit.yaml");
+  const runDir = mkdtempSync(join(tmpdir(), "resume-state-"));
   const state: RunState = { ...sampleState(), forceLocalhost: true };
-  writeRunState(definitionPath, state);
-  assert.equal(readRunState(definitionPath)?.forceLocalhost, true);
+  writeRunState(runDir, state);
+  assert.equal(readRunState(runDir)?.forceLocalhost, true);
 });
 
 test("readRunState returns undefined when there is no saved state", () => {
-  const dir = mkdtempSync(join(tmpdir(), "resume-state-"));
-  assert.equal(readRunState(join(dir, "fit.yaml")), undefined);
+  const runDir = mkdtempSync(join(tmpdir(), "resume-state-"));
+  assert.equal(readRunState(runDir), undefined);
 });
 
 test("readRunState rejects an unsupported version", () => {
-  const dir = mkdtempSync(join(tmpdir(), "resume-state-"));
-  const definitionPath = join(dir, "fit.yaml");
-  writeRunState(definitionPath, { ...sampleState(), version: 2 as unknown as 1 });
-  assert.throws(() => readRunState(definitionPath), /Unsupported run-state version/);
+  const runDir = mkdtempSync(join(tmpdir(), "resume-state-"));
+  writeRunState(runDir, { ...sampleState(), version: 2 as unknown as 1 });
+  assert.throws(() => readRunState(runDir), /Unsupported run-state version/);
 });

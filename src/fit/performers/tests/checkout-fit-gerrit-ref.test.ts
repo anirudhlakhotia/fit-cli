@@ -6,11 +6,11 @@ import {
   fitPerformerGerritFetchArgs,
   gerritSshCommand,
   gitStatusIsClean,
-  resolveFitGerritKey,
   resolveFitGerritUser,
   resolveGerritUserFromGhCli,
   requireFitGerritUser,
 } from "../checkout-fit-gerrit-ref/checkout-fit-gerrit-ref.js";
+import { resolveGerritSshKey } from "../../util/config.js";
 
 test("resolveFitGerritUser prefers FIT_GERRIT_USER then GERRIT_USER", () => {
   assert.equal(resolveFitGerritUser({ FIT_GERRIT_USER: " programmatix " }), "programmatix");
@@ -53,14 +53,14 @@ test("gitStatusIsClean accepts only empty porcelain output", () => {
   assert.equal(gitStatusIsClean(" M performers/node"), false);
 });
 
-test("resolveFitGerritKey prefers FIT_GERRIT_KEY then GERRIT_SSH_KEY", () => {
-  assert.equal(resolveFitGerritKey({ FIT_GERRIT_KEY: "/path/to/key" }), "/path/to/key");
-  assert.equal(resolveFitGerritKey({ GERRIT_SSH_KEY: "/path/to/key" }), "/path/to/key");
-  assert.equal(resolveFitGerritKey({ FIT_GERRIT_KEY: "  /trimmed  " }), "/trimmed");
+test("resolveGerritSshKey prefers FIT_GERRIT_KEY then GERRIT_SSH_KEY", () => {
+  assert.equal(resolveGerritSshKey({ env: { FIT_GERRIT_KEY: "/path/to/key" } }), "/path/to/key");
+  assert.equal(resolveGerritSshKey({ env: { GERRIT_SSH_KEY: "/path/to/key" } }), "/path/to/key");
+  assert.equal(resolveGerritSshKey({ env: { FIT_GERRIT_KEY: "  /trimmed  " } }), "/trimmed");
 });
 
-test("resolveFitGerritKey returns undefined when no env var and no default keys exist", () => {
-  assert.equal(resolveFitGerritKey({ HOME: "/nonexistent-home-for-test" }), undefined);
+test("resolveGerritSshKey returns undefined when no env var and no default keys exist", () => {
+  assert.equal(resolveGerritSshKey({ env: { HOME: "/nonexistent-home-for-test" } }), undefined);
 });
 
 test("gerritSshCommand includes key path and disables host-key checking", () => {

@@ -38,7 +38,7 @@ Then:
 npm ci
 
 # One-off configuration
-npm run config -- init
+npm run config -- edit
 # Or this for CI:
 # npm run config -- init --auto 
 

@@ -5,6 +5,10 @@
  * date" choice is a pure function (`pickLatestImageId`) so it can be unit tested
  * (see tests/image.test.ts).
  *
+ * If `ec2:DescribeImages` is not permitted (e.g. a restricted CI user), the
+ * function falls back to AWS's public SSM Parameter Store entry for the same
+ * image — no IAM permissions are needed to read public SSM parameters.
+ *
  * Run on its own:
  *   npx tsx src/util/non-fit/aws/image.ts [--region eu-west-1]
  */
@@ -44,24 +48,46 @@ export function pickLatestImageId(images: readonly AmiImage[]): string | null {
  * matching image is found (which would mean the region or filters are wrong).
  */
 export async function findUbuntuAmi(options: AwsOptions = {}): Promise<string> {
-  const response = await awsJson<{ Images?: AmiImage[] }>(
-    [
-      "ec2",
-      "describe-images",
-      "--owners",
-      CANONICAL_OWNER_ID,
-      "--filters",
-      `Name=name,Values=${UBUNTU_2204_NAME_PATTERN}`,
-      "Name=state,Values=available",
-      "Name=architecture,Values=x86_64",
-    ],
-    options,
-  );
-  const ami = pickLatestImageId(response.Images ?? []);
-  if (!ami) {
-    throw new Error("No Ubuntu 22.04 amd64 AMI found — check the region and your account permissions.");
+  try {
+    const response = await awsJson<{ Images?: AmiImage[] }>(
+      [
+        "ec2",
+        "describe-images",
+        "--owners",
+        CANONICAL_OWNER_ID,
+        "--filters",
+        `Name=name,Values=${UBUNTU_2204_NAME_PATTERN}`,
+        "Name=state,Values=available",
+        "Name=architecture,Values=x86_64",
+      ],
+      options,
+    );
+    const ami = pickLatestImageId(response.Images ?? []);
+    if (!ami) {
+      throw new Error("No Ubuntu 22.04 amd64 AMI found — check the region and your account permissions.");
+    }
+    return ami;
+  } catch (describeErr) {
+    // Fall back to the AWS public SSM Parameter Store entry — no IAM
+    // permissions are needed to read these public parameters, so this works
+    // even when ec2:DescribeImages is not allowed.
+    try {
+      const ssmPath = "/aws/service/canonical/ubuntu/server/22.04/stable/current/amd64/hvm/ebs-gp2/ami-id";
+      const result = await awsJson<{ Parameters?: { Value?: string }[]; InvalidParameters?: string[] }>(
+        ["ssm", "get-parameters", "--names", ssmPath],
+        options,
+      );
+      const amiId = result.Parameters?.[0]?.Value;
+      if (!amiId) {
+        throw new Error(`SSM parameter ${ssmPath} returned no value.`);
+      }
+      console.warn(`Warning: ec2:DescribeImages not permitted — resolved Ubuntu 22.04 AMI via SSM: ${amiId}`);
+      return amiId;
+    } catch {
+      // Re-throw the original DescribeImages error since that's the root cause.
+      throw describeErr;
+    }
   }
-  return ami;
 }
 
 if (isMain(import.meta.url)) {

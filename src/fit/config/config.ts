@@ -28,6 +28,7 @@ Init options:
   --disable-aws          Skip writing the aws section.
   --disable-github       Skip writing the github section.
   --disable-results-db   Skip writing the resultsDb section.
+  --disable-gerrit       Skip writing the gerrit section.
   --aws-region <r>       AWS region (env: AWS_REGION / AWS_DEFAULT_REGION, default: us-east-1).
   --aws-profile <p>      AWS profile (env: AWS_PROFILE).
   --aws-instance-type <t> EC2 instance type (env: FIT_EC2_INSTANCE_TYPE, default: c5.xlarge).
@@ -35,6 +36,8 @@ Init options:
   --github-token <t>     GitHub PAT (env: GITHUB_TOKEN / GH_TOKEN).
   --results-db-password <p> Results DB password (env: FIT_RESULTS_DB_PASSWORD).
   --results-db-username <u> Results DB username (env: FIT_RESULTS_DB_USERNAME).
+  --gerrit-user <u>      Gerrit username (env: FIT_GERRIT_USER / GERRIT_USER; defaults to github.user).
+  --gerrit-ssh-key <path> Path to SSH private key registered with Gerrit (env: FIT_GERRIT_KEY / GERRIT_SSH_KEY).
   --config-path <path>   Override config file path (default: ~/.fit-cli/config.json5).
   -h, --help             Show this help.`;
 
@@ -44,6 +47,7 @@ export interface AutoInitCliArgs {
   disableAws: boolean;
   disableGithub: boolean;
   disableResultsDb: boolean;
+  disableGerrit: boolean;
   awsRegion?: string;
   awsProfile?: string;
   awsInstanceType?: string;
@@ -51,6 +55,8 @@ export interface AutoInitCliArgs {
   githubToken?: string;
   resultsDbPassword?: string;
   resultsDbUsername?: string;
+  gerritUser?: string;
+  gerritSshKeyPath?: string;
   configPath: string;
 }
 
@@ -81,6 +87,7 @@ export function parseInitArgs(argv: string[]): AutoInitCliArgs {
   const disableAws = consumeFlag(args, "--disable-aws");
   const disableGithub = consumeFlag(args, "--disable-github");
   const disableResultsDb = consumeFlag(args, "--disable-results-db");
+  const disableGerrit = consumeFlag(args, "--disable-gerrit");
 
   const awsRegion = consumeValue(args, "--aws-region");
   const awsProfile = consumeValue(args, "--aws-profile");
@@ -89,6 +96,8 @@ export function parseInitArgs(argv: string[]): AutoInitCliArgs {
   const githubToken = consumeValue(args, "--github-token");
   const resultsDbPassword = consumeValue(args, "--results-db-password");
   const resultsDbUsername = consumeValue(args, "--results-db-username");
+  const gerritUser = consumeValue(args, "--gerrit-user");
+  const gerritSshKeyPath = consumeValue(args, "--gerrit-ssh-key");
   const configPath = consumeValue(args, "--config-path") ?? defaultFitCliConfigPath();
 
   // Warn about unknown flags
@@ -105,6 +114,7 @@ export function parseInitArgs(argv: string[]): AutoInitCliArgs {
     disableAws,
     disableGithub,
     disableResultsDb,
+    disableGerrit,
     awsRegion,
     awsProfile,
     awsInstanceType,
@@ -112,6 +122,8 @@ export function parseInitArgs(argv: string[]): AutoInitCliArgs {
     githubToken,
     resultsDbPassword,
     resultsDbUsername,
+    gerritUser,
+    gerritSshKeyPath,
     configPath,
   };
 }

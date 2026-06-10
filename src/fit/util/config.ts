@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import JSON5 from "json5";
 import YAML from "yaml";
 import { confirm } from "../../util/non-fit/prompts.js";
@@ -30,11 +30,19 @@ export interface FitCliResultsDbConfig {
   username?: string;
 }
 
+export interface FitCliGerritConfig {
+  /** Gerrit username. Defaults to github.user when not set. */
+  user?: string;
+  /** Path to the SSH private key registered with Gerrit. */
+  sshKeyPath?: string;
+}
+
 export interface FitCliConfig {
   version: 1;
   aws?: FitCliAwsConfig;
   github?: FitCliGithubConfig;
   resultsDb?: FitCliResultsDbConfig;
+  gerrit?: FitCliGerritConfig;
 }
 
 export interface FitCliConfigResult {
@@ -175,11 +183,24 @@ export function validateFitCliConfig(raw: unknown): FitCliConfig {
       })
     : undefined;
 
+  const gerritValue = raw.gerrit;
+  if (gerritValue !== undefined && !isRecord(gerritValue)) {
+    throw new InvalidFitCliConfigError(`Field "gerrit" must be a mapping; got ${JSON.stringify(gerritValue)}`);
+  }
+
+  const gerrit = gerritValue
+    ? compactRecord({
+        user: readOptionalString(gerritValue, "user", "gerrit.user"),
+        sshKeyPath: readOptionalString(gerritValue, "sshKeyPath", "gerrit.sshKeyPath"),
+      })
+    : undefined;
+
   return {
     version: FIT_CLI_CONFIG_VERSION,
     ...(aws && Object.keys(aws).length > 0 ? { aws } : {}),
     ...(github && Object.keys(github).length > 0 ? { github } : {}),
     ...(resultsDb && Object.keys(resultsDb).length > 0 ? { resultsDb } : {}),
+    ...(gerrit && Object.keys(gerrit).length > 0 ? { gerrit } : {}),
   };
 }
 
@@ -276,6 +297,49 @@ export function resolveResultsDbCredentials(
     password: config?.resultsDb?.password ?? env.FIT_RESULTS_DB_PASSWORD,
     username: config?.resultsDb?.username ?? env.FIT_RESULTS_DB_USERNAME,
   };
+}
+
+const CANDIDATE_GERRIT_SSH_KEY_NAMES = ["id_rsa", "id_ed25519", "id_ecdsa"];
+
+/**
+ * Resolve the Gerrit username. Priority: gerrit.user in config → FIT_GERRIT_USER
+ * env var → GERRIT_USER env var → github.user in config (same login is typical
+ * at Couchbase). Returns undefined if nothing is found.
+ */
+export function resolveGerritUser(
+  options: { config?: FitCliConfig; path?: string; env?: NodeJS.ProcessEnv } = {},
+): string | undefined {
+  const env = options.env ?? process.env;
+  const config = options.config ?? loadFitCliConfig(options.path).config;
+  return (
+    config?.gerrit?.user ??
+    (env.FIT_GERRIT_USER?.trim() || undefined) ??
+    (env.GERRIT_USER?.trim() || undefined) ??
+    config?.github?.user
+  );
+}
+
+/**
+ * Resolve the SSH private key path for Gerrit. Priority: gerrit.sshKeyPath in
+ * config → FIT_GERRIT_KEY env var → GERRIT_SSH_KEY env var → first of the
+ * standard ~/.ssh key files that exists on disk.
+ */
+export function resolveGerritSshKey(
+  options: { config?: FitCliConfig; path?: string; env?: NodeJS.ProcessEnv } = {},
+): string | undefined {
+  const env = options.env ?? process.env;
+  const config = options.config ?? loadFitCliConfig(options.path).config;
+  const configured =
+    config?.gerrit?.sshKeyPath ??
+    (env.FIT_GERRIT_KEY?.trim() || undefined) ??
+    (env.GERRIT_SSH_KEY?.trim() || undefined);
+  if (configured) return configured;
+  const home = env.HOME ?? homedir();
+  for (const name of CANDIDATE_GERRIT_SSH_KEY_NAMES) {
+    const candidate = join(home, ".ssh", name);
+    if (existsSync(candidate)) return candidate;
+  }
+  return undefined;
 }
 
 export function applyFitCliConfigToEnv(config: FitCliConfig, env: NodeJS.ProcessEnv = process.env): string[] {

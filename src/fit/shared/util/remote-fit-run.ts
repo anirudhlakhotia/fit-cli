@@ -18,7 +18,7 @@ import type { Sdk } from "../../../util/sdk/sdks.js";
 import type { AwsCredentials } from "../../../util/non-fit/aws/identity.js";
 import { DEFAULT_PERFORMER_PORT } from "../../performers/util/performer-port.js";
 import { createRemoteFitExecutionContext } from "./remote-fit-execution-context.js";
-import { resolveFitGerritKey } from "../../performers/checkout-fit-gerrit-ref/checkout-fit-gerrit-ref.js";
+import { resolveGerritSshKey } from "../../util/config.js";
 
 const REMOTE_FIT_WORKSPACE_DIR = "fit-workspace";
 const REMOTE_DOCKER_WRAPPER_FILE = "docker";
@@ -253,7 +253,7 @@ export function createLocalFitExecutionContext(rootDir: string): FitExecutionCon
     dockerCommand: "docker",
     artifacts: [],
     details: [],
-    gerritSshKeyPath: resolveFitGerritKey(),
+    gerritSshKeyPath: resolveGerritSshKey(),
     ensureWorkspace: async (sdk: Sdk): Promise<boolean> => {
       if (!(await ensureRepo(FIT_PERFORMER, rootDir))) {
         console.log("\nOnce transactions-fit-performer is in place, run fit-cli again.");

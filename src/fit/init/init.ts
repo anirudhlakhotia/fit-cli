@@ -4,6 +4,7 @@ import {
   FIT_CLI_CONFIG_VERSION,
   defaultFitCliConfigPath,
   loadFitCliConfig,
+  resolveGerritSshKey,
   saveFitCliConfig,
   type FitCliConfig,
 } from "../util/config.js";
@@ -29,6 +30,10 @@ export interface InitAnswers {
   githubToken?: string;
   /** Readonly password for the hosted results database; empty/undefined to skip. */
   resultsDbPassword?: string;
+  /** Gerrit username; defaults to github.user when blank. */
+  gerritUser?: string;
+  /** Path to the SSH private key registered with Gerrit. */
+  gerritSshKeyPath?: string;
 }
 
 function trimOptional(value: string | undefined): string | undefined {
@@ -88,11 +93,22 @@ export function initAnswersToConfig(answers: InitAnswers, existing?: FitCliConfi
         }
       : undefined;
 
+  const gerritUser = trimOptional(answers.gerritUser);
+  const gerritSshKeyPath = trimOptional(answers.gerritSshKeyPath);
+  const gerrit =
+    gerritUser || gerritSshKeyPath
+      ? {
+          ...(gerritUser ? { user: gerritUser } : {}),
+          ...(gerritSshKeyPath ? { sshKeyPath: gerritSshKeyPath } : {}),
+        }
+      : existing?.gerrit;
+
   return {
     version: FIT_CLI_CONFIG_VERSION,
     ...(aws ? { aws } : {}),
     ...(github ? { github } : {}),
     ...(resultsDb ? { resultsDb } : {}),
+    ...(gerrit ? { gerrit } : {}),
   };
 }
 
@@ -126,6 +142,32 @@ async function promptForGithubToken(existing?: FitCliConfig): Promise<string | u
   return trimOptional(entered) ?? existingToken;
 }
 
+async function promptForGerritUser(existing?: FitCliConfig): Promise<string | undefined> {
+  const existingUser = existing?.gerrit?.user;
+  const githubUser = existing?.github?.user;
+  const defaultUser = existingUser ?? githubUser;
+  const entered = await input({
+    promptId: "init.gerrit.user",
+    message: defaultUser
+      ? `Gerrit username (leave blank to use "${defaultUser}"):`
+      : "Gerrit username (leave blank to use your GitHub username):",
+    default: existingUser ?? "",
+  });
+  return trimOptional(entered) ?? existingUser;
+}
+
+async function promptForGerritSshKeyPath(existing?: FitCliConfig): Promise<string | undefined> {
+  const existingPath = existing?.gerrit?.sshKeyPath ?? resolveGerritSshKey({ config: existing });
+  const entered = await input({
+    promptId: "init.gerrit.ssh-key",
+    message: existingPath
+      ? `Path to Gerrit SSH private key (leave blank to use "${existingPath}"):`
+      : "Path to Gerrit SSH private key (leave blank to skip — required for fetching Gerrit change refs):",
+    default: existingPath ?? "",
+  });
+  return trimOptional(entered) ?? (existing?.gerrit?.sshKeyPath);
+}
+
 async function promptForResultsDbPassword(existing?: FitCliConfig): Promise<string | undefined> {
   const existingPassword = existing?.resultsDb?.password ?? process.env.FIT_RESULTS_DB_PASSWORD;
   const shared = "faas.couchbase.com results database password, for storing dev FIT/SIT and FIT/PERF results"
@@ -144,6 +186,8 @@ async function promptForConfig(existing?: FitCliConfig): Promise<InitAnswers> {
   const githubUser = await promptForGithubUser(existing);
   const githubToken = await promptForGithubToken(existing);
   const resultsDbPassword = await promptForResultsDbPassword(existing);
+  const gerritUser = await promptForGerritUser(existing);
+  const gerritSshKeyPath = await promptForGerritSshKeyPath(existing);
   const defaults = buildInitialDefaults(existing);
   const hasExistingAws = existing?.aws !== undefined;
   const configureAws = await confirm({
@@ -155,7 +199,7 @@ async function promptForConfig(existing?: FitCliConfig): Promise<InitAnswers> {
   });
 
   if (!configureAws) {
-    return { configureAws: false, githubUser, githubToken, resultsDbPassword };
+    return { configureAws: false, githubUser, githubToken, resultsDbPassword, gerritUser, gerritSshKeyPath };
   }
 
   return {
@@ -163,6 +207,8 @@ async function promptForConfig(existing?: FitCliConfig): Promise<InitAnswers> {
     githubUser,
     githubToken,
     resultsDbPassword,
+    gerritUser,
+    gerritSshKeyPath,
     aws: {
       region: await input({
         promptId: "init.aws.region",
@@ -351,6 +397,26 @@ export function buildAutoConfig(
     log.push({ field: "github.*", source: "--disable-github", found: false });
   }
 
+  // Gerrit section
+  let gerrit: FitCliConfig["gerrit"] | undefined;
+  if (!args.disableGerrit) {
+    const user = resolveField(log, "gerrit.user", args.gerritUser, "--gerrit-user", [
+      { name: "FIT_GERRIT_USER", value: env.FIT_GERRIT_USER },
+      { name: "GERRIT_USER", value: env.GERRIT_USER },
+    ]);
+    const sshKeyPath = resolveField(log, "gerrit.sshKeyPath", args.gerritSshKeyPath, "--gerrit-ssh-key", [
+      { name: "FIT_GERRIT_KEY", value: env.FIT_GERRIT_KEY },
+      { name: "GERRIT_SSH_KEY", value: env.GERRIT_SSH_KEY },
+    ]);
+    const parts = {
+      ...(user ? { user } : {}),
+      ...(sshKeyPath ? { sshKeyPath } : {}),
+    };
+    if (Object.keys(parts).length > 0) gerrit = parts;
+  } else {
+    log.push({ field: "gerrit.*", source: "--disable-gerrit", found: false });
+  }
+
   // Results DB section
   let resultsDb: FitCliConfig["resultsDb"] | undefined;
   if (!args.disableResultsDb) {
@@ -375,6 +441,7 @@ export function buildAutoConfig(
     ...(aws ? { aws } : {}),
     ...(github ? { github } : {}),
     ...(resultsDb ? { resultsDb } : {}),
+    ...(gerrit ? { gerrit } : {}),
   };
 
   return { config, log };

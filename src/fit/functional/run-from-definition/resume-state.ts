@@ -69,14 +69,14 @@ export interface RunState {
   performers: ResumePerformerState[];
 }
 
-/** Where the run-state file lives for the definition at `definitionPath`. */
-export function runStatePath(definitionPath: string): string {
-  return resolve(dirname(definitionPath), "instances", "0", "_internal", "run-state.json");
+/** Where the run-state file lives inside the artifact directory `runDir`. */
+export function runStatePath(runDir: string): string {
+  return resolve(runDir, "instances", "0", "_internal", "run-state.json");
 }
 
-/** Read the saved run state for a definition, or undefined if none exists. */
-export function readRunState(definitionPath: string): RunState | undefined {
-  const path = runStatePath(definitionPath);
+/** Read the saved run state from `runDir`, or undefined if none exists. */
+export function readRunState(runDir: string): RunState | undefined {
+  const path = runStatePath(runDir);
   if (!existsSync(path)) {
     return undefined;
   }
@@ -87,9 +87,9 @@ export function readRunState(definitionPath: string): RunState | undefined {
   return parsed as RunState;
 }
 
-/** Write the run state for a definition, creating the `instances/0/_internal` dir. */
-export function writeRunState(definitionPath: string, state: RunState): string {
-  const path = runStatePath(definitionPath);
+/** Write the run state into `runDir`, creating the `instances/0/_internal` dir. */
+export function writeRunState(runDir: string, state: RunState): string {
+  const path = runStatePath(runDir);
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   writeFileSync(path, `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 });
   return path;

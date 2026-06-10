@@ -5,12 +5,10 @@
  *   npx tsx src/fit/performers/checkout-fit-gerrit-ref/checkout-fit-gerrit-ref.ts refs/changes/29/246329/1
  */
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { fitCliError } from "../../../util/non-fit/fit-cli-log.js";
 import { posixQuote } from "../../../util/non-fit/remote-target.js";
+import { resolveGerritUser } from "../../util/config.js";
 import { rootDirFromArgv } from "../../util/root.js";
 import { createLocalFitExecutionContext, type FitExecutionContext } from "../../shared/util/remote-fit-run.js";
 
@@ -18,22 +16,6 @@ export const FIT_GERRIT_HOST = "review.couchbase.org";
 export const FIT_GERRIT_PORT = 29418;
 export const FIT_PERFORMER_GERRIT_REPO = "transactions-fit-performer";
 
-/**
- * Resolve the SSH private key to use for Gerrit.
- * Checks FIT_GERRIT_KEY, then GERRIT_SSH_KEY, then auto-detects from common ~/.ssh locations.
- * Returns undefined if no key is found.
- */
-export function resolveFitGerritKey(env: NodeJS.ProcessEnv = process.env): string | undefined {
-  const configured = env.FIT_GERRIT_KEY ?? env.GERRIT_SSH_KEY;
-  const trimmed = configured?.trim();
-  if (trimmed) return trimmed;
-  const home = env.HOME ?? homedir();
-  for (const name of ["id_rsa", "id_ed25519", "id_ecdsa"]) {
-    const candidate = join(home, ".ssh", name);
-    if (existsSync(candidate)) return candidate;
-  }
-  return undefined;
-}
 
 /** Build the GIT_SSH_COMMAND value for authenticating to Gerrit with a specific key. */
 export function gerritSshCommand(keyPath: string): string {
@@ -80,6 +62,28 @@ export function requireFitGerritUser(env: NodeJS.ProcessEnv = process.env): stri
   );
 }
 
+/**
+ * Resolve the Gerrit username using all sources: config file, env vars, git
+ * config, and gh CLI. Throws with a helpful message if nothing is found.
+ */
+export function requireGerritUser(): string {
+  const fromConfig = resolveGerritUser();
+  if (fromConfig) {
+    return fromConfig;
+  }
+  const fromGitConfig = resolveGerritUserFromGitConfig();
+  if (fromGitConfig) {
+    return fromGitConfig;
+  }
+  const fromGhCli = resolveGerritUserFromGhCli();
+  if (fromGhCli) {
+    return fromGhCli;
+  }
+  throw new Error(
+    "Cannot determine Gerrit username. Set gerrit.user in ~/.fit-cli/config.json5 (npm run init), or set FIT_GERRIT_USER / GERRIT_USER.",
+  );
+}
+
 export function fitPerformerGerritUrl(gerritUser: string): string {
   return `ssh://${gerritUser}@${FIT_GERRIT_HOST}:${FIT_GERRIT_PORT}/${FIT_PERFORMER_GERRIT_REPO}`;
 }
@@ -108,7 +112,7 @@ export async function checkoutFitGerritRef(
 
   let gerritUser: string;
   try {
-    gerritUser = requireFitGerritUser();
+    gerritUser = requireGerritUser();
   } catch (err) {
     fitCliError((err as Error).message);
     return false;

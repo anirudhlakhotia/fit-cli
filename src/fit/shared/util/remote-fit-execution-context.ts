@@ -28,7 +28,7 @@ import {
   stageGerritSshKey,
   type FitExecutionContext,
 } from "./remote-fit-run.js";
-import { resolveFitGerritKey } from "../../performers/checkout-fit-gerrit-ref/checkout-fit-gerrit-ref.js";
+import { resolveGerritSshKey } from "../../util/config.js";
 
 /**
  * Build a FitExecutionContext that runs against a remote box over SSH. Preparing
@@ -90,14 +90,14 @@ export async function createRemoteFitExecutionContext(
 
     await ensureRemoteRepos(target, rootDir, remoteFitRepos(sdk));
 
-    const localGerritKey = resolveFitGerritKey();
+    const localGerritKey = resolveGerritSshKey();
     if (localGerritKey) {
       console.log(`\n→ Staging Gerrit SSH key to remote instance...`);
       await stageGerritSshKey(target, rootDir, localGerritKey);
     }
   }
 
-  const gerritSshKeyPath = resolveFitGerritKey() ? remoteGerritSshKeyPath(rootDir) : undefined;
+  const gerritSshKeyPath = resolveGerritSshKey() ? remoteGerritSshKeyPath(rootDir) : undefined;
 
   return {
     kind: "remote",
