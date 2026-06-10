@@ -83,6 +83,8 @@ export function defaultSituationalCbdinoclusterInitConfig(): PieceData {
     },
     capella: {
       enabled: "true",
+      // FIT/SIT generally tests Capella+cbdino, so needs this
+      endpoint: 'https://api.cloud.couchbase.com',
       // todo seeing if we can remove these
       // endpoint: "http://localhost:8080",
       // "override-token": "the-secret-test-override-key",

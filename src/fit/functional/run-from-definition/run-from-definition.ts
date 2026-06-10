@@ -64,6 +64,7 @@ import {
 } from "../../../cluster/cluster-create/allocate-cluster.js";
 import { runClusterDiag } from "../../../cluster/cluster-diag/cluster-diag.js";
 import { prepareCbdinoclusterConfig, removeCluster, setupDeclarativeCluster } from "../../../cluster/cluster-create/setup-declarative-cluster.js";
+import { installCbdinoclusterRemote } from "../../../cluster/cluster-create/install-cbdinocluster.js";
 import { defaultCbdinoclusterInitConfig } from "../../../cluster/cluster-create/default-cbdinocluster-init-config.js";
 import {
   checkLocalhostCngKubernetes,
@@ -1115,6 +1116,11 @@ export async function runFromDefinition(
             }
           }
         } else {
+          if (execution.kind === "remote") {
+            if (!(await execution.commandAvailable("cbdinocluster"))) {
+              await installCbdinoclusterRemote(execution);
+            }
+          }
           await prepareCbdinoclusterConfig(
             execution,
             group.cbdinoclusterInit.config,

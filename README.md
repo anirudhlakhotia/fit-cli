@@ -120,16 +120,6 @@ Each step should be runnable independently from the CLI wherever possible - see 
 This is for debugging and development rather than intended for end-users. 
 End-users should be starting at `npm start`.
 
-The source is organised into:
-- `src/cluster/` — cluster creation, selection, diagnostics
-- `src/fit/functional/` — functional FIT test flows
-- `src/fit/shared/` — shared FIT logic (definitions, test drivers, etc.)
-- `src/fit/situational/` — situational/environment-specific setup (local DB, results DB)
-- `src/fit/performers/` — performer management (build, run, check)
-- `src/fit/util/` — FIT-specific utilities (config, repos, AWS)
-- `src/cloud/` — cloud instance management
-- `src/util/` — generic, non-FIT utilities
-
 ### ROOT_DIR
 - Everything file-based is relative to a ROOT_DIR (see "ROOT_DIR" below): the FIT repos live directly under it and the generated config is written under it. It defaults to the parent of the current directory and can be overridden with `--root <dir>` or the `FIT_ROOT` env var.
 
@@ -150,6 +140,10 @@ type: fit-functional-tests
 ```
 These allow us to drive repeatable workflows, much more reliably than replay files.
 See `examples/documented.yaml` for an annotated example; run one with `npm run definition <file.yaml>`.
+
+Definition file rules while generating:
+- If there are fields that are added later at runtime, add a very short comment saying that.
+- Take full advantage of being able to move cluster, cbdinocluster and fitConfig definitions elsewhere in the file and reference them by id.  This makes it much easier to read. 
 
 #### Definition file versions
 - We only have major versions.  Minor and patch are not worth the trouble here.
