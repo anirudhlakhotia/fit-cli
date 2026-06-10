@@ -24,7 +24,43 @@ export interface DetailCollection {
   details: Detail[];
 }
 
-export interface RunOutput extends ArtifactCollection, DetailCollection {}
+/** A failure that affected a definition run, for exit-code and summary purposes. */
+export interface RecordedFailure {
+  classification: string;
+  message: string;
+  context: {
+    instanceIndex: number;
+    cycleIndex: number;
+    iterationIndex?: number;
+  };
+}
+
+export interface RunOutput extends ArtifactCollection, DetailCollection {
+  worstFailure?: RecordedFailure;
+  failureCount?: number;
+}
+
+const FAILURE_SEVERITY: Record<string, number> = {
+  NonFatal: 0,
+  FatalToIteration: 1,
+  FatalToCycle: 2,
+  FatalToAll: 3,
+};
+
+export function worstFailureShouldExitNonZero(failure: RecordedFailure): boolean {
+  return (FAILURE_SEVERITY[failure.classification] ?? 0) >= FAILURE_SEVERITY.FatalToIteration;
+}
+
+export function formatFailureSummaryLine(failure: RecordedFailure, totalCount: number): string {
+  const { classification, message, context } = failure;
+  const extra = totalCount > 1 ? ` (+${totalCount - 1} more failure${totalCount > 2 ? "s" : ""})` : "";
+  const parts = [
+    `instance ${context.instanceIndex + 1}`,
+    `cycle ${context.cycleIndex + 1}`,
+    ...(context.iterationIndex !== undefined ? [`iteration ${context.iterationIndex + 1}`] : []),
+  ];
+  return `Returning non-zero due to ${classification} error '${message}' on ${parts.join(", ")}${extra}`;
+}
 
 interface ArtifactTableRow extends Artifact {
   size?: string;
@@ -83,9 +119,13 @@ export function combineDetails(...groups: ReadonlyArray<readonly Detail[] | unde
 
 /** Merge run outputs while preserving first-seen order within each output type. */
 export function combineRunOutputs(...groups: ReadonlyArray<Partial<RunOutput> | undefined>): RunOutput {
+  const worstFailure = groups.find((g) => g?.worstFailure !== undefined)?.worstFailure;
+  const failureCount = groups.find((g) => g?.failureCount !== undefined)?.failureCount;
   return {
     artifacts: combineArtifacts(...groups.map((group) => group?.artifacts)),
     details: combineDetails(...groups.map((group) => group?.details)),
+    ...(worstFailure !== undefined ? { worstFailure } : {}),
+    ...(failureCount !== undefined ? { failureCount } : {}),
   };
 }
 

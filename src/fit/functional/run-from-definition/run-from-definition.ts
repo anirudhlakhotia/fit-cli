@@ -38,6 +38,7 @@ import {
   combineDetails,
   type Artifact,
   type Detail,
+  type RecordedFailure,
   type RunOutput,
 } from "../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
@@ -112,6 +113,7 @@ import {
   throwFatalToCycle,
   throwFatalToIteration,
 } from "../../shared/failure-classification.js";
+import { RunFailureTracker } from "../../shared/run-failure-tracker.js";
 import {
   extractResumeAt,
   extractResumeSelector,
@@ -203,10 +205,16 @@ export function finalizeRunFromDefinition(
   artifacts: readonly Artifact[],
   details: readonly Detail[],
   runDir?: string,
+  worstFailure?: RecordedFailure,
+  failureCount?: number,
 ): RunOutput {
   const combined = combineArtifacts(artifacts);
   const guide = writeAgentsGuide(combined, runDir);
-  return { artifacts: combineArtifacts(combined, [guide.artifact]), details: combineDetails(details) };
+  return {
+    artifacts: combineArtifacts(combined, [guide.artifact]),
+    details: combineDetails(details),
+    ...(worstFailure ? { worstFailure, failureCount: failureCount ?? 1 } : {}),
+  };
 }
 
 /** Print what an iteration resolved to, so a CI log shows the run's inputs. */
@@ -407,7 +415,7 @@ export async function runTests(
   });
   artifacts.push(...performerSanity.artifacts);
   if (!performerSanity.ok) {
-    return { artifacts, details };
+    throwFatalToIteration("Performer cluster sanity check failed; stopping this iteration.");
   }
 
   const testRun = await runTestDriverFn(
@@ -425,6 +433,9 @@ export async function runTests(
     { label: iterationLabel("Cluster"), value: `${run.cluster.scheme}://${run.cluster.defaultHostname}` },
     ...testRun.details,
   );
+  if (!testRun.ok) {
+    throwFatalToIteration("FIT tests failed — check the test-driver log for details.");
+  }
   return { artifacts, details };
 }
 
@@ -490,6 +501,9 @@ export async function runSituationalTests(
 
   console.log(`\nWhen this run produces data, view it at:\n  ${SITUATIONAL_RESULTS_URL}`);
   details.push({ label: "Results UI", value: SITUATIONAL_RESULTS_URL });
+  if (!testRun.ok) {
+    throwFatalToIteration("FIT tests failed — check the test-driver log for details.");
+  }
   return { artifacts, details };
 }
 
@@ -880,12 +894,14 @@ export async function runFromDefinition(
   rootDir: string,
   options: RunFromDefinitionOptions = {},
 ): Promise<RunOutput> {
+  const tracker = new RunFailureTracker();
   const { resumeAt, resumeSelector = {} } = options;
   const phases = phasesForResumePoint(resumeAt);
   const resolved = resolveDefinition(loadDefinition(definitionPath));
   const executionGroups = buildExecutionGroups(resolved.instances);
   console.log(`\nRunning FIT tests from definition:\n  ${definitionPath}`);
 
+  const preconditionCtx = { instanceIndex: 0, cycleIndex: 0 };
   const savedState = resumeAt ? readRunState(dirname(resolve(definitionPath))) : undefined;
   if (resumeAt) {
     if (!savedState) {
@@ -893,7 +909,8 @@ export async function runFromDefinition(
         `\nresume: no saved run state found for ${definitionPath}. ` +
           "Run without --resume-at first, then choose to leave everything up.",
       );
-      return { artifacts: [], details: [] };
+      tracker.record("FatalToAll", "No saved run state found for resume", preconditionCtx);
+      return finalizeRunFromDefinition([], [], undefined, tracker.worst, tracker.failureCount);
     }
     console.log(`  Resuming at: ${resumeAt}`);
   }
@@ -903,7 +920,8 @@ export async function runFromDefinition(
   if (resumeAt && hasResumeSelector(resumeSelector)) {
     if (!expectedResumePath) {
       fitCliError("\nresume: the saved run state points at a run that no longer exists in this definition.");
-      return { artifacts: [], details: [] };
+      tracker.record("FatalToAll", "Saved run state points at a run that no longer exists", preconditionCtx);
+      return finalizeRunFromDefinition([], [], undefined, tracker.worst, tracker.failureCount);
     }
     if (!resumeSelectorMatchesPath(resumeSelector, expectedResumePath)) {
       fitCliError(
@@ -911,7 +929,8 @@ export async function runFromDefinition(
           `  Requested: ${resumeSelectorFlags(resumeSelector).join(" ")}\n` +
           `  Saved:     ${describeRunPath(expectedResumePath)}`,
       );
-      return { artifacts: [], details: [] };
+      tracker.record("FatalToAll", "Requested resume path does not match saved run state", preconditionCtx);
+      return finalizeRunFromDefinition([], [], undefined, tracker.worst, tracker.failureCount);
     }
   }
 
@@ -926,7 +945,8 @@ export async function runFromDefinition(
     const result = resolveGithubCredentials();
     if (typeof result === "string") {
       fitCliError(`\n✗ ${result}`);
-      return { artifacts: [], details: [] };
+      tracker.record("FatalToAll", result, preconditionCtx);
+      return finalizeRunFromDefinition([], [], undefined, tracker.worst, tracker.failureCount);
     }
     githubCredentials = result;
   }
@@ -938,7 +958,8 @@ export async function runFromDefinition(
     const result = await resolveAwsCredentials();
     if (typeof result === "string") {
       fitCliError(`\n✗ ${result}`);
-      return { artifacts: [], details: [] };
+      tracker.record("FatalToAll", result, preconditionCtx);
+      return finalizeRunFromDefinition([], [], undefined, tracker.worst, tracker.failureCount);
     }
     awsCredentials = result;
   }
@@ -960,7 +981,8 @@ export async function runFromDefinition(
           `  Ask on #the-fit-stop for it, then set it as resultsDb.password in your fit-cli config\n` +
           `  (~/.fit-cli/config.json5 — run \`npm run init\`).`,
       );
-      return { artifacts: [], details: [] };
+      tracker.record("FatalToAll", "Missing results database password in fit-cli config", preconditionCtx);
+      return finalizeRunFromDefinition([], [], undefined, tracker.worst, tracker.failureCount);
     }
     console.log(`\nChecking connectivity to results database at ${HOSTED_RESULTS_DB_HOST}...`);
     if (!(await checkResultsDatabaseConnectivity())) {
@@ -968,7 +990,8 @@ export async function runFromDefinition(
         `\n✗ Cannot reach the results database at ${HOSTED_RESULTS_DB_HOST}:5432.\n` +
           `  Make sure you are connected to the vpn-public VPN.`,
       );
-      return { artifacts: [], details: [] };
+      tracker.record("FatalToAll", `Cannot reach results database at ${HOSTED_RESULTS_DB_HOST}:5432`, preconditionCtx);
+      return finalizeRunFromDefinition([], [], undefined, tracker.worst, tracker.failureCount);
     }
     console.log(`  ✓ Reached ${HOSTED_RESULTS_DB_HOST}.`);
   }
@@ -1001,6 +1024,7 @@ export async function runFromDefinition(
       .slice(0, startCycleIndex)
       .reduce((total, group) => total + group.runs.length, 0);
 
+    try {
     for (let cycleIndex = startCycleIndex; cycleIndex < executionGroups.length; cycleIndex++) {
       activeCycleIndex = cycleIndex;
       if (cycleIndex !== startCycleIndex) {
@@ -1025,6 +1049,7 @@ export async function runFromDefinition(
       details.push(...targetOutcome.details);
       if (!targetOutcome.ready) {
         fitCliError(`\n✗ Could not acquire an execution target for execution group ${cycleIndex + 1}; skipping it.`);
+        tracker.record("FatalToCycle", `Could not acquire an execution target for execution group ${cycleIndex + 1}`, { instanceIndex: group.path.instanceIndex, cycleIndex });
         globalIterationIndex += group.runs.length;
         continue;
       }
@@ -1049,17 +1074,6 @@ export async function runFromDefinition(
       // on a remote box, confirm the box can reach the DB before doing real work.
       const cycleNeedsHostedDatabase =
         group.type === "situational" && group.runs.some((run) => run.databaseMode === "hosted");
-      if (cycleNeedsHostedDatabase && execution.kind === "remote") {
-        console.log(`\nChecking results database connectivity from the remote instance...`);
-        if (!(await checkResultsDatabaseConnectivity((cmd, args) => execution.capture(cmd, args)))) {
-          fitCliError(
-            `\n✗ The remote instance cannot reach the results database at ${HOSTED_RESULTS_DB_HOST}:5432.\n` +
-              `  Make sure the instance has network access to reach the database (VPN / security-group rules).`,
-          );
-          return finalizeRunFromDefinition(artifacts, details);
-        }
-        console.log(`  ✓ Reached ${HOSTED_RESULTS_DB_HOST} from the remote instance.`);
-      }
 
       let activeCycle = group;
       let clusterState: ResumeClusterState | undefined;
@@ -1067,6 +1081,17 @@ export async function runFromDefinition(
       const cyclePerformerStates: ResumePerformerState[] = [];
 
       try {
+        if (cycleNeedsHostedDatabase && execution.kind === "remote") {
+          console.log(`\nChecking results database connectivity from the remote instance...`);
+          if (!(await checkResultsDatabaseConnectivity((cmd, args) => execution.capture(cmd, args)))) {
+            throwFatalToCycle(
+              `The remote instance cannot reach the results database at ${HOSTED_RESULTS_DB_HOST}:5432. ` +
+                `Make sure the instance has network access to reach the database (VPN / security-group rules).`,
+            );
+          }
+          console.log(`  ✓ Reached ${HOSTED_RESULTS_DB_HOST} from the remote instance.`);
+        }
+
         if (group.type === "functional") {
           // CNG cycles need Kubernetes where cbdinocluster runs: check it on
           // localhost, or stand up k3d (and point the uploaded ~/.cbdinocluster at
@@ -1144,6 +1169,7 @@ export async function runFromDefinition(
           } catch (err) {
             if (err instanceof ClassifiedFailure && err.classification === "FatalToIteration") {
               fitCliError(`\n✗ ${err.message} (FatalToIteration — moving to next iteration)`);
+              tracker.record("FatalToIteration", err.message, { instanceIndex: group.path.instanceIndex, cycleIndex, iterationIndex: cycleIterationIndex });
             } else {
               throw err;
             }
@@ -1153,6 +1179,7 @@ export async function runFromDefinition(
       } catch (err) {
         if (err instanceof ClassifiedFailure && err.classification === "FatalToCycle") {
           fitCliError(`\n✗ ${err.message} (FatalToCycle)`);
+          tracker.record("FatalToCycle", err.message, { instanceIndex: group.path.instanceIndex, cycleIndex });
           globalIterationIndex += activeCycle.runs.length;
 
           // Promote this cycle as the active set so that stopping here lets
@@ -1204,8 +1231,16 @@ export async function runFromDefinition(
         activePerformerStates = [];
       }
     }
+    } catch (err) {
+      if (err instanceof ClassifiedFailure && err.classification === "FatalToAll") {
+        fitCliError(`\n✗ ${err.message} (FatalToAll — aborting run)`);
+        tracker.record("FatalToAll", err.message, { instanceIndex: activeCycleIndex, cycleIndex: activeCycleIndex });
+      } else {
+        throw err;
+      }
+    }
 
-    return finalizeRunFromDefinition(artifacts, details);
+    return finalizeRunFromDefinition(artifacts, details, runDir, tracker.worst, tracker.failureCount);
   } finally {
     await teardownRun({
       definitionPath,

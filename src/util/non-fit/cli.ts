@@ -6,9 +6,11 @@ import {
   formatArtifactsSection,
   formatDetailsSection,
   combineRunOutputs,
+  worstFailureShouldExitNonZero,
+  formatFailureSummaryLine,
   type RunOutput,
 } from "./artifacts.js";
-import { installFitCliConsoleFormatting } from "./fit-cli-log.js";
+import { installFitCliConsoleFormatting, fitCliError } from "./fit-cli-log.js";
 import { startSessionLog, startDebugLog } from "./proc.js";
 import { ensurePromptSession } from "./replay.js";
 
@@ -46,20 +48,26 @@ export function runCli(main: () => Promise<void | Partial<RunOutput>>): void {
     promptSession.runDir,
   );
   let summaryOutput: string | undefined;
+  let runOutput: RunOutput | undefined;
   Promise.resolve()
     .then(() => main())
     .then((result) => {
-      const output = combineRunOutputs(result ?? undefined, { artifacts: [sessionLogArtifact, debugLogArtifact] });
+      runOutput = combineRunOutputs(result ?? undefined, { artifacts: [sessionLogArtifact, debugLogArtifact] });
       const sections = [
-        formatArtifactsSection(promptSession.runDir, output.artifacts),
-        formatDetailsSection(output.details),
+        formatArtifactsSection(promptSession.runDir, runOutput.artifacts),
+        formatDetailsSection(runOutput.details),
       ].filter(Boolean);
       summaryOutput = sections.join("\n\n") || undefined;
       return promptSession.finishReplay();
     })
-    .then(() => {
+    .then(async () => {
       if (summaryOutput) {
         console.log(`\n${summaryOutput}`);
+      }
+      if (runOutput?.worstFailure && worstFailureShouldExitNonZero(runOutput.worstFailure)) {
+        fitCliError(formatFailureSummaryLine(runOutput.worstFailure, runOutput.failureCount ?? 1));
+        await Promise.all([sessionLog.flush(), debugLog.flush()]);
+        process.exit(1);
       }
     })
     .catch(async (err) => {
