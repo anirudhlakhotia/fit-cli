@@ -8,6 +8,7 @@
   },
   "scripts": {
     "start": "tsx src/fit/main/main.ts",
+    "config": "tsx src/fit/config/config.ts",
     "init": "tsx src/fit/init/init.ts",
     "replay": "tsx src/util/non-fit/replay-entry.ts --replay",
     "definition": "tsx src/fit/definition/definition.ts",

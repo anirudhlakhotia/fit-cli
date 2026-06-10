@@ -35,7 +35,9 @@ Then:
 npm ci
 
 # One-off configuration
-npm run init 
+npm run config -- init
+# Or this for CI:
+# npm run config -- init --auto 
 
 # Start the interactive wizard
 npm start
