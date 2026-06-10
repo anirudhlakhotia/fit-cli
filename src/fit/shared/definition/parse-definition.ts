@@ -1,7 +1,10 @@
 /**
  * Parse and validate a `fit` definition file.
  */
-import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 import JSON5 from "json5";
 import YAML from "yaml";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
@@ -653,6 +656,50 @@ export function parseDefinition(text: string, format?: DefinitionFormat): FitDef
 
 export function loadDefinition(path: string): FitDefinition {
   return parseDefinition(readFileSync(path, "utf8"), detectDefinitionFormat(path));
+}
+
+export function isDefinitionUrl(s: string): boolean {
+  return /^https?:\/\//i.test(s);
+}
+
+function basenameFromUrl(url: string): string {
+  try {
+    const parts = new URL(url).pathname.split("/").filter(Boolean);
+    return parts.at(-1) ?? "definition.json5";
+  } catch {
+    return "definition.json5";
+  }
+}
+
+/** Stable local cache path for a URL: ~/.fit-cli/url-cache/<12-char-hash>/<basename> */
+export function localPathForUrl(url: string, home: string = homedir()): string {
+  const slug = createHash("sha256").update(url).digest("hex").slice(0, 12);
+  return join(home, ".fit-cli", "url-cache", slug, basenameFromUrl(url));
+}
+
+/**
+ * Fetch a definition file from a URL, write it to a stable local cache path, and
+ * return that path. The stable path means resume state written next to it can be
+ * found again when the same URL is passed to a later `--resume-at` invocation.
+ */
+export async function cacheDefinition(url: string): Promise<string> {
+  let text: string;
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new InvalidDefinitionError(
+        `Failed to fetch definition from ${url}: HTTP ${response.status} ${response.statusText}`,
+      );
+    }
+    text = await response.text();
+  } catch (err) {
+    if (err instanceof InvalidDefinitionError) throw err;
+    throw new InvalidDefinitionError(`Failed to fetch definition from ${url}: ${(err as Error).message}`);
+  }
+  const localPath = localPathForUrl(url);
+  mkdirSync(dirname(localPath), { recursive: true });
+  writeFileSync(localPath, text, "utf8");
+  return localPath;
 }
 
 function countRuns(definition: FitDefinition): number {

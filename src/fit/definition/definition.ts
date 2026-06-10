@@ -10,7 +10,7 @@ import { isMain, runCli } from "../../util/non-fit/cli.js";
 import { rootDirFromArgv } from "../util/root.js";
 import { extractInteractiveFlag, extractReplayFlag } from "../../util/non-fit/replay.js";
 import { runFromDefinition } from "../functional/run-from-definition/run-from-definition.js";
-import { loadDefinition } from "../shared/definition/parse-definition.js";
+import { cacheDefinition, isDefinitionUrl, loadDefinition } from "../shared/definition/parse-definition.js";
 import { FIT_DEFINITION_TYPE } from "../shared/definition/types.js";
 import {
   extractResumeAt,
@@ -74,7 +74,7 @@ if (isMain(import.meta.url)) {
     // what people reach for. Anything that's neither a subcommand nor a plausible
     // definition file is a genuine mistake.
     const isSubcommand = SUBCOMMANDS.includes(subcommand as Subcommand);
-    const looksLikeDefinitionPath = /\.(ya?ml|json5)$/i.test(subcommand) || existsSync(subcommand);
+    const looksLikeDefinitionPath = /\.(ya?ml|json5)$/i.test(subcommand) || existsSync(subcommand) || isDefinitionUrl(subcommand);
     if (!isSubcommand && !looksLikeDefinitionPath) {
       console.error(`Unknown subcommand: ${subcommand}\n`);
       console.error(HELP);
@@ -87,7 +87,11 @@ if (isMain(import.meta.url)) {
         console.error("Usage: npm run definition -- validate <file.json5>");
         process.exit(2);
       }
-      const definition = loadDefinition(path);
+      if (isDefinitionUrl(path)) {
+        console.log(`Fetching definition from ${path}...`);
+      }
+      const resolvedPath = isDefinitionUrl(path) ? await cacheDefinition(path) : path;
+      const definition = loadDefinition(resolvedPath);
       console.log(
         `✓ Valid ${FIT_DEFINITION_TYPE} definition (version ${definition.version}, ` +
           `${definition.instances.length} instance(s), ${countRuns(definition)} run(s)).`,
@@ -115,11 +119,17 @@ if (isMain(import.meta.url)) {
       console.error((err as Error).message);
       process.exit(2);
     }
-    const definition = loadDefinition(definitionPath);
+    if (isDefinitionUrl(definitionPath)) {
+      console.log(`Fetching definition from ${definitionPath}...`);
+    }
+    const resolvedDefinitionPath = isDefinitionUrl(definitionPath)
+      ? await cacheDefinition(definitionPath)
+      : definitionPath;
+    const definition = loadDefinition(resolvedDefinitionPath);
     console.log(
       `✓ Valid ${FIT_DEFINITION_TYPE} definition (version ${definition.version}, ` +
         `${definition.instances.length} instance(s), ${countRuns(definition)} run(s)).`,
     );
-    return runFromDefinition(definitionPath, rootDir, { ...(resumePoint ? { resumeAt: resumePoint } : {}) });
+    return runFromDefinition(resolvedDefinitionPath, rootDir, { ...(resumePoint ? { resumeAt: resumePoint } : {}) });
   });
 }
