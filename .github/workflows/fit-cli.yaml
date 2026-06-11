@@ -20,13 +20,14 @@ on:
 permissions:
   id-token: write   # required for GitHub OIDC
   contents: read
+  checks: write     # required for action-junit-report to post the JUnit check run / annotations
 
 jobs:
   run-fit-cli:
     runs-on: [ubuntu-latest]
     steps:
       - name: Configure AWS credentials via OIDC
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           aws-region: us-west-2
           role-to-assume: arn:aws:iam::958525475024:role/fit-cli-role
@@ -42,14 +43,14 @@ jobs:
           aws sts get-caller-identity
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: lts/*
 
       - name: Clone and setup fit-cli
         env:
           # secrets.GITHUB_TOKEN contains a short-lived token bound to this repo, so we can't use it for e.g. checking out transactions-fit-performer
-          # Instead we use a hardcoded PAT (the author's)
+          # Instead we use a hardcoded github PAT (the author's).  Migrating to a Github App in future would be better.
           GITHUB_TOKEN: ${{ secrets.FIT_CLI_GITHUB_PAT }}
           GITHUB_USER: ${{ secrets.FIT_CLI_GITHUB_USER }}
         run: |
@@ -68,7 +69,17 @@ jobs:
           echo "last_line=$(tail -1 /tmp/fit-cli-output.log)" >> $GITHUB_OUTPUT
         id: run-fit-cli
 
-      # todo handle Junit results
+      # The FIT test-driver writes surefire JUnit XML, which fit-cli collects into
+      # each run's artifact dir (see collect-junit.ts). A run can produce many of
+      # these across instances/clusters/sessions, so we match them with a glob.
+      # if: always() — we still want the report when the test run step failed.
+      - name: Publish JUnit results
+        if: always()
+        uses: mikepenz/action-junit-report@v5
+        with:
+          report_paths: '/tmp/fit-cli/**/surefire-reports/TEST-*.xml'
+          check_name: FIT functional tests
+          require_tests: false   # a definition may legitimately run no functional tests
 
       - name: Job summary
         if: always()
@@ -88,7 +99,7 @@ jobs:
 
       - name: Upload run artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: fit-cli-run-${{ github.run_id }}
           path: /tmp/fit-cli/
