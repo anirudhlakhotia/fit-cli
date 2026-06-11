@@ -48,7 +48,7 @@ jobs:
           GITHUB_USER: ${{ github.actor }}
           AWS_REGION: us-west-2
         run: |
-          git clone https://github.com/couchbaselabs/fit-cli.git
+          git clone --branch ${{ github.ref_name }} https://github.com/couchbaselabs/fit-cli.git
           cd fit-cli
           npm ci
           npm run config -- edit --auto
