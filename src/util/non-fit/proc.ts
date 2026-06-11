@@ -160,6 +160,7 @@ export function startSessionLog(logFile: string): SessionLog {
   mkdirSync(dirname(logFile), { recursive: true, mode: 0o700 });
   const log = createWriteStream(logFile, { flags: "a", mode: 0o600 });
   log.write(`# ${new Date().toISOString()} fit-cli session\n`);
+  log.write(`# $ ${formatCommandLine(process.argv[0], process.argv.slice(1))}\n`);
 
   const logLineStarts = new Map<NodeJS.WriteStream, boolean>();
   for (const stream of [process.stdout, process.stderr]) {
@@ -213,6 +214,7 @@ export function startDebugLog(logFile: string): SessionLog {
   mkdirSync(dirname(logFile), { recursive: true, mode: 0o700 });
   const log = createWriteStream(logFile, { flags: "a", mode: 0o600 });
   log.write(`# ${new Date().toISOString()} fit-cli debug log\n`);
+  log.write(`# $ ${formatCommandLine(process.argv[0], process.argv.slice(1))}\n`);
   currentDebugLog = log;
 
   const flush = (): Promise<void> =>
