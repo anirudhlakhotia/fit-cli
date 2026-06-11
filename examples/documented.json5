@@ -50,11 +50,6 @@
 
           // Or allocate a fresh cluster for just this cluster lifetime:
           // cbdinocluster: {
-          //   init: {
-          //     // Args passed to `cbdinocluster init` on clean environments to set up
-          //     // ~/.cbdinocluster. fit-cli appends your GitHub credentials at runtime.
-          //     args: '--auto --disable-aws --disable-azure --disable-capella --disable-gcp --disable-k8s --disable-dns --docker-network fit',
-          //   },
           //   config: {
           //     nodes: [
           //       { count: 1, version: '8.1.0-2188', services: ['kv', 'n1ql', 'index'] },
@@ -131,15 +126,17 @@
       localhost: {},
       // FIT/SIT creates its own clusters, so none are set up here.
       clusters: [],
-      // FIT/SIT creates its own clusters via cbdinocluster; this init config must be present.
-      cbdinocluster: {
-        init: {
-          config: {
-            version: 6,
-            docker: {
-              enabled: true,
-              network: 'fit',
-              host: 'unix:///var/run/docker.sock',
+      setup: {
+        // FIT/SIT creates its own clusters via cbdinocluster; this init config must be present.
+        cbdinocluster: {
+          init: {
+            config: {
+              version: 6,
+              docker: {
+                enabled: true,
+                network: 'fit',
+                host: 'unix:///var/run/docker.sock',
+              },
             },
           },
         },

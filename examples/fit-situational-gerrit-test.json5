@@ -16,16 +16,18 @@
       aws: {},
       // FIT/SIT creates its own clusters, so none are set up here.
       clusters: [],
-      // FIT/SIT creates its own clusters via cbdinocluster; this init config must be present.
-      cbdinocluster: {
-        init: {
-          // This file will be uploaded verbatim into clean environments as ~/.cbdinocluster
-          config: {
-            version: 6,
-            docker: {
-              enabled: true,
-              network: 'fit',
-              host: 'unix:///var/run/docker.sock',
+      setup: {
+        // FIT/SIT creates its own clusters via cbdinocluster; this init config must be present.
+        cbdinocluster: {
+          init: {
+            // This file will be uploaded verbatim into clean environments as ~/.cbdinocluster
+            config: {
+              version: 6,
+              docker: {
+                enabled: true,
+                network: 'fit',
+                host: 'unix:///var/run/docker.sock',
+              },
             },
           },
         },
