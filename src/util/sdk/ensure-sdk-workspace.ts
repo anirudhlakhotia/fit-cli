@@ -24,8 +24,8 @@ export function requiredReposForSdk(_sdk: Sdk): Repo[] {
  * @returns true always — JVM SDKs now use prebuilt GHCR containers so no
  * extra workspace repos are needed.
  */
-export async function ensureSdkWorkspace(_sdk: Sdk, _rootDir: string): Promise<boolean> {
-  return true;
+export function ensureSdkWorkspace(_sdk: Sdk, _rootDir: string): Promise<boolean> {
+  return Promise.resolve(true);
 }
 
 if (isMain(import.meta.url)) {

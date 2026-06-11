@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { FIT_CLI_CONFIG_VERSION } from "../../util/config.js";
-import { buildAutoConfig, type AutoInitOptions } from "../edit.js";
+import { buildAutoConfig } from "../edit.js";
 import type { AutoInitCliArgs } from "../config.js";
 
 function baseArgs(overrides: Partial<AutoInitCliArgs> = {}): AutoInitCliArgs {

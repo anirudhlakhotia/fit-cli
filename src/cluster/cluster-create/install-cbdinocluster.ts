@@ -121,7 +121,11 @@ if (isMain(import.meta.url)) {
 
     const instanceDir = flag(argv, "dir");
     if (instanceDir) {
-      const info = JSON.parse(readFileSync(join(instanceDir, "ec2-instance.json"), "utf8"));
+      const info = JSON.parse(readFileSync(join(instanceDir, "ec2-instance.json"), "utf8")) as {
+        instanceId?: string;
+        keyPath?: string;
+        address?: string;
+      };
       instanceId ??= info.instanceId;
       identityFile ??= info.keyPath;
       address = info.address;

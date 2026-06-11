@@ -506,7 +506,7 @@ export function buildAutoConfig(
  * Run the non-interactive auto-edit flow: resolve config, display resolution
  * table, and write the config file (unless --dry-run).
  */
-export async function runAutoEdit(args: AutoInitCliArgs): Promise<void> {
+export function runAutoEdit(args: AutoInitCliArgs): Promise<void> {
   const { config, log } = buildAutoConfig({ args, env: process.env });
 
   printResolutionLog(log);
@@ -518,9 +518,10 @@ export async function runAutoEdit(args: AutoInitCliArgs): Promise<void> {
   if (args.dryRun) {
     console.log(`[dry-run] Would write to: ${args.configPath}`);
     console.log("[dry-run] No changes made.");
-    return;
+    return Promise.resolve();
   }
 
   const savedPath = saveFitCliConfig(config, args.configPath);
   console.log(`Saved fit-cli config to ${savedPath}`);
+  return Promise.resolve();
 }

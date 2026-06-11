@@ -79,7 +79,7 @@ export async function findUbuntuAmi(options: AwsOptions = {}): Promise<string> {
       );
       const amiId = result.Parameters?.[0]?.Value;
       if (!amiId) {
-        throw new Error(`SSM parameter ${ssmPath} returned no value.`);
+        throw new Error(`SSM parameter ${ssmPath} returned no value.`, { cause: describeErr });
       }
       console.warn(`Warning: ec2:DescribeImages not permitted — resolved Ubuntu 22.04 AMI via SSM: ${amiId}`);
       return amiId;

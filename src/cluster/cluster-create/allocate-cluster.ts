@@ -147,6 +147,9 @@ export async function allocateCluster(
     // best-effort: file may not exist if SSH itself never started
   }
   if (runError !== undefined) {
+    // Deferred rethrow of the original caught error after collecting output —
+    // rethrow it verbatim so its type/stack are preserved.
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
     throw runError;
   }
   const clusterId = parseAllocatedId(localOutput);

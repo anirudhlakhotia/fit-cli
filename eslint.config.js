@@ -15,6 +15,14 @@ export default tseslint.config(
         tsconfigRootDir: import.meta.dirname,
       },
     },
+    rules: {
+      // A leading underscore is the conventional "intentionally unused" marker —
+      // honour it for args, vars and caught errors.
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_" },
+      ],
+    },
   },
   {
     // The config file itself isn't part of the TS project, so turn off
