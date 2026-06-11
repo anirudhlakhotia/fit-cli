@@ -43,13 +43,14 @@ export interface RunOutput extends ArtifactCollection, DetailCollection {
 
 const FAILURE_SEVERITY: Record<string, number> = {
   NonFatal: 0,
-  FatalToIteration: 1,
-  FatalToCycle: 2,
-  FatalToAll: 3,
+  FatalToSession: 1,
+  FatalToCluster: 2,
+  FatalToInstance: 3,
+  FatalToAll: 4,
 };
 
 export function worstFailureShouldExitNonZero(failure: RecordedFailure): boolean {
-  return (FAILURE_SEVERITY[failure.classification] ?? 0) >= FAILURE_SEVERITY.FatalToIteration;
+  return (FAILURE_SEVERITY[failure.classification] ?? 0) >= FAILURE_SEVERITY.FatalToSession;
 }
 
 export function formatFailureSummaryLine(failure: RecordedFailure, totalCount: number): string {

@@ -67,7 +67,7 @@ This can save valuable time when iterating a definition file.  It will try its b
 
 But note that this is somewhat temperamental and experimental.  You may hit issues and patches are welcome.
 
-You can also get very far by just rerunning the full definition file and using onPortInUse and useExisting to reuse existing performer and cluster.
+You can also get very far by just rerunning the full definition file and using the performer onPortInUse and cluster useExisting settings to reuse existing resources.
 
 ## Running on a cloud instance (AWS EC2)
 
@@ -76,6 +76,25 @@ At the start of a FIT functional run you can choose to run on your own machine, 
 To use EC2, copy `.env.example` to `.env` and fill in your AWS credentials (or just have working AWS config already — env vars or `~/.aws/credentials` are picked up automatically). If credentials are missing the tool tells you and lets you choose local instead.
 
 When you pick EC2, the tool launches a fresh Ubuntu instance, opens SSH, and tags it `fit-cli=owned`. A key is generated for you (saved into the run folder), and key-based SSH is the only login path the tool enables. At the end of the run you're asked whether to keep it (for debugging) or terminate it — the default is terminate, so you don't leave a paid instance running. The SSH command to reach the box is printed during the run.
+
+### Default instance types
+
+The default instance type differs by the kind of testing, because each wants a different machine size (perf needs the beefiest box). They live in `~/.fit-cli/config.json5` keyed first by cloud provider, then by purpose, so a future provider can carry its own sizes without restructuring:
+
+```json5
+cloud: {
+  aws: {
+    region: 'us-east-1',
+    instanceTypes: {
+      functional: 'c5.xlarge',   // default
+      situational: 'c5.xlarge',  // default
+      perf: 'c5.4xlarge',        // default
+    },
+  },
+},
+```
+
+Set them via `npm run config -- edit` (interactive) or `npm run config -- edit --auto --aws-instance-type-perf c5.9xlarge …` (env: `FIT_EC2_INSTANCE_TYPE_<PURPOSE>`, or `FIT_EC2_INSTANCE_TYPE` for all). A definition file's `instance.aws.instanceType` still overrides the default for that instance. `perf` has no run type in the definition schema yet — its default is carried ready for when one lands. Only AWS exists today; other providers slot in as siblings of `aws`.
 
 The AWS building blocks live under `src/util/non-fit/aws/` (generic, reusable) and `src/fit/util/aws/` (FIT-specific). Like everything else, each is runnable on its own — see the header of each file.
 
@@ -94,6 +113,8 @@ If you find any are broken due to refactorings then please ask an AI to "sweep t
 
 - `npm start` — run the interactive wizard.
 - `npm run dev` — run the wizard, restarting on file changes.
+- `npm run definition -- execute <file>` — run a definition file (see Resuming for the resume flags).
+- `npm run cloud-instances -- list | manage | delete | remove-all` — manage the EC2 instances fit-cli launched.
 - `npm run typecheck` — type-check without emitting.
 - `npm run build` — compile TypeScript to `dist/`.
 - `npm test` — run the unit tests (node:test, via tsx).  Note - these always need to be kept instant - business logic only.  If it's slow, just don't test it.
@@ -145,7 +166,10 @@ These allow us to drive repeatable workflows, much more reliably than replay fil
 See `examples/documented.yaml` for an annotated example; run one with `npm run definition <file.yaml>`.
 
 Definition file rules while generating:
-- If there are fields that are added later at runtime, add a very short comment saying that.
+- If there are fields that are added later at runtime, add a very short comment saying that.  
+- Comments are injected by decorating the definition object with `"//<6 chars>": "text"` marker keys before the field they annotate and replacing them at render time (see `generate-definition.ts`).  
+- Add new comments there by keying off the field name, not the output text.
+- `cbdinocluster init` belongs under `instances[].setup.cbdinocluster.init`, not on each cluster: it configures `~/.cbdinocluster` once per instance.
 - Take full advantage of being able to move cluster, cbdinocluster and fitConfig definitions elsewhere in the file and reference them by id.  This makes it much easier to read. 
 
 #### Definition file versions
@@ -226,6 +250,7 @@ Nb the need for later removal does mean it can't be stored internally purely as 
 - Automatically use new temporary keys (`aws ec2 create-key-pair`).
 - Lifetime: we give the user the option on whether to delete the instance at the end, or leave it running for debugging.
   There is no built-in TTL system for EC2 so we make it very clear the user has to delete instances if they choose to leave them running.
+- To clean up afterwards: `npm run cloud-instances -- list` shows what's still running, and `npm run cloud-instances -- remove-all` terminates every `fit-cli`-owned instance you created.
 
 ### Running processes
 #### Logging
@@ -235,11 +260,12 @@ Stdout/stderr from the process can be either:
 * Sent to a separate artifact, for important but large logs.
 
 #### Failures
-Failing processes are defined as returning non-zero, and are classified as FatalToCycle, FatalToAll, FatalToIteration or NonFatal.
+Failing processes are defined as returning non-zero, and are classified as FatalToAll, FatalToInstance, FatalToCluster, FatalToSession or NonFatal.  The names mirror the definition-file hierarchy: an instance holds clusters, a cluster holds sessions.
 FatalToAll will stop the definition run.
-FatalToCycle includes things like failing to setup the cluster or instance for the cycle.  The next cycle is allowed to run.
-FatalToIteration will fail just this iteration.  The next iteration is allowed to run.
-NonFatal allows things to continue including this iteration.
+FatalToInstance includes things like failing to acquire or set up the instance (box).  The next instance is allowed to run.
+FatalToCluster includes things like failing to set up the cluster for the instance.  The next cluster is allowed to run.
+FatalToSession will fail just this session.  The next session is allowed to run.
+NonFatal allows things to continue including this session.
 
 Deciding which of these should result in the final process returning non-zero and hence failing CI, is very tricky.
 FatalToAll - obviously yes.

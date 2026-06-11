@@ -17,7 +17,7 @@
  */
 import { type RunOutput } from "../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
-import { ensureFitCliConfigEnv } from "../../util/config.js";
+import { ensureFitCliConfigEnv, resolveCloudInstanceType, type CloudInstancePurpose } from "../../util/config.js";
 import { fitCliError, fitCliWarn } from "../../../util/non-fit/fit-cli-log.js";
 import { input, select } from "../../../util/non-fit/prompts.js";
 import { LocalTarget } from "../../../util/non-fit/local-target.js";
@@ -145,6 +145,7 @@ export async function resolveExecutionGroupTarget(
   instance: ResolvedInstance,
   override: ExecutionOverride,
   executionGroupIndex: number,
+  purpose: CloudInstancePurpose,
 ): Promise<ExecutionTargetOutcome> {
   // The run-wide "existing EC2 instance" override: every group runs on the box
   // the user picked up front. They brought it, so cleanup is a no-op.
@@ -180,9 +181,12 @@ export async function resolveExecutionGroupTarget(
   console.log(`\n✓ Using AWS account ${creds.identity.account} (${creds.identity.arn})`);
 
   try {
+    // The definition's explicit instanceType wins; otherwise use the configured
+    // default for this run's purpose (functional/situational/perf).
+    const instanceType = instance.instanceType ?? resolveCloudInstanceType(purpose);
     const provisioned = await provisionFitInstance({
       instanceIndex: executionGroupIndex,
-      ...(instance.instanceType ? { instanceType: instance.instanceType } : {}),
+      instanceType,
       ...(instance.region ? { region: instance.region } : {}),
     });
     const teardown: ExecutionTargetTeardown = {

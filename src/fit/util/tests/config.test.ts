@@ -4,49 +4,66 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import {
+  DEFAULT_CLOUD_INSTANCE_TYPES,
   FIT_CLI_CONFIG_VERSION,
   UnsupportedFitCliConfigVersionError,
   applyFitCliConfigToEnv,
   ensureFitCliConfigEnv,
   loadFitCliConfig,
   parseFitCliConfig,
+  resolveCloudInstanceType,
   resolveGithubToken,
   resolveResultsDbCredentials,
   saveFitCliConfig,
+  type FitCliConfig,
 } from "../config.js";
 
 test("parses a version 1 fit-cli config (JSON5)", () => {
   const parsed = parseFitCliConfig(`{
   version: 1,
-  aws: {
-    region: 'us-east-1',
-    profile: 'dev',
-    instanceType: 'c5.xlarge',
+  cloud: {
+    aws: {
+      region: 'us-east-1',
+      profile: 'dev',
+      instanceTypes: {
+        functional: 'c5.xlarge',
+        situational: 'c5.2xlarge',
+        perf: 'c5.4xlarge',
+      },
+    },
   },
 }`);
 
   assert.deepEqual(parsed, {
     version: FIT_CLI_CONFIG_VERSION,
-    aws: {
-      region: "us-east-1",
-      profile: "dev",
-      instanceType: "c5.xlarge",
+    cloud: {
+      aws: {
+        region: "us-east-1",
+        profile: "dev",
+        instanceTypes: {
+          functional: "c5.xlarge",
+          situational: "c5.2xlarge",
+          perf: "c5.4xlarge",
+        },
+      },
     },
   });
 });
 
 test("parses a version 1 fit-cli config (YAML, backward compat)", () => {
   const parsed = parseFitCliConfig(
-    `version: 1\naws:\n  region: us-east-1\n  profile: dev\n  instanceType: c5.xlarge\n`,
+    `version: 1\ncloud:\n  aws:\n    region: us-east-1\n    profile: dev\n    instanceTypes:\n      perf: c5.4xlarge\n`,
     "yaml",
   );
 
   assert.deepEqual(parsed, {
     version: FIT_CLI_CONFIG_VERSION,
-    aws: {
-      region: "us-east-1",
-      profile: "dev",
-      instanceType: "c5.xlarge",
+    cloud: {
+      aws: {
+        region: "us-east-1",
+        profile: "dev",
+        instanceTypes: { perf: "c5.4xlarge" },
+      },
     },
   });
 });
@@ -54,19 +71,23 @@ test("parses a version 1 fit-cli config (YAML, backward compat)", () => {
 test("ignores legacy stored AWS credentials in config", () => {
   const parsed = parseFitCliConfig(`{
   version: 1,
-  aws: {
-    accessKeyId: 'abc',
-    secretAccessKey: 'def',
-    region: 'us-east-1',
-    profile: 'dev',
+  cloud: {
+    aws: {
+      accessKeyId: 'abc',
+      secretAccessKey: 'def',
+      region: 'us-east-1',
+      profile: 'dev',
+    },
   },
 }`);
 
   assert.deepEqual(parsed, {
     version: FIT_CLI_CONFIG_VERSION,
-    aws: {
-      region: "us-east-1",
-      profile: "dev",
+    cloud: {
+      aws: {
+        region: "us-east-1",
+        profile: "dev",
+      },
     },
   });
 });
@@ -139,21 +160,38 @@ test("applies config values only when the environment is unset", () => {
   const applied = applyFitCliConfigToEnv(
     {
       version: FIT_CLI_CONFIG_VERSION,
-      aws: {
-        region: "us-east-1",
-        profile: "dev",
-        instanceType: "c5.xlarge",
+      cloud: {
+        aws: {
+          region: "us-east-1",
+          profile: "dev",
+          // Per-purpose instance types are not exported to the environment.
+          instanceTypes: { functional: "c5.xlarge" },
+        },
       },
     },
     env,
   );
 
-  assert.deepEqual(applied, ["AWS_PROFILE", "FIT_EC2_INSTANCE_TYPE"]);
+  assert.deepEqual(applied, ["AWS_PROFILE"]);
   assert.deepEqual(env, {
     AWS_REGION: "eu-west-1",
     AWS_PROFILE: "dev",
-    FIT_EC2_INSTANCE_TYPE: "c5.xlarge",
   });
+});
+
+test("resolveCloudInstanceType prefers config, then the baked default", () => {
+  const config: FitCliConfig = {
+    version: FIT_CLI_CONFIG_VERSION,
+    cloud: { aws: { instanceTypes: { perf: "m6i.8xlarge" } } },
+  };
+  assert.equal(resolveCloudInstanceType("perf", { config }), "m6i.8xlarge");
+  // functional not set in config → baked default.
+  assert.equal(resolveCloudInstanceType("functional", { config }), DEFAULT_CLOUD_INSTANCE_TYPES.aws.functional);
+  // no config at all → baked default.
+  assert.equal(
+    resolveCloudInstanceType("situational", { config: { version: FIT_CLI_CONFIG_VERSION } }),
+    DEFAULT_CLOUD_INSTANCE_TYPES.aws.situational,
+  );
 });
 
 test("saves and reloads config.json5", () => {
@@ -162,9 +200,11 @@ test("saves and reloads config.json5", () => {
   saveFitCliConfig(
     {
       version: FIT_CLI_CONFIG_VERSION,
-      aws: {
-        region: "us-east-1",
-        instanceType: "c5.xlarge",
+      cloud: {
+        aws: {
+          region: "us-east-1",
+          instanceTypes: { functional: "c5.xlarge", perf: "c5.4xlarge" },
+        },
       },
     },
     path,
@@ -176,9 +216,11 @@ test("saves and reloads config.json5", () => {
     path,
     config: {
       version: FIT_CLI_CONFIG_VERSION,
-      aws: {
-        region: "us-east-1",
-        instanceType: "c5.xlarge",
+      cloud: {
+        aws: {
+          region: "us-east-1",
+          instanceTypes: { functional: "c5.xlarge", perf: "c5.4xlarge" },
+        },
       },
     },
   });
@@ -190,9 +232,11 @@ test("saves and reloads config.yaml (YAML format, backward compat)", () => {
   saveFitCliConfig(
     {
       version: FIT_CLI_CONFIG_VERSION,
-      aws: {
-        region: "us-east-1",
-        instanceType: "c5.xlarge",
+      cloud: {
+        aws: {
+          region: "us-east-1",
+          instanceTypes: { functional: "c5.xlarge" },
+        },
       },
     },
     path,
@@ -204,9 +248,11 @@ test("saves and reloads config.yaml (YAML format, backward compat)", () => {
     path,
     config: {
       version: FIT_CLI_CONFIG_VERSION,
-      aws: {
-        region: "us-east-1",
-        instanceType: "c5.xlarge",
+      cloud: {
+        aws: {
+          region: "us-east-1",
+          instanceTypes: { functional: "c5.xlarge" },
+        },
       },
     },
   });
@@ -224,8 +270,10 @@ test("ensureFitCliConfigEnv can run init and apply the created config", async ()
       saveFitCliConfig(
         {
           version: FIT_CLI_CONFIG_VERSION,
-          aws: {
-            region: "us-east-1",
+          cloud: {
+            aws: {
+              region: "us-east-1",
+            },
           },
         },
         configPath,

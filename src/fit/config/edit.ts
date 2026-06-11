@@ -1,22 +1,43 @@
 import JSON5 from "json5";
 import {
+  CLOUD_INSTANCE_PURPOSES,
+  DEFAULT_CLOUD_INSTANCE_TYPES,
   FIT_CLI_CONFIG_VERSION,
   defaultFitCliConfigPath,
   loadFitCliConfig,
   resolveGerritSshKey,
   saveFitCliConfig,
+  type CloudInstancePurpose,
+  type FitCliAwsConfig,
+  type FitCliCloudConfig,
   type FitCliConfig,
+  type FitCliInstanceTypes,
 } from "../util/config.js";
 import { DEFAULT_AWS_REGION, awsRegionPromptMessage } from "../../util/non-fit/aws/region.js";
 import { confirm, input, password } from "../../util/non-fit/prompts.js";
 import type { AutoInitCliArgs } from "./config.js";
 
-const DEFAULT_EC2_INSTANCE_TYPE = "c5.xlarge";
+/** The AWS default instance types, keyed by testing purpose. */
+const DEFAULT_EC2_INSTANCE_TYPES = DEFAULT_CLOUD_INSTANCE_TYPES.aws;
+
+/** Human-friendly label for a purpose, used in prompts. */
+const PURPOSE_LABELS: Record<CloudInstancePurpose, string> = {
+  functional: "functional",
+  situational: "situational (SIT)",
+  perf: "performance (PERF)",
+};
+
+/** Env var carrying a per-purpose instance-type override (e.g. FIT_EC2_INSTANCE_TYPE_PERF). */
+function purposeEnvVar(purpose: CloudInstancePurpose): string {
+  return `FIT_EC2_INSTANCE_TYPE_${purpose.toUpperCase()}`;
+}
+
+export type AwsInstanceTypeAnswers = Record<CloudInstancePurpose, string>;
 
 export interface AwsInitAnswers {
   region: string;
   profile: string;
-  instanceType: string;
+  instanceTypes: AwsInstanceTypeAnswers;
 }
 
 export interface InitAnswers {
@@ -39,42 +60,66 @@ function trimOptional(value: string | undefined): string | undefined {
   return trimmed ? trimmed : undefined;
 }
 
+/** Fill every purpose, preferring saved values then the baked-in defaults. */
+function instanceTypeDefaults(saved?: FitCliInstanceTypes): AwsInstanceTypeAnswers {
+  const result = {} as AwsInstanceTypeAnswers;
+  for (const purpose of CLOUD_INSTANCE_PURPOSES) {
+    result[purpose] = saved?.[purpose] ?? DEFAULT_EC2_INSTANCE_TYPES[purpose];
+  }
+  return result;
+}
+
 export function initDefaultsFromConfig(config?: FitCliConfig): AwsInitAnswers {
+  const aws = config?.cloud?.aws;
   return {
-    region: config?.aws?.region ?? DEFAULT_AWS_REGION,
-    profile: config?.aws?.profile ?? "",
-    instanceType: config?.aws?.instanceType ?? DEFAULT_EC2_INSTANCE_TYPE,
+    region: aws?.region ?? DEFAULT_AWS_REGION,
+    profile: aws?.profile ?? "",
+    instanceTypes: instanceTypeDefaults(aws?.instanceTypes),
   };
 }
 
 export function initDefaultsFromEnv(env: NodeJS.ProcessEnv): AwsInitAnswers {
+  const instanceTypes = {} as AwsInstanceTypeAnswers;
+  for (const purpose of CLOUD_INSTANCE_PURPOSES) {
+    instanceTypes[purpose] =
+      env[purposeEnvVar(purpose)] ?? env.FIT_EC2_INSTANCE_TYPE ?? DEFAULT_EC2_INSTANCE_TYPES[purpose];
+  }
   return {
     region: env.AWS_REGION ?? env.AWS_DEFAULT_REGION ?? DEFAULT_AWS_REGION,
     profile: env.AWS_PROFILE ?? "",
-    instanceType: env.FIT_EC2_INSTANCE_TYPE ?? DEFAULT_EC2_INSTANCE_TYPE,
+    instanceTypes,
   };
 }
 
-function awsAnswersToConfig(answers: AwsInitAnswers): FitCliConfig["aws"] {
+/** Keep only the purposes with a non-empty value. */
+function compactInstanceTypes(types: AwsInstanceTypeAnswers): FitCliInstanceTypes | undefined {
+  const parts: FitCliInstanceTypes = {};
+  for (const purpose of CLOUD_INSTANCE_PURPOSES) {
+    const value = trimOptional(types[purpose]);
+    if (value) parts[purpose] = value;
+  }
+  return Object.keys(parts).length > 0 ? parts : undefined;
+}
+
+function awsAnswersToConfig(answers: AwsInitAnswers): FitCliAwsConfig | undefined {
   const region = trimOptional(answers.region) ?? DEFAULT_AWS_REGION;
   const profile = trimOptional(answers.profile);
-  const instanceType = trimOptional(answers.instanceType) ?? DEFAULT_EC2_INSTANCE_TYPE;
+  const instanceTypes = compactInstanceTypes(answers.instanceTypes);
 
-  if (!region && !profile && !instanceType) {
-    return undefined;
-  }
-  return {
+  const parts: FitCliAwsConfig = {
     ...(region ? { region } : {}),
     ...(profile ? { profile } : {}),
-    ...(instanceType ? { instanceType } : {}),
+    ...(instanceTypes ? { instanceTypes } : {}),
   };
+  return Object.keys(parts).length > 0 ? parts : undefined;
 }
 
 export function initAnswersToConfig(answers: InitAnswers, existing?: FitCliConfig): FitCliConfig {
-  // Declining the AWS prompt leaves any saved AWS settings untouched rather
+  // Declining the AWS prompt leaves any saved cloud settings untouched rather
   // than wiping them, so re-running edit is non-destructive.
   const aws =
-    answers.configureAws && answers.aws ? awsAnswersToConfig(answers.aws) : existing?.aws;
+    answers.configureAws && answers.aws ? awsAnswersToConfig(answers.aws) : existing?.cloud?.aws;
+  const cloud: FitCliCloudConfig | undefined = aws ? { aws } : undefined;
   const user = trimOptional(answers.githubUser) ?? existing?.github?.user;
   const token = trimOptional(answers.githubToken);
   const github = user || token
@@ -103,7 +148,7 @@ export function initAnswersToConfig(answers: InitAnswers, existing?: FitCliConfi
 
   return {
     version: FIT_CLI_CONFIG_VERSION,
-    ...(aws ? { aws } : {}),
+    ...(cloud ? { cloud } : {}),
     ...(github ? { github } : {}),
     ...(resultsDb ? { resultsDb } : {}),
     ...(gerrit ? { gerrit } : {}),
@@ -187,7 +232,7 @@ async function promptForConfig(existing?: FitCliConfig): Promise<InitAnswers> {
   const gerritUser = await promptForGerritUser(existing);
   const gerritSshKeyPath = await promptForGerritSshKeyPath(existing);
   const defaults = buildInitialDefaults(existing);
-  const hasExistingAws = existing?.aws !== undefined;
+  const hasExistingAws = existing?.cloud?.aws !== undefined;
   const configureAws = await confirm({
     promptId: "init.aws.configure",
     message: hasExistingAws
@@ -218,13 +263,22 @@ async function promptForConfig(existing?: FitCliConfig): Promise<InitAnswers> {
         message: "AWS profile (optional):",
         default: defaults.profile,
       }),
-      instanceType: await input({
-        promptId: "init.aws.instance-type",
-        message: "Default FIT EC2 instance type:",
-        default: defaults.instanceType,
-      }),
+      instanceTypes: await promptForInstanceTypes(defaults.instanceTypes),
     },
   };
+}
+
+/** Ask for a default EC2 instance type per testing purpose. */
+async function promptForInstanceTypes(defaults: AwsInstanceTypeAnswers): Promise<AwsInstanceTypeAnswers> {
+  const answers = {} as AwsInstanceTypeAnswers;
+  for (const purpose of CLOUD_INSTANCE_PURPOSES) {
+    answers[purpose] = await input({
+      promptId: `init.aws.instance-type.${purpose}`,
+      message: `Default EC2 instance type for ${PURPOSE_LABELS[purpose]} tests:`,
+      default: defaults[purpose],
+    });
+  }
+  return answers;
 }
 
 /** Placeholder shown in place of secrets when echoing the config. */
@@ -403,33 +457,46 @@ export function buildAutoConfig(
   const { args, env = process.env } = options;
   const log: ResolutionEntry[] = [];
 
-  // AWS section
-  let aws: FitCliConfig["aws"] | undefined;
+  // Cloud (AWS) section
+  let cloud: FitCliCloudConfig | undefined;
   if (!args.disableAws) {
-    const region = resolveField(log, "aws.region", args.awsRegion, "--aws-region", [
+    const region = resolveField(log, "cloud.aws.region", args.awsRegion, "--aws-region", [
       { name: "AWS_REGION", value: env.AWS_REGION },
       { name: "AWS_DEFAULT_REGION", value: env.AWS_DEFAULT_REGION },
     ], DEFAULT_AWS_REGION);
-    const profile = resolveField(log, "aws.profile", args.awsProfile, "--aws-profile", [
+    const profile = resolveField(log, "cloud.aws.profile", args.awsProfile, "--aws-profile", [
       { name: "AWS_PROFILE", value: env.AWS_PROFILE },
     ]);
-    const instanceType = resolveField(log, "aws.instanceType", args.awsInstanceType, "--aws-instance-type", [
-      { name: "FIT_EC2_INSTANCE_TYPE", value: env.FIT_EC2_INSTANCE_TYPE },
-    ], DEFAULT_EC2_INSTANCE_TYPE);
 
-    const parts = {
+    const instanceTypes: FitCliInstanceTypes = {};
+    for (const purpose of CLOUD_INSTANCE_PURPOSES) {
+      const type = resolveField(
+        log,
+        `cloud.aws.instanceTypes.${purpose}`,
+        args.awsInstanceTypes?.[purpose],
+        `--aws-instance-type-${purpose}`,
+        [
+          { name: purposeEnvVar(purpose), value: env[purposeEnvVar(purpose)] },
+          { name: "FIT_EC2_INSTANCE_TYPE", value: env.FIT_EC2_INSTANCE_TYPE },
+        ],
+        DEFAULT_EC2_INSTANCE_TYPES[purpose],
+      );
+      if (type) instanceTypes[purpose] = type;
+    }
+
+    const parts: FitCliAwsConfig = {
       ...(region ? { region } : {}),
       ...(profile ? { profile } : {}),
-      ...(instanceType ? { instanceType } : {}),
+      ...(Object.keys(instanceTypes).length > 0 ? { instanceTypes } : {}),
     };
-    if (Object.keys(parts).length > 0) aws = parts;
+    if (Object.keys(parts).length > 0) cloud = { aws: parts };
 
     // Diagnostic: AWS credentials (must be set in env; not written to config)
     checkDiagnosticVar(log, "AWS_ACCESS_KEY_ID", env.AWS_ACCESS_KEY_ID);
     checkDiagnosticVar(log, "AWS_SECRET_ACCESS_KEY", env.AWS_SECRET_ACCESS_KEY);
     checkDiagnosticVar(log, "AWS_SESSION_TOKEN", env.AWS_SESSION_TOKEN);
   } else {
-    log.push({ field: "aws.*", source: "--disable-aws", found: false });
+    log.push({ field: "cloud.aws.*", source: "--disable-aws", found: false });
   }
 
   // GitHub section
@@ -493,7 +560,7 @@ export function buildAutoConfig(
 
   const config: FitCliConfig = {
     version: FIT_CLI_CONFIG_VERSION,
-    ...(aws ? { aws } : {}),
+    ...(cloud ? { cloud } : {}),
     ...(github ? { github } : {}),
     ...(resultsDb ? { resultsDb } : {}),
     ...(gerrit ? { gerrit } : {}),

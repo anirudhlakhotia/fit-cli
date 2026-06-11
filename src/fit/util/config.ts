@@ -10,10 +10,45 @@ export const FIT_CLI_CONFIG_DIRNAME = ".fit-cli";
 export const FIT_CLI_CONFIG_BASENAME = "config.json5";
 const LEGACY_CONFIG_YAML_BASENAME = "config.yaml";
 
+/**
+ * The kinds of testing a default instance type can be chosen for. These are the
+ * "purposes" a cloud instance is provisioned for; each can want a different
+ * machine size (perf needs the beefiest box, functional the least). `perf` has
+ * no run type in the definition schema yet — its default is carried here ready
+ * for when one lands.
+ */
+export const CLOUD_INSTANCE_PURPOSES = ["functional", "situational", "perf"] as const;
+export type CloudInstancePurpose = (typeof CLOUD_INSTANCE_PURPOSES)[number];
+
+/** Cloud service providers fit-cli can provision instances on. Only AWS today. */
+export const CLOUD_PROVIDERS = ["aws"] as const;
+export type CloudProvider = (typeof CLOUD_PROVIDERS)[number];
+
+/** Baked-in default instance type per purpose, used when the config omits one. */
+export const DEFAULT_CLOUD_INSTANCE_TYPES: Record<CloudProvider, Record<CloudInstancePurpose, string>> = {
+  aws: {
+    functional: "c5.xlarge",
+    situational: "c5.xlarge",
+    perf: "c5.4xlarge",
+  },
+};
+
+export type FitCliInstanceTypes = Partial<Record<CloudInstancePurpose, string>>;
+
 export interface FitCliAwsConfig {
   region?: string;
   profile?: string;
-  instanceType?: string;
+  /** Default EC2 instance type per testing purpose; missing purposes fall back to the baked default. */
+  instanceTypes?: FitCliInstanceTypes;
+}
+
+/**
+ * Per-CSP cloud settings. Today only `aws` exists, but instance types are keyed
+ * by purpose under each provider so a future GCP/Azure section can carry its own
+ * sizes without restructuring.
+ */
+export interface FitCliCloudConfig {
+  aws?: FitCliAwsConfig;
 }
 
 export interface FitCliGithubConfig {
@@ -39,7 +74,7 @@ export interface FitCliGerritConfig {
 
 export interface FitCliConfig {
   version: 1;
-  aws?: FitCliAwsConfig;
+  cloud?: FitCliCloudConfig;
   github?: FitCliGithubConfig;
   resultsDb?: FitCliResultsDbConfig;
   gerrit?: FitCliGerritConfig;
@@ -103,11 +138,26 @@ function compactRecord<T extends Record<string, string | undefined>>(record: T):
 }
 
 function configEnvEntries(config: FitCliConfig): Record<string, string> {
+  // Instance types are now per-purpose, so there's no single FIT_EC2_INSTANCE_TYPE
+  // to export — runs resolve the right one via resolveCloudInstanceType().
   return compactRecord({
-    AWS_REGION: config.aws?.region,
-    AWS_PROFILE: config.aws?.profile,
-    FIT_EC2_INSTANCE_TYPE: config.aws?.instanceType,
+    AWS_REGION: config.cloud?.aws?.region,
+    AWS_PROFILE: config.cloud?.aws?.profile,
   });
+}
+
+/**
+ * The default cloud instance type for a given testing purpose. Prefers the value
+ * saved in the fit-cli config (`cloud.<csp>.instanceTypes.<purpose>`), then falls
+ * back to the baked-in default. Loads the config itself when one isn't supplied.
+ */
+export function resolveCloudInstanceType(
+  purpose: CloudInstancePurpose,
+  options: { config?: FitCliConfig; path?: string; provider?: CloudProvider } = {},
+): string {
+  const provider = options.provider ?? "aws";
+  const config = options.config ?? loadFitCliConfig(options.path).config;
+  return config?.cloud?.[provider]?.instanceTypes?.[purpose] ?? DEFAULT_CLOUD_INSTANCE_TYPES[provider][purpose];
 }
 
 const promptedMissingConfigPaths = new Set<string>();
@@ -146,18 +196,12 @@ export function validateFitCliConfig(raw: unknown): FitCliConfig {
     );
   }
 
-  const awsValue = raw.aws;
-  if (awsValue !== undefined && !isRecord(awsValue)) {
-    throw new InvalidFitCliConfigError(`Field "aws" must be a mapping; got ${JSON.stringify(awsValue)}`);
+  const cloudValue = raw.cloud;
+  if (cloudValue !== undefined && !isRecord(cloudValue)) {
+    throw new InvalidFitCliConfigError(`Field "cloud" must be a mapping; got ${JSON.stringify(cloudValue)}`);
   }
 
-  const aws = awsValue
-    ? compactRecord({
-        region: readOptionalString(awsValue, "region", "aws.region"),
-        profile: readOptionalString(awsValue, "profile", "aws.profile"),
-        instanceType: readOptionalString(awsValue, "instanceType", "aws.instanceType"),
-      })
-    : undefined;
+  const cloud = cloudValue ? validateCloudConfig(cloudValue) : undefined;
 
   const githubValue = raw.github;
   if (githubValue !== undefined && !isRecord(githubValue)) {
@@ -197,11 +241,49 @@ export function validateFitCliConfig(raw: unknown): FitCliConfig {
 
   return {
     version: FIT_CLI_CONFIG_VERSION,
-    ...(aws && Object.keys(aws).length > 0 ? { aws } : {}),
+    ...(cloud ? { cloud } : {}),
     ...(github && Object.keys(github).length > 0 ? { github } : {}),
     ...(resultsDb && Object.keys(resultsDb).length > 0 ? { resultsDb } : {}),
     ...(gerrit && Object.keys(gerrit).length > 0 ? { gerrit } : {}),
   };
+}
+
+/** Validate and compact the `cloud` section. Returns undefined when it's empty. */
+function validateCloudConfig(cloudValue: Record<string, unknown>): FitCliCloudConfig | undefined {
+  const awsValue = cloudValue.aws;
+  if (awsValue !== undefined && !isRecord(awsValue)) {
+    throw new InvalidFitCliConfigError(`Field "cloud.aws" must be a mapping; got ${JSON.stringify(awsValue)}`);
+  }
+
+  let aws: FitCliAwsConfig | undefined;
+  if (awsValue) {
+    const instanceTypes = validateInstanceTypes(awsValue.instanceTypes, "cloud.aws.instanceTypes");
+    const parts: FitCliAwsConfig = {
+      ...compactRecord({
+        region: readOptionalString(awsValue, "region", "cloud.aws.region"),
+        profile: readOptionalString(awsValue, "profile", "cloud.aws.profile"),
+      }),
+      ...(instanceTypes ? { instanceTypes } : {}),
+    };
+    if (Object.keys(parts).length > 0) aws = parts;
+  }
+
+  if (!aws) return undefined;
+  return { aws };
+}
+
+/** Validate and compact a per-purpose instance-type mapping. */
+function validateInstanceTypes(value: unknown, path: string): FitCliInstanceTypes | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) {
+    throw new InvalidFitCliConfigError(`Field "${path}" must be a mapping; got ${JSON.stringify(value)}`);
+  }
+  const parts: FitCliInstanceTypes = {};
+  for (const purpose of CLOUD_INSTANCE_PURPOSES) {
+    const type = readOptionalString(value, purpose, `${path}.${purpose}`);
+    if (type !== undefined && type !== "") parts[purpose] = type;
+  }
+  return Object.keys(parts).length > 0 ? parts : undefined;
 }
 
 function detectConfigFormat(path: string): "json5" | "yaml" {

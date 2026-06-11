@@ -240,7 +240,7 @@ const READY_DATABASE = {
   details: [],
 };
 
-test("runSituationalTests throws FatalToIteration when the test driver reports failure", async () => {
+test("runSituationalTests throws FatalToSession when the test driver reports failure", async () => {
   await assert.rejects(
     () =>
       runSituationalTests(fitExecutionContext(), situationalIteration(), {
@@ -273,7 +273,7 @@ test("runSituationalTests stops before generating a config when the database isn
   assert.equal(ranDriver, false);
 });
 
-test("runTests throws FatalToIteration when the test driver reports failure", async () => {
+test("runTests throws FatalToSession when the test driver reports failure", async () => {
   await assert.rejects(
     () =>
       runTests(fitExecutionContext(), "connection", iteration(), undefined, {
@@ -286,7 +286,7 @@ test("runTests throws FatalToIteration when the test driver reports failure", as
   );
 });
 
-test("runTests throws FatalToIteration when performer sanity fails", async () => {
+test("runTests throws FatalToSession when performer sanity fails", async () => {
   await assert.rejects(
     () =>
       runTests(fitExecutionContext(), "connection", iteration(), undefined, {

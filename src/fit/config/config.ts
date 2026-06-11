@@ -12,7 +12,12 @@
  */
 import { isMain, runCli } from "../../util/non-fit/cli.js";
 import { runAutoEdit, runEditWorkflow, formatConfigForDisplay } from "./edit.js";
-import { defaultFitCliConfigPath, loadFitCliConfig } from "../util/config.js";
+import {
+  CLOUD_INSTANCE_PURPOSES,
+  defaultFitCliConfigPath,
+  loadFitCliConfig,
+  type FitCliInstanceTypes,
+} from "../util/config.js";
 
 const HELP = `Manage fit-cli configuration.
 
@@ -34,7 +39,12 @@ Edit options:
   --disable-gerrit       Skip writing the gerrit section.
   --aws-region <r>       AWS region (env: AWS_REGION / AWS_DEFAULT_REGION, default: us-east-1).
   --aws-profile <p>      AWS profile (env: AWS_PROFILE).
-  --aws-instance-type <t> EC2 instance type (env: FIT_EC2_INSTANCE_TYPE, default: c5.xlarge).
+  --aws-instance-type-functional <t>  EC2 instance type for functional tests
+                         (env: FIT_EC2_INSTANCE_TYPE_FUNCTIONAL / FIT_EC2_INSTANCE_TYPE, default: c5.xlarge).
+  --aws-instance-type-situational <t> EC2 instance type for situational (SIT) tests
+                         (env: FIT_EC2_INSTANCE_TYPE_SITUATIONAL / FIT_EC2_INSTANCE_TYPE, default: c5.xlarge).
+  --aws-instance-type-perf <t>        EC2 instance type for performance (PERF) tests
+                         (env: FIT_EC2_INSTANCE_TYPE_PERF / FIT_EC2_INSTANCE_TYPE, default: c5.4xlarge).
   --github-user <u>      GitHub username (env: GITHUB_USER).
   --github-token <t>     GitHub PAT (env: GITHUB_TOKEN / GH_TOKEN).
   --results-db-password <p> Results DB password (env: FIT_RESULTS_DB_PASSWORD).
@@ -53,7 +63,8 @@ export interface AutoInitCliArgs {
   disableGerrit: boolean;
   awsRegion?: string;
   awsProfile?: string;
-  awsInstanceType?: string;
+  /** Default EC2 instance type per testing purpose. */
+  awsInstanceTypes?: FitCliInstanceTypes;
   githubUser?: string;
   githubToken?: string;
   resultsDbPassword?: string;
@@ -94,7 +105,11 @@ export function parseEditArgs(argv: string[]): AutoInitCliArgs {
 
   const awsRegion = consumeValue(args, "--aws-region");
   const awsProfile = consumeValue(args, "--aws-profile");
-  const awsInstanceType = consumeValue(args, "--aws-instance-type");
+  const awsInstanceTypes: FitCliInstanceTypes = {};
+  for (const purpose of CLOUD_INSTANCE_PURPOSES) {
+    const value = consumeValue(args, `--aws-instance-type-${purpose}`);
+    if (value !== undefined) awsInstanceTypes[purpose] = value;
+  }
   const githubUser = consumeValue(args, "--github-user");
   const githubToken = consumeValue(args, "--github-token");
   const resultsDbPassword = consumeValue(args, "--results-db-password");
@@ -120,7 +135,7 @@ export function parseEditArgs(argv: string[]): AutoInitCliArgs {
     disableGerrit,
     awsRegion,
     awsProfile,
-    awsInstanceType,
+    ...(Object.keys(awsInstanceTypes).length > 0 ? { awsInstanceTypes } : {}),
     githubUser,
     githubToken,
     resultsDbPassword,

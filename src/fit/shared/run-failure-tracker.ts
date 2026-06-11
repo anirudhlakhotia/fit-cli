@@ -3,9 +3,10 @@ import type { RecordedFailure } from "../../util/non-fit/artifacts.js";
 
 const SEVERITY: Record<FailureClassification, number> = {
   NonFatal: 0,
-  FatalToIteration: 1,
-  FatalToCycle: 2,
-  FatalToAll: 3,
+  FatalToSession: 1,
+  FatalToCluster: 2,
+  FatalToInstance: 3,
+  FatalToAll: 4,
 };
 
 /**
@@ -43,7 +44,7 @@ export class RunFailureTracker {
 
   shouldExitNonZero(): boolean {
     return (
-      !!this.worstFailure && SEVERITY[this.worstFailure.classification as FailureClassification] >= SEVERITY.FatalToIteration
+      !!this.worstFailure && SEVERITY[this.worstFailure.classification as FailureClassification] >= SEVERITY.FatalToSession
     );
   }
 }

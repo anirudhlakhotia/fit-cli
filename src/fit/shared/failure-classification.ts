@@ -1,15 +1,23 @@
 /**
- * How a failing process (non-zero exit) affects the current definition run.
+ * How a failing process (non-zero exit) affects the current definition run. The
+ * names mirror the definition-file hierarchy: an instance holds clusters, a
+ * cluster holds sessions.
  *
- * FatalToAll       – stops the entire definition run immediately.
- * FatalToCycle     – the cycle cannot continue (e.g. cluster or instance setup
- *                    failed), but the next cycle is allowed to run.
- * FatalToIteration – only this iteration is abandoned; the next iteration in
- *                    the same cycle is allowed to run.
- * NonFatal         – the failure is recorded but the current iteration
- *                    continues.
+ * FatalToAll      – stops the entire definition run immediately.
+ * FatalToInstance – this instance cannot continue (e.g. the box couldn't be
+ *                   acquired or set up), but the next instance is allowed to run.
+ * FatalToCluster  – this cluster cannot continue (e.g. cluster setup failed), but
+ *                   the next cluster on the instance is allowed to run.
+ * FatalToSession  – only this session is abandoned; the next session in the same
+ *                   cluster is allowed to run.
+ * NonFatal        – the failure is recorded but the current session continues.
  */
-export type FailureClassification = "FatalToAll" | "FatalToCycle" | "FatalToIteration" | "NonFatal";
+export type FailureClassification =
+  | "FatalToAll"
+  | "FatalToInstance"
+  | "FatalToCluster"
+  | "FatalToSession"
+  | "NonFatal";
 
 /** A process failure tagged with how the run should react to it. */
 export class ClassifiedFailure extends Error {
@@ -26,10 +34,14 @@ export function throwFatalToAll(message: string): never {
   throw new ClassifiedFailure(message, "FatalToAll");
 }
 
-export function throwFatalToCycle(message: string): never {
-  throw new ClassifiedFailure(message, "FatalToCycle");
+export function throwFatalToInstance(message: string): never {
+  throw new ClassifiedFailure(message, "FatalToInstance");
 }
 
-export function throwFatalToIteration(message: string): never {
-  throw new ClassifiedFailure(message, "FatalToIteration");
+export function throwFatalToCluster(message: string): never {
+  throw new ClassifiedFailure(message, "FatalToCluster");
+}
+
+export function throwFatalToSession(message: string): never {
+  throw new ClassifiedFailure(message, "FatalToSession");
 }

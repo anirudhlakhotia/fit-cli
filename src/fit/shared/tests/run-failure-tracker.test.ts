@@ -7,28 +7,38 @@ const ctx = { instanceIndex: 0, clusterIndex: 1, sessionIndex: 2 };
 
 test("RunFailureTracker: worst-wins ordering — lower severity does not displace higher", () => {
   const tracker = new RunFailureTracker();
-  tracker.record("FatalToCycle", "cycle failed", { instanceIndex: 0, clusterIndex: 1 });
+  tracker.record("FatalToCluster", "cluster failed", { instanceIndex: 0, clusterIndex: 1 });
   tracker.record("NonFatal", "minor", { instanceIndex: 0, clusterIndex: 1 });
-  tracker.record("FatalToIteration", "iteration failed", { instanceIndex: 0, clusterIndex: 1 });
+  tracker.record("FatalToSession", "session failed", { instanceIndex: 0, clusterIndex: 1 });
 
-  assert.equal(tracker.worst?.classification, "FatalToCycle");
-  assert.equal(tracker.worst?.message, "cycle failed");
+  assert.equal(tracker.worst?.classification, "FatalToCluster");
+  assert.equal(tracker.worst?.message, "cluster failed");
 });
 
-test("RunFailureTracker: FatalToAll displaces FatalToCycle", () => {
+test("RunFailureTracker: FatalToAll displaces FatalToCluster", () => {
   const tracker = new RunFailureTracker();
-  tracker.record("FatalToCycle", "cycle failed", { instanceIndex: 0, clusterIndex: 0 });
+  tracker.record("FatalToCluster", "cluster failed", { instanceIndex: 0, clusterIndex: 0 });
   tracker.record("FatalToAll", "everything failed", { instanceIndex: 0, clusterIndex: 1 });
 
   assert.equal(tracker.worst?.classification, "FatalToAll");
   assert.equal(tracker.worst?.message, "everything failed");
 });
 
+test("RunFailureTracker: FatalToInstance sits between FatalToCluster and FatalToAll", () => {
+  const tracker = new RunFailureTracker();
+  tracker.record("FatalToCluster", "cluster failed", { instanceIndex: 0, clusterIndex: 0 });
+  tracker.record("FatalToInstance", "instance failed", { instanceIndex: 0 });
+  assert.equal(tracker.worst?.classification, "FatalToInstance");
+
+  tracker.record("FatalToAll", "everything failed", { instanceIndex: 0 });
+  assert.equal(tracker.worst?.classification, "FatalToAll");
+});
+
 test("RunFailureTracker: count increments for every record call", () => {
   const tracker = new RunFailureTracker();
   tracker.record("NonFatal", "a", ctx);
-  tracker.record("FatalToIteration", "b", ctx);
-  tracker.record("FatalToCycle", "c", ctx);
+  tracker.record("FatalToSession", "b", ctx);
+  tracker.record("FatalToCluster", "c", ctx);
 
   assert.equal(tracker.failureCount, 3);
 });
@@ -44,15 +54,15 @@ test("RunFailureTracker: shouldExitNonZero is false for NonFatal only", () => {
   assert.equal(tracker.shouldExitNonZero(), false);
 });
 
-test("RunFailureTracker: shouldExitNonZero is true for FatalToIteration", () => {
+test("RunFailureTracker: shouldExitNonZero is true for FatalToSession", () => {
   const tracker = new RunFailureTracker();
-  tracker.record("FatalToIteration", "iteration failed", ctx);
+  tracker.record("FatalToSession", "session failed", ctx);
   assert.equal(tracker.shouldExitNonZero(), true);
 });
 
-test("RunFailureTracker: shouldExitNonZero is true for FatalToCycle", () => {
+test("RunFailureTracker: shouldExitNonZero is true for FatalToCluster", () => {
   const tracker = new RunFailureTracker();
-  tracker.record("FatalToCycle", "cycle failed", ctx);
+  tracker.record("FatalToCluster", "cluster failed", ctx);
   assert.equal(tracker.shouldExitNonZero(), true);
 });
 
@@ -66,37 +76,37 @@ test("worstFailureShouldExitNonZero: false for NonFatal", () => {
   assert.equal(worstFailureShouldExitNonZero({ classification: "NonFatal", message: "x", context: { instanceIndex: 0 } }), false);
 });
 
-test("worstFailureShouldExitNonZero: true for FatalToIteration boundary", () => {
-  assert.equal(worstFailureShouldExitNonZero({ classification: "FatalToIteration", message: "x", context: { instanceIndex: 0 } }), true);
+test("worstFailureShouldExitNonZero: true for FatalToSession boundary", () => {
+  assert.equal(worstFailureShouldExitNonZero({ classification: "FatalToSession", message: "x", context: { instanceIndex: 0 } }), true);
 });
 
 test("formatFailureSummaryLine: 1-based instance/cluster", () => {
   const line = formatFailureSummaryLine(
-    { classification: "FatalToCycle", message: "cluster failed", context: { instanceIndex: 0, clusterIndex: 1 } },
+    { classification: "FatalToCluster", message: "cluster failed", context: { instanceIndex: 0, clusterIndex: 1 } },
     1,
   );
-  assert.equal(line, "Returning non-zero due to FatalToCycle error 'cluster failed' on instance 1, cluster 2");
+  assert.equal(line, "Returning non-zero due to FatalToCluster error 'cluster failed' on instance 1, cluster 2");
 });
 
 test("formatFailureSummaryLine: includes cluster and session when present", () => {
   const line = formatFailureSummaryLine(
-    { classification: "FatalToIteration", message: "tests failed", context: { instanceIndex: 1, clusterIndex: 0, sessionIndex: 2 } },
+    { classification: "FatalToSession", message: "tests failed", context: { instanceIndex: 1, clusterIndex: 0, sessionIndex: 2 } },
     1,
   );
-  assert.equal(line, "Returning non-zero due to FatalToIteration error 'tests failed' on instance 2, cluster 1, session 3");
+  assert.equal(line, "Returning non-zero due to FatalToSession error 'tests failed' on instance 2, cluster 1, session 3");
 });
 
 test("formatFailureSummaryLine: clusterless session omits cluster", () => {
   const line = formatFailureSummaryLine(
-    { classification: "FatalToIteration", message: "tests failed", context: { instanceIndex: 0, sessionIndex: 1, clusterless: true } },
+    { classification: "FatalToSession", message: "tests failed", context: { instanceIndex: 0, sessionIndex: 1, clusterless: true } },
     1,
   );
-  assert.equal(line, "Returning non-zero due to FatalToIteration error 'tests failed' on instance 1, session 2");
+  assert.equal(line, "Returning non-zero due to FatalToSession error 'tests failed' on instance 1, session 2");
 });
 
 test("formatFailureSummaryLine: shows +N more for multiple failures", () => {
   const line = formatFailureSummaryLine(
-    { classification: "FatalToCycle", message: "cluster failed", context: { instanceIndex: 0, clusterIndex: 0 } },
+    { classification: "FatalToCluster", message: "cluster failed", context: { instanceIndex: 0, clusterIndex: 0 } },
     3,
   );
   assert.match(line, /\(\+2 more failures\)/);
@@ -104,7 +114,7 @@ test("formatFailureSummaryLine: shows +N more for multiple failures", () => {
 
 test("formatFailureSummaryLine: shows +1 more singular for two failures", () => {
   const line = formatFailureSummaryLine(
-    { classification: "FatalToCycle", message: "cluster failed", context: { instanceIndex: 0, clusterIndex: 0 } },
+    { classification: "FatalToCluster", message: "cluster failed", context: { instanceIndex: 0, clusterIndex: 0 } },
     2,
   );
   assert.match(line, /\(\+1 more failure\)/);

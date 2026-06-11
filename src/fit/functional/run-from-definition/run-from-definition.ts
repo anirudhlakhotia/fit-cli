@@ -115,8 +115,8 @@ import {
 } from "../select-execution-target/select-execution-target.js";
 import {
   ClassifiedFailure,
-  throwFatalToCycle,
-  throwFatalToIteration,
+  throwFatalToCluster,
+  throwFatalToSession,
 } from "../../shared/failure-classification.js";
 import { RunFailureTracker, type FailureContext } from "../../shared/run-failure-tracker.js";
 import {
@@ -273,7 +273,7 @@ function withRemoteK8sInit(group: ResolvedFunctionalExecutionGroup, home: string
 /**
  * Make a functional cycle's execution target CNG-ready. Non-CNG cycles pass
  * through untouched. For CNG: on localhost, verify ~/.cbdinocluster has
- * Kubernetes enabled (FatalToCycle with guidance if not); on a clean instance,
+ * Kubernetes enabled (FatalToCluster with guidance if not); on a clean instance,
  * install k3d and point the uploaded cbdinocluster config at it.
  */
 async function prepareFunctionalCngCycle(
@@ -290,7 +290,7 @@ async function prepareFunctionalCngCycle(
   }
   const check = checkLocalhostCngKubernetes();
   if (!check.ok) {
-    throwFatalToCycle(check.message);
+    throwFatalToCluster(check.message);
   }
   console.log("→ setup-cluster: this machine's ~/.cbdinocluster has Kubernetes enabled — CNG-ready.");
   return group;
@@ -418,7 +418,7 @@ export async function runTests(
   const details: Detail[] = [];
 
   if (!(await runClusterDiagFn(run.cluster, { captureCommand: (cmd, args, cwd, runOpts) => execution.capture(cmd, args, cwd, runOpts) }))) {
-    throwFatalToCycle("Cluster sanity test failed; this execution group cannot continue.");
+    throwFatalToCluster("Cluster sanity test failed; this execution group cannot continue.");
   }
 
   const fitConfig = generateFitConfigurationFn(
@@ -437,7 +437,7 @@ export async function runTests(
   });
   artifacts.push(...performerSanity.artifacts);
   if (!performerSanity.ok) {
-    throwFatalToIteration("Performer cluster sanity check failed; stopping this iteration.");
+    throwFatalToSession("Performer cluster sanity check failed; stopping this iteration.");
   }
 
   const testRun = await runTestDriverFn(
@@ -463,7 +463,7 @@ export async function runTests(
     ...(testRun.summary ? { summary: testRun.summary } : {}),
   });
   if (!testRun.ok) {
-    throwFatalToIteration("FIT tests failed — check the test-driver log for details.");
+    throwFatalToSession("FIT tests failed — check the test-driver log for details.");
   }
   return { artifacts, details };
 }
@@ -539,7 +539,7 @@ export async function runSituationalTests(
     ...(testRun.summary ? { summary: testRun.summary } : {}),
   });
   if (!testRun.ok) {
-    throwFatalToIteration("FIT tests failed — check the test-driver log for details.");
+    throwFatalToSession("FIT tests failed — check the test-driver log for details.");
   }
   return { artifacts, details };
 }
@@ -610,7 +610,7 @@ async function runIteration(
     ? await setupPerformer(execution, fitPerformerGerritRef, run)
     : await resumePerformer(execution, run, savedState, globalIterationIndex);
   if (!performer) {
-    throwFatalToIteration("The performer isn't ready to run; stopping this iteration.");
+    throwFatalToSession("The performer isn't ready to run; stopping this iteration.");
   }
   artifacts.push(...performer.artifacts);
   if (setupPerformerPhase && performer.containerId) {
@@ -1167,12 +1167,12 @@ export async function runFromDefinition(
       const isResumeStartCycle = savedState !== undefined && cycleIndex === startCycleIndex;
       const targetOutcome = isResumeStartCycle
         ? await reconnectExecutionTarget(savedState.target)
-        : await resolveExecutionGroupTarget(group.instance, executionOverride, cycleIndex);
+        : await resolveExecutionGroupTarget(group.instance, executionOverride, cycleIndex, group.type);
       artifacts.push(...targetOutcome.artifacts);
       details.push(...targetOutcome.details);
       if (!targetOutcome.ready) {
         fitCliError(`\n✗ Could not acquire an execution target for execution group ${cycleIndex + 1}; skipping it.`);
-        tracker.record("FatalToCycle", `Could not acquire an execution target for execution group ${cycleIndex + 1}`, failureContextFromPath(group.path));
+        tracker.record("FatalToInstance", `Could not acquire an execution target for execution group ${cycleIndex + 1}`, failureContextFromPath(group.path));
         globalIterationIndex += group.runs.length;
         continue;
       }
@@ -1207,7 +1207,7 @@ export async function runFromDefinition(
         if (cycleNeedsHostedDatabase && execution.kind === "remote") {
           console.log(`\nChecking results database connectivity from the remote instance...`);
           if (!(await checkResultsDatabaseConnectivity((cmd, args) => execution.capture(cmd, args)))) {
-            throwFatalToCycle(
+            throwFatalToCluster(
               `The remote instance cannot reach the results database at ${HOSTED_RESULTS_DB_HOST}:5432. ` +
                 `Make sure the instance has network access to reach the database (VPN / security-group rules).`,
             );
@@ -1231,7 +1231,7 @@ export async function runFromDefinition(
             artifacts.push(...setup.artifacts);
             details.push(...setup.details);
             if (cbdinoclusterSetupFailed(activeCycle, true)) {
-              throwFatalToCycle("setup-cluster didn't produce a cluster, so this execution group can't continue.");
+              throwFatalToCluster("setup-cluster didn't produce a cluster, so this execution group can't continue.");
             }
             if (clusterState) {
               printResumeHint("after-cluster-creation", definitionCopyPath, activeCycle.path, false);
@@ -1296,12 +1296,12 @@ export async function runFromDefinition(
               }
             }
           } catch (err) {
-            if (err instanceof ClassifiedFailure && err.classification === "FatalToIteration") {
+            if (err instanceof ClassifiedFailure && err.classification === "FatalToSession") {
               const nextStep = isLastIteration
                 ? "no more iterations in this execution group"
                 : "moving to the next iteration";
-              fitCliError(`\n✗ ${err.message} (FatalToIteration — ${nextStep})`);
-              tracker.record("FatalToIteration", err.message, failureContextFromPath(iteration.path));
+              fitCliError(`\n✗ ${err.message} (FatalToSession — ${nextStep})`);
+              tracker.record("FatalToSession", err.message, failureContextFromPath(iteration.path));
             } else {
               throw err;
             }
@@ -1309,9 +1309,9 @@ export async function runFromDefinition(
           globalIterationIndex++;
         }
       } catch (err) {
-        if (err instanceof ClassifiedFailure && err.classification === "FatalToCycle") {
-          fitCliError(`\n✗ ${err.message} (FatalToCycle)`);
-          tracker.record("FatalToCycle", err.message, failureContextFromPath(group.path));
+        if (err instanceof ClassifiedFailure && err.classification === "FatalToCluster") {
+          fitCliError(`\n✗ ${err.message} (FatalToCluster)`);
+          tracker.record("FatalToCluster", err.message, failureContextFromPath(group.path));
           globalIterationIndex += activeCycle.runs.length;
 
           // Promote this cycle as the active set so that stopping here lets
