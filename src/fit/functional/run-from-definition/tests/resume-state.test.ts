@@ -10,7 +10,7 @@ function sampleState(): RunState {
     version: 1,
     executionGroupIndex: 0,
     startRunIndex: 0,
-    target: { kind: "remote", instanceId: "i-123", address: "ec2.example.com", region: "us-east-1", user: "ubuntu", identityFile: "/tmp/key.pem" },
+    target: { kind: "remote", instanceId: "i-123", address: "ec2.example.com", user: "ubuntu", identityFile: "/tmp/key.pem" },
     cluster: {
       cluster: {
         scheme: "couchbase",

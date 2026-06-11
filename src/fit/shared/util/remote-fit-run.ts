@@ -18,7 +18,7 @@ import type { Sdk } from "../../../util/sdk/sdks.js";
 import type { AwsCredentials } from "../../../util/non-fit/aws/identity.js";
 import { DEFAULT_PERFORMER_PORT } from "../../performers/util/performer-port.js";
 import { createRemoteFitExecutionContext } from "./remote-fit-execution-context.js";
-import { resolveGerritSshKey } from "../../util/config.js";
+import { resolveGerritSshKey, type ResolvedCapellaConfig } from "../../util/config.js";
 
 const REMOTE_FIT_WORKSPACE_DIR = "fit-workspace";
 const REMOTE_DOCKER_WRAPPER_FILE = "docker";
@@ -230,6 +230,61 @@ export async function uploadRemoteAwsCredentials(
       ` || printf '\\n. ${posixQuote(remotePath)}\\n' >> ~/.profile`],
     undefined,
     { display: `add AWS credentials to ~/.profile (idempotent)` },
+  );
+}
+
+const REMOTE_CAPELLA_CONFIG_FILENAME = "fit-capella-config.sh";
+
+function remoteCapellaConfigPath(rootDir: string): string {
+  return join(rootDir, REMOTE_CAPELLA_CONFIG_FILENAME);
+}
+
+function capellaConfigScript(capella: ResolvedCapellaConfig): string {
+  // The env var names cbdinocluster's `init` reads (see its cmd/init.go). With
+  // CAPELLA_USER present, `init --auto` enables Capella and fills the block from
+  // these; the situational init args leave Capella enabled for exactly this.
+  return (
+    [
+      `export CAPELLA_USER=${posixQuote(capella.username ?? "")}`,
+      `export CAPELLA_ENDPOINT=${posixQuote(capella.endpoint)}`,
+      `export CAPELLA_OID=${posixQuote(capella.organizationId)}`,
+      `export CAPELLA_PASS=${posixQuote(capella.password)}`,
+      `export CAPELLA_OVERRIDE_TOKEN=${posixQuote(capella.overrideToken)}`,
+      `export CAPELLA_INTERNAL_SUPPORT_TOKEN=${posixQuote(capella.internalSupportToken)}`,
+    ].join("\n") + "\n"
+  );
+}
+
+/**
+ * Write the Capella control-plane settings to the remote instance as a sourced
+ * env file, so `cbdinocluster init --auto` (run later via a login shell) inherits
+ * the `CAPELLA_*` vars and bakes the `capella` block into `~/.cbdinocluster`.
+ * Must run before the init step. Mirrors {@link uploadRemoteAwsCredentials}: the
+ * file is uploaded via SCP (never on a command line) and sourced from
+ * `~/.profile` idempotently.
+ */
+export async function uploadRemoteCapellaConfig(
+  target: ExecutionTarget,
+  rootDir: string,
+  capella: ResolvedCapellaConfig,
+): Promise<void> {
+  const remotePath = remoteCapellaConfigPath(rootDir);
+  const localFile = createRunFilePath(REMOTE_CAPELLA_CONFIG_FILENAME);
+  writeFileSync(localFile, capellaConfigScript(capella), { mode: 0o600 });
+  console.log(
+    `→ setup-capella: uploading Capella settings to ${remotePath} on ${(target as { description?: string }).description ?? "remote"}`,
+  );
+  await target.putFile(localFile, remotePath);
+  rmSync(localFile, { force: true });
+  await target.run("chmod", ["600", remotePath]);
+  // Source from ~/.profile idempotently so every login shell inherits the vars.
+  await target.run(
+    "sh",
+    ["-lc",
+      `grep -qF ${posixQuote(basename(remotePath))} ~/.profile 2>/dev/null` +
+      ` || printf '\\n. ${posixQuote(remotePath)}\\n' >> ~/.profile`],
+    undefined,
+    { display: `add Capella settings to ~/.profile (idempotent)` },
   );
 }
 

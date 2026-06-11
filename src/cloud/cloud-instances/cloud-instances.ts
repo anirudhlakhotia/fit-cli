@@ -2,14 +2,15 @@
 /**
  * Top-level entry for managing fit-cli EC2 instances.
  *
- * npm run cloud-instances -- list   [--region <r>]
- * npm run cloud-instances -- manage [--region <r>] [--tag key=value] [--key <key-name>]
- * npm run cloud-instances -- delete <instance-id> [--region <r>] [--force]
- * npm run cloud-instances -- remove-all [--region <r>] [--all-users] [--force]
+ * npm run cloud-instances -- list
+ * npm run cloud-instances -- manage [--tag key=value] [--key <key-name>]
+ * npm run cloud-instances -- delete <instance-id> [--force]
+ * npm run cloud-instances -- remove-all [--all-users] [--force]
  * npm run cloud-instances -- --help
  */
 import { isMain, runCli } from "../../util/non-fit/cli.js";
-import { logAwsAction, prepareAwsCli, resolveRegion } from "../../util/non-fit/aws/aws-cli.js";
+import { logAwsAction, prepareAwsCli } from "../../util/non-fit/aws/aws-cli.js";
+import { AWS_REGION } from "../../util/non-fit/aws/aws-target.js";
 import { checkCredentials } from "../../util/non-fit/aws/identity.js";
 import { listInstances, LIVE_STATES } from "../../util/non-fit/aws/list-instances.js";
 import { terminateInstance } from "../../util/non-fit/aws/terminate-instance.js";
@@ -27,49 +28,48 @@ import { manageInstances, type InstanceQuery } from "../../util/non-fit/aws/mana
 const HELP = `Manage fit-cli EC2 instances.
 
 Usage:
-  npm run cloud-instances -- list   [--region <region>]
-  npm run cloud-instances -- manage [--region <region>] [--tag key=value] [--key <key-name>]
-  npm run cloud-instances -- delete <instance-id> [--region <region>] [--force]
-  npm run cloud-instances -- remove-all [--region <region>] [--all-users] [--force]
+  npm run cloud-instances -- list
+  npm run cloud-instances -- manage [--tag key=value] [--key <key-name>]
+  npm run cloud-instances -- delete <instance-id> [--force]
+  npm run cloud-instances -- remove-all [--all-users] [--force]
   npm run cloud-instances -- --help
 
 Subcommands:
-  list        Show all fit-cli instances in the region with their status and cost context.
+  list        Show all fit-cli instances with their status and cost context.
   manage      Interactively browse and act on instances (terminate, view details).
   delete      Terminate an instance by id (prompts for confirmation unless --force).
-  remove-all  Terminate every fit-cli instance you created in the region (add
-              --all-users for everyone's; prompts for confirmation unless --force).`;
+  remove-all  Terminate every fit-cli instance you created (add --all-users for
+              everyone's; prompts for confirmation unless --force).`;
 
 async function cmdList(argv: string[]): Promise<void> {
-  const awsOptions = await prepareAwsCli(argv);
-  const region = resolveRegion(awsOptions);
+  await prepareAwsCli();
 
-  logAwsAction("Listing fit-cli EC2 instances", awsOptions, {
+  logAwsAction("Listing fit-cli EC2 instances", {
     tag: `${FIT_OWNER_TAG.key}=${FIT_OWNER_TAG.value}`,
     states: LIVE_STATES,
   });
 
-  const creds = await checkCredentials(awsOptions);
+  const creds = await checkCredentials();
   const context: InstanceListContext | undefined = creds.ok
     ? { account: creds.identity.account, creator: creds.identity.arn.split("/").at(-1) ?? creds.identity.userId }
     : undefined;
 
-  const instances = await listInstances(FIT_OWNER_TAG, { region });
+  const instances = await listInstances(FIT_OWNER_TAG);
 
   if (instances.length === 0) {
-    console.log(`No fit-cli EC2 instances found in ${region}.`);
+    console.log(`No fit-cli EC2 instances found in ${AWS_REGION}.`);
     if (context) {
       console.log(`Filter: tag:fit-cli=owned  ·  account: ${context.account}  ·  user: ${context.creator}`);
     }
-    console.log(`Console: ${awsConsoleInstancesUrl(region)}`);
+    console.log(`Console: ${awsConsoleInstancesUrl()}`);
     return;
   }
 
-  console.log(formatExistingInstancesBanner(instances, region, context));
+  console.log(formatExistingInstancesBanner(instances, context));
 }
 
 async function cmdManage(argv: string[]): Promise<void> {
-  const awsOptions = await prepareAwsCli(argv);
+  await prepareAwsCli();
 
   const flag = (name: string): string | undefined => {
     const index = argv.indexOf(`--${name}`);
@@ -90,41 +90,34 @@ async function cmdManage(argv: string[]): Promise<void> {
 
   logAwsAction(
     "Managing EC2 instances",
-    awsOptions,
     query.kind === "key"
       ? { keyName: query.keyName, states: LIVE_STATES }
       : { tag: query.tag ? `${query.tag.key}=${query.tag.value}` : "fit-cli=owned", states: LIVE_STATES },
   );
 
-  await manageInstances(query, awsOptions);
+  await manageInstances(query);
 }
 
 async function cmdDelete(argv: string[]): Promise<void> {
-  // Separate the instance-id positional from flags; skip the value after --region.
-  const regionFlagIdx = argv.indexOf("--region");
-  const positionals = argv.filter(
-    (arg, i) => !arg.startsWith("-") && i !== regionFlagIdx + 1,
-  );
-  const instanceId = positionals[0];
+  const instanceId = argv.find((arg) => !arg.startsWith("-"));
   if (!instanceId) {
-    throw new Error("Usage: npm run cloud-instances -- delete <instance-id> [--region <region>] [--force]");
+    throw new Error("Usage: npm run cloud-instances -- delete <instance-id> [--force]");
   }
 
   const force = argv.includes("--force");
-  const awsOptions = await prepareAwsCli(argv);
-  const region = resolveRegion(awsOptions);
+  await prepareAwsCli();
 
-  logAwsAction("Terminating EC2 instance", awsOptions, { instanceId });
+  logAwsAction("Terminating EC2 instance", { instanceId });
 
-  const info = await describeInstance(instanceId, awsOptions);
+  const info = await describeInstance(instanceId);
   if (!info) {
-    throw new Error(`Instance ${instanceId} not found in ${region}.`);
+    throw new Error(`Instance ${instanceId} not found in ${AWS_REGION}.`);
   }
 
   const addr = info.publicDns || info.publicIp;
   const creatorPart = info.creator ? `  created-by: ${info.creator}` : "";
   console.log(`Instance: ${instanceId}${addr ? ` (${addr})` : ""}${creatorPart}  state: ${info.state}`);
-  console.log(`Terminate command: ${terminateInstanceCommand(instanceId, region)}`);
+  console.log(`Terminate command: ${terminateInstanceCommand(instanceId)}`);
 
   if (!force) {
     const confirmed = await confirm({
@@ -138,7 +131,7 @@ async function cmdDelete(argv: string[]): Promise<void> {
     }
   }
 
-  await terminateInstance(instanceId, awsOptions);
+  await terminateInstance(instanceId);
   console.log(`✓ Terminating ${instanceId}`);
 }
 
@@ -150,36 +143,35 @@ function callerCreator(identity: { arn: string; userId: string }): string {
 async function cmdRemoveAll(argv: string[]): Promise<void> {
   const allUsers = argv.includes("--all-users");
   const force = argv.includes("--force");
-  const awsOptions = await prepareAwsCli(argv);
-  const region = resolveRegion(awsOptions);
+  await prepareAwsCli();
 
-  logAwsAction("Removing fit-cli EC2 instances", awsOptions, {
+  logAwsAction("Removing fit-cli EC2 instances", {
     tag: `${FIT_OWNER_TAG.key}=${FIT_OWNER_TAG.value}`,
     states: LIVE_STATES,
     scope: allUsers ? "all users" : "current user",
   });
 
-  const creds = await checkCredentials(awsOptions);
+  const creds = await checkCredentials();
   const context: InstanceListContext | undefined = creds.ok
     ? { account: creds.identity.account, creator: callerCreator(creds.identity) }
     : undefined;
   if (!allUsers && !creds.ok) {
     throw new Error(
       "Can't determine who you are from AWS credentials, so can't scope removal to your own instances. " +
-        "Fix your credentials, or pass --all-users to remove every fit-cli instance in the region.",
+        "Fix your credentials, or pass --all-users to remove every fit-cli instance.",
     );
   }
 
-  const all = await listInstances(FIT_OWNER_TAG, { region });
+  const all = await listInstances(FIT_OWNER_TAG);
   const mine = allUsers ? all : all.filter((instance) => instance.creator === context?.creator);
 
   if (mine.length === 0) {
     const scope = allUsers ? "" : ` created by ${context?.creator}`;
-    console.log(`No fit-cli EC2 instances${scope} found in ${region}.`);
+    console.log(`No fit-cli EC2 instances${scope} found in ${AWS_REGION}.`);
     return;
   }
 
-  console.log(formatExistingInstancesBanner(mine, region, context));
+  console.log(formatExistingInstancesBanner(mine, context));
 
   if (!force) {
     const confirmed = await confirm({
@@ -196,7 +188,7 @@ async function cmdRemoveAll(argv: string[]): Promise<void> {
   const failures: { instanceId: string; error: string }[] = [];
   for (const instance of mine) {
     try {
-      await terminateInstance(instance.instanceId, awsOptions);
+      await terminateInstance(instance.instanceId);
       console.log(`✓ Terminating ${instance.instanceId}`);
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);

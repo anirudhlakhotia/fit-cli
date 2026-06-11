@@ -15,11 +15,10 @@
  *   npx tsx src/util/non-fit/aws/manage-instances.ts                       # fit-cli=owned
  *   npx tsx src/util/non-fit/aws/manage-instances.ts --tag env=ci
  *   npx tsx src/util/non-fit/aws/manage-instances.ts --key fit-cli-abc123
- *   npx tsx src/util/non-fit/aws/manage-instances.ts --region eu-west-1
  */
 import { isMain, runCli } from "../cli.js";
 import { confirm, select } from "../prompts.js";
-import { logAwsAction, prepareAwsCli, type AwsOptions } from "./aws-cli.js";
+import { logAwsAction, prepareAwsCli } from "./aws-cli.js";
 import { describeInstance } from "./describe-instance.js";
 import { findInstancesByKeyName, listInstances, LIVE_STATES } from "./list-instances.js";
 import { type InstanceInfo } from "./parse-instance.js";
@@ -31,10 +30,10 @@ export type InstanceQuery =
   | { kind: "key"; keyName: string };
 
 /** Run the appropriate listing for a query. */
-async function findInstances(query: InstanceQuery, options: AwsOptions): Promise<InstanceInfo[]> {
+async function findInstances(query: InstanceQuery): Promise<InstanceInfo[]> {
   return query.kind === "key"
-    ? findInstancesByKeyName(query.keyName, options)
-    : listInstances(query.tag, options);
+    ? findInstancesByKeyName(query.keyName)
+    : listInstances(query.tag);
 }
 
 /** A one-line, human-readable summary of an instance for a menu choice. */
@@ -110,7 +109,6 @@ async function chooseAction(instance: InstanceInfo, round: number): Promise<Inst
 async function terminateWithConfirm(
   instance: InstanceInfo,
   round: number,
-  options: AwsOptions,
 ): Promise<boolean> {
   const confirmed = await confirm({
     promptId: `aws.manage-instances.confirm-terminate-${round}`,
@@ -121,7 +119,7 @@ async function terminateWithConfirm(
     console.log("Left it running.");
     return false;
   }
-  await terminateInstance(instance.instanceId, options);
+  await terminateInstance(instance.instanceId);
   console.log(`✓ Terminating ${instance.instanceId}`);
   return true;
 }
@@ -131,11 +129,11 @@ async function terminateWithConfirm(
  * until they quit. Each pass re-lists from AWS so the view stays accurate after
  * a termination.
  */
-export async function manageInstances(query: InstanceQuery, options: AwsOptions = {}): Promise<void> {
+export async function manageInstances(query: InstanceQuery): Promise<void> {
   // Prompt ids must be unique within a run, so each pass of the loop carries its
   // own round number to keep its prompts distinct from the previous pass's.
   for (let round = 0; ; round++) {
-    const instances = await findInstances(query, options);
+    const instances = await findInstances(query);
     reportInstances(instances);
 
     const choice = await chooseInstance(instances, round);
@@ -154,10 +152,10 @@ export async function manageInstances(query: InstanceQuery, options: AwsOptions 
 
     const action = await chooseAction(instance, round);
     if (action === "details") {
-      const details = await describeInstance(instance.instanceId, options);
+      const details = await describeInstance(instance.instanceId);
       console.log(JSON.stringify(details ?? instance, null, 2));
     } else if (action === "terminate") {
-      await terminateWithConfirm(instance, round, options);
+      await terminateWithConfirm(instance, round);
     }
   }
 }
@@ -183,14 +181,13 @@ if (isMain(import.meta.url)) {
   runCli(async () => {
     const argv = process.argv.slice(2);
     const query = queryFromArgv(argv);
-    const awsOptions = await prepareAwsCli(argv);
+    await prepareAwsCli();
     logAwsAction(
       "Managing EC2 instances",
-      awsOptions,
       query.kind === "key"
         ? { keyName: query.keyName, states: LIVE_STATES }
         : { tag: query.tag ? `${query.tag.key}=${query.tag.value}` : "fit-cli=owned", states: LIVE_STATES },
     );
-    await manageInstances(query, awsOptions);
+    await manageInstances(query);
   });
 }

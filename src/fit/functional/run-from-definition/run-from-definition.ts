@@ -55,9 +55,8 @@ import {
 } from "../../../util/non-fit/replay.js";
 import { confirm, select } from "../../../util/non-fit/prompts.js";
 import { rootDirFromArgv } from "../../util/root.js";
-import { resolveGithubCredentials, resolveResultsDbCredentials } from "../../util/config.js";
+import { resolveCapellaConfig, resolveGithubCredentials, resolveResultsDbCredentials } from "../../util/config.js";
 import { terminateInstanceCommand } from "../../util/aws/lifecycle-warning.js";
-import { resolveRegion } from "../../../util/non-fit/aws/aws-cli.js";
 import { resolveAwsCredentials, type AwsCredentials } from "../../../util/non-fit/aws/identity.js";
 import {
   localClusterCommandExecutor,
@@ -81,7 +80,12 @@ import {
 } from "../../performers/check-build-and-run-performer/check-build-and-run-performer.js";
 import { generateFitConfiguration } from "../../shared/fit-configuration/generate-fit-configuration.js";
 import { generateSituationalConfiguration } from "../../situational/configuration/generate-situational-configuration.js";
-import { createFitExecutionContext, uploadRemoteAwsCredentials, type FitExecutionContext } from "../../shared/util/remote-fit-run.js";
+import {
+  createFitExecutionContext,
+  uploadRemoteAwsCredentials,
+  uploadRemoteCapellaConfig,
+  type FitExecutionContext,
+} from "../../shared/util/remote-fit-run.js";
 import { loadDefinition } from "../../shared/definition/parse-definition.js";
 import {
   buildExecutionGroups,
@@ -666,7 +670,6 @@ function targetStateFrom(teardown: ExecutionTargetTeardown): ResumeTargetState {
     kind: teardown.kind,
     ...(teardown.instanceId ? { instanceId: teardown.instanceId } : {}),
     ...(teardown.address ? { address: teardown.address } : {}),
-    ...(teardown.region ? { region: teardown.region } : {}),
     ...(teardown.user ? { user: teardown.user } : {}),
     ...(teardown.identityFile ? { identityFile: teardown.identityFile } : {}),
   };
@@ -911,12 +914,11 @@ async function teardownRun(inputs: TeardownInputs): Promise<void> {
       );
     }
     if (teardown.terminate && teardown.instanceId) {
-      const region = teardown.region ?? resolveRegion();
       fitCliWarn(`\nInstance ${teardown.instanceId} is still running — remember to terminate it when done.`);
       if (teardown.identityFile && teardown.user && teardown.address) {
         console.log(`\nSSH in with:\n  ssh -i ${teardown.identityFile} ${teardown.user}@${teardown.address}`);
       }
-      console.log(`\nTerminate it with:\n  ${terminateInstanceCommand(teardown.instanceId, region)}`);
+      console.log(`\nTerminate it with:\n  ${terminateInstanceCommand(teardown.instanceId)}`);
     }
     return;
   }
@@ -1242,6 +1244,19 @@ export async function runFromDefinition(
             if (!(await execution.commandAvailable("cbdinocluster"))) {
               await installCbdinoclusterRemote(execution);
             }
+            // Forward the Capella settings before init so `cbdinocluster init --auto`
+            // (run via a login shell sourcing ~/.profile) picks them up and writes the
+            // capella block. Without a username it can't enable Capella, so fail clearly
+            // rather than letting `cbdinocluster allocate` later fail with "no deployers".
+            const capella = resolveCapellaConfig();
+            if (!capella.username) {
+              throwFatalToCluster(
+                "Situational runs allocate Capella clusters, which needs a Capella username. " +
+                  "Set capella.username in ~/.fit-cli/config.json5 (run `npm run config -- edit`) " +
+                  "or provide CAPELLA_USER/CAP_USER in the environment.",
+              );
+            }
+            await uploadRemoteCapellaConfig(execution.target, execution.rootDir, capella);
           }
           await prepareCbdinoclusterInit(
             execution,

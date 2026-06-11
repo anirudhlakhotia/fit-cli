@@ -136,7 +136,7 @@ export function reconcileArtifactsWithDir(artifactDir: string, explicit: readonl
   const extras: Artifact[] = discovered
     .filter((filename) => !known.has(filename))
     .sort()
-    .map((filename) => ({ filename, explanation: "(captured during the run)" }));
+    .map((filename) => ({ filename, explanation: "User's prompt inputs" }));
   return [...combined, ...extras];
 }
 

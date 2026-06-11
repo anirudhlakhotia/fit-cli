@@ -30,6 +30,7 @@ import { readFileSync } from "fs";
 import { join } from "path";
 import { isMain, runCli } from "../../util/non-fit/cli.js";
 import { prepareAwsCli } from "../../util/non-fit/aws/aws-cli.js";
+import { AWS_REGION } from "../../util/non-fit/aws/aws-target.js";
 import { describeInstance } from "../../util/non-fit/aws/describe-instance.js";
 import { fitCliError } from "../../util/non-fit/fit-cli-log.js";
 import type { RunOptions } from "../../util/non-fit/proc.js";
@@ -195,7 +196,7 @@ if (isMain(import.meta.url)) {
       fitCliError(
         "Usage:\n" +
           "  install-cao-tools.ts --dir <instance-dir> [--user ubuntu] [--version 2.8.0] [--cao-dir <cao-tools-dir>] [--deploy]\n" +
-          "  install-cao-tools.ts --instance <ec2-id> --key <path.pem> [--user ubuntu] [--region <aws-region>] [--version 2.8.0] [--cao-dir <cao-tools-dir>] [--deploy]\n" +
+          "  install-cao-tools.ts --instance <ec2-id> --key <path.pem> [--user ubuntu] [--version 2.8.0] [--cao-dir <cao-tools-dir>] [--deploy]\n" +
           "  install-cao-tools.ts --print [--cao-dir <cao-tools-dir>] [--version 2.8.0]\n" +
           "\n--deploy also installs the Couchbase CRDs + admission controller (needs cbdinocluster + a CNG-ready ~/.cbdinocluster on the box).",
       );
@@ -204,11 +205,11 @@ if (isMain(import.meta.url)) {
     const caoToolsDir = flag(argv, "cao-dir") ?? defaultCaoToolsDir(user, version);
 
     if (!address) {
-      const awsOptions = await prepareAwsCli(argv);
+      await prepareAwsCli();
       console.log(`Looking up EC2 instance ${instanceId}...`);
-      const info = await describeInstance(instanceId, awsOptions);
+      const info = await describeInstance(instanceId);
       if (!info) {
-        throw new Error(`No EC2 instance found with id ${instanceId} (in ${awsOptions.region}).`);
+        throw new Error(`No EC2 instance found with id ${instanceId} (in ${AWS_REGION}).`);
       }
       address = info.publicDns || info.publicIp;
       if (!address) {

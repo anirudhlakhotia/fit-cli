@@ -42,7 +42,7 @@ import type {
 } from "./types.js";
 
 export type ResolvedInstance =
-  | { kind: "aws"; instanceType?: string; region?: string }
+  | { kind: "aws"; instanceType?: string }
   | { kind: "localhost" };
 
 export function resolveInstance(instance: InstanceLifetime): ResolvedInstance {
@@ -50,7 +50,6 @@ export function resolveInstance(instance: InstanceLifetime): ResolvedInstance {
     return {
       kind: "aws",
       ...(instance.aws.instanceType !== undefined ? { instanceType: instance.aws.instanceType } : {}),
-      ...(instance.aws.region !== undefined ? { region: instance.aws.region } : {}),
     };
   }
   return { kind: "localhost" };

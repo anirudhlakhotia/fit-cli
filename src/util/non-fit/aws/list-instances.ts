@@ -8,10 +8,9 @@
  *   npx tsx src/util/non-fit/aws/list-instances.ts                                 # fit-cli=owned
  *   npx tsx src/util/non-fit/aws/list-instances.ts --tag env=ci
  *   npx tsx src/util/non-fit/aws/list-instances.ts --key fit-cli-abc123
- *   npx tsx src/util/non-fit/aws/list-instances.ts --region eu-west-1
  */
 import { isMain, runCli } from "../cli.js";
-import { awsJson, logAwsAction, prepareAwsCli, type AwsOptions } from "./aws-cli.js";
+import { awsJson, logAwsAction, prepareAwsCli } from "./aws-cli.js";
 import { parseInstances, type DescribeInstancesResponse, type InstanceInfo } from "./parse-instance.js";
 
 /** Instance states worth listing — everything except terminated. */
@@ -23,7 +22,6 @@ export const LIVE_STATES = "pending,running,stopping,stopped";
  */
 export async function listInstances(
   tag: { key: string; value: string } = { key: "fit-cli", value: "owned" },
-  options: AwsOptions = {},
 ): Promise<InstanceInfo[]> {
   const response = await awsJson<DescribeInstancesResponse>(
     [
@@ -33,7 +31,6 @@ export async function listInstances(
       `Name=tag:${tag.key},Values=${tag.value}`,
       `Name=instance-state-name,Values=${LIVE_STATES}`,
     ],
-    options,
   );
   return parseInstances(response);
 }
@@ -44,7 +41,7 @@ export async function listInstances(
  * box(es) from one run — useful for reaping a leak when launch failed before we
  * captured the instance id.
  */
-export async function findInstancesByKeyName(keyName: string, options: AwsOptions = {}): Promise<InstanceInfo[]> {
+export async function findInstancesByKeyName(keyName: string): Promise<InstanceInfo[]> {
   const response = await awsJson<DescribeInstancesResponse>(
     [
       "ec2",
@@ -53,7 +50,6 @@ export async function findInstancesByKeyName(keyName: string, options: AwsOption
       `Name=key-name,Values=${keyName}`,
       `Name=instance-state-name,Values=${LIVE_STATES}`,
     ],
-    options,
   );
   return parseInstances(response);
 }
@@ -67,16 +63,15 @@ if (isMain(import.meta.url)) {
     };
     const key = flag("key");
     const tagFlag = flag("tag");
-    const awsOptions = await prepareAwsCli(argv);
-    logAwsAction("Listing EC2 instances", awsOptions, key ? { keyName: key, states: LIVE_STATES } : {
+    await prepareAwsCli();
+    logAwsAction("Listing EC2 instances", key ? { keyName: key, states: LIVE_STATES } : {
       tag: tagFlag ?? "fit-cli=owned",
       states: LIVE_STATES,
     });
     const instances = key
-      ? await findInstancesByKeyName(key, awsOptions)
+      ? await findInstancesByKeyName(key)
       : await listInstances(
           tagFlag ? { key: tagFlag.split("=")[0], value: tagFlag.split("=")[1] ?? "" } : undefined,
-          awsOptions,
         );
     console.log(instances.length ? JSON.stringify(instances, null, 2) : "No matching instances.");
   });

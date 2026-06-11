@@ -1,70 +1,134 @@
-# Test locally (though it doesn't really work as it a) requires AWS CLI be installed and though that's fixable, then b) gh-act doesn't provide real AWS creds):
+# Test locally
+# ------------
+# (though it doesn't really work as it a) requires AWS CLI be installed and though that's fixable, then b) gh-act doesn't provide real AWS creds):
 # gh extension install nektos/gh-act
 # gh act workflow_dispatch -W .github/workflows/run-fit-cli-functional.yml --input definitionFile="examples/fit-functional-sanity-test.json5"
-# or kick off with:
-# gh workflow run run-fit-functional.yml --ref <your-branch> Z--field definitionFile="examples/fit-functional-sanity-test.json5"
-name: Run FIT with fit-cli (supports FIT/SIT, FIT/PERF and FIT functional)
+#
+# Run
+# ------------
+# gh workflow run fit-cli.yaml --ref <your-branch> --field definitionFile="https://gist.githubusercontent.com/programmatix/<gist-id>/raw" --repo couchbaselabs/fit-cli
+# Note: use gist.githubusercontent.com/…/raw (not gist.github.com) to get raw content, not the HTML page.
+name: Run FIT with fit-cli
 
 on:
   workflow_dispatch:
     inputs:
       definitionFile:
-        description: A fit-cli definition file e.g. "https://gist.github.com/programmatix/<gist>" or "examples/fit-functional-sanity-test.json5" (local to fit-cli).  To generate one, clone the fit-cli project and follow the README.
+        description: A fit-cli definition file e.g. "https://gist.githubusercontent.com/programmatix/<gist-id>/raw" or "examples/fit-functional-sanity-test.json5" (local to fit-cli). Use gist.githubusercontent.com/…/raw, not gist.github.com. To generate one, clone the fit-cli project and follow the README.
         type: string
         default: examples/fit-functional-sanity-test.json5
+      capellaEnvironment:
+        description: Used for FIT/SIT testing against Capella
+        type: choice
+        default: capella-env-dev
+        options:
+          - capella-env-dev
+          - capella-env-stage
+
+permissions:
+  id-token: write   # required for GitHub OIDC
+  contents: read
+  checks: write     # required for action-junit-report to post the JUnit check run / annotations
 
 jobs:
   run-fit-cli:
     runs-on: [ubuntu-latest]
+    # Bind to the chosen Capella environment so its CAP_* variables (and any
+    # secrets) resolve below. Created in the repo as capella-env-dev / capella-env-stage.
+    environment: ${{ inputs.capellaEnvironment }}
     steps:
-#      - name: Install and configure AWS CLI
-#        env:
-#          # The SDKQE AWS: https://github.com/couchbaselabs/sdkqe-github-runners-tf/blob/master/terraform/aws/runners/main.tf
-#          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-#          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-#          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION || 'us-west-2' }}
-#        run: |
-#          # The Github runners we use do have AWS CLI installed already, just install it to help with gh-act local testing.
-#          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-#          unzip -q awscliv2.zip
-#          sudo ./aws/install --update
-#          rm -rf awscliv2.zip aws
-#          # This part does need running regardless, it seems.
-#          aws configure set aws_access_key_id "$AWS_ACCESS_KEY_ID"
-#          aws configure set aws_secret_access_key "$AWS_SECRET_ACCESS_KEY"
-#          aws configure set region "$AWS_DEFAULT_REGION"
-#          # Debugging
-#          echo "Key prefix: ${AWS_ACCESS_KEY_ID:0:4}"
-#          aws sts get-caller-identity
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-region: us-west-2
+          role-to-assume: arn:aws:iam::958525475024:role/fit-cli-role
+          role-session-name: gha-${{ github.actor }}-${{ github.run_id }}
+          audience: sts.amazonaws.com
+          retry-max-attempts: 3
 
       - name: Diagnostics
         run: |
           echo "Key prefix: ${AWS_ACCESS_KEY_ID:0:4}"
+          echo "Github actor: ${{ github.actor }}"
+          echo "Github run_id: ${{ github.run_id }}"
           aws sts get-caller-identity
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: lts/*
 
       - name: Clone and setup fit-cli
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_USER: ${{ github.actor }}
-          AWS_REGION: us-west-2
+          # secrets.GITHUB_TOKEN contains a short-lived token bound to this repo, so we can't use it for e.g. checking out transactions-fit-performer
+          # Instead we use a hardcoded github PAT (the author's).  Migrating to a Github App in future would be better.
+          GITHUB_TOKEN: ${{ secrets.FIT_CLI_GITHUB_PAT }}
+          GITHUB_USER: ${{ secrets.FIT_CLI_GITHUB_USER }}
+          # Capella settings from the chosen environment. `config edit --auto` reads
+          # these into the capella section of ~/.fit-cli/config.json5; the run step
+          # then forwards them to the remote box as CAPELLA_* (see uploadRemoteCapellaConfig).
+          CAPELLA_USER: ${{ vars.CAP_USER }}
+          CAPELLA_ENDPOINT: ${{ vars.CAP_END_POINT }}
+          CAPELLA_OID: ${{ vars.CAP_OID }}
+          CAPELLA_PASS: ${{ vars.CAP_PASS }}
+          CAPELLA_OVERRIDE_TOKEN: ${{ vars.CAP_OVERRIDE_TOKEN }}
+          CAPELLA_INTERNAL_SUPPORT_TOKEN: ${{ vars.CAP_INTERNAL_SUPPORT_TOKEN }}
         run: |
-          git clone https://github.com/couchbaselabs/fit-cli.git
+          git clone --branch ${{ github.ref_name }} https://github.com/couchbaselabs/fit-cli.git
           cd fit-cli
           npm ci
-          npm run config -- init --auto
+          npm run config -- edit --auto
 
       - name: Run fit-cli
         env:
-          AWS_REGION: us-west-2
-          AWS_DEFAULT_REGION: us-west-2
+          GITHUB_TOKEN: ${{ secrets.FIT_CLI_GITHUB_PAT }}
+          GITHUB_USER: ${{ secrets.FIT_CLI_GITHUB_USER }}
+          # Also exposed here as a fallback: resolveCapellaConfig() reads config first,
+          # then these env vars, before forwarding CAPELLA_* to the remote instance.
+          CAPELLA_USER: ${{ vars.CAP_USER }}
+          CAPELLA_ENDPOINT: ${{ vars.CAP_END_POINT }}
+          CAPELLA_OID: ${{ vars.CAP_OID }}
+          CAPELLA_PASS: ${{ vars.CAP_PASS }}
+          CAPELLA_OVERRIDE_TOKEN: ${{ vars.CAP_OVERRIDE_TOKEN }}
+          CAPELLA_INTERNAL_SUPPORT_TOKEN: ${{ vars.CAP_INTERNAL_SUPPORT_TOKEN }}
         run: |
           cd fit-cli
-          npm run definition -- execute ${{ inputs.definitionFile }}
+          npm run definition -- execute ${{ inputs.definitionFile }} | tee /tmp/fit-cli-output.log
+          echo "last_line=$(tail -1 /tmp/fit-cli-output.log)" >> $GITHUB_OUTPUT
+        id: run-fit-cli
 
-      # todo handle Junit results
-      # todo archive artifacts
+      # The FIT test-driver writes surefire JUnit XML, which fit-cli collects into
+      # each run's artifact dir (see collect-junit.ts). A run can produce many of
+      # these across instances/clusters/sessions, so we match them with a glob.
+      # if: always() — we still want the report when the test run step failed.
+      - name: Publish JUnit results
+        if: always()
+        uses: mikepenz/action-junit-report@v5
+        with:
+          report_paths: '/tmp/fit-cli/**/surefire-reports/TEST-*.xml'
+          check_name: FIT functional tests
+          require_tests: false   # a definition may legitimately run no functional tests
+
+      - name: Job summary
+        if: always()
+        run: |
+          echo "## fit-cli Run Artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -n "${{ steps.run-fit-cli.outputs.last_line }}" ]; then
+            echo "**Result:** ${{ steps.run-fit-cli.outputs.last_line }}" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "Artifacts are attached to [this run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) as \`fit-cli-run-${{ github.run_id }}\`." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Files" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          find /tmp/fit-cli -type f 2>/dev/null | sort >> $GITHUB_STEP_SUMMARY || echo "(none)" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload run artifacts
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: fit-cli-run-${{ github.run_id }}
+          path: /tmp/fit-cli/
+          if-no-files-found: warn

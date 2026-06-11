@@ -5,13 +5,13 @@
  * fails early with a clear message rather than midway through provisioning.
  *
  * Run on its own:
- *   npx tsx src/util/non-fit/aws/identity.ts [--region eu-west-1]
+ *   npx tsx src/util/non-fit/aws/identity.ts
  *
  * Prints the caller identity, or the reason it couldn't be determined (exit 1).
  */
 import { isMain, runCli } from "../cli.js";
 import { capture } from "../proc.js";
-import { awsJson, ensureAwsCli, logAwsAction, prepareAwsCli, type AwsOptions } from "./aws-cli.js";
+import { awsJson, ensureAwsCli, logAwsAction, prepareAwsCli } from "./aws-cli.js";
 
 /** Who the current credentials belong to. */
 export interface CallerIdentity {
@@ -31,14 +31,13 @@ export type CredentialsCheck =
  * the aws CLI not being installed, or credentials being absent/invalid — so the
  * workflow can report and offer the local path instead.
  */
-export async function checkCredentials(options: AwsOptions = {}): Promise<CredentialsCheck> {
+export async function checkCredentials(): Promise<CredentialsCheck> {
   if (!ensureAwsCli()) {
     return { ok: false, message: "The AWS CLI is not installed." };
   }
   try {
     const raw = await awsJson<{ Account: string; Arn: string; UserId: string }>(
       ["sts", "get-caller-identity"],
-      options,
     );
     return { ok: true, identity: { account: raw.Account, arn: raw.Arn, userId: raw.UserId } };
   } catch (err) {
@@ -114,9 +113,9 @@ export async function resolveAwsCredentials(
 
 if (isMain(import.meta.url)) {
   runCli(async () => {
-    const awsOptions = await prepareAwsCli(process.argv.slice(2));
-    logAwsAction("Checking AWS credentials", awsOptions, { operation: "sts get-caller-identity" });
-    const result = await checkCredentials(awsOptions);
+    await prepareAwsCli();
+    logAwsAction("Checking AWS credentials", { operation: "sts get-caller-identity" });
+    const result = await checkCredentials();
     if (!result.ok) {
       console.error(`✗ ${result.message}`);
       process.exit(1);

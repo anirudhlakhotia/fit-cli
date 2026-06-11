@@ -24,11 +24,15 @@ import { run } from "../../../util/non-fit/proc.js";
 import { posixQuote } from "../../../util/non-fit/remote-target.js";
 import { runRunDir, type DefinitionRunPath } from "../../../util/non-fit/replay.js";
 import type { ExecutionTarget } from "../../../util/non-fit/target.js";
-import { FIT_PERFORMER, repoPath } from "../../util/repos.js";
 
-/** Absolute path to the surefire JUnit XML directory the test-driver produces. */
-export function surefireReportsDir(rootDir: string): string {
-  return join(repoPath(FIT_PERFORMER, rootDir), "test-driver", "target", "surefire-reports");
+/**
+ * Absolute path to the surefire JUnit XML directory the test-driver produces,
+ * given the transactions-fit-performer checkout dir. Surefire's `reportsDirectory`
+ * has no command-line property (only a `default-value`), so `-Dsurefire.reportsDirectory`
+ * is silently ignored — reports always land in the project's default location.
+ */
+export function surefireReportsDir(fitPerformerDir: string): string {
+  return join(fitPerformerDir, "test-driver", "target", "surefire-reports");
 }
 
 /** The surefire XML report files (TEST-*.xml) found in `sourceDir`. */

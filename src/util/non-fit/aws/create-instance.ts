@@ -7,10 +7,10 @@
  * Run on its own (the AMI/key/SG must already exist — see image.ts, key-pair.ts,
  * security-group.ts):
  *   npx tsx src/util/non-fit/aws/create-instance.ts \
- *     --ami ami-0123 --type t3.micro --key my-key --sg sg-0123 [--tag fit-cli=owned] [--wait] [--region eu-west-1]
+ *     --ami ami-0123 --type t3.micro --key my-key --sg sg-0123 [--subnet subnet-0123] [--tag fit-cli=owned] [--wait]
  */
 import { isMain, runCli } from "../cli.js";
-import { awsJson, awsText, logAwsAction, prepareAwsCli, type AwsOptions } from "./aws-cli.js";
+import { awsJson, awsText, logAwsAction, prepareAwsCli } from "./aws-cli.js";
 import { parseInstances, type DescribeInstancesResponse } from "./parse-instance.js";
 
 /** A single EBS block-device mapping. */
@@ -27,6 +27,8 @@ export interface CreateInstanceSpec {
   instanceType: string;
   keyName: string;
   securityGroupId: string;
+  /** Subnet to launch into. Required when the account/region has no default VPC. */
+  subnetId?: string;
   /** Cloud-init / shell user-data run at first boot (plain text). */
   userData?: string;
   /** Tags applied to the instance, e.g. { "fit-cli": "owned" }. */
@@ -60,8 +62,11 @@ function blockDeviceMappingArgs(mappings: BlockDeviceMapping[]): string[] {
   return args;
 }
 
-/** Launch a single instance and return its id (it will still be "pending"). */
-export async function createInstance(spec: CreateInstanceSpec, options: AwsOptions = {}): Promise<string> {
+/**
+ * Build the `aws ec2 run-instances` argument list for a spec. Pure (no I/O) so
+ * the arg shaping — including the optional `--subnet-id` — can be unit tested.
+ */
+export function runInstancesArgs(spec: CreateInstanceSpec): string[] {
   const args = [
     "ec2",
     "run-instances",
@@ -76,6 +81,9 @@ export async function createInstance(spec: CreateInstanceSpec, options: AwsOptio
     "--count",
     "1",
   ];
+  if (spec.subnetId) {
+    args.push("--subnet-id", spec.subnetId);
+  }
   if (spec.userData) {
     // The aws CLI base64-encodes a plain --user-data value for us.
     args.push("--user-data", spec.userData);
@@ -86,7 +94,12 @@ export async function createInstance(spec: CreateInstanceSpec, options: AwsOptio
   if (spec.blockDeviceMappings && spec.blockDeviceMappings.length > 0) {
     args.push(...blockDeviceMappingArgs(spec.blockDeviceMappings));
   }
-  const response = await awsJson<DescribeInstancesResponse>(args, options);
+  return args;
+}
+
+/** Launch a single instance and return its id (it will still be "pending"). */
+export async function createInstance(spec: CreateInstanceSpec): Promise<string> {
+  const response = await awsJson<DescribeInstancesResponse>(runInstancesArgs(spec));
   const launched = parseInstances(response);
   if (launched.length === 0) {
     // AWS may have created an instance even though we couldn't read its id back
@@ -98,14 +111,14 @@ export async function createInstance(spec: CreateInstanceSpec, options: AwsOptio
 }
 
 /** Block until the instance reaches the "running" state (EC2's own waiter). */
-export async function waitForInstanceRunning(instanceId: string, options: AwsOptions = {}): Promise<void> {
-  await awsText(["ec2", "wait", "instance-running", "--instance-ids", instanceId], options);
+export async function waitForInstanceRunning(instanceId: string): Promise<void> {
+  await awsText(["ec2", "wait", "instance-running", "--instance-ids", instanceId]);
 }
 
 if (isMain(import.meta.url)) {
   runCli(async () => {
+    await prepareAwsCli();
     const argv = process.argv.slice(2);
-    const awsOptions = await prepareAwsCli(argv);
     const flag = (name: string): string | undefined => {
       const index = argv.indexOf(`--${name}`);
       return index !== -1 ? argv[index + 1] : undefined;
@@ -116,27 +129,29 @@ if (isMain(import.meta.url)) {
     const securityGroupId = flag("sg");
     if (!amiId || !instanceType || !keyName || !securityGroupId) {
       throw new Error(
-        "Usage: create-instance.ts --ami <id> --type <type> --key <name> --sg <id> [--tag k=v] [--user-data <text>] [--wait] [--region <aws-region>]",
+        "Usage: create-instance.ts --ami <id> --type <type> --key <name> --sg <id> [--subnet <id>] [--tag k=v] [--user-data <text>] [--wait]",
       );
     }
+    const subnetId = flag("subnet");
     const tagFlag = flag("tag");
     const tags = tagFlag ? { [tagFlag.split("=")[0]]: tagFlag.split("=")[1] ?? "" } : undefined;
     const userData = flag("user-data");
     const wait = argv.includes("--wait");
-    logAwsAction("Creating EC2 instance", awsOptions, {
+    logAwsAction("Creating EC2 instance", {
       amiId,
       instanceType,
       keyName,
       securityGroupId,
+      subnetId,
       tag: tagFlag,
       wait,
       userData: userData ? "provided" : undefined,
     });
-    const id = await createInstance({ amiId, instanceType, keyName, securityGroupId, userData, tags }, awsOptions);
+    const id = await createInstance({ amiId, instanceType, keyName, securityGroupId, subnetId, userData, tags });
     console.log(`✓ Launched ${id}`);
     if (wait) {
       console.log("Waiting for it to reach running...");
-      await waitForInstanceRunning(id, awsOptions);
+      await waitForInstanceRunning(id);
       console.log(`✓ ${id} is running`);
     }
   });

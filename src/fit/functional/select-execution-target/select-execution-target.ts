@@ -21,7 +21,6 @@ import { ensureFitCliConfigEnv, resolveCloudInstanceType, type CloudInstancePurp
 import { fitCliError, fitCliWarn } from "../../../util/non-fit/fit-cli-log.js";
 import { input, select } from "../../../util/non-fit/prompts.js";
 import { LocalTarget } from "../../../util/non-fit/local-target.js";
-import { resolveRegion, type AwsOptions } from "../../../util/non-fit/aws/aws-cli.js";
 import { checkCredentials } from "../../../util/non-fit/aws/identity.js";
 import { listInstances } from "../../../util/non-fit/aws/list-instances.js";
 import { terminateInstance } from "../../../util/non-fit/aws/terminate-instance.js";
@@ -43,7 +42,6 @@ export interface ExecutionTargetTeardown {
   kind: "local" | "remote";
   instanceId?: string;
   address?: string;
-  region?: string;
   user?: string;
   identityFile?: string;
   /** Terminate the instance (and delete its key when known). */
@@ -95,7 +93,7 @@ export async function reconnectExecutionTarget(target: ResumeTargetState): Promi
     return { ready: true, target: new LocalTarget(), teardown: LOCAL_TEARDOWN, artifacts: [], details: [] };
   }
 
-  const { address, user, identityFile, instanceId, region } = target;
+  const { address, user, identityFile, instanceId } = target;
   if (!address || !user || !identityFile) {
     fitCliError("\nresume: the saved run state is missing the instance address, user or key.");
     return { ready: false, artifacts: [], details: [] };
@@ -114,11 +112,10 @@ export async function reconnectExecutionTarget(target: ResumeTargetState): Promi
     kind: "remote",
     ...(instanceId ? { instanceId } : {}),
     address,
-    ...(region ? { region } : {}),
     user,
     identityFile,
     ...(instanceId
-      ? { terminate: () => terminateInstance(instanceId, region ? { region } : {}) }
+      ? { terminate: () => terminateInstance(instanceId) }
       : {}),
   };
   return {
@@ -187,13 +184,11 @@ export async function resolveExecutionGroupTarget(
     const provisioned = await provisionFitInstance({
       instanceIndex: executionGroupIndex,
       instanceType,
-      ...(instance.region ? { region: instance.region } : {}),
     });
     const teardown: ExecutionTargetTeardown = {
       kind: "remote",
       instanceId: provisioned.instanceId,
       address: provisioned.address,
-      region: instance.region ?? resolveRegion(),
       user: FIT_INSTANCE_USER,
       identityFile: provisioned.keyPath,
       terminate: provisioned.terminate,
@@ -258,7 +253,6 @@ export async function selectExecutionTarget(): Promise<ExecutionTargetOutcome> {
         kind: "remote",
         instanceId: instance.instanceId,
         address: instance.address,
-        region: resolveRegion(),
         user: FIT_INSTANCE_USER,
         identityFile: instance.keyPath,
         terminate: instance.terminate,
@@ -282,12 +276,9 @@ export async function selectExecutionTarget(): Promise<ExecutionTargetOutcome> {
  * came up), so the caller can loop without re-running.
  */
 async function connectExistingInstance(attempt: number): Promise<ExecutionTargetOutcome | "back"> {
-  const region = resolveRegion();
-  const awsOptions: AwsOptions = region ? { region } : {};
-
   let running: InstanceInfo[];
   try {
-    running = (await listInstances(undefined, awsOptions)).filter(
+    running = (await listInstances()).filter(
       (instance) => instance.state === "running" && (instance.publicDns || instance.publicIp),
     );
   } catch (err) {

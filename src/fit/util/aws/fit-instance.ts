@@ -14,8 +14,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { artifactFromPath, type Artifact, type Detail } from "../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
-import { resolveRegion, type AwsOptions } from "../../../util/non-fit/aws/aws-cli.js";
-import { defaultAwsRegionMessage, resolveAwsRegion } from "../../../util/non-fit/aws/region.js";
+import { AWS_REGION, AWS_SUBNET_ID, AWS_VPC_ID } from "../../../util/non-fit/aws/aws-target.js";
 import { checkCredentials } from "../../../util/non-fit/aws/identity.js";
 import { findUbuntuAmi } from "../../../util/non-fit/aws/image.js";
 import { createInstance, waitForInstanceRunning, type BlockDeviceMapping } from "../../../util/non-fit/aws/create-instance.js";
@@ -94,7 +93,6 @@ export interface ProvisionedInstance {
 /** Options for provisioning (all optional; sensible FIT defaults apply). */
 export interface ProvisionOptions {
   instanceType?: string;
-  region?: string;
   /** Instance this execution target belongs to; its key and info land under that instance dir. */
   instanceIndex?: number;
 }
@@ -110,13 +108,7 @@ export async function provisionFitInstance(options: ProvisionOptions = {}): Prom
     promptId: "fit-instance.config.create",
     promptMessage: "No fit-cli config found. Run `npm run config -- edit` now before provisioning an EC2 instance?",
   });
-  const { region, source } = resolveAwsRegion({ region: options.region });
-  if (source === "default") {
-    console.log(defaultAwsRegionMessage(region));
-  }
-  const awsOptions: AwsOptions = { region };
-
-  const creds = await checkCredentials(awsOptions);
+  const creds = await checkCredentials();
   if (!creds.ok) {
     throw new Error(`AWS credentials are not usable: ${creds.message}`);
   }
@@ -133,7 +125,6 @@ export async function provisionFitInstance(options: ProvisionOptions = {}): Prom
   let existingInstances: InstanceInfo[] = [];
   try {
     existingInstances = await warnAboutExistingInstances(
-      awsOptions,
       { account: creds.identity.account, creator: creatorTag },
       { warn: false },
     );
@@ -142,19 +133,18 @@ export async function provisionFitInstance(options: ProvisionOptions = {}): Prom
   }
 
   const instanceType = options.instanceType ?? defaultInstanceType();
-  console.log(`Provisioning a ${instanceType} EC2 instance in ${region}...`);
+  console.log(`Provisioning a ${instanceType} EC2 instance in ${AWS_REGION}...`);
 
-  const amiId = await findUbuntuAmi(awsOptions);
+  const amiId = await findUbuntuAmi();
   const securityGroupId = await ensureSecurityGroup(
-    { name: FIT_SECURITY_GROUP, description: "fit-cli ephemeral test instances", ingressPorts: [22] },
-    awsOptions,
+    { name: FIT_SECURITY_GROUP, description: "fit-cli ephemeral test instances", ingressPorts: [22], vpcId: AWS_VPC_ID },
   );
 
   const keyName = `fit-cli-${Date.now().toString(36)}`;
   const instanceDir = instanceRunDir(options.instanceIndex ?? 0);
   mkdirSync(instanceDir, { recursive: true, mode: 0o700 });
   const keyPath = join(instanceDir, `${keyName}.pem`);
-  await createKeyPair(keyName, keyPath, awsOptions);
+  await createKeyPair(keyName, keyPath);
 
   let instanceId: string | undefined;
   try {
@@ -164,15 +154,15 @@ export async function provisionFitInstance(options: ProvisionOptions = {}): Prom
         instanceType,
         keyName,
         securityGroupId,
+        subnetId: AWS_SUBNET_ID,
         tags: { [FIT_OWNER_TAG.key]: FIT_OWNER_TAG.value, "created-by": creatorTag },
         blockDeviceMappings: fitBlockDeviceMappings(),
       },
-      awsOptions,
     );
     console.log(`  launched ${instanceId}, waiting for it to start...`);
-    await waitForInstanceRunning(instanceId, awsOptions);
+    await waitForInstanceRunning(instanceId);
 
-    const info = await describeInstance(instanceId, awsOptions);
+    const info = await describeInstance(instanceId);
     const address = info?.publicDns || info?.publicIp;
     if (!address) {
       throw new Error(`Instance ${instanceId} is running but has no public address.`);
@@ -187,14 +177,14 @@ export async function provisionFitInstance(options: ProvisionOptions = {}): Prom
 
     const id = instanceId;
     const terminate = async (): Promise<void> => {
-      await terminateInstance(id, awsOptions);
-      await deleteKeyPair(keyName, awsOptions).catch(() => {});
+      await terminateInstance(id);
+      await deleteKeyPair(keyName).catch(() => {});
     };
 
     const infoPath = join(instanceDir, "ec2-instance.json");
     writeFileSync(
       infoPath,
-      `${JSON.stringify({ instanceId: id, address, region, instanceType, keyPath }, null, 2)}\n`,
+      `${JSON.stringify({ instanceId: id, address, region: AWS_REGION, instanceType, keyPath }, null, 2)}\n`,
     );
     const artifacts = [
       artifactFromPath(keyPath, "SSH private key for the EC2 test instance"),
@@ -207,12 +197,12 @@ export async function provisionFitInstance(options: ProvisionOptions = {}): Prom
       },
       {
         label: "Terminate instance command",
-        value: terminateInstanceCommand(id, region),
+        value: terminateInstanceCommand(id),
       },
     ];
 
     console.log(`\n✓ EC2 instance ${id} is ready at ${address}`);
-    fitCliWarn(`\n${formatEc2DeletionResponsibilityBanner(id, region, address, existingInstances, { account: creds.identity.account, creator: creatorTag })}\n`);
+    fitCliWarn(`\n${formatEc2DeletionResponsibilityBanner(id, address, existingInstances, { account: creds.identity.account, creator: creatorTag })}\n`);
     console.log("Debug it directly with:");
     console.log(`  ssh -i ${keyPath} ${FIT_INSTANCE_USER}@${address}`);
     return { instanceId: id, address, keyPath, host, target: new RemoteTarget(host), artifacts, details, terminate };
@@ -222,13 +212,13 @@ export async function provisionFitInstance(options: ProvisionOptions = {}): Prom
     // run's unique key name so an instance AWS created anyway can't leak.
     const leaked = instanceId
       ? [instanceId]
-      : await findInstancesByKeyName(keyName, awsOptions)
+      : await findInstancesByKeyName(keyName)
           .then((found) => found.map((i) => i.instanceId))
           .catch(() => []);
     for (const id of leaked) {
-      await terminateInstance(id, awsOptions).catch(() => {});
+      await terminateInstance(id).catch(() => {});
     }
-    await deleteKeyPair(keyName, awsOptions).catch(() => {});
+    await deleteKeyPair(keyName).catch(() => {});
     throw err;
   }
 }
@@ -237,7 +227,7 @@ if (isMain(import.meta.url)) {
   runCli(async () => {
     const provisioned = await provisionFitInstance();
     console.log(`\nLeaving it running. Terminate when done with:`);
-    console.log(`  ${terminateInstanceCommand(provisioned.instanceId, resolveRegion())}`);
+    console.log(`  ${terminateInstanceCommand(provisioned.instanceId)}`);
     return { artifacts: provisioned.artifacts, details: provisioned.details };
   });
 }

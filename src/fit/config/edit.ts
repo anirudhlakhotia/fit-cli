@@ -1,6 +1,7 @@
 import JSON5 from "json5";
 import {
   CLOUD_INSTANCE_PURPOSES,
+  DEFAULT_CAPELLA_SETTINGS,
   DEFAULT_CLOUD_INSTANCE_TYPES,
   FIT_CLI_CONFIG_VERSION,
   defaultFitCliConfigPath,
@@ -9,11 +10,11 @@ import {
   saveFitCliConfig,
   type CloudInstancePurpose,
   type FitCliAwsConfig,
+  type FitCliCapellaConfig,
   type FitCliCloudConfig,
   type FitCliConfig,
   type FitCliInstanceTypes,
 } from "../util/config.js";
-import { DEFAULT_AWS_REGION, awsRegionPromptMessage } from "../../util/non-fit/aws/region.js";
 import { confirm, input, password } from "../../util/non-fit/prompts.js";
 import type { AutoInitCliArgs } from "./config.js";
 
@@ -35,10 +36,12 @@ function purposeEnvVar(purpose: CloudInstancePurpose): string {
 export type AwsInstanceTypeAnswers = Record<CloudInstancePurpose, string>;
 
 export interface AwsInitAnswers {
-  region: string;
   profile: string;
   instanceTypes: AwsInstanceTypeAnswers;
 }
+
+/** Every Capella field as a (possibly empty) string, ready to write to config. */
+export type CapellaInitAnswers = Required<Record<keyof FitCliCapellaConfig, string>>;
 
 export interface InitAnswers {
   configureAws: boolean;
@@ -53,6 +56,8 @@ export interface InitAnswers {
   gerritUser?: string;
   /** Path to the SSH private key registered with Gerrit. */
   gerritSshKeyPath?: string;
+  configureCapella: boolean;
+  capella?: CapellaInitAnswers;
 }
 
 function trimOptional(value: string | undefined): string | undefined {
@@ -72,7 +77,6 @@ function instanceTypeDefaults(saved?: FitCliInstanceTypes): AwsInstanceTypeAnswe
 export function initDefaultsFromConfig(config?: FitCliConfig): AwsInitAnswers {
   const aws = config?.cloud?.aws;
   return {
-    region: aws?.region ?? DEFAULT_AWS_REGION,
     profile: aws?.profile ?? "",
     instanceTypes: instanceTypeDefaults(aws?.instanceTypes),
   };
@@ -85,7 +89,6 @@ export function initDefaultsFromEnv(env: NodeJS.ProcessEnv): AwsInitAnswers {
       env[purposeEnvVar(purpose)] ?? env.FIT_EC2_INSTANCE_TYPE ?? DEFAULT_EC2_INSTANCE_TYPES[purpose];
   }
   return {
-    region: env.AWS_REGION ?? env.AWS_DEFAULT_REGION ?? DEFAULT_AWS_REGION,
     profile: env.AWS_PROFILE ?? "",
     instanceTypes,
   };
@@ -102,15 +105,36 @@ function compactInstanceTypes(types: AwsInstanceTypeAnswers): FitCliInstanceType
 }
 
 function awsAnswersToConfig(answers: AwsInitAnswers): FitCliAwsConfig | undefined {
-  const region = trimOptional(answers.region) ?? DEFAULT_AWS_REGION;
   const profile = trimOptional(answers.profile);
   const instanceTypes = compactInstanceTypes(answers.instanceTypes);
 
   const parts: FitCliAwsConfig = {
-    ...(region ? { region } : {}),
     ...(profile ? { profile } : {}),
     ...(instanceTypes ? { instanceTypes } : {}),
   };
+  return Object.keys(parts).length > 0 ? parts : undefined;
+}
+
+/** Capella prompt defaults from a saved config: username from config, the rest defaulting to the hardcoded values. */
+function capellaDefaultsFromConfig(config?: FitCliConfig): CapellaInitAnswers {
+  const c = config?.capella;
+  return {
+    username: c?.username ?? "",
+    endpoint: c?.endpoint ?? DEFAULT_CAPELLA_SETTINGS.endpoint,
+    organizationId: c?.organizationId ?? DEFAULT_CAPELLA_SETTINGS.organizationId,
+    password: c?.password ?? DEFAULT_CAPELLA_SETTINGS.password,
+    overrideToken: c?.overrideToken ?? DEFAULT_CAPELLA_SETTINGS.overrideToken,
+    internalSupportToken: c?.internalSupportToken ?? DEFAULT_CAPELLA_SETTINGS.internalSupportToken,
+  };
+}
+
+/** Keep only the Capella fields with a non-empty value. */
+function capellaAnswersToConfig(answers: CapellaInitAnswers): FitCliCapellaConfig | undefined {
+  const parts: FitCliCapellaConfig = {};
+  for (const key of Object.keys(answers) as (keyof CapellaInitAnswers)[]) {
+    const value = trimOptional(answers[key]);
+    if (value) parts[key] = value;
+  }
   return Object.keys(parts).length > 0 ? parts : undefined;
 }
 
@@ -146,12 +170,17 @@ export function initAnswersToConfig(answers: InitAnswers, existing?: FitCliConfi
         }
       : existing?.gerrit;
 
+  // Declining the Capella prompt leaves any saved capella settings untouched.
+  const capella =
+    answers.configureCapella && answers.capella ? capellaAnswersToConfig(answers.capella) : existing?.capella;
+
   return {
     version: FIT_CLI_CONFIG_VERSION,
     ...(cloud ? { cloud } : {}),
     ...(github ? { github } : {}),
     ...(resultsDb ? { resultsDb } : {}),
     ...(gerrit ? { gerrit } : {}),
+    ...(capella ? { capella } : {}),
   };
 }
 
@@ -241,29 +270,71 @@ async function promptForConfig(existing?: FitCliConfig): Promise<InitAnswers> {
     default: false,
   });
 
-  if (!configureAws) {
-    return { configureAws: false, githubUser, githubToken, resultsDbPassword, gerritUser, gerritSshKeyPath };
-  }
+  const aws = configureAws
+    ? {
+        profile: await input({
+          promptId: "init.aws.profile",
+          message: "AWS profile (optional):",
+          default: defaults.profile,
+        }),
+        instanceTypes: await promptForInstanceTypes(defaults.instanceTypes),
+      }
+    : undefined;
+
+  const { configureCapella, capella } = await promptForCapella(existing);
 
   return {
-    configureAws: true,
+    configureAws,
+    ...(aws ? { aws } : {}),
     githubUser,
     githubToken,
     resultsDbPassword,
     gerritUser,
     gerritSshKeyPath,
-    aws: {
-      region: await input({
-        promptId: "init.aws.region",
-        message: awsRegionPromptMessage(defaults.region),
-        default: defaults.region,
-      }),
-      profile: await input({
-        promptId: "init.aws.profile",
-        message: "AWS profile (optional):",
-        default: defaults.profile,
-      }),
-      instanceTypes: await promptForInstanceTypes(defaults.instanceTypes),
+    configureCapella,
+    ...(capella ? { capella } : {}),
+  };
+}
+
+/**
+ * Ask whether to configure Capella (situational/SIT only), and if so, the
+ * username plus the five fields that default to the hardcoded values.
+ */
+async function promptForCapella(
+  existing?: FitCliConfig,
+): Promise<{ configureCapella: boolean; capella?: CapellaInitAnswers }> {
+  const hasExisting = existing?.capella !== undefined;
+  const configureCapella = await confirm({
+    promptId: "init.capella.configure",
+    message: hasExisting
+      ? "Edit Capella settings? Only needed for situational (SIT) runs."
+      : "Configure Capella settings? Only needed for situational (SIT) runs.",
+    default: false,
+  });
+  if (!configureCapella) {
+    return { configureCapella: false };
+  }
+
+  const defaults = capellaDefaultsFromConfig(existing);
+  const username = await input({
+    promptId: "init.capella.username",
+    message: defaults.username
+      ? `Capella username (leave blank to keep "${defaults.username}"):`
+      : "Capella username (usually your Couchbase email):",
+    default: defaults.username,
+  });
+  const ask = (field: keyof CapellaInitAnswers, label: string) =>
+    input({ promptId: `init.capella.${field}`, message: `${label}:`, default: defaults[field] });
+
+  return {
+    configureCapella: true,
+    capella: {
+      username,
+      endpoint: await ask("endpoint", "Capella endpoint"),
+      organizationId: await ask("organizationId", "Capella organization ID"),
+      password: await ask("password", "Capella password"),
+      overrideToken: await ask("overrideToken", "Capella override token"),
+      internalSupportToken: await ask("internalSupportToken", "Capella internal support token"),
     },
   };
 }
@@ -297,6 +368,16 @@ export function formatConfigForDisplay(config: FitCliConfig): string {
       : {}),
     ...(config.resultsDb
       ? { resultsDb: { ...config.resultsDb, ...(config.resultsDb.password ? { password: ELIDED } : {}) } }
+      : {}),
+    ...(config.capella
+      ? {
+          capella: {
+            ...config.capella,
+            ...(config.capella.password ? { password: ELIDED } : {}),
+            ...(config.capella.overrideToken ? { overrideToken: ELIDED } : {}),
+            ...(config.capella.internalSupportToken ? { internalSupportToken: ELIDED } : {}),
+          },
+        }
       : {}),
   };
   return JSON5.stringify(redacted, null, 2).trimEnd();
@@ -375,7 +456,13 @@ function mask(value: string | undefined): string {
   return value.slice(0, 4) + "****";
 }
 
-const SECRET_FIELDS = new Set(["github.token", "resultsDb.password"]);
+const SECRET_FIELDS = new Set([
+  "github.token",
+  "resultsDb.password",
+  "capella.password",
+  "capella.overrideToken",
+  "capella.internalSupportToken",
+]);
 
 /** Check whether a diagnostic-only env var is present, appending an entry to the log. */
 function checkDiagnosticVar(log: ResolutionEntry[], envName: string, value: string | undefined): void {
@@ -460,10 +547,6 @@ export function buildAutoConfig(
   // Cloud (AWS) section
   let cloud: FitCliCloudConfig | undefined;
   if (!args.disableAws) {
-    const region = resolveField(log, "cloud.aws.region", args.awsRegion, "--aws-region", [
-      { name: "AWS_REGION", value: env.AWS_REGION },
-      { name: "AWS_DEFAULT_REGION", value: env.AWS_DEFAULT_REGION },
-    ], DEFAULT_AWS_REGION);
     const profile = resolveField(log, "cloud.aws.profile", args.awsProfile, "--aws-profile", [
       { name: "AWS_PROFILE", value: env.AWS_PROFILE },
     ]);
@@ -485,7 +568,6 @@ export function buildAutoConfig(
     }
 
     const parts: FitCliAwsConfig = {
-      ...(region ? { region } : {}),
       ...(profile ? { profile } : {}),
       ...(Object.keys(instanceTypes).length > 0 ? { instanceTypes } : {}),
     };
@@ -558,12 +640,95 @@ export function buildAutoConfig(
     log.push({ field: "resultsDb.*", source: "--disable-results-db", found: false });
   }
 
+  // Capella section. Anchored on the username: with no username there's nothing
+  // to log in as, so we skip the section entirely rather than write a block of
+  // bare defaults into every config. The defaults still apply at use time via
+  // resolveCapellaConfig().
+  let capella: FitCliConfig["capella"] | undefined;
+  if (args.disableCapella) {
+    log.push({ field: "capella.*", source: "--disable-capella", found: false });
+  } else {
+    const username = resolveField(log, "capella.username", args.capellaUsername, "--capella-username", [
+      { name: "CAPELLA_USER", value: env.CAPELLA_USER },
+      { name: "CAP_USER", value: env.CAP_USER },
+    ]);
+    if (!username) {
+      log.push({ field: "capella.*", source: "(no username)", found: false });
+    } else {
+    const endpoint = resolveField(
+      log,
+      "capella.endpoint",
+      args.capellaEndpoint,
+      "--capella-endpoint",
+      [
+        { name: "CAPELLA_ENDPOINT", value: env.CAPELLA_ENDPOINT },
+        { name: "CAP_END_POINT", value: env.CAP_END_POINT },
+      ],
+      DEFAULT_CAPELLA_SETTINGS.endpoint,
+    );
+    const organizationId = resolveField(
+      log,
+      "capella.organizationId",
+      args.capellaOrganizationId,
+      "--capella-oid",
+      [
+        { name: "CAPELLA_OID", value: env.CAPELLA_OID },
+        { name: "CAP_OID", value: env.CAP_OID },
+      ],
+      DEFAULT_CAPELLA_SETTINGS.organizationId,
+    );
+    const capellaPassword = resolveField(
+      log,
+      "capella.password",
+      args.capellaPassword,
+      "--capella-password",
+      [
+        { name: "CAPELLA_PASS", value: env.CAPELLA_PASS },
+        { name: "CAP_PASS", value: env.CAP_PASS },
+      ],
+      DEFAULT_CAPELLA_SETTINGS.password,
+    );
+    const overrideToken = resolveField(
+      log,
+      "capella.overrideToken",
+      args.capellaOverrideToken,
+      "--capella-override-token",
+      [
+        { name: "CAPELLA_OVERRIDE_TOKEN", value: env.CAPELLA_OVERRIDE_TOKEN },
+        { name: "CAP_OVERRIDE_TOKEN", value: env.CAP_OVERRIDE_TOKEN },
+      ],
+      DEFAULT_CAPELLA_SETTINGS.overrideToken,
+    );
+    const internalSupportToken = resolveField(
+      log,
+      "capella.internalSupportToken",
+      args.capellaInternalSupportToken,
+      "--capella-internal-support-token",
+      [
+        { name: "CAPELLA_INTERNAL_SUPPORT_TOKEN", value: env.CAPELLA_INTERNAL_SUPPORT_TOKEN },
+        { name: "CAP_INTERNAL_SUPPORT_TOKEN", value: env.CAP_INTERNAL_SUPPORT_TOKEN },
+      ],
+      DEFAULT_CAPELLA_SETTINGS.internalSupportToken,
+    );
+
+      capella = {
+        username,
+        ...(endpoint ? { endpoint } : {}),
+        ...(organizationId ? { organizationId } : {}),
+        ...(capellaPassword ? { password: capellaPassword } : {}),
+        ...(overrideToken ? { overrideToken } : {}),
+        ...(internalSupportToken ? { internalSupportToken } : {}),
+      };
+    }
+  }
+
   const config: FitCliConfig = {
     version: FIT_CLI_CONFIG_VERSION,
     ...(cloud ? { cloud } : {}),
     ...(github ? { github } : {}),
     ...(resultsDb ? { resultsDb } : {}),
     ...(gerrit ? { gerrit } : {}),
+    ...(capella ? { capella } : {}),
   };
 
   return { config, log };

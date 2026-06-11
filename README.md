@@ -77,26 +77,11 @@ To use EC2, copy `.env.example` to `.env` and fill in your AWS credentials (or j
 
 When you pick EC2, the tool launches a fresh Ubuntu instance, opens SSH, and tags it `fit-cli=owned`. A key is generated for you (saved into the run folder), and key-based SSH is the only login path the tool enables. At the end of the run you're asked whether to keep it (for debugging) or terminate it — the default is terminate, so you don't leave a paid instance running. The SSH command to reach the box is printed during the run.
 
-### Default instance types
+The AWS region and VPC are fixed (region `us-west-2`, VPC `cbqerunners-vpc`) and are not configurable because:
 
-The default instance type differs by the kind of testing, because each wants a different machine size (perf needs the beefiest box). They live in `~/.fit-cli/config.json5` keyed first by cloud provider, then by purpose, so a future provider can carry its own sizes without restructuring:
-
-```json5
-cloud: {
-  aws: {
-    region: 'us-east-1',
-    instanceTypes: {
-      functional: 'c5.xlarge',   // default
-      situational: 'c5.xlarge',  // default
-      perf: 'c5.4xlarge',        // default
-    },
-  },
-},
-```
-
-Set them via `npm run config -- edit` (interactive) or `npm run config -- edit --auto --aws-instance-type-perf c5.9xlarge …` (env: `FIT_EC2_INSTANCE_TYPE_<PURPOSE>`, or `FIT_EC2_INSTANCE_TYPE` for all). A definition file's `instance.aws.instanceType` still overrides the default for that instance. `perf` has no run type in the definition schema yet — its default is carried ready for when one lands. Only AWS exists today; other providers slot in as siblings of `aws`.
-
-The AWS building blocks live under `src/util/non-fit/aws/` (generic, reusable) and `src/fit/util/aws/` (FIT-specific). Like everything else, each is runnable on its own — see the header of each file.
+* Ensures compatibility with the existing sdkqe-github-runners-tf work that allows testing private endpoints.
+* Simplifies and derisks where to look for user's instances for cleanup.
+* It means we always have a VPC and avoid hitting VPCIdNotSpecified if the user specifies a region that does not have a default one.
 
 ## Running a single step or flow
 
@@ -118,6 +103,10 @@ If you find any are broken due to refactorings then please ask an AI to "sweep t
 - `npm run typecheck` — type-check without emitting.
 - `npm run build` — compile TypeScript to `dist/`.
 - `npm test` — run the unit tests (node:test, via tsx).  Note - these always need to be kept instant - business logic only.  If it's slow, just don't test it.
+
+## Capella
+When running locally, we use Capella creds from your fit-cli config.  Generally you just need to provide your email address.  We default to using Capella's production environment.
+When running on CI, the user chooses what Capella environment to use (stage, dev, etc.) and we use previously-setup accounts for those. 
 
 ## General rules
 Everyone - AI and human - please follow these as best you can.
@@ -240,6 +229,7 @@ Namely, we endeavour to support in addition to the primary clean instance flow:
 Each run of fit-cli will produce a new unique directory (ARTIFACT_DIR) under /tmp/fit-cli/ which will contain any artifacts.
 ARTIFACT_DIR already contains the timestamp, and artifacts under it should have short clear filenames that do not need to be unique.  E.g. "cbdinocluster.yaml" is good.
 Artifacts are returned by workflows and displayed in a table to the user at the end of user-facing runs.
+Yes an artifact dir is produced every single run, including things like creating the config.  That's intentional to aid with debugging.  We may tone it down in future if it feels too overkill.
 
 #### Artifact pieces
 Sometimes an artifact, such as a definition file, will be built up in pieces across multiple steps and workflows.
@@ -265,6 +255,7 @@ FatalToAll will stop the definition run.
 FatalToInstance includes things like failing to acquire or set up the instance (box).  The next instance is allowed to run.
 FatalToCluster includes things like failing to set up the cluster for the instance.  The next cluster is allowed to run.
 FatalToSession will fail just this session.  The next session is allowed to run.
+FatalToRun will fail just this run.  The next run is allowed to, uh, run.
 NonFatal allows things to continue including this session.
 
 Deciding which of these should result in the final process returning non-zero and hence failing CI, is very tricky.

@@ -1,6 +1,6 @@
 /**
  * image — resolve an AMI to launch. `findUbuntuAmi` asks EC2 for Canonical's
- * Ubuntu 22.04 LTS images in the target region and picks the most recent, so we
+ * Ubuntu 22.04 LTS images in the fixed region and picks the most recent, so we
  * don't hardcode a per-region AMI id that goes stale. The "newest by creation
  * date" choice is a pure function (`pickLatestImageId`) so it can be unit tested
  * (see tests/image.test.ts).
@@ -10,10 +10,10 @@
  * image — no IAM permissions are needed to read public SSM parameters.
  *
  * Run on its own:
- *   npx tsx src/util/non-fit/aws/image.ts [--region eu-west-1]
+ *   npx tsx src/util/non-fit/aws/image.ts
  */
 import { isMain, runCli } from "../cli.js";
-import { awsJson, logAwsAction, prepareAwsCli, type AwsOptions } from "./aws-cli.js";
+import { awsJson, logAwsAction, prepareAwsCli } from "./aws-cli.js";
 
 /** Canonical's AWS account id — the trusted owner of official Ubuntu images. */
 export const CANONICAL_OWNER_ID = "099720109477";
@@ -44,10 +44,10 @@ export function pickLatestImageId(images: readonly AmiImage[]): string | null {
 }
 
 /**
- * Find the latest Ubuntu 22.04 LTS amd64 AMI in the target region. Throws if no
- * matching image is found (which would mean the region or filters are wrong).
+ * Find the latest Ubuntu 22.04 LTS amd64 AMI in the fixed region. Throws if no
+ * matching image is found (which would mean the filters are wrong).
  */
-export async function findUbuntuAmi(options: AwsOptions = {}): Promise<string> {
+export async function findUbuntuAmi(): Promise<string> {
   try {
     const response = await awsJson<{ Images?: AmiImage[] }>(
       [
@@ -60,7 +60,6 @@ export async function findUbuntuAmi(options: AwsOptions = {}): Promise<string> {
         "Name=state,Values=available",
         "Name=architecture,Values=x86_64",
       ],
-      options,
     );
     const ami = pickLatestImageId(response.Images ?? []);
     if (!ami) {
@@ -75,7 +74,6 @@ export async function findUbuntuAmi(options: AwsOptions = {}): Promise<string> {
       const ssmPath = "/aws/service/canonical/ubuntu/server/22.04/stable/current/amd64/hvm/ebs-gp2/ami-id";
       const result = await awsJson<{ Parameters?: { Value?: string }[]; InvalidParameters?: string[] }>(
         ["ssm", "get-parameters", "--names", ssmPath],
-        options,
       );
       const amiId = result.Parameters?.[0]?.Value;
       if (!amiId) {
@@ -92,11 +90,11 @@ export async function findUbuntuAmi(options: AwsOptions = {}): Promise<string> {
 
 if (isMain(import.meta.url)) {
   runCli(async () => {
-    const awsOptions = await prepareAwsCli(process.argv.slice(2));
-    logAwsAction("Looking up Ubuntu AMI", awsOptions, {
+    await prepareAwsCli();
+    logAwsAction("Looking up Ubuntu AMI", {
       owner: CANONICAL_OWNER_ID,
       namePattern: UBUNTU_2204_NAME_PATTERN,
     });
-    console.log(`✓ Latest Ubuntu 22.04 amd64 AMI: ${await findUbuntuAmi(awsOptions)}`);
+    console.log(`✓ Latest Ubuntu 22.04 amd64 AMI: ${await findUbuntuAmi()}`);
   });
 }

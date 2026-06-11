@@ -15,6 +15,7 @@ import {
   defaultCbdinoclusterInitArgs,
   defaultCbdinoclusterInitConfig,
   situationalCbdinoclusterConfigPatch,
+  situationalCbdinoclusterInitArgs,
 } from "../../../cluster/cluster-create/default-cbdinocluster-init-config.js";
 import { CNG_K3D_CONTEXT } from "../../../cluster/cluster-create/cng-kubernetes.js";
 import type { ClusterExistsPolicy } from "../../../cluster/cluster-create/cluster-exists-policy.js";
@@ -270,7 +271,7 @@ function buildSituationalInstance(inputs: SituationalDefinitionInputs): Instance
     // It's per-instance setup, applied once on the box (see InstanceSetup).
     setup: {
       cbdinocluster: {
-        init: { args: defaultCbdinoclusterInitArgs(), configPatch: situationalCbdinoclusterConfigPatch() },
+        init: { args: situationalCbdinoclusterInitArgs(), configPatch: situationalCbdinoclusterConfigPatch() },
       },
     },
     clusters: [],
@@ -378,8 +379,7 @@ function commentLinesFor(key: string, value: unknown, parentKey: string | undefi
     case "args":
       return parentKey === "init"
         ? [
-            "Passed to `cbdinocluster init` on clean environments to set up ~/.cbdinocluster.",
-            "Edit to taste; fit-cli appends your GitHub credentials at runtime.",
+            "Passed to `cbdinocluster init` on clean environments to set up ~/.cbdinocluster.  Added at runtime: GitHub creds",
           ]
         : [];
     case "configPatch":
@@ -392,9 +392,7 @@ function commentLinesFor(key: string, value: unknown, parentKey: string | undefi
         "fit-cli will provide some fields like ${defaultHostname} at runtime when cluster details are known.",
       ];
     case "setup":
-      return parentKey === "instances"
-        ? ["Per-instance setup, applied once on the box before any cluster or run (e.g. `cbdinocluster init` for ~/.cbdinocluster)."]
-        : [];
+      return [];
     case "clusters":
       return parentKey === "instances" && Array.isArray(value) && value.length === 0
         ? ["FIT/SIT creates its own clusters, so none are set up here."]
