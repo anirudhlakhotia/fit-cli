@@ -19,7 +19,6 @@ function baseArgs(overrides: Partial<AutoInitCliArgs> = {}): AutoInitCliArgs {
 
 test("buildAutoConfig: all env vars set produces full config", () => {
   const env = {
-    AWS_REGION: "eu-west-1",
     AWS_PROFILE: "dev",
     // A single FIT_EC2_INSTANCE_TYPE seeds every purpose; a per-purpose var wins for perf.
     FIT_EC2_INSTANCE_TYPE: "m6i.large",
@@ -36,7 +35,6 @@ test("buildAutoConfig: all env vars set produces full config", () => {
     version: FIT_CLI_CONFIG_VERSION,
     cloud: {
       aws: {
-        region: "eu-west-1",
         profile: "dev",
         instanceTypes: { functional: "m6i.large", situational: "m6i.large", perf: "m6i.4xlarge" },
       },
@@ -48,7 +46,7 @@ test("buildAutoConfig: all env vars set produces full config", () => {
 
 test("buildAutoConfig: --disable-aws omits cloud section", () => {
   const env = {
-    AWS_REGION: "us-east-2",
+    AWS_PROFILE: "dev",
     GITHUB_USER: "octocat",
     GITHUB_TOKEN: "ghp_t",
   };
@@ -76,14 +74,13 @@ test("buildAutoConfig: --disable-results-db omits resultsDb section", () => {
 });
 
 test("buildAutoConfig: CLI arg overrides env var", () => {
-  const env = { AWS_REGION: "us-east-1", GITHUB_USER: "env-user" };
+  const env = { GITHUB_USER: "env-user" };
 
   const { config } = buildAutoConfig({
-    args: baseArgs({ awsRegion: "ap-southeast-1", githubUser: "cli-user" }),
+    args: baseArgs({ githubUser: "cli-user" }),
     env,
   });
 
-  assert.equal(config.cloud?.aws?.region, "ap-southeast-1");
   assert.equal(config.github?.user, "cli-user");
 });
 
@@ -92,8 +89,7 @@ test("buildAutoConfig: missing optional fields are omitted gracefully", () => {
 
   const { config } = buildAutoConfig({ args: baseArgs(), env });
 
-  // cloud.aws gets defaults for region and instance types, so it's present
-  assert.equal(config.cloud?.aws?.region, "us-west-2");
+  // cloud.aws gets defaults for instance types, so it's present
   assert.equal(config.cloud?.aws?.instanceTypes?.functional, "c5.xlarge");
   assert.equal(config.cloud?.aws?.instanceTypes?.perf, "c5.4xlarge");
   assert.equal(config.cloud?.aws?.profile, undefined);
@@ -116,14 +112,6 @@ test("buildAutoConfig: GITHUB_TOKEN takes precedence over GH_TOKEN", () => {
   const { config } = buildAutoConfig({ args: baseArgs(), env });
 
   assert.equal(config.github?.token, "ghp_primary");
-});
-
-test("buildAutoConfig: AWS_DEFAULT_REGION is fallback for AWS_REGION", () => {
-  const env = { AWS_DEFAULT_REGION: "eu-central-1" };
-
-  const { config } = buildAutoConfig({ args: baseArgs(), env });
-
-  assert.equal(config.cloud?.aws?.region, "eu-central-1");
 });
 
 test("buildAutoConfig: resolution log records all checks in order", () => {

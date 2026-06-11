@@ -23,8 +23,6 @@ export interface ResumeTargetState {
   instanceId?: string;
   /** Public DNS/IP to SSH back into. */
   address?: string;
-  /** AWS region the instance lives in. */
-  region?: string;
   /** SSH login user. */
   user?: string;
   /** Path to the SSH private key the earlier run generated. */

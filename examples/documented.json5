@@ -31,7 +31,7 @@
       // Provide exactly one of "aws" or "localhost". At run time you can still
       // override and force every instance onto localhost.
       // aws: {},
-      // aws: { instanceType: 'c5.4xlarge', region: 'us-east-1' },
+      // aws: { instanceType: 'c5.4xlarge' },
       localhost: {},
       clusters: [
         {

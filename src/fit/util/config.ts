@@ -36,7 +36,6 @@ export const DEFAULT_CLOUD_INSTANCE_TYPES: Record<CloudProvider, Record<CloudIns
 export type FitCliInstanceTypes = Partial<Record<CloudInstancePurpose, string>>;
 
 export interface FitCliAwsConfig {
-  region?: string;
   profile?: string;
   /** Default EC2 instance type per testing purpose; missing purposes fall back to the baked default. */
   instanceTypes?: FitCliInstanceTypes;
@@ -141,7 +140,6 @@ function configEnvEntries(config: FitCliConfig): Record<string, string> {
   // Instance types are now per-purpose, so there's no single FIT_EC2_INSTANCE_TYPE
   // to export — runs resolve the right one via resolveCloudInstanceType().
   return compactRecord({
-    AWS_REGION: config.cloud?.aws?.region,
     AWS_PROFILE: config.cloud?.aws?.profile,
   });
 }
@@ -260,7 +258,6 @@ function validateCloudConfig(cloudValue: Record<string, unknown>): FitCliCloudCo
     const instanceTypes = validateInstanceTypes(awsValue.instanceTypes, "cloud.aws.instanceTypes");
     const parts: FitCliAwsConfig = {
       ...compactRecord({
-        region: readOptionalString(awsValue, "region", "cloud.aws.region"),
         profile: readOptionalString(awsValue, "profile", "cloud.aws.profile"),
       }),
       ...(instanceTypes ? { instanceTypes } : {}),

@@ -60,7 +60,6 @@ export interface InstanceSetup {
 
 export interface AwsInstanceSetup {
   instanceType?: string;
-  region?: string;
 }
 
 export type InstanceMode =

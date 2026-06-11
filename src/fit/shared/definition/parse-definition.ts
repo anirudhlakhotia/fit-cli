@@ -245,10 +245,6 @@ function validateAwsInstance(value: unknown, path: string): AwsInstanceSetup {
   if (instanceType !== undefined) {
     aws.instanceType = instanceType;
   }
-  const region = validateOptionalString(record, "region", `${path}.region`);
-  if (region !== undefined) {
-    aws.region = region;
-  }
   return aws;
 }
 

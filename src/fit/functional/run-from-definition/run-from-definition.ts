@@ -57,7 +57,6 @@ import { confirm, select } from "../../../util/non-fit/prompts.js";
 import { rootDirFromArgv } from "../../util/root.js";
 import { resolveGithubCredentials, resolveResultsDbCredentials } from "../../util/config.js";
 import { terminateInstanceCommand } from "../../util/aws/lifecycle-warning.js";
-import { resolveRegion } from "../../../util/non-fit/aws/aws-cli.js";
 import { resolveAwsCredentials, type AwsCredentials } from "../../../util/non-fit/aws/identity.js";
 import {
   localClusterCommandExecutor,
@@ -666,7 +665,6 @@ function targetStateFrom(teardown: ExecutionTargetTeardown): ResumeTargetState {
     kind: teardown.kind,
     ...(teardown.instanceId ? { instanceId: teardown.instanceId } : {}),
     ...(teardown.address ? { address: teardown.address } : {}),
-    ...(teardown.region ? { region: teardown.region } : {}),
     ...(teardown.user ? { user: teardown.user } : {}),
     ...(teardown.identityFile ? { identityFile: teardown.identityFile } : {}),
   };
@@ -911,12 +909,11 @@ async function teardownRun(inputs: TeardownInputs): Promise<void> {
       );
     }
     if (teardown.terminate && teardown.instanceId) {
-      const region = teardown.region ?? resolveRegion();
       fitCliWarn(`\nInstance ${teardown.instanceId} is still running — remember to terminate it when done.`);
       if (teardown.identityFile && teardown.user && teardown.address) {
         console.log(`\nSSH in with:\n  ssh -i ${teardown.identityFile} ${teardown.user}@${teardown.address}`);
       }
-      console.log(`\nTerminate it with:\n  ${terminateInstanceCommand(teardown.instanceId, region)}`);
+      console.log(`\nTerminate it with:\n  ${terminateInstanceCommand(teardown.instanceId)}`);
     }
     return;
   }

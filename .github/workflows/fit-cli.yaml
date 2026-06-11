@@ -50,17 +50,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_USER: ${{ github.actor }}
-          AWS_REGION: us-west-2
         run: |
           git clone --branch ${{ github.ref_name }} https://github.com/couchbaselabs/fit-cli.git
           cd fit-cli
           npm ci
-          npm run config -- edit --auto --aws-region eu-west-1 # todo
+          npm run config -- edit --auto
 
       - name: Run fit-cli
-        env:
-          AWS_REGION: us-west-2
-          AWS_DEFAULT_REGION: us-west-2
         run: |
           cd fit-cli
           npm run definition -- execute ${{ inputs.definitionFile }} | tee /tmp/fit-cli-output.log

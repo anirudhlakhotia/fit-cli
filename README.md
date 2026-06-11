@@ -77,26 +77,7 @@ To use EC2, copy `.env.example` to `.env` and fill in your AWS credentials (or j
 
 When you pick EC2, the tool launches a fresh Ubuntu instance, opens SSH, and tags it `fit-cli=owned`. A key is generated for you (saved into the run folder), and key-based SSH is the only login path the tool enables. At the end of the run you're asked whether to keep it (for debugging) or terminate it — the default is terminate, so you don't leave a paid instance running. The SSH command to reach the box is printed during the run.
 
-### Default instance types
-
-The default instance type differs by the kind of testing, because each wants a different machine size (perf needs the beefiest box). They live in `~/.fit-cli/config.json5` keyed first by cloud provider, then by purpose, so a future provider can carry its own sizes without restructuring:
-
-```json5
-cloud: {
-  aws: {
-    region: 'us-east-1',
-    instanceTypes: {
-      functional: 'c5.xlarge',   // default
-      situational: 'c5.xlarge',  // default
-      perf: 'c5.4xlarge',        // default
-    },
-  },
-},
-```
-
-Set them via `npm run config -- edit` (interactive) or `npm run config -- edit --auto --aws-instance-type-perf c5.9xlarge …` (env: `FIT_EC2_INSTANCE_TYPE_<PURPOSE>`, or `FIT_EC2_INSTANCE_TYPE` for all). A definition file's `instance.aws.instanceType` still overrides the default for that instance. `perf` has no run type in the definition schema yet — its default is carried ready for when one lands. Only AWS exists today; other providers slot in as siblings of `aws`.
-
-The AWS building blocks live under `src/util/non-fit/aws/` (generic, reusable) and `src/fit/util/aws/` (FIT-specific). Like everything else, each is runnable on its own — see the header of each file.
+The AWS region and VPC are fixed (region `us-west-2`, VPC `cbqerunners-vpc`) and are not configurable, for reasons I should get around to documenting.
 
 ## Running a single step or flow
 

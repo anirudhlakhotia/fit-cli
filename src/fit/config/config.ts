@@ -3,7 +3,7 @@
  * Top-level dispatcher for the `config` npm script.
  *
  * npm run config -- edit [--auto] [--dry-run] [--disable-aws] [--disable-github] [--disable-results-db]
- *                        [--aws-region <r>] [--aws-profile <p>] [--aws-instance-type <t>]
+ *                        [--aws-profile <p>] [--aws-instance-type <t>]
  *                        [--github-user <u>] [--github-token <t>]
  *                        [--results-db-password <p>] [--results-db-username <u>]
  *                        [--config-path <path>]
@@ -37,7 +37,6 @@ Edit options:
   --disable-github       Skip writing the github section.
   --disable-results-db   Skip writing the resultsDb section.
   --disable-gerrit       Skip writing the gerrit section.
-  --aws-region <r>       AWS region (env: AWS_REGION / AWS_DEFAULT_REGION, default: us-east-1).
   --aws-profile <p>      AWS profile (env: AWS_PROFILE).
   --aws-instance-type-functional <t>  EC2 instance type for functional tests
                          (env: FIT_EC2_INSTANCE_TYPE_FUNCTIONAL / FIT_EC2_INSTANCE_TYPE, default: c5.xlarge).
@@ -61,7 +60,6 @@ export interface AutoInitCliArgs {
   disableGithub: boolean;
   disableResultsDb: boolean;
   disableGerrit: boolean;
-  awsRegion?: string;
   awsProfile?: string;
   /** Default EC2 instance type per testing purpose. */
   awsInstanceTypes?: FitCliInstanceTypes;
@@ -103,7 +101,6 @@ export function parseEditArgs(argv: string[]): AutoInitCliArgs {
   const disableResultsDb = consumeFlag(args, "--disable-results-db");
   const disableGerrit = consumeFlag(args, "--disable-gerrit");
 
-  const awsRegion = consumeValue(args, "--aws-region");
   const awsProfile = consumeValue(args, "--aws-profile");
   const awsInstanceTypes: FitCliInstanceTypes = {};
   for (const purpose of CLOUD_INSTANCE_PURPOSES) {
@@ -133,7 +130,6 @@ export function parseEditArgs(argv: string[]): AutoInitCliArgs {
     disableGithub,
     disableResultsDb,
     disableGerrit,
-    awsRegion,
     awsProfile,
     ...(Object.keys(awsInstanceTypes).length > 0 ? { awsInstanceTypes } : {}),
     githubUser,

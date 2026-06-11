@@ -23,6 +23,7 @@ import { readFileSync } from "fs";
 import { join } from "path";
 import { isMain, runCli } from "../../util/non-fit/cli.js";
 import { prepareAwsCli } from "../../util/non-fit/aws/aws-cli.js";
+import { AWS_REGION } from "../../util/non-fit/aws/aws-target.js";
 import { describeInstance } from "../../util/non-fit/aws/describe-instance.js";
 import { RemoteTarget } from "../../util/non-fit/remote-target.js";
 import { waitForSsh, type RemoteHost } from "../../util/non-fit/ssh.js";
@@ -135,17 +136,17 @@ if (isMain(import.meta.url)) {
       fitCliError(
         "Usage:\n" +
           "  install-cbdinocluster.ts --dir <instance-dir> [--user ubuntu]\n" +
-          "  install-cbdinocluster.ts --instance <ec2-id> --key <path.pem> [--user ubuntu] [--region <aws-region>]",
+          "  install-cbdinocluster.ts --instance <ec2-id> --key <path.pem> [--user ubuntu]",
       );
       process.exit(1);
     }
 
     if (!address) {
-      const awsOptions = await prepareAwsCli(argv);
+      await prepareAwsCli();
       console.log(`Looking up EC2 instance ${instanceId}...`);
-      const info = await describeInstance(instanceId, awsOptions);
+      const info = await describeInstance(instanceId);
       if (!info) {
-        throw new Error(`No EC2 instance found with id ${instanceId} (in ${awsOptions.region}).`);
+        throw new Error(`No EC2 instance found with id ${instanceId} (in ${AWS_REGION}).`);
       }
       address = info.publicDns || info.publicIp;
       if (!address) {

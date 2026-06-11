@@ -4,17 +4,16 @@
  * the aws CLI; the JSON shaping lives in parse-instance.ts.
  *
  * Run on its own:
- *   npx tsx src/util/non-fit/aws/describe-instance.ts --id i-0123456789abcdef0 [--region eu-west-1]
+ *   npx tsx src/util/non-fit/aws/describe-instance.ts --id i-0123456789abcdef0
  */
 import { isMain, runCli } from "../cli.js";
-import { awsJson, logAwsAction, prepareAwsCli, type AwsOptions } from "./aws-cli.js";
+import { awsJson, logAwsAction, prepareAwsCli } from "./aws-cli.js";
 import { parseInstances, type DescribeInstancesResponse, type InstanceInfo } from "./parse-instance.js";
 
 /** Describe a single instance, or null if it isn't found. */
-export async function describeInstance(instanceId: string, options: AwsOptions = {}): Promise<InstanceInfo | null> {
+export async function describeInstance(instanceId: string): Promise<InstanceInfo | null> {
   const response = await awsJson<DescribeInstancesResponse>(
     ["ec2", "describe-instances", "--instance-ids", instanceId],
-    options,
   );
   return parseInstances(response)[0] ?? null;
 }
@@ -25,10 +24,10 @@ if (isMain(import.meta.url)) {
     const idIndex = argv.indexOf("--id");
     const id = idIndex !== -1 ? argv[idIndex + 1] : undefined;
     if (!id) {
-      throw new Error("Usage: describe-instance.ts --id <instance-id> [--region <aws-region>]");
+      throw new Error("Usage: describe-instance.ts --id <instance-id>");
     }
-    const awsOptions = await prepareAwsCli(argv);
-    logAwsAction("Describing EC2 instance", awsOptions, { instanceId: id });
-    console.log(JSON.stringify(await describeInstance(id, awsOptions), null, 2));
+    await prepareAwsCli();
+    logAwsAction("Describing EC2 instance", { instanceId: id });
+    console.log(JSON.stringify(await describeInstance(id), null, 2));
   });
 }

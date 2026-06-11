@@ -13,7 +13,6 @@ import {
   type FitCliConfig,
   type FitCliInstanceTypes,
 } from "../util/config.js";
-import { DEFAULT_AWS_REGION, awsRegionPromptMessage } from "../../util/non-fit/aws/region.js";
 import { confirm, input, password } from "../../util/non-fit/prompts.js";
 import type { AutoInitCliArgs } from "./config.js";
 
@@ -35,7 +34,6 @@ function purposeEnvVar(purpose: CloudInstancePurpose): string {
 export type AwsInstanceTypeAnswers = Record<CloudInstancePurpose, string>;
 
 export interface AwsInitAnswers {
-  region: string;
   profile: string;
   instanceTypes: AwsInstanceTypeAnswers;
 }
@@ -72,7 +70,6 @@ function instanceTypeDefaults(saved?: FitCliInstanceTypes): AwsInstanceTypeAnswe
 export function initDefaultsFromConfig(config?: FitCliConfig): AwsInitAnswers {
   const aws = config?.cloud?.aws;
   return {
-    region: aws?.region ?? DEFAULT_AWS_REGION,
     profile: aws?.profile ?? "",
     instanceTypes: instanceTypeDefaults(aws?.instanceTypes),
   };
@@ -85,7 +82,6 @@ export function initDefaultsFromEnv(env: NodeJS.ProcessEnv): AwsInitAnswers {
       env[purposeEnvVar(purpose)] ?? env.FIT_EC2_INSTANCE_TYPE ?? DEFAULT_EC2_INSTANCE_TYPES[purpose];
   }
   return {
-    region: env.AWS_REGION ?? env.AWS_DEFAULT_REGION ?? DEFAULT_AWS_REGION,
     profile: env.AWS_PROFILE ?? "",
     instanceTypes,
   };
@@ -102,12 +98,10 @@ function compactInstanceTypes(types: AwsInstanceTypeAnswers): FitCliInstanceType
 }
 
 function awsAnswersToConfig(answers: AwsInitAnswers): FitCliAwsConfig | undefined {
-  const region = trimOptional(answers.region) ?? DEFAULT_AWS_REGION;
   const profile = trimOptional(answers.profile);
   const instanceTypes = compactInstanceTypes(answers.instanceTypes);
 
   const parts: FitCliAwsConfig = {
-    ...(region ? { region } : {}),
     ...(profile ? { profile } : {}),
     ...(instanceTypes ? { instanceTypes } : {}),
   };
@@ -253,11 +247,6 @@ async function promptForConfig(existing?: FitCliConfig): Promise<InitAnswers> {
     gerritUser,
     gerritSshKeyPath,
     aws: {
-      region: await input({
-        promptId: "init.aws.region",
-        message: awsRegionPromptMessage(defaults.region),
-        default: defaults.region,
-      }),
       profile: await input({
         promptId: "init.aws.profile",
         message: "AWS profile (optional):",
@@ -460,10 +449,6 @@ export function buildAutoConfig(
   // Cloud (AWS) section
   let cloud: FitCliCloudConfig | undefined;
   if (!args.disableAws) {
-    const region = resolveField(log, "cloud.aws.region", args.awsRegion, "--aws-region", [
-      { name: "AWS_REGION", value: env.AWS_REGION },
-      { name: "AWS_DEFAULT_REGION", value: env.AWS_DEFAULT_REGION },
-    ], DEFAULT_AWS_REGION);
     const profile = resolveField(log, "cloud.aws.profile", args.awsProfile, "--aws-profile", [
       { name: "AWS_PROFILE", value: env.AWS_PROFILE },
     ]);
@@ -485,7 +470,6 @@ export function buildAutoConfig(
     }
 
     const parts: FitCliAwsConfig = {
-      ...(region ? { region } : {}),
       ...(profile ? { profile } : {}),
       ...(Object.keys(instanceTypes).length > 0 ? { instanceTypes } : {}),
     };
