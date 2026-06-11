@@ -98,4 +98,11 @@ jobs:
           npm run definition -- execute ${{ inputs.definitionFile }}
 
       # todo handle Junit results
-      # todo archive artifacts
+
+      - name: Upload run artifacts
+        if: always() # Upload success or failure
+        uses: actions/upload-artifact@v4
+        with:
+          name: fit-cli-run-${{ github.run_id }}
+          path: /tmp/fit-cli/
+          if-no-files-found: warn
