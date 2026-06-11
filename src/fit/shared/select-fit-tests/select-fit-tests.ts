@@ -62,6 +62,14 @@ const ALL_FIT_TESTS_SELECTED = "All FIT tests selected";
 /** Relative-path prefix (under test-driver/src/test) the situational tests live at. */
 export const SITUATIONAL_TEST_PATH_PREFIX = "scala/com/couchbase/situational/";
 
+/** Relative-path prefix (under test-driver/src/test) the transactions tests live at. */
+export const TRANSACTIONS_TEST_PATH_PREFIX = "java/com/couchbase/transactions/";
+
+/** Returns true if the test belongs to the transactions package. */
+export function isTransactionsTest(test: FitTestCase): boolean {
+  return test.relativePath.startsWith(TRANSACTIONS_TEST_PATH_PREFIX);
+}
+
 /**
  * Which slice of the test-driver's tests a flow cares about, and which test it
  * runs in "sanity" mode. Functional and situational tests share one test-driver
@@ -316,7 +324,7 @@ export function deserializeSelectedFitTestsFromReplay(
   return response;
 }
 
-type FitTestRunMode = "all" | "single" | "multiple" | "sanity";
+type FitTestRunMode = "all" | "all-transactions" | "all-non-transactions" | "single" | "multiple" | "sanity";
 
 /** Ask whether to run everything, a single searchable test, a sanity test, or a chosen subset. */
 async function askFitTestRunMode(domain: FitTestDomain, promptIdPrefix?: string): Promise<FitTestRunMode> {
@@ -326,6 +334,8 @@ async function askFitTestRunMode(domain: FitTestDomain, promptIdPrefix?: string)
     default: "all",
     choices: [
       { name: "Run everything", value: "all" },
+      { name: "All transactions tests", value: "all-transactions" },
+      { name: "All non-transactions tests", value: "all-non-transactions" },
       { name: "Run a single test", value: "single" },
       {
         name: `Run a single sanity test (${domain.sanitySelector})`,
@@ -393,6 +403,10 @@ export async function promptForFitTestSelection(
 ): Promise<FitTestSelection> {
   const mode = await askFitTestRunMode(domain, promptIdPrefix);
   switch (mode) {
+    case "all-transactions":
+      return buildFitTestSelection(tests, tests.filter(isTransactionsTest).map((t) => t.className));
+    case "all-non-transactions":
+      return buildFitTestSelection(tests, tests.filter((t) => !isTransactionsTest(t)).map((t) => t.className));
     case "single":
       return await selectSingleFitTest(tests, promptIdPrefix);
     case "sanity":
