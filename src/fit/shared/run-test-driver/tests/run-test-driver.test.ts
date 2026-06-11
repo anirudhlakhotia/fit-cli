@@ -16,7 +16,7 @@ import type { FitTestSelection } from "../../select-fit-tests/select-fit-tests.j
 
 test("surefireReportsDir points at the test-driver's surefire output", () => {
   assert.equal(
-    surefireReportsDir("/work/root"),
+    surefireReportsDir("/work/root/transactions-fit-performer"),
     "/work/root/transactions-fit-performer/test-driver/target/surefire-reports",
   );
 });
