@@ -74,29 +74,29 @@ jobs:
           echo "Github run_id: ${{ github.run_id }}"
           aws sts get-caller-identity
 
-#      - name: Setup Node.js
-#        uses: actions/setup-node@v4
-#        with:
-#          node-version: lts/*
-#
-#      - name: Clone and setup fit-cli
-#        env:
-#          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-#          GITHUB_USER: ${{ github.actor }}
-#          AWS_REGION: us-west-2
-#        run: |
-#          git clone https://github.com/couchbaselabs/fit-cli.git
-#          cd fit-cli
-#          npm ci
-#          npm run config -- init --auto
-#
-#      - name: Run fit-cli
-#        env:
-#          AWS_REGION: us-west-2
-#          AWS_DEFAULT_REGION: us-west-2
-#        run: |
-#          cd fit-cli
-#          npm run definition -- execute ${{ inputs.definitionFile }}
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Clone and setup fit-cli
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_USER: ${{ github.actor }}
+          AWS_REGION: us-west-2
+        run: |
+          git clone https://github.com/couchbaselabs/fit-cli.git
+          cd fit-cli
+          npm ci
+          npm run config -- init --auto
+
+      - name: Run fit-cli
+        env:
+          AWS_REGION: us-west-2
+          AWS_DEFAULT_REGION: us-west-2
+        run: |
+          cd fit-cli
+          npm run definition -- execute ${{ inputs.definitionFile }}
 
       # todo handle Junit results
       # todo archive artifacts
