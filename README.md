@@ -104,6 +104,10 @@ If you find any are broken due to refactorings then please ask an AI to "sweep t
 - `npm run build` — compile TypeScript to `dist/`.
 - `npm test` — run the unit tests (node:test, via tsx).  Note - these always need to be kept instant - business logic only.  If it's slow, just don't test it.
 
+## Capella
+When running locally, we use Capella creds from your fit-cli config.  Generally you just need to provide your email address.  We default to using Capella's production environment.
+When running on CI, the user chooses what Capella environment to use (stage, dev, etc.) and we use previously-setup accounts for those. 
+
 ## General rules
 Everyone - AI and human - please follow these as best you can.
 
