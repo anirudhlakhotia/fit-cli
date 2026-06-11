@@ -5,6 +5,7 @@
  * npm run cloud-instances -- list   [--region <r>]
  * npm run cloud-instances -- manage [--region <r>] [--tag key=value] [--key <key-name>]
  * npm run cloud-instances -- delete <instance-id> [--region <r>] [--force]
+ * npm run cloud-instances -- remove-all [--region <r>] [--all-users] [--force]
  * npm run cloud-instances -- --help
  */
 import { isMain, runCli } from "../../util/non-fit/cli.js";
@@ -29,12 +30,15 @@ Usage:
   npm run cloud-instances -- list   [--region <region>]
   npm run cloud-instances -- manage [--region <region>] [--tag key=value] [--key <key-name>]
   npm run cloud-instances -- delete <instance-id> [--region <region>] [--force]
+  npm run cloud-instances -- remove-all [--region <region>] [--all-users] [--force]
   npm run cloud-instances -- --help
 
 Subcommands:
-  list    Show all fit-cli instances in the region with their status and cost context.
-  manage  Interactively browse and act on instances (terminate, view details).
-  delete  Terminate an instance by id (prompts for confirmation unless --force).`;
+  list        Show all fit-cli instances in the region with their status and cost context.
+  manage      Interactively browse and act on instances (terminate, view details).
+  delete      Terminate an instance by id (prompts for confirmation unless --force).
+  remove-all  Terminate every fit-cli instance you created in the region (add
+              --all-users for everyone's; prompts for confirmation unless --force).`;
 
 async function cmdList(argv: string[]): Promise<void> {
   const awsOptions = await prepareAwsCli(argv);
@@ -138,6 +142,75 @@ async function cmdDelete(argv: string[]): Promise<void> {
   console.log(`✓ Terminating ${instanceId}`);
 }
 
+/** Derive the readable creator id fit-cli stamps as the `created-by` tag. */
+function callerCreator(identity: { arn: string; userId: string }): string {
+  return identity.arn.split("/").at(-1) ?? identity.userId;
+}
+
+async function cmdRemoveAll(argv: string[]): Promise<void> {
+  const allUsers = argv.includes("--all-users");
+  const force = argv.includes("--force");
+  const awsOptions = await prepareAwsCli(argv);
+  const region = resolveRegion(awsOptions);
+
+  logAwsAction("Removing fit-cli EC2 instances", awsOptions, {
+    tag: `${FIT_OWNER_TAG.key}=${FIT_OWNER_TAG.value}`,
+    states: LIVE_STATES,
+    scope: allUsers ? "all users" : "current user",
+  });
+
+  const creds = await checkCredentials(awsOptions);
+  const context: InstanceListContext | undefined = creds.ok
+    ? { account: creds.identity.account, creator: callerCreator(creds.identity) }
+    : undefined;
+  if (!allUsers && !creds.ok) {
+    throw new Error(
+      "Can't determine who you are from AWS credentials, so can't scope removal to your own instances. " +
+        "Fix your credentials, or pass --all-users to remove every fit-cli instance in the region.",
+    );
+  }
+
+  const all = await listInstances(FIT_OWNER_TAG, { region });
+  const mine = allUsers ? all : all.filter((instance) => instance.creator === context?.creator);
+
+  if (mine.length === 0) {
+    const scope = allUsers ? "" : ` created by ${context?.creator}`;
+    console.log(`No fit-cli EC2 instances${scope} found in ${region}.`);
+    return;
+  }
+
+  console.log(formatExistingInstancesBanner(mine, region, context));
+
+  if (!force) {
+    const confirmed = await confirm({
+      promptId: "cloud-instances.remove-all.confirm",
+      message: `Terminate all ${mine.length} instance(s) above? This cannot be undone.`,
+      default: false,
+    });
+    if (!confirmed) {
+      console.log("Cancelled — instances left running.");
+      return;
+    }
+  }
+
+  const failures: { instanceId: string; error: string }[] = [];
+  for (const instance of mine) {
+    try {
+      await terminateInstance(instance.instanceId, awsOptions);
+      console.log(`✓ Terminating ${instance.instanceId}`);
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      failures.push({ instanceId: instance.instanceId, error });
+      console.error(`✗ Failed to terminate ${instance.instanceId}: ${error}`);
+    }
+  }
+
+  if (failures.length > 0) {
+    throw new Error(`Failed to terminate ${failures.length} of ${mine.length} instance(s).`);
+  }
+  console.log(`\n✓ Terminating ${mine.length} instance(s).`);
+}
+
 if (isMain(import.meta.url)) {
   runCli(async () => {
     const [subcommand, ...rest] = process.argv.slice(2);
@@ -160,6 +233,11 @@ if (isMain(import.meta.url)) {
 
     if (subcommand === "delete") {
       await cmdDelete(rest);
+      return;
+    }
+
+    if (subcommand === "remove-all") {
+      await cmdRemoveAll(rest);
       return;
     }
 

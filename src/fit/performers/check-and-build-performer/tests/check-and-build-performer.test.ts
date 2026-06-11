@@ -53,6 +53,7 @@ test("checkAndBuildPerformer treats a missing local image as informational befor
     stageFile: (localPath) => Promise.resolve(localPath),
     collectFile: () => Promise.resolve(),
     removeTree: () => Promise.resolve(),
+    runArtifactsDir: () => "/tmp/root/artifacts/run",
     collectJunitArtifacts: () => Promise.resolve([]),
     pathExists: () => Promise.resolve(true),
     commandAvailable: () => Promise.resolve(true),

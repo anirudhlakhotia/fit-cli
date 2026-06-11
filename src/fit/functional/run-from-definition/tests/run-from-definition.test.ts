@@ -121,6 +121,7 @@ function fitExecutionContext(): FitExecutionContext {
     stageFile: (path) => Promise.resolve(path),
     collectFile: () => Promise.resolve(),
     removeTree: () => Promise.resolve(),
+    runArtifactsDir: () => "/tmp/root/artifacts/run",
     collectJunitArtifacts: () => Promise.resolve([]),
     pathExists: () => Promise.resolve(true),
     commandAvailable: () => Promise.resolve(true),

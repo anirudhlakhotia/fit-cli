@@ -18,7 +18,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { artifactFromPath, type Artifact } from "../../../util/non-fit/artifacts.js";
 import { run } from "../../../util/non-fit/proc.js";
 import { posixQuote } from "../../../util/non-fit/remote-target.js";
@@ -106,13 +106,12 @@ async function renderJunitReport(reportsDir: string, runDir: string): Promise<Ar
 }
 
 /**
- * Copy the test-driver's JUnit XML into ARTIFACT_DIR/surefire-reports, render an
- * HTML report from it, and return artifacts for both. Best effort: returns an
- * empty list when no reports were produced, and still returns the XML artifact
- * if the HTML render fails.
+ * Copy the test-driver's JUnit XML from `sourceDir` into ARTIFACT_DIR/surefire-reports,
+ * render an HTML report from it, and return artifacts for both. Best effort:
+ * returns an empty list when no reports were produced, and still returns the XML
+ * artifact if the HTML render fails.
  */
-export async function collectJunitArtifacts(rootDir: string, path: DefinitionRunPath): Promise<Artifact[]> {
-  const sourceDir = surefireReportsDir(rootDir);
+export async function collectJunitArtifacts(sourceDir: string, path: DefinitionRunPath): Promise<Artifact[]> {
   const xmlFiles = junitXmlFiles(sourceDir);
   if (xmlFiles.length === 0) {
     console.warn(`\nNo JUnit reports found under ${sourceDir}; skipping JUnit artifacts.`);
@@ -123,7 +122,13 @@ export async function collectJunitArtifacts(rootDir: string, path: DefinitionRun
   const destDir = join(runDir, "surefire-reports");
   mkdirSync(destDir, { recursive: true, mode: 0o700 });
   for (const file of xmlFiles) {
-    cpSync(join(sourceDir, file), join(destDir, file));
+    const src = join(sourceDir, file);
+    const dest = join(destDir, file);
+    // When the test-driver wrote surefire reports straight into this run's dir
+    // (local execution), source and dest are the same file — nothing to copy.
+    if (resolve(src) !== resolve(dest)) {
+      cpSync(src, dest);
+    }
   }
 
   const artifacts: Artifact[] = [

@@ -50,11 +50,12 @@ version: 1
 type: fit
 instances:
   - localhost: {}
+    setup:
+      cbdinocluster:
+        init:
+          config:
+            version: 6
     clusters: []
-    cbdinocluster:
-      init:
-        config:
-          version: 6
     clusterlessSessions:
       - performer:
           sdk: python
@@ -74,10 +75,12 @@ version: 1
 type: fit
 instances:
   - aws: {}
+    setup:
+      cbdinocluster:
+        init:
+          args: "--auto --disable-k8s --docker-network fit"
     clusters:
       - cbdinocluster:
-          init:
-            args: "--auto --disable-k8s --docker-network fit"
           config:
             nodes:
               - count: 1
@@ -92,13 +95,13 @@ instances:
                   run: all
 `;
 
-test("parses a cbdinocluster init args string", () => {
+test("parses a per-instance cbdinocluster init args string", () => {
   const def = parseDefinition(FUNCTIONAL_WITH_INIT_ARGS);
   assert.equal(
-    def.instances[0]?.clusters[0]?.cbdinocluster?.init?.args,
+    def.instances[0]?.setup?.cbdinocluster?.init?.args,
     "--auto --disable-k8s --docker-network fit",
   );
-  assert.equal(def.instances[0]?.clusters[0]?.cbdinocluster?.init?.config, undefined);
+  assert.equal(def.instances[0]?.setup?.cbdinocluster?.init?.config, undefined);
 });
 
 test("rejects a cbdinocluster init with both args and config", () => {
@@ -109,12 +112,14 @@ version: 1
 type: fit
 instances:
   - aws: {}
+    setup:
+      cbdinocluster:
+        init:
+          args: "--auto"
+          config:
+            version: 6
     clusters:
       - cbdinocluster:
-          init:
-            args: "--auto"
-            config:
-              version: 6
           config:
             nodes:
               - count: 1
@@ -140,9 +145,11 @@ version: 1
 type: fit
 instances:
   - aws: {}
+    setup:
+      cbdinocluster:
+        init: {}
     clusters:
       - cbdinocluster:
-          init: {}
           config:
             nodes:
               - count: 1
@@ -157,6 +164,35 @@ instances:
                   run: all
 `),
     (err: unknown) => err instanceof InvalidDefinitionError && /args/.test(err.message),
+  );
+});
+
+test("rejects cbdinocluster init left on a cluster config (moved to instance.setup)", () => {
+  assert.throws(
+    () =>
+      parseDefinition(`
+version: 1
+type: fit
+instances:
+  - aws: {}
+    clusters:
+      - cbdinocluster:
+          init:
+            args: "--auto"
+          config:
+            nodes:
+              - count: 1
+                version: "8.1.0"
+                services: [kv]
+        sessions:
+          - performer:
+              sdk: java
+            runs:
+              - type: functional
+                tests:
+                  run: all
+`),
+    (err: unknown) => err instanceof InvalidDefinitionError && /setup\.cbdinocluster\.init/.test(err.message),
   );
 });
 
@@ -196,10 +232,11 @@ version: 1
 type: fit
 instances:
   - localhost: {}
+    setup:
+      cbdinocluster:
+        init:
+          config: {}
     clusters: []
-    cbdinocluster:
-      init:
-        config: {}
     clusterlessSessions:
       - performer:
           sdk: java

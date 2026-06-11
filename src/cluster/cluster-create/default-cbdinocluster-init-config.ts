@@ -76,6 +76,23 @@ export function defaultSituationalCbdinoclusterInitConfig(): PieceData {
       network: "fit",
       host: "unix:///var/run/docker.sock",
     },
+    ...situationalCbdinoclusterConfigPatch(),
+  };
+}
+
+/**
+ * The `aws` + `capella` blocks situational (FIT/SIT) runs need but
+ * `cbdinocluster init --auto` can't lay down: those prompts default off and have
+ * no enabling flags. fit-cli runs `cbdinocluster init` for the docker/github base
+ * (like the functional path) and then merges this on top of the resulting
+ * `~/.cbdinocluster` (see `mergeRemoteCbdinoclusterConfig`), so nothing writes a
+ * cbdinocluster config file from scratch any more.
+ *
+ * See {@link defaultSituationalCbdinoclusterInitConfig} for why both blocks are
+ * required (the `cloud`/Capella deployer only registers when `capella` is enabled).
+ */
+export function situationalCbdinoclusterConfigPatch(): PieceData {
+  return {
     aws: {
       enabled: "true",
       // todo seeing if we can remove these

@@ -27,23 +27,35 @@ export type UseExistingClusterSetup = Record<string, never>;
 /**
  * How to prepare `~/.cbdinocluster` on the box before allocating.
  *
- * The docker path carries an editable `args` string — the arguments passed to
- * `cbdinocluster init` (e.g. `--auto --disable-k8s --docker-network fit`) so the
- * box self-installs its config. fit-cli appends the GitHub credentials at runtime
- * (kept out of the definition file). The CNG/situational paths still carry a
- * `config` object that gets uploaded verbatim as `~/.cbdinocluster`. Exactly one
- * of `args`/`config` is present.
+ * The docker/situational path carries an editable `args` string — the arguments
+ * passed to `cbdinocluster init` (e.g. `--auto --disable-k8s --docker-network fit`)
+ * so the box self-installs its config. fit-cli appends the GitHub credentials at
+ * runtime (kept out of the definition file). `configPatch` (args path only) is
+ * merged onto `~/.cbdinocluster` after init runs, for config `cbdinocluster init`
+ * can't express via flags — e.g. situational's `capella`/`aws` blocks, which
+ * `--auto` leaves disabled. The CNG path still carries a `config` object uploaded
+ * verbatim as `~/.cbdinocluster`. Exactly one of `args`/`config` is present.
  */
 export interface CbdinoclusterInitSetup {
   args?: string;
   config?: PieceData;
+  configPatch?: PieceData;
 }
 
 export interface CbdinoclusterSetup {
-  init?: CbdinoclusterInitSetup;
   config: CbdinoclusterDef;
   onClusterExists?: ClusterExistsPolicy;
   deployer?: string;
+}
+
+/**
+ * Per-instance setup applied once to the box before any cluster or run. The
+ * cbdinocluster `init` lives here (not under each cluster) because `cbdinocluster
+ * init` configures `~/.cbdinocluster` once per instance — every cluster on the
+ * instance then allocates against that same config.
+ */
+export interface InstanceSetup {
+  cbdinocluster?: { init: CbdinoclusterInitSetup };
 }
 
 export interface AwsInstanceSetup {
@@ -141,8 +153,8 @@ export interface FitConfigRef {
 export type InstanceLifetime =
   & InstanceMode
   & {
+    setup?: InstanceSetup;
     clusters: ClusterLifetime[];
-    cbdinocluster?: { init: CbdinoclusterInitSetup };
     clusterlessSessions?: SessionLifetime[];
   };
 

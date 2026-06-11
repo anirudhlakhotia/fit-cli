@@ -33,6 +33,7 @@ import {
   type FitDefinition,
   type FitRun,
   type InstanceLifetime,
+  type InstanceSetup,
   type MavenOptions,
   type PerformerSetup,
   type SessionLifetime,
@@ -193,7 +194,14 @@ function validateCbdinoclusterInit(value: unknown, path: string): CbdinoclusterI
     throw new InvalidDefinitionError(`"${path}" must have exactly one of "args" or "config", not both.`);
   }
   if (hasArgs) {
-    return { args: requireString(record, "args", `${path}.args`) };
+    return {
+      args: requireString(record, "args", `${path}.args`),
+      // configPatch is merged onto ~/.cbdinocluster after `cbdinocluster init`
+      // runs, for config init can't express via flags (e.g. situational capella/aws).
+      ...(record.configPatch !== undefined
+        ? { configPatch: validateFitConfig(record.configPatch, `${path}.configPatch`) }
+        : {}),
+    };
   }
   if (hasConfig) {
     return { config: validateFitConfig(record.config, `${path}.config`) };
@@ -208,7 +216,9 @@ function validateCbdinocluster(value: unknown, path: string): CbdinoclusterSetup
   }
   const cbdinocluster: CbdinoclusterSetup = { config: validateCbdinoclusterDef(record.config, `${path}.config`) };
   if (record.init !== undefined) {
-    cbdinocluster.init = validateCbdinoclusterInit(record.init, `${path}.init`);
+    throw new InvalidDefinitionError(
+      `"${path}.init" is no longer accepted here — cbdinocluster init moved to instances[].setup.cbdinocluster.init (set up once per instance).`,
+    );
   }
   if (record.onClusterExists !== undefined) {
     if (!isClusterExistsPolicy(record.onClusterExists)) {
@@ -517,6 +527,22 @@ function validateFitConfigs(value: unknown): FitConfigRef[] {
   });
 }
 
+function validateInstanceSetup(value: unknown, path: string): InstanceSetup | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  const record = requireRecord(value, path);
+  const setup: InstanceSetup = {};
+  if (record.cbdinocluster !== undefined) {
+    const cbdinocluster = requireRecord(record.cbdinocluster, `${path}.cbdinocluster`);
+    if (cbdinocluster.init === undefined) {
+      throw new InvalidDefinitionError(`Missing required field: ${path}.cbdinocluster.init`);
+    }
+    setup.cbdinocluster = { init: validateCbdinoclusterInit(cbdinocluster.init, `${path}.cbdinocluster.init`) };
+  }
+  return setup;
+}
+
 function validateInstance(value: unknown, index: number): InstanceLifetime {
   const path = `instances[${index}]`;
   const record = requireRecord(value, path);
@@ -546,18 +572,20 @@ function validateInstance(value: unknown, index: number): InstanceLifetime {
     clusters,
   };
   if (record.cbdinocluster !== undefined) {
-    const cbdinocluster = requireRecord(record.cbdinocluster, `${path}.cbdinocluster`);
-    if (cbdinocluster.init === undefined) {
-      throw new InvalidDefinitionError(`Missing required field: ${path}.cbdinocluster.init`);
-    }
-    instance.cbdinocluster = { init: validateCbdinoclusterInit(cbdinocluster.init, `${path}.cbdinocluster.init`) };
+    throw new InvalidDefinitionError(
+      `"${path}.cbdinocluster" is no longer accepted — cbdinocluster init moved to ${path}.setup.cbdinocluster.init (set up once per instance).`,
+    );
+  }
+  const setup = validateInstanceSetup(record.setup, `${path}.setup`);
+  if (setup !== undefined) {
+    instance.setup = setup;
   }
   if (clusterlessSessions !== undefined) {
     if (clusterlessSessions.length === 0) {
       throw new InvalidDefinitionError(`"${path}.clusterlessSessions" must contain at least one session when present.`);
     }
-    if (instance.cbdinocluster === undefined) {
-      throw new InvalidDefinitionError(`"${path}.cbdinocluster.init" is required when using clusterlessSessions.`);
+    if (setup?.cbdinocluster?.init === undefined) {
+      throw new InvalidDefinitionError(`"${path}.setup.cbdinocluster.init" is required when using clusterlessSessions.`);
     }
     instance.clusterlessSessions = clusterlessSessions;
   }

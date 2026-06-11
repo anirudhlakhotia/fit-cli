@@ -14,7 +14,7 @@ import { buildClusterDefObject, type ClusterDef } from "../../../cluster/cluster
 import {
   defaultCbdinoclusterInitArgs,
   defaultCbdinoclusterInitConfig,
-  defaultSituationalCbdinoclusterInitConfig,
+  situationalCbdinoclusterConfigPatch,
 } from "../../../cluster/cluster-create/default-cbdinocluster-init-config.js";
 import { CNG_K3D_CONTEXT } from "../../../cluster/cluster-create/cng-kubernetes.js";
 import type { ClusterExistsPolicy } from "../../../cluster/cluster-create/cluster-exists-policy.js";
@@ -203,7 +203,6 @@ function buildFunctionalInstance(inputs: DefinitionInputs): BuiltFunctionalInsta
     : {
         id: CLUSTER_CONFIG_ID,
         cbdinocluster: {
-          init: buildCbdinoclusterInit(cng, inputs.githubUser),
           config: buildClusterDefObject(inputs.cluster.def),
           ...(inputs.onClusterExists ? { onClusterExists: inputs.onClusterExists } : {}),
         },
@@ -216,6 +215,11 @@ function buildFunctionalInstance(inputs: DefinitionInputs): BuiltFunctionalInsta
   };
   const instance: InstanceLifetime = {
     ...(inputs.instance ?? { localhost: {} }),
+    // cbdinocluster init is set up once per instance — see InstanceSetup. Only
+    // cbdinocluster-backed clusters need it; connection clusters bring their own.
+    ...(inputs.cluster.kind === "cbdinocluster"
+      ? { setup: { cbdinocluster: { init: buildCbdinoclusterInit(cng, inputs.githubUser) } } }
+      : {}),
     clusters: [
       {
         clusterConfig: CLUSTER_CONFIG_ID,
@@ -261,8 +265,15 @@ function buildSituationalFitConfig(databaseMode: SituationalDatabaseMode): FitCo
 function buildSituationalInstance(inputs: SituationalDefinitionInputs): InstanceLifetime {
   return {
     ...(inputs.instance ?? { localhost: {} }),
+    // Situational runs `cbdinocluster init` for the docker/github base (like the
+    // functional path), then merges the capella/aws blocks init can't express.
+    // It's per-instance setup, applied once on the box (see InstanceSetup).
+    setup: {
+      cbdinocluster: {
+        init: { args: defaultCbdinoclusterInitArgs(), configPatch: situationalCbdinoclusterConfigPatch() },
+      },
+    },
     clusters: [],
-    cbdinocluster: { init: { config: defaultSituationalCbdinoclusterInitConfig() } },
     clusterlessSessions: [
       {
         ...buildPerformerSession(inputs.sdk, inputs.version, inputs.onPortInUse),
@@ -330,102 +341,141 @@ export function buildFitFunctionalDefinition(
   return buildFitFunctionalDefinitionFrom({ cluster: { kind: "connection", cluster }, sdk, selection });
 }
 
-function formatFitDefinitionYaml(definition: FitDefinition): string {
-  let text = YAML.stringify(definition);
-  text = text.replace(/(^\s*init:\n)(\s*)config:$/gm, (_match, initLine: string, indent: string) =>
-    `${initLine}${indent}# This file will be uploaded verbatim into clean environments as ~/.cbdinocluster\n${indent}config:`
-  );
-  text = text.replace(/(^\s*init:\n)(\s*)args:/gm, (_match, initLine: string, indent: string) =>
-    `${initLine}${indent}# Passed to \`cbdinocluster init\` on clean environments to set up ~/.cbdinocluster.\n${indent}# Edit to taste; fit-cli appends your GitHub credentials at runtime.\n${indent}args:`
-  );
-  text = text.replace(
-    /^fitConfigs:$/gm,
-    [
-      "# Each fitConfig is used as a base when generating FITConfiguration.json.  Anything here will be copied into the config (unless overwritten by fit-cli).",
-      "# fit-cli will provide some fields like ${defaultHostname} at runtime when cluster details are known.",
-      "fitConfigs:",
-    ].join("\n"),
-  );
-  return text;
+// ── Comment injection ────────────────────────────────────────────────────────
+// Rather than splice comments into the rendered text with line-anchored regexes
+// (brittle, and blind to shape changes), we decorate a copy of the definition
+// with marker keys — "//<6 chars>": "comment text" — placed immediately before
+// the field they annotate, render it, then turn each marker line into a real
+// comment. Keying off field names instead of line patterns keeps the comments
+// attached to the right fields no matter how the serializer lays them out.
+
+let commentMarkerSeq = 0;
+
+/** A unique six-character marker key; renders just before its sibling field. */
+function commentMarkerKey(): string {
+  const id = (commentMarkerSeq++).toString(36).padStart(6, "0").slice(-6);
+  return `//${id}`;
 }
 
-function formatFitSituationalDefinitionYaml(definition: FitDefinition): string {
-  let text = formatFitDefinitionYaml(definition);
-  text = text.replace(
-    /^(\s*)clusters: \[\]$/gm,
-    "$1# FIT/SIT creates its own clusters, so none are set up here.\n$1clusters: []",
-  );
-  text = text.replace(
-    /^(\s*)cbdinocluster:\n(\s+)init:/gm,
-    "$1# FIT/SIT creates its own clusters via cbdinocluster; this init config must be present.\n$1cbdinocluster:\n$2init:",
-  );
-  text = text.replace(
-    /^(\s*)clusterlessSessions:$/gm,
-    "$1# Sessions not tied to any particular cluster (the name distinguishes these from sessions nested under clusters:)\n$1clusterlessSessions:",
-  );
-  // Comment on the situational fitConfig's clusterAccess placeholder.
-  text = text.replace(
-    /^(\s*)(clusterAccess:)\n(\s+defaultHostname:)/gm,
-    "$1# Ignored for situational-only runs — cbdino creates and manages the cluster.\n$1$2\n$3",
-  );
-  // Note that fit-cli injects performerPorts (and, for hosted mode, situational.database) at runtime.
-  text = text.replace(
-    /^(\s*)(excludeTests: \[\])/gm,
-    "$1# fit-cli will inject performerPorts at runtime.\n$1$2",
-  );
-  return text;
+type JsonObject = Record<string, unknown>;
+
+function isJsonObject(value: unknown): value is JsonObject {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function formatFitDefinitionJson5(definition: FitDefinition): string {
-  let text = JSON5.stringify(definition, null, 2);
-  // Insert comment before `config:` inside every `init: {` block
-  text = text.replace(/^(\s*)(init: \{)\n(\s*)(config:)/gm, (_, ind1: string, initBrace: string, ind2: string, configKey: string) =>
-    `${ind1}${initBrace}\n${ind2}// This file will be uploaded verbatim into clean environments as ~/.cbdinocluster\n${ind2}${configKey}`,
-  );
-  // Insert comment before `args:` inside every `init: {` block (the docker path)
-  text = text.replace(/^(\s*)(init: \{)\n(\s*)(args:)/gm, (_, ind1: string, initBrace: string, ind2: string, argsKey: string) =>
-    `${ind1}${initBrace}\n${ind2}// Passed to \`cbdinocluster init\` on clean environments to set up ~/.cbdinocluster.\n${ind2}// Edit to taste; fit-cli appends your GitHub credentials at runtime.\n${ind2}${argsKey}`,
-  );
-  // Insert comments before `fitConfigs:`
-  text = text.replace(/^(\s*)(fitConfigs: \[)/gm, (_match: string, ind: string, fitConfigsKey: string) =>
-    `${ind}// Each fitConfig is used as a base when generating FITConfiguration.json.  Anything here will be copied into the config (unless overwritten by fit-cli).\n${ind}// fit-cli will provide some fields like \${defaultHostname} at runtime when cluster details are known.\n${ind}${fitConfigsKey}`,
-  );
+/**
+ * The short comment line(s) to splice in immediately before `key`, given its
+ * value and the key of the object it sits in. As a general rule, anything fit-cli
+ * fills in at runtime gets a one-line note so a reader knows it'll be provided
+ * later rather than being missing.
+ */
+function commentLinesFor(key: string, value: unknown, parentKey: string | undefined): string[] {
+  switch (key) {
+    case "config":
+      return parentKey === "init"
+        ? ["This file will be uploaded verbatim into clean environments as ~/.cbdinocluster"]
+        : [];
+    case "args":
+      return parentKey === "init"
+        ? [
+            "Passed to `cbdinocluster init` on clean environments to set up ~/.cbdinocluster.",
+            "Edit to taste; fit-cli appends your GitHub credentials at runtime.",
+          ]
+        : [];
+    case "configPatch":
+      return parentKey === "init"
+        ? ["Merged onto ~/.cbdinocluster after `cbdinocluster init` runs — for config init can't set via flags (e.g. capella/aws)."]
+        : [];
+    case "fitConfigs":
+      return [
+        "Each fitConfig is used as a base when generating FITConfiguration.json.  Anything here will be copied into the config (unless overwritten by fit-cli).",
+        "fit-cli will provide some fields like ${defaultHostname} at runtime when cluster details are known.",
+      ];
+    case "setup":
+      return parentKey === "instances"
+        ? ["Per-instance setup, applied once on the box before any cluster or run (e.g. `cbdinocluster init` for ~/.cbdinocluster)."]
+        : [];
+    case "clusters":
+      return parentKey === "instances" && Array.isArray(value) && value.length === 0
+        ? ["FIT/SIT creates its own clusters, so none are set up here."]
+        : [];
+    case "clusterlessSessions":
+      return ["Sessions not tied to any particular cluster (the name distinguishes these from sessions nested under clusters:)"];
+    case "clusterAccess":
+      if (isJsonObject(value) && JSON.stringify(value).includes("${defaultHostname}")) {
+        return ["fit-cli fills ${defaultHostname} (and rest.hostname) in at runtime once the cluster is up."];
+      }
+      if (isJsonObject(value) && "defaultHostname" in value) {
+        return ["Ignored for situational-only runs — cbdino creates and manages the cluster."];
+      }
+      return [];
+    case "excludeTests":
+      return Array.isArray(value) && value.length === 0
+        ? ["fit-cli will inject performerPorts at runtime."]
+        : [];
+    default:
+      return [];
+  }
+}
+
+/** Deep-copy a definition, inserting comment markers before annotated fields. */
+function decorateWithCommentMarkers(node: unknown, parentKey?: string): unknown {
+  if (Array.isArray(node)) {
+    return node.map((item) => decorateWithCommentMarkers(item, parentKey));
+  }
+  if (!isJsonObject(node)) {
+    return node;
+  }
+  const result: JsonObject = {};
+  for (const [key, rawValue] of Object.entries(node)) {
+    for (const line of commentLinesFor(key, rawValue, parentKey)) {
+      result[commentMarkerKey()] = line;
+    }
+    result[key] = decorateWithCommentMarkers(rawValue, key);
+  }
+  return result;
+}
+
+// A marker key, single- or double-quoted (JSON5 may use either).
+const MARKER_KEY = `(?:"\\/\\/[0-9a-z]{6}"|'\\/\\/[0-9a-z]{6}')`;
+// A single- or double-quoted string value.
+const QUOTED_VALUE = `(?:"(?:[^"\\\\]|\\\\.)*"|'(?:[^'\\\\]|\\\\.)*')`;
+
+/** Turn `'//xxxxxx': 'text'` marker lines into `// text` comments (JSON5). */
+function renderCommentMarkersJson5(text: string): string {
+  const pattern = new RegExp(`^([ \\t]*)${MARKER_KEY}:[ \\t]*(${QUOTED_VALUE}),?[ \\t]*$`, "gm");
+  return text.replace(pattern, (_match, indent: string, quoted: string) => `${indent}// ${String(JSON5.parse(quoted))}`);
+}
+
+/** Turn `//xxxxxx: text` marker lines into `# text` comments (YAML). */
+function renderCommentMarkersYaml(text: string): string {
+  const pattern = new RegExp(`^([ \\t]*)(?:${MARKER_KEY}|\\/\\/[0-9a-z]{6}):[ \\t]*(.*)$`, "gm");
+  return text.replace(pattern, (_match, indent: string, rawValue: string) => {
+    let comment = rawValue;
+    try {
+      const parsed = YAML.parse(rawValue) as unknown;
+      if (typeof parsed === "string") comment = parsed;
+    } catch {
+      // Keep the raw value if it doesn't parse as a scalar.
+    }
+    return `${indent}# ${comment}`;
+  });
+}
+
+export function formatFitDefinition(definition: FitDefinition, format: DefinitionFormat = "json5"): string {
+  const decorated = decorateWithCommentMarkers(definition);
+  if (format === "yaml") {
+    // lineWidth: 0 disables scalar wrapping so each comment marker stays on one line.
+    return renderCommentMarkersYaml(YAML.stringify(decorated, { lineWidth: 0 }));
+  }
+  let text = renderCommentMarkersJson5(JSON5.stringify(decorated, null, 2));
   if (!text.endsWith("\n")) text += "\n";
   return text;
 }
 
-function formatFitSituationalDefinitionJson5(definition: FitDefinition): string {
-  let text = formatFitDefinitionJson5(definition);
-  text = text.replace(/^(\s*)(clusters: \[\],?)$/gm, (_match: string, ind: string, clustersKey: string) =>
-    `${ind}// FIT/SIT creates its own clusters, so none are set up here.\n${ind}${clustersKey}`,
-  );
-  text = text.replace(/^(\s*)(cbdinocluster: \{)\n(\s*)(init:)/gm, (_match: string, ind1: string, cbdBrace: string, ind2: string, initKey: string) =>
-    `${ind1}// FIT/SIT creates its own clusters via cbdinocluster; this init config must be present.\n${ind1}${cbdBrace}\n${ind2}${initKey}`,
-  );
-  text = text.replace(/^(\s*)(clusterlessSessions: \[)/gm, (_match: string, ind: string, clKey: string) =>
-    `${ind}// Sessions not tied to any particular cluster (the name distinguishes these from sessions nested under clusters:)\n${ind}${clKey}`,
-  );
-  // Comment on the situational fitConfig's clusterAccess placeholder.
-  text = text.replace(
-    /^(\s*)(clusterAccess: \{)\n(\s+defaultHostname:)/gm,
-    (_match: string, ind: string, key: string, nextLine: string) =>
-      `${ind}// Ignored for situational-only runs — cbdino creates and manages the cluster.\n${ind}${key}\n${nextLine}`,
-  );
-  // Note that fit-cli injects performerPorts (and, for hosted mode, situational.database) at runtime.
-  text = text.replace(
-    /^(\s*)(excludeTests: \[\])/gm,
-    (_match: string, ind: string, key: string) =>
-      `${ind}// fit-cli will inject performerPorts at runtime.\n${ind}${key}`,
-  );
-  return text;
-}
-
-export function formatFitDefinition(definition: FitDefinition, format: DefinitionFormat = "json5"): string {
-  return format === "yaml" ? formatFitDefinitionYaml(definition) : formatFitDefinitionJson5(definition);
-}
-
+/** Situational definitions render through the same key-driven comment logic. */
 export function formatFitSituationalDefinition(definition: FitDefinition, format: DefinitionFormat = "json5"): string {
-  return format === "yaml" ? formatFitSituationalDefinitionYaml(definition) : formatFitSituationalDefinitionJson5(definition);
+  return formatFitDefinition(definition, format);
 }
 
 export function formatFitFunctionalDefinition(definition: FitDefinition, format: DefinitionFormat = "json5"): string {

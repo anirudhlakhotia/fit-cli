@@ -8,10 +8,18 @@ const SEVERITY: Record<FailureClassification, number> = {
   FatalToAll: 3,
 };
 
+/**
+ * Where a failure happened, in the vocabulary of a definition file: an instance
+ * holds clusters, a cluster holds sessions. `clusterless` sessions (situational
+ * runs) aren't tied to a cluster, so they carry a session but no cluster. All but
+ * `instanceIndex` are optional — a failure raised before any run started (e.g. a
+ * precondition check) only knows the instance, if that.
+ */
 export interface FailureContext {
   instanceIndex: number;
-  cycleIndex: number;
-  iterationIndex?: number;
+  clusterIndex?: number;
+  sessionIndex?: number;
+  clusterless?: boolean;
 }
 
 export class RunFailureTracker {

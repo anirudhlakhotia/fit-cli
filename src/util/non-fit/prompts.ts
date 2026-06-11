@@ -36,6 +36,22 @@ function drainStdin(): void {
   // Restore cooked mode — @inquirer's readline will re-enable raw mode.
   process.stdin.setRawMode(false);
 }
+
+/**
+ * Drain stdin, yield a turn of the event loop, then drain again. A single
+ * synchronous {@link drainStdin} only flushes what's already buffered; bytes that
+ * the terminal hands over a tick later (the tail end of a long scroll of output,
+ * or a stray Enter the user fat-fingered while results streamed) land just after
+ * it and would otherwise auto-resolve the next prompt to its default — the bug
+ * where "Leave everything up?" reads No despite the user typing y. Draining
+ * across an event-loop turn closes that window.
+ */
+async function drainStdinSettled(): Promise<void> {
+  if (!process.stdin.isTTY) return;
+  drainStdin();
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  drainStdin();
+}
 type PasswordConfig = Parameters<typeof prompts.password>[0];
 type PromptConfigWithId = { promptId: string; message: string };
 
@@ -121,8 +137,8 @@ function runPrompt<T>(
     promptId,
     kind,
     message,
-    (replayDefault) => withRawTerminalWrites(() => {
-      drainStdin();
+    (replayDefault) => withRawTerminalWrites(async () => {
+      await drainStdinSettled();
       return prompt(replayDefault);
     }),
     options,

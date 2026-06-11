@@ -64,7 +64,7 @@ import {
   type ClusterCommandExecutor,
 } from "../../../cluster/cluster-create/allocate-cluster.js";
 import { runClusterDiag } from "../../../cluster/cluster-diag/cluster-diag.js";
-import { prepareCbdinoclusterConfig, removeCluster, setupDeclarativeCluster } from "../../../cluster/cluster-create/setup-declarative-cluster.js";
+import { prepareCbdinoclusterInit, removeCluster, setupDeclarativeCluster } from "../../../cluster/cluster-create/setup-declarative-cluster.js";
 import { installCbdinoclusterRemote } from "../../../cluster/cluster-create/install-cbdinocluster.js";
 import { defaultCbdinoclusterInitConfig } from "../../../cluster/cluster-create/default-cbdinocluster-init-config.js";
 import {
@@ -118,7 +118,7 @@ import {
   throwFatalToCycle,
   throwFatalToIteration,
 } from "../../shared/failure-classification.js";
-import { RunFailureTracker } from "../../shared/run-failure-tracker.js";
+import { RunFailureTracker, type FailureContext } from "../../shared/run-failure-tracker.js";
 import {
   extractResumeAt,
   extractResumeSelector,
@@ -719,6 +719,26 @@ function describeRunPath(path: DefinitionRunPath): string {
     : `instance ${path.instanceIndex + 1} / cluster ${(path.clusterIndex ?? 0) + 1} / session ${(path.sessionIndex ?? 0) + 1} / run ${(path.runIndex ?? 0) + 1}`;
 }
 
+/**
+ * Translate a run path into a {@link FailureContext} so the end-of-run summary
+ * line names the cluster/session (functional) or just the session (clusterless /
+ * situational) that failed, rather than internal loop counters.
+ */
+function failureContextFromPath(path: DefinitionRunPath): FailureContext {
+  if (path.clusterlessSession) {
+    return {
+      instanceIndex: path.instanceIndex,
+      clusterless: true,
+      ...(path.sessionIndex !== undefined ? { sessionIndex: path.sessionIndex } : {}),
+    };
+  }
+  return {
+    instanceIndex: path.instanceIndex,
+    ...(path.clusterIndex !== undefined ? { clusterIndex: path.clusterIndex } : {}),
+    ...(path.sessionIndex !== undefined ? { sessionIndex: path.sessionIndex } : {}),
+  };
+}
+
 /** One-line summary of the instance/cluster/session for the detail table. */
 function iterationPathSummary(path: DefinitionRunPath): string {
   return path.clusterlessSession
@@ -1001,7 +1021,7 @@ export async function runFromDefinition(
   const executionGroups = buildExecutionGroups(resolved.instances);
   console.log(`\nRunning FIT tests from definition:\n  ${definitionPath}`);
 
-  const preconditionCtx = { instanceIndex: 0, cycleIndex: 0 };
+  const preconditionCtx: FailureContext = { instanceIndex: 0 };
   const savedState = resumeAt ? readRunState(dirname(resolve(definitionPath))) : undefined;
   if (resumeAt) {
     if (!savedState) {
@@ -1152,7 +1172,7 @@ export async function runFromDefinition(
       details.push(...targetOutcome.details);
       if (!targetOutcome.ready) {
         fitCliError(`\n✗ Could not acquire an execution target for execution group ${cycleIndex + 1}; skipping it.`);
-        tracker.record("FatalToCycle", `Could not acquire an execution target for execution group ${cycleIndex + 1}`, { instanceIndex: group.path.instanceIndex, cycleIndex });
+        tracker.record("FatalToCycle", `Could not acquire an execution target for execution group ${cycleIndex + 1}`, failureContextFromPath(group.path));
         globalIterationIndex += group.runs.length;
         continue;
       }
@@ -1223,10 +1243,10 @@ export async function runFromDefinition(
               await installCbdinoclusterRemote(execution);
             }
           }
-          await prepareCbdinoclusterConfig(
+          await prepareCbdinoclusterInit(
             execution,
-            group.cbdinoclusterInit.config,
-            undefined,
+            group.cbdinoclusterInit,
+            githubCredentials,
             instanceRunDir(group.path.instanceIndex),
           );
           if (execution.kind === "remote" && awsCredentials) {
@@ -1281,7 +1301,7 @@ export async function runFromDefinition(
                 ? "no more iterations in this execution group"
                 : "moving to the next iteration";
               fitCliError(`\n✗ ${err.message} (FatalToIteration — ${nextStep})`);
-              tracker.record("FatalToIteration", err.message, { instanceIndex: group.path.instanceIndex, cycleIndex, iterationIndex: cycleIterationIndex });
+              tracker.record("FatalToIteration", err.message, failureContextFromPath(iteration.path));
             } else {
               throw err;
             }
@@ -1291,7 +1311,7 @@ export async function runFromDefinition(
       } catch (err) {
         if (err instanceof ClassifiedFailure && err.classification === "FatalToCycle") {
           fitCliError(`\n✗ ${err.message} (FatalToCycle)`);
-          tracker.record("FatalToCycle", err.message, { instanceIndex: group.path.instanceIndex, cycleIndex });
+          tracker.record("FatalToCycle", err.message, failureContextFromPath(group.path));
           globalIterationIndex += activeCycle.runs.length;
 
           // Promote this cycle as the active set so that stopping here lets
@@ -1346,7 +1366,7 @@ export async function runFromDefinition(
     } catch (err) {
       if (err instanceof ClassifiedFailure && err.classification === "FatalToAll") {
         fitCliError(`\n✗ ${err.message} (FatalToAll — aborting run)`);
-        tracker.record("FatalToAll", err.message, { instanceIndex: activeCycleIndex, cycleIndex: activeCycleIndex });
+        tracker.record("FatalToAll", err.message, activeResumePath ? failureContextFromPath(activeResumePath) : { instanceIndex: 0 });
       } else {
         throw err;
       }

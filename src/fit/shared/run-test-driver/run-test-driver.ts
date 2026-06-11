@@ -10,10 +10,9 @@
  *   npx tsx src/fit/shared/run-test-driver/run-test-driver.ts
  */
 import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { artifactFromPath, combineArtifacts, type Detail, type RunOutput } from "../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
-import { surefireReportsDir } from "./collect-junit.js";
 import { createLogFile } from "../../../util/non-fit/proc.js";
 import type { DefinitionRunPath } from "../../../util/non-fit/replay.js";
 import { rootDirFromArgv } from "../../util/root.js";
@@ -124,7 +123,7 @@ export function didFitTestDriverPass(summary: FitTestDriverSummary): boolean {
 }
 
 function runDetailLabel(path: DefinitionRunPath, label: string): string {
-  return `run ${path.runIndex ?? 0} ${label}`;
+  return `Run ${path.runIndex ?? 0} ${label}`;
 }
 
 export function fitTestDriverSummaryDetails(summary: FitTestDriverSummary, path: DefinitionRunPath): Detail[] {
@@ -156,6 +155,7 @@ export function fitTestDriverSummaryDetails(summary: FitTestDriverSummary, path:
 export function runTestDriverArgs(
   selection: FitTestSelection,
   fitConfigPath?: string,
+  surefireReportsDirectory?: string,
   extraMavenArgs: readonly string[] = DEFAULT_MAVEN_TEST_ARGS,
 ): string[] {
   return [
@@ -169,6 +169,9 @@ export function runTestDriverArgs(
     "-Dsurefire.failIfNoSpecifiedTests=false",
     ...(selection.mavenTestSelector ? [`-Dtest=${selection.mavenTestSelector}`] : []),
     ...(fitConfigPath ? [`-Dfit.config=${fitConfigPath}`] : []),
+    // Write JUnit reports straight into this run's own dir so concurrent/sequential
+    // runs never share a surefire dir — no pre-run purge, no stale-report hazard.
+    ...(surefireReportsDirectory ? [`-Dsurefire.reportsDirectory=${surefireReportsDirectory}`] : []),
     "test",
     ...extraMavenArgs,
   ];
@@ -182,19 +185,20 @@ export async function runTestDriver(
   fitConfigPath?: string,
   extraMavenArgs: readonly string[] = DEFAULT_MAVEN_TEST_ARGS,
 ): Promise<TestRunResult> {
-  const targetFitConfigPath = fitConfigPath ? await execution.stageFile(fitConfigPath) : undefined;
-  const args = runTestDriverArgs(selection, targetFitConfigPath, extraMavenArgs);
+  // Per-run I/O (config, log, surefire reports) lives in this run's own dir on
+  // the execution target — locally that's the artifact tree, on a remote box a
+  // mirror of it under artifacts/. Each run gets a fresh surefire dir, so there's
+  // no shared dir to purge and no stale-report hazard across runs.
+  const runArtifactsDir = execution.runArtifactsDir(path);
+  const targetSurefireDir = join(runArtifactsDir, "surefire-reports");
 
-  // Surefire only overwrites reports for the classes it actually runs; it never
-  // purges the directory. Without this, stale reports from a prior (broader) run
-  // get collected alongside this run's, polluting the JUnit report with tests we
-  // didn't run. We delete only surefire-reports, not the whole target/ — a true
-  // `mvn clean` (or rm -rf target) would also drop the compiled code, making
-  // every iteration pay the recompile cost.
-  await execution.removeTree(surefireReportsDir(execution.rootDir));
+  const targetFitConfigPath = fitConfigPath
+    ? await execution.stageFile(fitConfigPath, join(runArtifactsDir, basename(fitConfigPath)))
+    : undefined;
+  const args = runTestDriverArgs(selection, targetFitConfigPath, targetSurefireDir, extraMavenArgs);
 
   const logFile = fitTestLogFile(path);
-  const targetLogFile = execution.targetFilePath(logFile);
+  const targetLogFile = join(runArtifactsDir, basename(logFile));
   const logArtifact = artifactFromPath(logFile, "FIT test-driver stdout/stderr captured for this run");
   console.log(`\nRunning FIT test-driver with:\n  cd ${execution.fitPerformerDir} && ./mvnw ${args.join(" ")}\n`);
   console.log(`Streaming FIT test-driver output to:\n  ${targetLogFile}\n`);
@@ -214,7 +218,7 @@ export async function runTestDriver(
   await execution.collectFile(targetLogFile, logFile);
   const artifacts = combineArtifacts(
     [logArtifact],
-    await execution.collectJunitArtifacts(surefireReportsDir(execution.rootDir), path),
+    await execution.collectJunitArtifacts(targetSurefireDir, path),
   );
   const summary = extractFitTestDriverSummaryFromJunitReports(join(dirname(logFile), "surefire-reports"));
   const ok = commandOk && (summary ? didFitTestDriverPass(summary) : true);

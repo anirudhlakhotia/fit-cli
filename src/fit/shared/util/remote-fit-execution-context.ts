@@ -24,6 +24,7 @@ import {
   remoteFitRootDir,
   remoteGerritSshKeyPath,
   remotePerformerArgs,
+  remoteRunArtifactsDir,
   remoteWorkspaceRepos,
   stageGerritSshKey,
   type FitExecutionContext,
@@ -136,15 +137,23 @@ export async function createRemoteFitExecutionContext(
         display: commandOn(formatCommandLine(command, args), target.description),
         ...opts,
       }),
-    runToFile: (command, args, targetPath, cwd) =>
-      target.run("sh", ["-lc", redirectShellCommand(pathPrefixedCommand(binDir, command, args), targetPath)], cwd, {
+    runToFile: async (command, args, targetPath, cwd) => {
+      // The redirect (`> targetPath`) won't create parent dirs, and per-run
+      // targets now nest under artifacts/instances/.../runs/N — so ensure the dir.
+      await target.run("mkdir", ["-p", dirname(targetPath)]);
+      return target.run("sh", ["-lc", redirectShellCommand(pathPrefixedCommand(binDir, command, args), targetPath)], cwd, {
         display: commandOn(formatCommandLine(command, args), target.description),
-      }),
-    targetFilePath: (localPath) => join(rootDir, basename(localPath)),
-    stageFile: (localPath, targetPath) => {
-      const destination = targetPath ?? join(rootDir, basename(localPath));
-      return target.putFile(localPath, destination).then(() => destination);
+      });
     },
+    targetFilePath: (localPath) => join(rootDir, basename(localPath)),
+    stageFile: async (localPath, targetPath) => {
+      const destination = targetPath ?? join(rootDir, basename(localPath));
+      // scp won't create intermediate dirs; per-run targets nest, so ensure the dir.
+      await target.run("mkdir", ["-p", dirname(destination)]);
+      await target.putFile(localPath, destination);
+      return destination;
+    },
+    runArtifactsDir: (path) => remoteRunArtifactsDir(rootDir, path),
     collectFile: (targetPath, localPath) => {
       mkdirSync(dirname(localPath), { recursive: true, mode: 0o700 });
       return target.getFile(targetPath, localPath);

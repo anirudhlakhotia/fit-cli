@@ -1,4 +1,4 @@
-import { statSync } from "node:fs";
+import { readdirSync, statSync } from "node:fs";
 import { isAbsolute, join, relative } from "node:path";
 import { ensureRunDir } from "./replay.js";
 
@@ -30,8 +30,9 @@ export interface RecordedFailure {
   message: string;
   context: {
     instanceIndex: number;
-    cycleIndex: number;
-    iterationIndex?: number;
+    clusterIndex?: number;
+    sessionIndex?: number;
+    clusterless?: boolean;
   };
 }
 
@@ -56,8 +57,10 @@ export function formatFailureSummaryLine(failure: RecordedFailure, totalCount: n
   const extra = totalCount > 1 ? ` (+${totalCount - 1} more failure${totalCount > 2 ? "s" : ""})` : "";
   const parts = [
     `instance ${context.instanceIndex + 1}`,
-    `cycle ${context.cycleIndex + 1}`,
-    ...(context.iterationIndex !== undefined ? [`iteration ${context.iterationIndex + 1}`] : []),
+    // Clusterless (situational) sessions aren't tied to a cluster, so they show a
+    // session but no cluster; functional runs show both.
+    ...(!context.clusterless && context.clusterIndex !== undefined ? [`cluster ${context.clusterIndex + 1}`] : []),
+    ...(context.sessionIndex !== undefined ? [`session ${context.sessionIndex + 1}`] : []),
   ];
   return `Returning non-zero due to ${classification} error '${message}' on ${parts.join(", ")}${extra}`;
 }
@@ -96,6 +99,44 @@ export function combineArtifacts(...groups: ReadonlyArray<readonly Artifact[] | 
   }
 
   return combined;
+}
+
+/** List every file under `dir`, recursively, as paths relative to `dir`. */
+function walkFilesRelative(dir: string, base: string = dir): string[] {
+  const files: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...walkFilesRelative(full, base));
+    } else if (entry.isFile()) {
+      files.push(relative(base, full));
+    }
+  }
+  return files;
+}
+
+/**
+ * Union the explicitly-registered artifacts with every other file actually found
+ * under the run dir, so the end-of-run table never silently omits something that
+ * was written. Registered artifacts keep their first-seen order and their
+ * human-written "Purpose"; anything else found on disk is appended (sorted) with
+ * a generic purpose. Best-effort — if the dir can't be read, the explicit list is
+ * returned unchanged.
+ */
+export function reconcileArtifactsWithDir(artifactDir: string, explicit: readonly Artifact[]): Artifact[] {
+  const combined = combineArtifacts(explicit);
+  let discovered: string[];
+  try {
+    discovered = walkFilesRelative(artifactDir);
+  } catch {
+    return combined;
+  }
+  const known = new Set(combined.map((artifact) => artifact.filename));
+  const extras: Artifact[] = discovered
+    .filter((filename) => !known.has(filename))
+    .sort()
+    .map((filename) => ({ filename, explanation: "(captured during the run)" }));
+  return [...combined, ...extras];
 }
 
 /** Merge detail lists while preserving first-seen order. */

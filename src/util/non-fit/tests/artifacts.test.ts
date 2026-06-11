@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -10,7 +10,31 @@ import {
   combineRunOutputs,
   formatArtifactsSection,
   formatDetailsSection,
+  reconcileArtifactsWithDir,
 } from "../artifacts.js";
+
+test("reconcileArtifactsWithDir appends on-disk files not already registered", () => {
+  const runDir = mkdtempSync(join(tmpdir(), "fit-cli-artifacts-"));
+  writeFileSync(join(runDir, "fit.json5"), "{}");
+  writeFileSync(join(runDir, "leftover.log"), "noise");
+  mkdirSync(join(runDir, "instances", "0"), { recursive: true });
+  writeFileSync(join(runDir, "instances", "0", "performer.log"), "logs");
+
+  const reconciled = reconcileArtifactsWithDir(runDir, [
+    { filename: "fit.json5", explanation: "Generated fit definition file" },
+  ]);
+
+  assert.deepEqual(reconciled, [
+    { filename: "fit.json5", explanation: "Generated fit definition file" },
+    { filename: join("instances", "0", "performer.log"), explanation: "(captured during the run)" },
+    { filename: "leftover.log", explanation: "(captured during the run)" },
+  ]);
+});
+
+test("reconcileArtifactsWithDir returns the explicit list when the dir is unreadable", () => {
+  const explicit = [{ filename: "a.log", explanation: "Performer logs" }];
+  assert.deepEqual(reconcileArtifactsWithDir(join(tmpdir(), "does-not-exist-fit-cli"), explicit), explicit);
+});
 
 test("artifactFromPath stores the filename relative to ARTIFACT_DIR", () => {
   const artifact = artifactFromPath(

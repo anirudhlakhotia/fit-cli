@@ -4,7 +4,7 @@ import { type Artifact, type Detail } from "../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { LocalTarget } from "../../../util/non-fit/local-target.js";
 import { streamToFile, type RunOptions } from "../../../util/non-fit/proc.js";
-import { createRunFilePath, type DefinitionRunPath } from "../../../util/non-fit/replay.js";
+import { createRunFilePath, runRunDir, type DefinitionRunPath } from "../../../util/non-fit/replay.js";
 import { posixQuote } from "../../../util/non-fit/remote-target.js";
 import type { ExecutionTarget } from "../../../util/non-fit/target.js";
 import { rootDirFromArgv } from "../../util/root.js";
@@ -51,6 +51,14 @@ export interface FitExecutionContext {
   stageFile(localPath: string, targetPath?: string): Promise<string>;
   collectFile(targetPath: string, localPath: string): Promise<void>;
   removeTree(path: string): Promise<void>;
+  /**
+   * Directory (on the execution target) that holds this run's per-run I/O —
+   * FITConfiguration.json, driver.log and surefire-reports. Local contexts use
+   * the same per-run tree the artifacts are collected into; remote contexts use
+   * a mirror of it under the box's `artifacts/` dir, so per-run files never
+   * collide in the flat workspace root. See {@link remoteRunArtifactsDir}.
+   */
+  runArtifactsDir(path: DefinitionRunPath): string;
   collectJunitArtifacts(sourceDir: string, path: DefinitionRunPath): Promise<Artifact[]>;
   pathExists(path: string): Promise<boolean>;
   commandAvailable(command: string): Promise<boolean>;
@@ -63,6 +71,24 @@ export function remoteFitRootDir(user: string = FIT_INSTANCE_USER): string {
 
 export function remoteFitBinDir(rootDir: string): string {
   return join(rootDir, "bin");
+}
+
+/**
+ * Root of the per-run artifact mirror on a remote box. The shared checkout and
+ * build stay flat under the workspace root; only per-run I/O lives here, mirroring
+ * the local artifact tree so collection is a pure path rebase.
+ */
+export function remoteArtifactsDir(rootDir: string): string {
+  return join(rootDir, "artifacts");
+}
+
+/**
+ * Directory on a remote box for one run's per-run I/O, mirroring the local
+ * `runRunDir` layout (`instances/N/clusters/C/sessions/S/runs/R`, or the
+ * clusterless variant) rooted at {@link remoteArtifactsDir}.
+ */
+export function remoteRunArtifactsDir(rootDir: string, path: DefinitionRunPath): string {
+  return runRunDir(path, remoteArtifactsDir(rootDir));
 }
 
 export function remoteDockerWrapperPath(rootDir: string): string {
@@ -289,7 +315,8 @@ export function createLocalFitExecutionContext(rootDir: string): FitExecutionCon
       rmSync(path, { recursive: true, force: true });
       return Promise.resolve();
     },
-    collectJunitArtifacts: async (_sourceDir, path) => await collectJunitArtifacts(rootDir, path),
+    runArtifactsDir: (path) => runRunDir(path),
+    collectJunitArtifacts: async (sourceDir, path) => await collectJunitArtifacts(sourceDir, path),
     pathExists: async (path) => target.capture("test", ["-e", path], undefined, { quiet: true }).then(() => true).catch(() => false),
     commandAvailable: async (command) =>
       target

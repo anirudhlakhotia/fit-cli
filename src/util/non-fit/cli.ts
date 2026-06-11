@@ -6,6 +6,7 @@ import {
   formatArtifactsSection,
   formatDetailsSection,
   combineRunOutputs,
+  reconcileArtifactsWithDir,
   worstFailureShouldExitNonZero,
   formatFailureSummaryLine,
   type RunOutput,
@@ -54,7 +55,10 @@ export function runCli(main: () => Promise<void | Partial<RunOutput>>): void {
     .then((result) => {
       runOutput = combineRunOutputs(result ?? undefined, { artifacts: [sessionLogArtifact, debugLogArtifact] });
       const sections = [
-        formatArtifactsSection(promptSession.runDir, runOutput.artifacts),
+        formatArtifactsSection(
+          promptSession.runDir,
+          reconcileArtifactsWithDir(promptSession.runDir, runOutput.artifacts),
+        ),
         formatDetailsSection(runOutput.details),
       ].filter(Boolean);
       summaryOutput = sections.join("\n\n") || undefined;

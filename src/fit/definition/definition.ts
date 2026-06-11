@@ -2,7 +2,7 @@
 /**
  * Top-level dispatcher for the `definition` npm script.
  *
- * npm run definition -- execute <file.yaml> [--resume-at=<point>] [--root <dir>]
+ * npm run definition -- execute <file.yaml> [--resume-at=<point>] [resume selectors] [--root <dir>]
  * npm run definition -- validate <file.yaml>
  */
 import { existsSync } from "node:fs";
@@ -14,6 +14,7 @@ import { cacheDefinition, isDefinitionUrl, loadDefinition } from "../shared/defi
 import { FIT_DEFINITION_TYPE } from "../shared/definition/types.js";
 import {
   extractResumeAt,
+  extractResumeSelector,
   parseResumePoint,
 } from "../functional/run-from-definition/resume.js";
 
@@ -23,7 +24,7 @@ type Subcommand = (typeof SUBCOMMANDS)[number];
 const HELP = `Manage FIT definition files.
 
 Usage:
-  npm run definition -- execute <file.json5> [--resume-at=<point>] [--root <dir>]
+  npm run definition -- execute <file.json5> [--resume-at=<point>] [resume selectors] [--root <dir>]
   npm run definition -- validate <file.json5>
   npm run definition -- --help
 
@@ -37,7 +38,14 @@ Resume points for execute:
   --resume-at=after-instance-creation   Reuse a running instance.
   --resume-at=after-remote-preparation  Reuse a prepared remote workspace.
   --resume-at=after-cluster-creation    Reuse an allocated cluster.
-  --resume-at=after-performer           Reuse the cluster and a running performer.`;
+  --resume-at=after-performer           Reuse the cluster and a running performer.
+
+Resume selectors for execute (narrow a resume to one run; emitted by a left-up run):
+  --resume-instance=<n>             Which instance to resume.
+  --resume-cluster=<n>              Which cluster within the instance.
+  --resume-session=<n>              Which session within the cluster.
+  --resume-clusterless-session=<n>  Which clusterless (situational) session.
+  --resume-run=<n>                  Which run within the session.`;
 
 function countRuns(definition: ReturnType<typeof loadDefinition>): number {
   return definition.instances.reduce(
@@ -104,11 +112,13 @@ if (isMain(import.meta.url)) {
     const executeArgs = isSubcommand ? rest : argv;
     const { rootDir, positionals } = rootDirFromArgv(executeArgs);
     const { resumeAt, positionals: afterResume } = extractResumeAt(positionals);
-    const [definitionPath, ...extra] = afterResume;
+    const { selector: resumeSelector, positionals: afterSelector } = extractResumeSelector(afterResume);
+    const [definitionPath, ...extra] = afterSelector;
     if (!definitionPath || extra.length > 0) {
       console.error(
-        "Usage: npm run definition -- execute <file.yaml> [--resume-at=<point>] [--root <dir>]\n" +
-          "  --resume-at: after-instance-creation | after-remote-preparation | after-cluster-creation | after-performer",
+        "Usage: npm run definition -- execute <file.yaml> [--resume-at=<point>] [resume selectors] [--root <dir>]\n" +
+          "  --resume-at: after-instance-creation | after-remote-preparation | after-cluster-creation | after-performer\n" +
+          "  resume selectors: --resume-instance=<n> --resume-cluster=<n> --resume-session=<n> --resume-clusterless-session=<n> --resume-run=<n>",
       );
       process.exit(2);
     }
@@ -130,6 +140,9 @@ if (isMain(import.meta.url)) {
       `✓ Valid ${FIT_DEFINITION_TYPE} definition (version ${definition.version}, ` +
         `${definition.instances.length} instance(s), ${countRuns(definition)} run(s)).`,
     );
-    return runFromDefinition(resolvedDefinitionPath, rootDir, { ...(resumePoint ? { resumeAt: resumePoint } : {}) });
+    return runFromDefinition(resolvedDefinitionPath, rootDir, {
+      ...(resumePoint ? { resumeAt: resumePoint } : {}),
+      resumeSelector,
+    });
   });
 }

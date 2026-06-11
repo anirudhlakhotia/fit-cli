@@ -37,6 +37,7 @@ import { installCbdinoclusterRemote } from "./install-cbdinocluster.js";
 import { installCaoCrdsAndAdmission } from "./install-cao-tools.js";
 import { type ClusterExistsPolicy } from "./cluster-exists-policy.js";
 import { type CbdinoclusterDef } from "./build-cluster-def.js";
+import type { CbdinoclusterInitSetup } from "../../fit/shared/definition/types.js";
 
 /** The bare command name we look for on the PATH. */
 const CBDINOCLUSTER = "cbdinocluster";
@@ -139,6 +140,8 @@ export async function runCbdinoclusterInit(
   cbdinocluster: string,
   args: string,
   githubCredentials?: { user: string; token: string },
+  configPatch?: PieceData,
+  cycleDir: string = ensureRunDir(),
 ): Promise<void> {
   if (!("kind" in execution) || execution.kind !== "remote") {
     return;
@@ -158,6 +161,69 @@ export async function runCbdinoclusterInit(
   if (network) {
     console.log(`→ setup-cluster: ensuring Docker network ${network} exists on ${execution.description}`);
     await ensureDockerNetwork(execution, network);
+  }
+  // Layer on config `cbdinocluster init` can't set via flags (e.g. situational's
+  // capella/aws blocks — `--auto` leaves those disabled regardless of flags).
+  if (configPatch) {
+    await mergeRemoteCbdinoclusterConfig(execution, configPatch, cycleDir);
+  }
+}
+
+/**
+ * Merge extra top-level blocks onto the `~/.cbdinocluster` that `cbdinocluster
+ * init` just wrote, for config init can't express via flags (situational's
+ * `capella`/`aws`). Reads the file init produced, shallow-merges the patch's
+ * top-level keys over it, and writes it back. Remote-only, mirroring
+ * {@link runCbdinoclusterInit}: on this machine we leave the operator's own
+ * `~/.cbdinocluster` alone.
+ */
+export async function mergeRemoteCbdinoclusterConfig(
+  execution: ClusterCommandExecutor,
+  patch: PieceData,
+  cycleDir: string = ensureRunDir(),
+): Promise<void> {
+  if (!("kind" in execution) || execution.kind !== "remote") {
+    return;
+  }
+  const existing = await execution.capture(
+    "sh",
+    ["-lc", `cat ${CBDINOCLUSTER_DEFAULT_REMOTE_CONFIG_PATH}`],
+    undefined,
+    { quiet: true },
+  );
+  const base = (YAML.parse(existing) ?? {}) as PieceData;
+  const merged: PieceData = { ...base, ...patch };
+  console.log(
+    `→ setup-cluster: merging capella/aws config into ${CBDINOCLUSTER_DEFAULT_REMOTE_CONFIG_PATH} on ${execution.description}`,
+  );
+  await uploadCbdinoclusterConfig(execution, merged, cycleDir);
+}
+
+/**
+ * Prepare `~/.cbdinocluster` from a definition's init setup, picking the right
+ * path: the `args` path runs `cbdinocluster init <args>` (and merges any
+ * `configPatch`); the legacy `config` path uploads a config object verbatim (CNG).
+ * Used by the situational flow, which sets up its own cluster outside
+ * {@link setupDeclarativeCluster}.
+ */
+export async function prepareCbdinoclusterInit(
+  execution: ClusterCommandExecutor,
+  init: CbdinoclusterInitSetup | undefined,
+  githubCredentials?: { user: string; token: string },
+  cycleDir: string = ensureRunDir(),
+): Promise<void> {
+  if (init?.args !== undefined) {
+    const cbdinocluster = await resolveCbdinoclusterCommand(execution);
+    if (!cbdinocluster) {
+      console.error(
+        `\n✗ setup-cluster: cbdinocluster isn't on the PATH for ${execution.description}. ` +
+          `Get it from ${CBDINOCLUSTER_URL}.`,
+      );
+      return;
+    }
+    await runCbdinoclusterInit(execution, cbdinocluster, init.args, githubCredentials, init.configPatch, cycleDir);
+  } else {
+    await prepareCbdinoclusterConfig(execution, init?.config, githubCredentials, cycleDir);
   }
 }
 
@@ -417,7 +483,7 @@ async function allocate(
  * result with `cluster: undefined` rather than thrown.
  */
 export async function setupDeclarativeCluster(plan: {
-  init?: { args?: string; config?: PieceData };
+  init?: CbdinoclusterInitSetup;
   config: CbdinoclusterDef;
   onClusterExists: ClusterExistsPolicy;
   deployer?: string;
@@ -436,11 +502,12 @@ export async function setupDeclarativeCluster(plan: {
     return FAILED();
   }
 
-  // The docker path carries an editable `cbdinocluster init` args string: run it
-  // on the box to self-install ~/.cbdinocluster. The CNG/situational paths still
-  // upload a config object verbatim.
+  // The docker/situational path carries an editable `cbdinocluster init` args
+  // string: run it on the box to self-install ~/.cbdinocluster, then merge any
+  // configPatch for what init can't express via flags. The CNG path still uploads
+  // a config object verbatim.
   if (plan.init?.args !== undefined) {
-    await runCbdinoclusterInit(execution, cbdinocluster, plan.init.args, plan.githubCredentials);
+    await runCbdinoclusterInit(execution, cbdinocluster, plan.init.args, plan.githubCredentials, plan.init.configPatch, cycleDir);
   } else {
     await prepareCbdinoclusterConfig(execution, plan.init?.config, plan.githubCredentials, cycleDir);
   }

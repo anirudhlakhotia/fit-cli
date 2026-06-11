@@ -59,8 +59,10 @@ test("buildFitFunctionalDefinitionFrom records a cbdinocluster in clusterConfigs
   assert.equal(definition.clusterConfigs?.[0]?.id, "cluster-0");
   assert.equal(definition.clusterConfigs?.[0]?.cbdinocluster?.config.nodes[0]?.count, 2);
 
-  // The docker path carries an editable `cbdinocluster init` args string, not a config object.
-  const init = definition.clusterConfigs?.[0]?.cbdinocluster?.init;
+  // cbdinocluster init is set up once per instance, under instance.setup — not on
+  // the cluster config. The docker path carries an editable args string, not config.
+  assert.equal((definition.clusterConfigs?.[0]?.cbdinocluster as unknown as { init?: unknown } | undefined)?.init, undefined);
+  const init = definition.instances[0]?.setup?.cbdinocluster?.init;
   assert.equal(init?.config, undefined);
   assert.match(init?.args ?? "", /^--auto\b/);
   assert.match(init?.args ?? "", /--docker-network fit/);
@@ -133,6 +135,36 @@ test("formatFitDefinition includes the nested instances key and fitConfigs comme
 
   assert.match(rendered, /fitConfigs:/);
   assert.match(rendered, /\/\/ Each fitConfig is used as a base when generating FITConfiguration\.json/);
+});
+
+test("formatFitDefinition never leaks comment markers into the output", () => {
+  const functional = buildFitFunctionalDefinitionFrom({
+    cluster: { kind: "cbdinocluster", def: { cng: false, nodeCount: 1, version: "7.6.0", services: ["kv"] } },
+    sdk,
+    githubUser: "octocat",
+    selection: buildDefaultFitTestSelection(),
+  });
+  const situational = buildFitSituationalDefinitionFrom({
+    sdk,
+    databaseMode: "hosted",
+    selection: buildDefaultFitTestSelection(),
+  });
+  for (const definition of [functional, situational]) {
+    for (const format of ["json5", "yaml"] as const) {
+      const rendered = formatFitDefinition(definition, format);
+      assert.doesNotMatch(rendered, /\/\/[0-9a-z]{6}/, `${format} output should not contain marker keys`);
+    }
+  }
+});
+
+test("formatFitSituationalDefinition comments the clusterless sessions and runtime fields", () => {
+  const rendered = formatFitDefinition(
+    buildFitSituationalDefinitionFrom({ sdk, databaseMode: "hosted", selection: buildDefaultFitTestSelection() }),
+    "json5",
+  );
+  assert.match(rendered, /\/\/ Sessions not tied to any particular cluster/);
+  assert.match(rendered, /\/\/ fit-cli will inject performerPorts at runtime\./);
+  assert.match(rendered, /\/\/ Merged onto ~\/\.cbdinocluster after `cbdinocluster init` runs/);
 });
 
 test("formatFitDefinition includes the nested instances key and fitConfigs comment (YAML)", () => {

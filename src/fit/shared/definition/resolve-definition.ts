@@ -29,6 +29,7 @@ import {
 import type { CbdinoclusterDef } from "../../../cluster/cluster-create/build-cluster-def.js";
 import { loadDefinition } from "./parse-definition.js";
 import type {
+  CbdinoclusterInitSetup,
   ClusterLifetime,
   ConnectionClusterSetup,
   FitConfigPiece,
@@ -83,7 +84,7 @@ export interface ResolvedSessionPlan {
 }
 
 export interface ResolvedCbdinocluster {
-  init?: { args?: string; config?: PieceData };
+  init?: CbdinoclusterInitSetup;
   config: CbdinoclusterDef;
   onClusterExists: ClusterExistsPolicy;
   deployer?: string;
@@ -102,7 +103,7 @@ export interface ResolvedInstancePlan {
   path: DefinitionRunPath;
   instance: ResolvedInstance;
   clusters: ResolvedClusterPlan[];
-  cbdinoclusterInit?: { args?: string; config?: PieceData };
+  cbdinoclusterInit?: CbdinoclusterInitSetup;
   clusterlessSessions: ResolvedSessionPlan[];
 }
 
@@ -145,7 +146,7 @@ export interface ResolvedSituationalExecutionGroup {
   type: "situational";
   path: DefinitionRunPath;
   instance: ResolvedInstance;
-  cbdinoclusterInit: { args?: string; config?: PieceData };
+  cbdinoclusterInit: CbdinoclusterInitSetup;
   runs: ResolvedSituationalExecutionRun[];
 }
 
@@ -328,7 +329,6 @@ export function resolveCbdinocluster(cluster: ClusterLifetime): ResolvedCbdinocl
   return {
     config: cluster.cbdinocluster.config,
     onClusterExists: cluster.cbdinocluster.onClusterExists ?? DEFAULT_CLUSTER_EXISTS_POLICY,
-    ...(cluster.cbdinocluster.init !== undefined ? { init: { ...cluster.cbdinocluster.init } } : {}),
     ...(cluster.cbdinocluster.deployer !== undefined ? { deployer: cluster.cbdinocluster.deployer } : {}),
   };
 }
@@ -413,7 +413,7 @@ export function resolveInstancePlan(instance: InstanceLifetime, instanceIndex: n
     path,
     instance: resolveInstance(instance),
     clusters: instance.clusters.map((cluster, clusterIndex) => resolveCluster(cluster, { instanceIndex, clusterIndex })),
-    ...(instance.cbdinocluster !== undefined ? { cbdinoclusterInit: { ...instance.cbdinocluster.init } } : {}),
+    ...(instance.setup?.cbdinocluster !== undefined ? { cbdinoclusterInit: { ...instance.setup.cbdinocluster.init } } : {}),
     clusterlessSessions: (instance.clusterlessSessions ?? []).map((session, sessionIndex) =>
       resolveSession(session, { instanceIndex, sessionIndex, clusterlessSession: true }, false)),
   };
@@ -439,7 +439,16 @@ export function buildExecutionGroups(instances: ResolvedInstancePlan[]): Resolve
       clusterMode: cluster.clusterMode,
       cng: cluster.cng,
       ...(cluster.cluster ? { cluster: cluster.cluster } : {}),
-      ...(cluster.cbdinocluster ? { cbdinocluster: cluster.cbdinocluster } : {}),
+      // cbdinocluster init lives once per instance now (instance.setup); fold it
+      // into each cbdinocluster-backed cluster group so setup-cluster still finds it.
+      ...(cluster.cbdinocluster
+        ? {
+            cbdinocluster: {
+              ...cluster.cbdinocluster,
+              ...(instance.cbdinoclusterInit ? { init: instance.cbdinoclusterInit } : {}),
+            },
+          }
+        : {}),
       runs: cluster.sessions.flatMap((session) =>
         session.runs
           .filter((run): run is ResolvedFunctionalRun => run.type === "functional")
