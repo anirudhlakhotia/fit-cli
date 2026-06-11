@@ -37,6 +37,7 @@ Edit options:
   --disable-github       Skip writing the github section.
   --disable-results-db   Skip writing the resultsDb section.
   --disable-gerrit       Skip writing the gerrit section.
+  --disable-capella      Skip writing the capella section.
   --aws-profile <p>      AWS profile (env: AWS_PROFILE).
   --aws-instance-type-functional <t>  EC2 instance type for functional tests
                          (env: FIT_EC2_INSTANCE_TYPE_FUNCTIONAL / FIT_EC2_INSTANCE_TYPE, default: c5.xlarge).
@@ -50,6 +51,12 @@ Edit options:
   --results-db-username <u> Results DB username (env: FIT_RESULTS_DB_USERNAME).
   --gerrit-user <u>      Gerrit username (env: FIT_GERRIT_USER / GERRIT_USER; defaults to github.user).
   --gerrit-ssh-key <path> Path to SSH private key registered with Gerrit (env: FIT_GERRIT_KEY / GERRIT_SSH_KEY).
+  --capella-username <u> Capella username for situational/SIT runs (env: CAPELLA_USER / CAP_USER). No default.
+  --capella-endpoint <e> Capella endpoint (env: CAPELLA_ENDPOINT / CAP_END_POINT; default: api.cloud.couchbase.com).
+  --capella-oid <id>     Capella organization ID (env: CAPELLA_OID / CAP_OID; has a default).
+  --capella-password <p> Capella password (env: CAPELLA_PASS / CAP_PASS; default: NotUsed).
+  --capella-override-token <t>          Capella override token (env: CAPELLA_OVERRIDE_TOKEN / CAP_OVERRIDE_TOKEN).
+  --capella-internal-support-token <t>  Capella internal support token (env: CAPELLA_INTERNAL_SUPPORT_TOKEN / CAP_INTERNAL_SUPPORT_TOKEN).
   --config-path <path>   Override config file path (default: ~/.fit-cli/config.json5).
   -h, --help             Show this help.`;
 
@@ -60,6 +67,7 @@ export interface AutoInitCliArgs {
   disableGithub: boolean;
   disableResultsDb: boolean;
   disableGerrit: boolean;
+  disableCapella: boolean;
   awsProfile?: string;
   /** Default EC2 instance type per testing purpose. */
   awsInstanceTypes?: FitCliInstanceTypes;
@@ -69,6 +77,12 @@ export interface AutoInitCliArgs {
   resultsDbUsername?: string;
   gerritUser?: string;
   gerritSshKeyPath?: string;
+  capellaUsername?: string;
+  capellaEndpoint?: string;
+  capellaOrganizationId?: string;
+  capellaPassword?: string;
+  capellaOverrideToken?: string;
+  capellaInternalSupportToken?: string;
   configPath: string;
 }
 
@@ -100,6 +114,7 @@ export function parseEditArgs(argv: string[]): AutoInitCliArgs {
   const disableGithub = consumeFlag(args, "--disable-github");
   const disableResultsDb = consumeFlag(args, "--disable-results-db");
   const disableGerrit = consumeFlag(args, "--disable-gerrit");
+  const disableCapella = consumeFlag(args, "--disable-capella");
 
   const awsProfile = consumeValue(args, "--aws-profile");
   const awsInstanceTypes: FitCliInstanceTypes = {};
@@ -113,6 +128,12 @@ export function parseEditArgs(argv: string[]): AutoInitCliArgs {
   const resultsDbUsername = consumeValue(args, "--results-db-username");
   const gerritUser = consumeValue(args, "--gerrit-user");
   const gerritSshKeyPath = consumeValue(args, "--gerrit-ssh-key");
+  const capellaUsername = consumeValue(args, "--capella-username");
+  const capellaEndpoint = consumeValue(args, "--capella-endpoint");
+  const capellaOrganizationId = consumeValue(args, "--capella-oid");
+  const capellaPassword = consumeValue(args, "--capella-password");
+  const capellaOverrideToken = consumeValue(args, "--capella-override-token");
+  const capellaInternalSupportToken = consumeValue(args, "--capella-internal-support-token");
   const configPath = consumeValue(args, "--config-path") ?? defaultFitCliConfigPath();
 
   // Warn about unknown flags
@@ -130,6 +151,7 @@ export function parseEditArgs(argv: string[]): AutoInitCliArgs {
     disableGithub,
     disableResultsDb,
     disableGerrit,
+    disableCapella,
     awsProfile,
     ...(Object.keys(awsInstanceTypes).length > 0 ? { awsInstanceTypes } : {}),
     githubUser,
@@ -138,6 +160,12 @@ export function parseEditArgs(argv: string[]): AutoInitCliArgs {
     resultsDbUsername,
     gerritUser,
     gerritSshKeyPath,
+    capellaUsername,
+    capellaEndpoint,
+    capellaOrganizationId,
+    capellaPassword,
+    capellaOverrideToken,
+    capellaInternalSupportToken,
     configPath,
   };
 }

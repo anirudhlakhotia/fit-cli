@@ -55,7 +55,7 @@ import {
 } from "../../../util/non-fit/replay.js";
 import { confirm, select } from "../../../util/non-fit/prompts.js";
 import { rootDirFromArgv } from "../../util/root.js";
-import { resolveGithubCredentials, resolveResultsDbCredentials } from "../../util/config.js";
+import { resolveCapellaConfig, resolveGithubCredentials, resolveResultsDbCredentials } from "../../util/config.js";
 import { terminateInstanceCommand } from "../../util/aws/lifecycle-warning.js";
 import { resolveAwsCredentials, type AwsCredentials } from "../../../util/non-fit/aws/identity.js";
 import {
@@ -80,7 +80,12 @@ import {
 } from "../../performers/check-build-and-run-performer/check-build-and-run-performer.js";
 import { generateFitConfiguration } from "../../shared/fit-configuration/generate-fit-configuration.js";
 import { generateSituationalConfiguration } from "../../situational/configuration/generate-situational-configuration.js";
-import { createFitExecutionContext, uploadRemoteAwsCredentials, type FitExecutionContext } from "../../shared/util/remote-fit-run.js";
+import {
+  createFitExecutionContext,
+  uploadRemoteAwsCredentials,
+  uploadRemoteCapellaConfig,
+  type FitExecutionContext,
+} from "../../shared/util/remote-fit-run.js";
 import { loadDefinition } from "../../shared/definition/parse-definition.js";
 import {
   buildExecutionGroups,
@@ -1239,6 +1244,19 @@ export async function runFromDefinition(
             if (!(await execution.commandAvailable("cbdinocluster"))) {
               await installCbdinoclusterRemote(execution);
             }
+            // Forward the Capella settings before init so `cbdinocluster init --auto`
+            // (run via a login shell sourcing ~/.profile) picks them up and writes the
+            // capella block. Without a username it can't enable Capella, so fail clearly
+            // rather than letting `cbdinocluster allocate` later fail with "no deployers".
+            const capella = resolveCapellaConfig();
+            if (!capella.username) {
+              throwFatalToCluster(
+                "Situational runs allocate Capella clusters, which needs a Capella username. " +
+                  "Set capella.username in ~/.fit-cli/config.json5 (run `npm run config -- edit`) " +
+                  "or provide CAPELLA_USER/CAP_USER in the environment.",
+              );
+            }
+            await uploadRemoteCapellaConfig(execution.target, execution.rootDir, capella);
           }
           await prepareCbdinoclusterInit(
             execution,

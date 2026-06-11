@@ -12,6 +12,7 @@ function baseArgs(overrides: Partial<AutoInitCliArgs> = {}): AutoInitCliArgs {
     disableGithub: false,
     disableResultsDb: false,
     disableGerrit: false,
+    disableCapella: false,
     configPath: "/tmp/test-config.json5",
     ...overrides,
   };
@@ -112,6 +113,45 @@ test("buildAutoConfig: GITHUB_TOKEN takes precedence over GH_TOKEN", () => {
   const { config } = buildAutoConfig({ args: baseArgs(), env });
 
   assert.equal(config.github?.token, "ghp_primary");
+});
+
+test("buildAutoConfig: CAP_* env (fit-app-deployment names) populates capella with defaults filled in", () => {
+  const env = {
+    CAP_USER: "graham.pople@couchbase.com",
+    CAP_OID: "org-from-env",
+  };
+
+  const { config } = buildAutoConfig({ args: baseArgs(), env });
+
+  assert.deepEqual(config.capella, {
+    username: "graham.pople@couchbase.com",
+    endpoint: "https://api.cloud.couchbase.com",
+    organizationId: "org-from-env",
+    password: "NotUsed",
+    overrideToken: "the-secret-test-override-key",
+    internalSupportToken: "the-secret-token-for-internal-support",
+  });
+});
+
+test("buildAutoConfig: CAPELLA_* takes precedence over CAP_* aliases", () => {
+  const env = { CAPELLA_USER: "primary@cb.com", CAP_USER: "alias@cb.com" };
+
+  const { config } = buildAutoConfig({ args: baseArgs(), env });
+
+  assert.equal(config.capella?.username, "primary@cb.com");
+});
+
+test("buildAutoConfig: capella section omitted when no username is resolvable", () => {
+  // Endpoint/oid/etc all have defaults, but with no username there's nothing to log in as.
+  const { config } = buildAutoConfig({ args: baseArgs(), env: { CAP_OID: "org" } });
+
+  assert.equal(config.capella, undefined);
+});
+
+test("buildAutoConfig: --disable-capella omits capella even with a username present", () => {
+  const { config } = buildAutoConfig({ args: baseArgs({ disableCapella: true }), env: { CAP_USER: "u@cb.com" } });
+
+  assert.equal(config.capella, undefined);
 });
 
 test("buildAutoConfig: resolution log records all checks in order", () => {

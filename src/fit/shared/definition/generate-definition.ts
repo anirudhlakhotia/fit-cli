@@ -15,6 +15,7 @@ import {
   defaultCbdinoclusterInitArgs,
   defaultCbdinoclusterInitConfig,
   situationalCbdinoclusterConfigPatch,
+  situationalCbdinoclusterInitArgs,
 } from "../../../cluster/cluster-create/default-cbdinocluster-init-config.js";
 import { CNG_K3D_CONTEXT } from "../../../cluster/cluster-create/cng-kubernetes.js";
 import type { ClusterExistsPolicy } from "../../../cluster/cluster-create/cluster-exists-policy.js";
@@ -270,7 +271,7 @@ function buildSituationalInstance(inputs: SituationalDefinitionInputs): Instance
     // It's per-instance setup, applied once on the box (see InstanceSetup).
     setup: {
       cbdinocluster: {
-        init: { args: defaultCbdinoclusterInitArgs(), configPatch: situationalCbdinoclusterConfigPatch() },
+        init: { args: situationalCbdinoclusterInitArgs(), configPatch: situationalCbdinoclusterConfigPatch() },
       },
     },
     clusters: [],

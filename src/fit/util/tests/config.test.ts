@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import {
+  DEFAULT_CAPELLA_SETTINGS,
   DEFAULT_CLOUD_INSTANCE_TYPES,
   FIT_CLI_CONFIG_VERSION,
   UnsupportedFitCliConfigVersionError,
@@ -11,6 +12,7 @@ import {
   ensureFitCliConfigEnv,
   loadFitCliConfig,
   parseFitCliConfig,
+  resolveCapellaConfig,
   resolveCloudInstanceType,
   resolveGithubToken,
   resolveResultsDbCredentials,
@@ -144,6 +146,52 @@ test("resolveResultsDbCredentials falls back to FIT_RESULTS_DB_* env vars", () =
     }),
     { password: "env-pass", username: undefined },
   );
+});
+
+test("parses a stored capella section", () => {
+  const parsed = parseFitCliConfig(`{
+  version: 1,
+  capella: { username: "graham.pople@couchbase.com", organizationId: "org-123" },
+}`);
+  assert.deepEqual(parsed.capella, { username: "graham.pople@couchbase.com", organizationId: "org-123" });
+});
+
+test("resolveCapellaConfig fills every field but username from defaults", () => {
+  const resolved = resolveCapellaConfig({
+    config: { version: FIT_CLI_CONFIG_VERSION, capella: { username: "me@cb.com" } },
+    env: {},
+  });
+  assert.deepEqual(resolved, {
+    username: "me@cb.com",
+    endpoint: DEFAULT_CAPELLA_SETTINGS.endpoint,
+    organizationId: DEFAULT_CAPELLA_SETTINGS.organizationId,
+    password: DEFAULT_CAPELLA_SETTINGS.password,
+    overrideToken: DEFAULT_CAPELLA_SETTINGS.overrideToken,
+    internalSupportToken: DEFAULT_CAPELLA_SETTINGS.internalSupportToken,
+  });
+});
+
+test("resolveCapellaConfig prefers config, then CAPELLA_*/CAP_* env, then default", () => {
+  const fromConfig = resolveCapellaConfig({
+    config: { version: FIT_CLI_CONFIG_VERSION, capella: { username: "cfg", endpoint: "https://cfg" } },
+    env: { CAPELLA_ENDPOINT: "https://env", CAPELLA_USER: "envuser" },
+  });
+  assert.equal(fromConfig.username, "cfg");
+  assert.equal(fromConfig.endpoint, "https://cfg");
+
+  const fromEnv = resolveCapellaConfig({
+    config: { version: FIT_CLI_CONFIG_VERSION },
+    env: { CAP_USER: "graham", CAP_OID: "org-from-cap" },
+  });
+  assert.equal(fromEnv.username, "graham");
+  assert.equal(fromEnv.organizationId, "org-from-cap");
+  assert.equal(fromEnv.endpoint, DEFAULT_CAPELLA_SETTINGS.endpoint);
+});
+
+test("resolveCapellaConfig leaves username undefined when nothing provides one", () => {
+  const resolved = resolveCapellaConfig({ config: { version: FIT_CLI_CONFIG_VERSION }, env: {} });
+  assert.equal(resolved.username, undefined);
+  assert.equal(resolved.endpoint, DEFAULT_CAPELLA_SETTINGS.endpoint);
 });
 
 test("rejects unsupported newer config versions", () => {

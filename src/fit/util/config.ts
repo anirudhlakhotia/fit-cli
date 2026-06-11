@@ -71,12 +71,46 @@ export interface FitCliGerritConfig {
   sshKeyPath?: string;
 }
 
+/**
+ * Capella control-plane settings the situational cbdinocluster cloud deployer
+ * authenticates with. fit-cli forwards these to the remote box as `CAPELLA_*`
+ * environment variables so `cbdinocluster init --auto` bakes them into
+ * `~/.cbdinocluster` (see resolveCapellaConfig / uploadRemoteCapellaConfig).
+ *
+ * Only `username` is per-user and has no default; the rest default to the
+ * well-known values in {@link DEFAULT_CAPELLA_SETTINGS} and rarely need changing.
+ */
+export interface FitCliCapellaConfig {
+  /** Capella account the deployer logs in as (env: CAPELLA_USER). No default — required for situational runs. */
+  username?: string;
+  /** Capella control-plane endpoint (env: CAPELLA_ENDPOINT). */
+  endpoint?: string;
+  /** Capella organization/tenant ID (env: CAPELLA_OID). */
+  organizationId?: string;
+  /** Capella account password (env: CAPELLA_PASS). Unused in practice — the override token authenticates. */
+  password?: string;
+  /** Internal override token (env: CAPELLA_OVERRIDE_TOKEN). */
+  overrideToken?: string;
+  /** Internal support token (env: CAPELLA_INTERNAL_SUPPORT_TOKEN). */
+  internalSupportToken?: string;
+}
+
+/** Hardcoded defaults for every Capella field except `username` (which is per-user). */
+export const DEFAULT_CAPELLA_SETTINGS = {
+  endpoint: "https://api.cloud.couchbase.com",
+  organizationId: "adb4fb4c-1d98-4287-ac33-230742d2cc76",
+  password: "NotUsed",
+  overrideToken: "the-secret-test-override-key",
+  internalSupportToken: "the-secret-token-for-internal-support",
+} as const;
+
 export interface FitCliConfig {
   version: 1;
   cloud?: FitCliCloudConfig;
   github?: FitCliGithubConfig;
   resultsDb?: FitCliResultsDbConfig;
   gerrit?: FitCliGerritConfig;
+  capella?: FitCliCapellaConfig;
 }
 
 export interface FitCliConfigResult {
@@ -237,12 +271,29 @@ export function validateFitCliConfig(raw: unknown): FitCliConfig {
       })
     : undefined;
 
+  const capellaValue = raw.capella;
+  if (capellaValue !== undefined && !isRecord(capellaValue)) {
+    throw new InvalidFitCliConfigError(`Field "capella" must be a mapping; got ${JSON.stringify(capellaValue)}`);
+  }
+
+  const capella = capellaValue
+    ? compactRecord({
+        username: readOptionalString(capellaValue, "username", "capella.username"),
+        endpoint: readOptionalString(capellaValue, "endpoint", "capella.endpoint"),
+        organizationId: readOptionalString(capellaValue, "organizationId", "capella.organizationId"),
+        password: readOptionalString(capellaValue, "password", "capella.password"),
+        overrideToken: readOptionalString(capellaValue, "overrideToken", "capella.overrideToken"),
+        internalSupportToken: readOptionalString(capellaValue, "internalSupportToken", "capella.internalSupportToken"),
+      })
+    : undefined;
+
   return {
     version: FIT_CLI_CONFIG_VERSION,
     ...(cloud ? { cloud } : {}),
     ...(github && Object.keys(github).length > 0 ? { github } : {}),
     ...(resultsDb && Object.keys(resultsDb).length > 0 ? { resultsDb } : {}),
     ...(gerrit && Object.keys(gerrit).length > 0 ? { gerrit } : {}),
+    ...(capella && Object.keys(capella).length > 0 ? { capella } : {}),
   };
 }
 
@@ -375,6 +426,57 @@ export function resolveResultsDbCredentials(
   return {
     password: config?.resultsDb?.password ?? env.FIT_RESULTS_DB_PASSWORD,
     username: config?.resultsDb?.username ?? env.FIT_RESULTS_DB_USERNAME,
+  };
+}
+
+/** The Capella settings forwarded to a remote box, with every field resolved. */
+export interface ResolvedCapellaConfig {
+  /** Undefined when no username is configured (situational runs then can't enable Capella). */
+  username?: string;
+  endpoint: string;
+  organizationId: string;
+  password: string;
+  overrideToken: string;
+  internalSupportToken: string;
+}
+
+/** First non-empty trimmed env var among `names`, or undefined. */
+function firstEnv(env: NodeJS.ProcessEnv, names: string[]): string | undefined {
+  for (const name of names) {
+    const value = env[name]?.trim();
+    if (value) return value;
+  }
+  return undefined;
+}
+
+/**
+ * Resolve the Capella control-plane settings for the situational cloud deployer.
+ * Priority per field: fit-cli config → `CAPELLA_*`/`CAP_*` env var → hardcoded
+ * default ({@link DEFAULT_CAPELLA_SETTINGS}). `username` has no default, so it's
+ * undefined unless configured or present in the environment. The `CAP_*` aliases
+ * match the GitHub Actions variable names used by fit-app-deployment. Loads the
+ * config itself when one isn't supplied.
+ */
+export function resolveCapellaConfig(
+  options: { config?: FitCliConfig; path?: string; env?: NodeJS.ProcessEnv } = {},
+): ResolvedCapellaConfig {
+  const env = options.env ?? process.env;
+  const config = options.config ?? loadFitCliConfig(options.path).config;
+  const c = config?.capella;
+  return {
+    username: c?.username ?? firstEnv(env, ["CAPELLA_USER", "CAP_USER"]),
+    endpoint: c?.endpoint ?? firstEnv(env, ["CAPELLA_ENDPOINT", "CAP_END_POINT"]) ?? DEFAULT_CAPELLA_SETTINGS.endpoint,
+    organizationId:
+      c?.organizationId ?? firstEnv(env, ["CAPELLA_OID", "CAP_OID"]) ?? DEFAULT_CAPELLA_SETTINGS.organizationId,
+    password: c?.password ?? firstEnv(env, ["CAPELLA_PASS", "CAP_PASS"]) ?? DEFAULT_CAPELLA_SETTINGS.password,
+    overrideToken:
+      c?.overrideToken ??
+      firstEnv(env, ["CAPELLA_OVERRIDE_TOKEN", "CAP_OVERRIDE_TOKEN"]) ??
+      DEFAULT_CAPELLA_SETTINGS.overrideToken,
+    internalSupportToken:
+      c?.internalSupportToken ??
+      firstEnv(env, ["CAPELLA_INTERNAL_SUPPORT_TOKEN", "CAP_INTERNAL_SUPPORT_TOKEN"]) ??
+      DEFAULT_CAPELLA_SETTINGS.internalSupportToken,
   };
 }
 

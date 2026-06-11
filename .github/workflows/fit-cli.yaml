@@ -6,16 +6,24 @@
 #
 # Run
 # ------------
-# gh workflow run run-fit-functional.yml --ref <your-branch> Z--field definitionFile="examples/fit-functional-sanity-test.json5"
+# gh workflow run fit-cli.yaml --ref <your-branch> --field definitionFile="https://gist.githubusercontent.com/programmatix/<gist-id>/raw" --repo couchbaselabs/fit-cli
+# Note: use gist.githubusercontent.com/…/raw (not gist.github.com) to get raw content, not the HTML page.
 name: Run FIT with fit-cli
 
 on:
   workflow_dispatch:
     inputs:
       definitionFile:
-        description: A fit-cli definition file e.g. "https://gist.github.com/programmatix/<gist>" or "examples/fit-functional-sanity-test.json5" (local to fit-cli).  To generate one, clone the fit-cli project and follow the README.
+        description: A fit-cli definition file e.g. "https://gist.githubusercontent.com/programmatix/<gist-id>/raw" or "examples/fit-functional-sanity-test.json5" (local to fit-cli). Use gist.githubusercontent.com/…/raw, not gist.github.com. To generate one, clone the fit-cli project and follow the README.
         type: string
         default: examples/fit-functional-sanity-test.json5
+      capellaEnvironment:
+        description: Used for FIT/SIT testing against Capella
+        type: choice
+        default: capella-env-dev
+        options:
+          - capella-env-dev
+          - capella-env-stage
 
 permissions:
   id-token: write   # required for GitHub OIDC
@@ -25,6 +33,9 @@ permissions:
 jobs:
   run-fit-cli:
     runs-on: [ubuntu-latest]
+    # Bind to the chosen Capella environment so its CAP_* variables (and any
+    # secrets) resolve below. Created in the repo as capella-env-dev / capella-env-stage.
+    environment: ${{ inputs.capellaEnvironment }}
     steps:
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v6
@@ -53,6 +64,15 @@ jobs:
           # Instead we use a hardcoded github PAT (the author's).  Migrating to a Github App in future would be better.
           GITHUB_TOKEN: ${{ secrets.FIT_CLI_GITHUB_PAT }}
           GITHUB_USER: ${{ secrets.FIT_CLI_GITHUB_USER }}
+          # Capella settings from the chosen environment. `config edit --auto` reads
+          # these into the capella section of ~/.fit-cli/config.json5; the run step
+          # then forwards them to the remote box as CAPELLA_* (see uploadRemoteCapellaConfig).
+          CAPELLA_USER: ${{ vars.CAP_USER }}
+          CAPELLA_ENDPOINT: ${{ vars.CAP_END_POINT }}
+          CAPELLA_OID: ${{ vars.CAP_OID }}
+          CAPELLA_PASS: ${{ vars.CAP_PASS }}
+          CAPELLA_OVERRIDE_TOKEN: ${{ vars.CAP_OVERRIDE_TOKEN }}
+          CAPELLA_INTERNAL_SUPPORT_TOKEN: ${{ vars.CAP_INTERNAL_SUPPORT_TOKEN }}
         run: |
           git clone --branch ${{ github.ref_name }} https://github.com/couchbaselabs/fit-cli.git
           cd fit-cli
@@ -63,6 +83,14 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.FIT_CLI_GITHUB_PAT }}
           GITHUB_USER: ${{ secrets.FIT_CLI_GITHUB_USER }}
+          # Also exposed here as a fallback: resolveCapellaConfig() reads config first,
+          # then these env vars, before forwarding CAPELLA_* to the remote instance.
+          CAPELLA_USER: ${{ vars.CAP_USER }}
+          CAPELLA_ENDPOINT: ${{ vars.CAP_END_POINT }}
+          CAPELLA_OID: ${{ vars.CAP_OID }}
+          CAPELLA_PASS: ${{ vars.CAP_PASS }}
+          CAPELLA_OVERRIDE_TOKEN: ${{ vars.CAP_OVERRIDE_TOKEN }}
+          CAPELLA_INTERNAL_SUPPORT_TOKEN: ${{ vars.CAP_INTERNAL_SUPPORT_TOKEN }}
         run: |
           cd fit-cli
           npm run definition -- execute ${{ inputs.definitionFile }} | tee /tmp/fit-cli-output.log

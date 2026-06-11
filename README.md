@@ -77,7 +77,11 @@ To use EC2, copy `.env.example` to `.env` and fill in your AWS credentials (or j
 
 When you pick EC2, the tool launches a fresh Ubuntu instance, opens SSH, and tags it `fit-cli=owned`. A key is generated for you (saved into the run folder), and key-based SSH is the only login path the tool enables. At the end of the run you're asked whether to keep it (for debugging) or terminate it — the default is terminate, so you don't leave a paid instance running. The SSH command to reach the box is printed during the run.
 
-The AWS region and VPC are fixed (region `us-west-2`, VPC `cbqerunners-vpc`) and are not configurable, for reasons I should get around to documenting.
+The AWS region and VPC are fixed (region `us-west-2`, VPC `cbqerunners-vpc`) and are not configurable because:
+
+* Ensures compatibility with the existing sdkqe-github-runners-tf work that allows testing private endpoints.
+* Simplifies and derisks where to look for user's instances for cleanup.
+* It means we always have a VPC and avoid hitting VPCIdNotSpecified if the user specifies a region that does not have a default one.
 
 ## Running a single step or flow
 
@@ -247,6 +251,7 @@ FatalToAll will stop the definition run.
 FatalToInstance includes things like failing to acquire or set up the instance (box).  The next instance is allowed to run.
 FatalToCluster includes things like failing to set up the cluster for the instance.  The next cluster is allowed to run.
 FatalToSession will fail just this session.  The next session is allowed to run.
+FatalToRun will fail just this run.  The next run is allowed to, uh, run.
 NonFatal allows things to continue including this session.
 
 Deciding which of these should result in the final process returning non-zero and hence failing CI, is very tricky.

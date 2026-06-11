@@ -48,6 +48,7 @@ test("init defaults can seed from environment values", () => {
 test("init answers keep non-secret cloud settings", () => {
   const config = initAnswersToConfig({
     configureAws: true,
+    configureCapella: false,
     aws: { profile: "", instanceTypes: { ...ALL_TYPES } },
   });
 
@@ -60,6 +61,7 @@ test("init answers keep non-secret cloud settings", () => {
 test("init answers drop legacy stored credentials", () => {
   const config = initAnswersToConfig({
     configureAws: true,
+    configureCapella: false,
     aws: { profile: "dev", instanceTypes: { ...ALL_TYPES } },
   });
 
@@ -70,7 +72,7 @@ test("init answers drop legacy stored credentials", () => {
 });
 
 test("init answers can skip AWS entirely", () => {
-  const config = initAnswersToConfig({ configureAws: false });
+  const config = initAnswersToConfig({ configureAws: false, configureCapella: false });
 
   assert.deepEqual(config, { version: FIT_CLI_CONFIG_VERSION });
 });
@@ -81,7 +83,7 @@ test("init answers keep existing cloud settings when AWS is declined", () => {
     cloud: { aws: { profile: "dev", instanceTypes: { perf: "m6i.large" } } },
   };
 
-  const config = initAnswersToConfig({ configureAws: false, githubToken: "ghp_new" }, existing);
+  const config = initAnswersToConfig({ configureAws: false, configureCapella: false, githubToken: "ghp_new" }, existing);
 
   assert.deepEqual(config, {
     version: FIT_CLI_CONFIG_VERSION,
@@ -91,7 +93,7 @@ test("init answers keep existing cloud settings when AWS is declined", () => {
 });
 
 test("init answers store a GitHub token alongside (or without) AWS", () => {
-  assert.deepEqual(initAnswersToConfig({ configureAws: false, githubToken: "ghp_example" }), {
+  assert.deepEqual(initAnswersToConfig({ configureAws: false, configureCapella: false, githubToken: "ghp_example" }), {
     version: FIT_CLI_CONFIG_VERSION,
     github: { token: "ghp_example" },
   });
@@ -99,6 +101,7 @@ test("init answers store a GitHub token alongside (or without) AWS", () => {
   assert.deepEqual(
     initAnswersToConfig({
       configureAws: true,
+      configureCapella: false,
       githubToken: "  ghp_trimmed  ",
       aws: { profile: "", instanceTypes: { ...ALL_TYPES } },
     }),
