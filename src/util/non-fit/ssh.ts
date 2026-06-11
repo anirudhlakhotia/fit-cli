@@ -50,6 +50,10 @@ function connectionOptions(host: RemoteHost, scp = false): string[] {
     "-o",
     `ConnectTimeout=${host.connectTimeoutSeconds ?? 10}`,
     "-o",
+    "ServerAliveInterval=30",
+    "-o",
+    "ServerAliveCountMax=10",
+    "-o",
     "LogLevel=ERROR",
   ];
   if (host.identityFile) {
