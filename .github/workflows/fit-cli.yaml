@@ -65,7 +65,6 @@ jobs:
           role-session-name: gha-${{ github.actor }}-${{ github.run_id }}
           audience: sts.amazonaws.com
           retry-max-attempts: 3
-          action-timeout-s: 20
 
       - name: Diagnostics
         run: |
@@ -88,7 +87,7 @@ jobs:
           git clone https://github.com/couchbaselabs/fit-cli.git
           cd fit-cli
           npm ci
-          npm run config -- init --auto
+          npm run config -- edit --auto
 
       - name: Run fit-cli
         env:
