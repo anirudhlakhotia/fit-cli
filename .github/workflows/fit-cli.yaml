@@ -56,7 +56,7 @@ jobs:
               actor: payload.actor,
               workflow: payload.workflow
             }, null, 2))
-            
+
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
