@@ -48,8 +48,10 @@ jobs:
 
       - name: Clone and setup fit-cli
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_USER: ${{ github.actor }}
+          # secrets.GITHUB_TOKEN contains a short-lived token bound to this repo, so we can't use it for e.g. checking out transactions-fit-performer
+          # Instead we use a hardcoded PAT (the author's)
+          GITHUB_TOKEN: ${{ secrets.FIT_CLI_GITHUB_PAT }}
+          GITHUB_USER: ${{ secrets.FIT_CLI_GITHUB_USER }}
         run: |
           git clone --branch ${{ github.ref_name }} https://github.com/couchbaselabs/fit-cli.git
           cd fit-cli
@@ -57,6 +59,9 @@ jobs:
           npm run config -- edit --auto
 
       - name: Run fit-cli
+        env:
+          GITHUB_TOKEN: ${{ secrets.FIT_CLI_GITHUB_PAT }}
+          GITHUB_USER: ${{ secrets.FIT_CLI_GITHUB_USER }}
         run: |
           cd fit-cli
           npm run definition -- execute ${{ inputs.definitionFile }} | tee /tmp/fit-cli-output.log
