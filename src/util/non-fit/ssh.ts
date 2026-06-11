@@ -52,7 +52,7 @@ function connectionOptions(host: RemoteHost, scp = false): string[] {
     "-o",
     "ServerAliveInterval=30",
     "-o",
-    "ServerAliveCountMax=10",
+    "ServerAliveCountMax=240",
     "-o",
     "LogLevel=ERROR",
   ];
