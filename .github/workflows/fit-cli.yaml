@@ -13,6 +13,10 @@ on:
         type: string
         default: examples/fit-functional-sanity-test.json5
 
+permissions:
+  id-token: write   # required for GitHub OIDC
+  contents: read
+
 jobs:
   run-fit-cli:
     runs-on: [ubuntu-latest]
@@ -37,34 +41,62 @@ jobs:
 #          echo "Key prefix: ${AWS_ACCESS_KEY_ID:0:4}"
 #          aws sts get-caller-identity
 
+      - name: Inspect GitHub OIDC token claims
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const token = await core.getIDToken('sts.amazonaws.com')
+            const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString())
+            console.log(JSON.stringify({
+              iss: payload.iss,
+              aud: payload.aud,
+              sub: payload.sub,
+              repository: payload.repository,
+              ref: payload.ref,
+              actor: payload.actor,
+              workflow: payload.workflow
+            }, null, 2))
+            
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: us-west-2
+          role-to-assume: arn:aws:iam::958525475024:role/fit-cli-role
+          role-session-name: gha-${{ github.actor }}-${{ github.run_id }}
+          audience: sts.amazonaws.com
+          retry-max-attempts: 3
+          action-timeout-s: 20
+
       - name: Diagnostics
         run: |
           echo "Key prefix: ${AWS_ACCESS_KEY_ID:0:4}"
+          echo "Github actor: ${{ github.actor }}"
+          echo "Github run_id: ${{ github.run_id }}"
           aws sts get-caller-identity
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: lts/*
-
-      - name: Clone and setup fit-cli
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_USER: ${{ github.actor }}
-          AWS_REGION: us-west-2
-        run: |
-          git clone https://github.com/couchbaselabs/fit-cli.git
-          cd fit-cli
-          npm ci
-          npm run config -- init --auto
-
-      - name: Run fit-cli
-        env:
-          AWS_REGION: us-west-2
-          AWS_DEFAULT_REGION: us-west-2
-        run: |
-          cd fit-cli
-          npm run definition -- execute ${{ inputs.definitionFile }}
+#      - name: Setup Node.js
+#        uses: actions/setup-node@v4
+#        with:
+#          node-version: lts/*
+#
+#      - name: Clone and setup fit-cli
+#        env:
+#          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+#          GITHUB_USER: ${{ github.actor }}
+#          AWS_REGION: us-west-2
+#        run: |
+#          git clone https://github.com/couchbaselabs/fit-cli.git
+#          cd fit-cli
+#          npm ci
+#          npm run config -- init --auto
+#
+#      - name: Run fit-cli
+#        env:
+#          AWS_REGION: us-west-2
+#          AWS_DEFAULT_REGION: us-west-2
+#        run: |
+#          cd fit-cli
+#          npm run definition -- execute ${{ inputs.definitionFile }}
 
       # todo handle Junit results
       # todo archive artifacts
