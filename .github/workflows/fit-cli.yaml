@@ -37,6 +37,14 @@ jobs:
     # secrets) resolve below. Created in the repo as capella-env-dev / capella-env-stage.
     environment: ${{ inputs.capellaEnvironment }}
     steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.CBFITFRAMEWORK_APP_ID }}
+          private-key: ${{ secrets.CBFITFRAMEWORK_PRIVATE_KEY }}
+          owner: couchbaselabs
+
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v6
         with:
@@ -60,10 +68,8 @@ jobs:
 
       - name: Clone and setup fit-cli
         env:
-          # secrets.GITHUB_TOKEN contains a short-lived token bound to this repo, so we can't use it for e.g. checking out transactions-fit-performer
-          # Instead we use a hardcoded github PAT (the author's).  Migrating to a Github App in future would be better.
-          GITHUB_TOKEN: ${{ secrets.FIT_CLI_GITHUB_PAT }}
-          GITHUB_USER: ${{ secrets.FIT_CLI_GITHUB_USER }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          GITHUB_USER: x-access-token
           # Capella settings from the chosen environment. `config edit --auto` reads
           # these into the capella section of ~/.fit-cli/config.json5; the run step
           # then forwards them to the remote box as CAPELLA_* (see uploadRemoteCapellaConfig).
@@ -81,8 +87,8 @@ jobs:
 
       - name: Run fit-cli
         env:
-          GITHUB_TOKEN: ${{ secrets.FIT_CLI_GITHUB_PAT }}
-          GITHUB_USER: ${{ secrets.FIT_CLI_GITHUB_USER }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          GITHUB_USER: x-access-token
           # Also exposed here as a fallback: resolveCapellaConfig() reads config first,
           # then these env vars, before forwarding CAPELLA_* to the remote instance.
           CAPELLA_USER: ${{ vars.CAP_USER }}
