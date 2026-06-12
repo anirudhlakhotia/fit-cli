@@ -125,7 +125,7 @@ test("buildAutoConfig: CAP_* env (fit-app-deployment names) populates capella wi
 
   assert.deepEqual(config.capella, {
     username: "graham.pople@couchbase.com",
-    endpoint: "https://api.cloud.couchbase.com",
+    endpoint: "https://api.dev.nonprod-project-avengers.com",
     organizationId: "org-from-env",
     password: "NotUsed",
     overrideToken: "the-secret-test-override-key",

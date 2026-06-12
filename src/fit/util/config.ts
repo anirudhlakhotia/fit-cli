@@ -97,7 +97,7 @@ export interface FitCliCapellaConfig {
 
 /** Hardcoded defaults for every Capella field except `username` (which is per-user). */
 export const DEFAULT_CAPELLA_SETTINGS = {
-  endpoint: "https://api.cloud.couchbase.com",
+  endpoint: "https://api.dev.nonprod-project-avengers.com",
   organizationId: "adb4fb4c-1d98-4287-ac33-230742d2cc76",
   password: "NotUsed",
   overrideToken: "the-secret-test-override-key",

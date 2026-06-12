@@ -52,7 +52,7 @@ Edit options:
   --gerrit-user <u>      Gerrit username (env: FIT_GERRIT_USER / GERRIT_USER; defaults to github.user).
   --gerrit-ssh-key <path> Path to SSH private key registered with Gerrit (env: FIT_GERRIT_KEY / GERRIT_SSH_KEY).
   --capella-username <u> Capella username for situational/SIT runs (env: CAPELLA_USER / CAP_USER). No default.
-  --capella-endpoint <e> Capella endpoint (env: CAPELLA_ENDPOINT / CAP_END_POINT; default: api.cloud.couchbase.com).
+  --capella-endpoint <e> Capella endpoint (env: CAPELLA_ENDPOINT / CAP_END_POINT; default: api.dev.nonprod-project-avengers.com).
   --capella-oid <id>     Capella organization ID (env: CAPELLA_OID / CAP_OID; has a default).
   --capella-password <p> Capella password (env: CAPELLA_PASS / CAP_PASS; default: NotUsed).
   --capella-override-token <t>          Capella override token (env: CAPELLA_OVERRIDE_TOKEN / CAP_OVERRIDE_TOKEN).
