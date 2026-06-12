@@ -429,10 +429,9 @@ export async function createFitDefinition(rootDir: string, options?: { format?: 
   printWithoutTimestamps(formatFn(definition, outputFormat));
   console.log(`\n✓ Wrote ${result.path}`);
   const ciInstructions =
-    `\nTo run on CI via https://github.com/couchbaselabs/fit-cli, first upload as a gist:\n` +
-    `  gh gist create ${result.path} --desc "fit-cli FIT definition"\n` +
-    `Then trigger the workflow with the raw gist URL (use gist.githubusercontent.com/<user>/<id>/raw, not gist.github.com):\n` +
-    `  gh workflow run fit-cli.yaml --repo couchbaselabs/fit-cli --field definitionFile=<your gist url>`;
+    `\nTo run on CI via https://github.com/couchbaselabs/fit-cli, upload as a gist and trigger in one step:\n` +
+    `  GIST_URL=$(gh gist create ${result.path} --desc "fit-cli FIT definition")\\\n` +
+    `  gh workflow run fit-cli.yaml --repo couchbaselabs/fit-cli --field definitionFile="\${GIST_URL/gist.github.com/gist.githubusercontent.com}/raw"`;
 
   console.log(
     `\nRun it later with:\n` +
