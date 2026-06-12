@@ -98,6 +98,13 @@ import {
 } from "../../shared/definition/resolve-definition.js";
 import { runTestDriver, type FitTestDriverSummary } from "../../shared/run-test-driver/run-test-driver.js";
 import {
+  buildFitTestSelection,
+  FUNCTIONAL_TEST_DOMAIN,
+  isTransactionsTest,
+  listFitTests,
+  type FitTestSelection,
+} from "../../shared/select-fit-tests/select-fit-tests.js";
+import {
   buildHostedDatabase,
   checkResultsDatabaseConnectivity,
   HOSTED_RESULTS_DB_HOST,
@@ -226,6 +233,25 @@ export function finalizeRunFromDefinition(
   };
 }
 
+/**
+ * Resolve a deferred test-mode selection to a concrete class list.
+ * Called right before running Maven so the performer repo is already available.
+ */
+async function resolveTestSelectionMode(
+  selection: FitTestSelection,
+  execution: FitExecutionContext,
+): Promise<FitTestSelection> {
+  if (!selection.mode) {
+    return selection;
+  }
+  const tests = await listFitTests(execution, FUNCTIONAL_TEST_DOMAIN);
+  const selectedClasses =
+    selection.mode === "all-transactions"
+      ? tests.filter(isTransactionsTest).map((t) => t.className)
+      : tests.filter((t) => !isTransactionsTest(t)).map((t) => t.className);
+  return buildFitTestSelection(tests, selectedClasses);
+}
+
 /** Print what an iteration resolved to, so a CI log shows the run's inputs. */
 function announce(
   group: ResolvedExecutionGroup,
@@ -233,9 +259,11 @@ function announce(
   fitPerformerGerritRef: string | undefined,
 ): void {
   const { testSelection } = run;
-  const testsLabel = testSelection.mavenTestSelector
-    ? `${testSelection.selectedTests.length} test(s): ${testSelection.mavenTestSelector}`
-    : "all tests";
+  const testsLabel = testSelection.mode
+    ? `all ${testSelection.mode === "all-transactions" ? "transactions" : "non-transactions"} tests`
+    : testSelection.mavenTestSelector
+      ? `${testSelection.selectedTests.length} test(s): ${testSelection.mavenTestSelector}`
+      : "all tests";
   console.log(`\n=== Instance ${run.path.instanceIndex + 1} (${group.instance.kind}) ===`);
   if (!run.path.clusterlessSession) {
     console.log(`=== Cluster ${((run.path.clusterIndex ?? 0) + 1)} (${run.type}) ===`);
@@ -444,9 +472,10 @@ export async function runTests(
     throwFatalToSession("Performer cluster sanity check failed; stopping this iteration.");
   }
 
+  const resolvedTestSelection = await resolveTestSelectionMode(run.testSelection, execution);
   const testRun = await runTestDriverFn(
     execution,
-    run.testSelection,
+    resolvedTestSelection,
     run.path,
     fitConfig.path,
     run.extraMavenArgs,

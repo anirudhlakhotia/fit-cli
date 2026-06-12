@@ -163,6 +163,9 @@ function buildCbdinoclusterInit(cng: boolean, githubUser?: string): Cbdinocluste
 }
 
 function buildTests(selection: FitTestSelection) {
+  if (selection.mode) {
+    return { run: selection.mode } as const;
+  }
   return {
     run: selection.mavenTestSelector
       ? selection.selectedTests.map((test) => test.className)

@@ -85,7 +85,7 @@ export interface PerformerSetup {
   onPortInUse?: PortInUsePolicy;
 }
 
-export type DefinitionTests = "all" | string[];
+export type DefinitionTests = "all" | "all-transactions" | "all-non-transactions" | string[];
 
 export interface MavenOptions {
   args?: string[];

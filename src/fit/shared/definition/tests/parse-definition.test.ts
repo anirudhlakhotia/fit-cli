@@ -475,3 +475,52 @@ fitConfigs:
     (err: unknown) => err instanceof InvalidDefinitionError && /[Dd]uplicate/.test(err.message),
   );
 });
+
+test("parses all-transactions and all-non-transactions test placeholders", () => {
+  for (const mode of ["all-transactions", "all-non-transactions"] as const) {
+    const def = parseDefinition(`
+version: 1
+type: fit
+instances:
+  - localhost: {}
+    clusters:
+      - connection:
+          connectionString: couchbase://localhost
+          username: Administrator
+          password: password
+        sessions:
+          - performer:
+              sdk: java
+            runs:
+              - type: functional
+                tests:
+                  run: ${mode}
+`);
+    assert.equal(def.instances[0]?.clusters[0]?.sessions[0]?.runs[0]?.tests.run, mode);
+  }
+});
+
+test("rejects an unknown tests.run string", () => {
+  assert.throws(
+    () =>
+      parseDefinition(`
+version: 1
+type: fit
+instances:
+  - localhost: {}
+    clusters:
+      - connection:
+          connectionString: couchbase://localhost
+          username: Administrator
+          password: password
+        sessions:
+          - performer:
+              sdk: java
+            runs:
+              - type: functional
+                tests:
+                  run: all-unknown
+`),
+    (err: unknown) => err instanceof InvalidDefinitionError && /tests.*run/.test(err.message),
+  );
+});
