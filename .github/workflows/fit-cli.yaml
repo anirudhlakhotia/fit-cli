@@ -33,8 +33,10 @@ permissions:
 jobs:
   run-fit-cli:
     runs-on: [ubuntu-latest]
-    # Bind to the chosen Capella environment so its CAP_* variables (and any
-    # secrets) resolve below. Created in the repo as capella-env-dev / capella-env-stage.
+    # Bind to the chosen Capella environment so its CAP_* secrets resolve below.
+    # Created in the repo as capella-env-dev / capella-env-stage. Binding to an
+    # environment also rewrites the OIDC sub claim to ...:environment:<name>, so
+    # the fit-cli-role trust policy must allow that subject (it does — see below).
     environment: ${{ inputs.capellaEnvironment }}
     steps:
       - name: Diagnostics1
@@ -77,12 +79,12 @@ jobs:
           # Capella settings from the chosen environment. `config edit --auto` reads
           # these into the capella section of ~/.fit-cli/config.json5; the run step
           # then forwards them to the remote box as CAPELLA_* (see uploadRemoteCapellaConfig).
-          CAPELLA_USER: ${{ vars.CAP_USER }}
-          CAPELLA_ENDPOINT: ${{ vars.CAP_END_POINT }}
-          CAPELLA_OID: ${{ vars.CAP_OID }}
-          CAPELLA_PASS: ${{ vars.CAP_PASS }}
-          CAPELLA_OVERRIDE_TOKEN: ${{ vars.CAP_OVERRIDE_TOKEN }}
-          CAPELLA_INTERNAL_SUPPORT_TOKEN: ${{ vars.CAP_INTERNAL_SUPPORT_TOKEN }}
+          CAPELLA_USER: ${{ secrets.CAP_USER }}
+          CAPELLA_ENDPOINT: ${{ secrets.CAP_END_POINT }}
+          CAPELLA_OID: ${{ secrets.CAP_OID }}
+          CAPELLA_PASS: ${{ secrets.CAP_PASS }}
+          CAPELLA_OVERRIDE_TOKEN: ${{ secrets.CAP_OVERRIDE_TOKEN }}
+          CAPELLA_INTERNAL_SUPPORT_TOKEN: ${{ secrets.CAP_INTERNAL_SUPPORT_TOKEN }}
         run: |
           git clone --branch ${{ github.ref_name }} https://github.com/couchbaselabs/fit-cli.git
           cd fit-cli
@@ -95,12 +97,12 @@ jobs:
           GITHUB_USER: x-access-token
           # Also exposed here as a fallback: resolveCapellaConfig() reads config first,
           # then these env vars, before forwarding CAPELLA_* to the remote instance.
-          CAPELLA_USER: ${{ vars.CAP_USER }}
-          CAPELLA_ENDPOINT: ${{ vars.CAP_END_POINT }}
-          CAPELLA_OID: ${{ vars.CAP_OID }}
-          CAPELLA_PASS: ${{ vars.CAP_PASS }}
-          CAPELLA_OVERRIDE_TOKEN: ${{ vars.CAP_OVERRIDE_TOKEN }}
-          CAPELLA_INTERNAL_SUPPORT_TOKEN: ${{ vars.CAP_INTERNAL_SUPPORT_TOKEN }}
+          CAPELLA_USER: ${{ secrets.CAP_USER }}
+          CAPELLA_ENDPOINT: ${{ secrets.CAP_END_POINT }}
+          CAPELLA_OID: ${{ secrets.CAP_OID }}
+          CAPELLA_PASS: ${{ secrets.CAP_PASS }}
+          CAPELLA_OVERRIDE_TOKEN: ${{ secrets.CAP_OVERRIDE_TOKEN }}
+          CAPELLA_INTERNAL_SUPPORT_TOKEN: ${{ secrets.CAP_INTERNAL_SUPPORT_TOKEN }}
         run: |
           cd fit-cli
           npm run definition -- execute ${{ inputs.definitionFile }} | tee /tmp/fit-cli-output.log
