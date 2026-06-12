@@ -6,3 +6,8 @@ Only add things to this file that are very very specific to LLMs.  Almost everyt
 # Rules
 ## Git
 - Do not commit or push or make branches unless explicitly instructed to.
+
+## Worktrees
+- The basic pattern is I want to see your uncommitted changes in the worktree so I can review.  Then I'll ask you to merge them - which means commit and merge back to main, with a nice commit message.
+- When merging a worktree back to main, give it a nice commit message.
+- Before creating a worktree, try to understand the problem enough first to give the worktree a useful name.

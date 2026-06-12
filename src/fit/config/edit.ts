@@ -317,15 +317,16 @@ async function promptForCapella(
   }
 
   const defaults = capellaDefaultsFromConfig(existing);
+  const ask = (field: keyof CapellaInitAnswers, label: string) =>
+      input({ promptId: `init.capella.${field}`, message: `${label}:`, default: defaults[field] });
+  const endpoint = await ask("endpoint", "Capella endpoint (defaults to development - https://dev.nonprod-project-avengers.com/)");
   const username = await input({
     promptId: "init.capella.username",
     message: defaults.username
-      ? `Capella username (leave blank to keep "${defaults.username}"):`
-      : "Capella username (usually your Couchbase email):",
+        ? `Capella username (leave blank to keep "${defaults.username}"):`
+        : "Capella username (usually your Couchbase email for that Capella endpoint/environment):",
     default: defaults.username,
   });
-  const ask = (field: keyof CapellaInitAnswers, label: string) =>
-    input({ promptId: `init.capella.${field}`, message: `${label}:`, default: defaults[field] });
 
   console.warn(
     `\nWarning: Capella password will be saved in plaintext in ${configPath ?? "~/.fit-cli/config.json5"}.\n` +
@@ -343,7 +344,7 @@ async function promptForCapella(
     configureCapella: true,
     capella: {
       username,
-      endpoint: await ask("endpoint", "Capella endpoint"),
+      endpoint: endpoint,
       organizationId: await ask("organizationId", "Capella organization ID"),
       password: trimOptional(capellaPassword) ?? defaults.password,
       overrideToken: await ask("overrideToken", "Capella override token"),
