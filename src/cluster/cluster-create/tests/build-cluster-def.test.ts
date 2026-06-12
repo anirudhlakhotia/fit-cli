@@ -10,7 +10,9 @@ import { test } from "node:test";
 import {
   CAO_GATEWAY_VERSION,
   CAO_OPERATOR_VERSION,
+  DOCKER_SERVICE_MEMORY_MB,
   buildClusterDef,
+  buildClusterDefObject,
 } from "../build-cluster-def.js";
 
 test("a basic single-node def renders the nodes block", () => {
@@ -62,4 +64,38 @@ test("without CNG there is no cao block", () => {
 test("the def always ends with a trailing newline", () => {
   const def = buildClusterDef({ nodeCount: 1, version: "8.1.0", services: ["kv"], cng: false });
   assert.ok(def.endsWith("\n"));
+});
+
+test("buildClusterDefObject auto-emits docker RAM quotas for kv and fts", () => {
+  const def = buildClusterDefObject({
+    nodeCount: 3,
+    version: "8.1.0",
+    services: ["kv", "n1ql", "index", "fts"],
+    cng: false,
+  });
+  assert.deepEqual(def.docker, {
+    "kv-memory": DOCKER_SERVICE_MEMORY_MB,
+    "fts-memory": DOCKER_SERVICE_MEMORY_MB,
+  });
+});
+
+test("buildClusterDefObject omits docker when neither kv nor fts is present", () => {
+  const def = buildClusterDefObject({
+    nodeCount: 1,
+    version: "8.1.0",
+    services: ["n1ql", "index"],
+    cng: false,
+  });
+  assert.equal(def.docker, undefined);
+});
+
+test("buildClusterDefObject uses cao (not docker) for CNG clusters", () => {
+  const def = buildClusterDefObject({
+    nodeCount: 3,
+    version: "8.1.0",
+    services: ["kv", "fts"],
+    cng: true,
+  });
+  assert.equal(def.docker, undefined);
+  assert.equal(def.cao?.["operator-version"], CAO_OPERATOR_VERSION);
 });

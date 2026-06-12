@@ -59,6 +59,11 @@ test("buildFitFunctionalDefinitionFrom records a cbdinocluster in clusterConfigs
   assert.equal(definition.clusterConfigs?.[0]?.id, "cluster-0");
   assert.equal(definition.clusterConfigs?.[0]?.cbdinocluster?.config.nodes[0]?.count, 2);
 
+  // The docker deployer gets a per-service RAM quota emitted automatically (kv
+  // here; fts would be added too if selected) so generated definitions don't hit
+  // "RAM quota specified is too large" on large-bucket tests.
+  assert.deepEqual(definition.clusterConfigs?.[0]?.cbdinocluster?.config.docker, { "kv-memory": 4096 });
+
   // cbdinocluster init is set up once per instance, under instance.setup — not on
   // the cluster config. The docker path carries an editable args string, not config.
   assert.equal((definition.clusterConfigs?.[0]?.cbdinocluster as unknown as { init?: unknown } | undefined)?.init, undefined);
