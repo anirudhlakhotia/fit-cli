@@ -5,7 +5,6 @@
  * another workspace):
  *   npx tsx src/fit/shared/create-definition/create-definition.ts
  */
-import { execSync } from "child_process";
 import { type RunOutput } from "../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { printWithoutTimestamps } from "../../../util/non-fit/fit-cli-log.js";
@@ -429,27 +428,11 @@ export async function createFitDefinition(rootDir: string, options?: { format?: 
   console.log(`\nWriting ${result.path}:\n`);
   printWithoutTimestamps(formatFn(definition, outputFormat));
   console.log(`\n✓ Wrote ${result.path}`);
-  let gistUrl: string | undefined;
-  try {
-    const gistOutput = execSync(`gh gist create ${result.path} --desc "fit-cli FIT definition"`, {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    const gistHtmlUrl = gistOutput.match(/https:\/\/gist\.github\.com\/\S+/)?.[0];
-    if (!gistHtmlUrl) console.warn(`\nWarning: created gist but could not parse URL from output`);
-    // Convert to raw URL so fit-cli can fetch the file directly
-    gistUrl = gistHtmlUrl ? gistHtmlUrl.replace('https://gist.github.com/', 'https://gist.githubusercontent.com/') + '/raw' : undefined;
-  } catch {
-    console.warn(`\nWarning: could not upload gist (is 'gh' installed and authenticated?)`);
-  }
-
-  const ciInstructions = gistUrl
-    ? `\nTo run on CI via https://github.com/couchbaselabs/fit-cli:\n` +
-      `  gh workflow run fit-cli.yaml --field definitionFile=${gistUrl} --repo couchbaselabs/fit-cli`
-    : `\nTo run on CI via https://github.com/couchbaselabs/fit-cli, first upload as a gist:\n` +
-      `  gh gist create ${result.path} --desc "fit-cli FIT definition"\n` +
-      `Then trigger the workflow with the raw gist URL (use gist.githubusercontent.com/<user>/<id>/raw, not gist.github.com):\n` +
-      `  gh workflow run fit-cli.yaml --field definitionFile=https://gist.githubusercontent.com/<user>/<id>/raw --repo couchbaselabs/fit-cli`;
+  const ciInstructions =
+    `\nTo run on CI via https://github.com/couchbaselabs/fit-cli, first upload as a gist:\n` +
+    `  gh gist create ${result.path} --desc "fit-cli FIT definition"\n` +
+    `Then trigger the workflow with the raw gist URL (use gist.githubusercontent.com/<user>/<id>/raw, not gist.github.com):\n` +
+    `  gh workflow run fit-cli.yaml --field definitionFile=https://gist.githubusercontent.com/<user>/<id>/raw --repo couchbaselabs/fit-cli`;
 
   console.log(
     `\nRun it later with:\n` +
