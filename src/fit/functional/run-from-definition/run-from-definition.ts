@@ -1073,18 +1073,7 @@ export async function runFromDefinition(
     githubCredentials = result;
   }
 
-  // Resolve AWS credentials upfront for situational cycles — the test-driver's
-  // cbdinocluster call uses the cloud (AWS) deployer.
   let awsCredentials: AwsCredentials | undefined;
-  if (executionGroups.slice(startCycleIndex).some((group) => group.type === "situational")) {
-    const result = await resolveAwsCredentials();
-    if (typeof result === "string") {
-      fitCliError(`\n✗ ${result}`);
-      tracker.record("FatalToAll", result, preconditionCtx);
-      return finalizeRunFromDefinition([], [], undefined, tracker.worst, tracker.failureCount);
-    }
-    awsCredentials = result;
-  }
 
   // Check hosted results-database config and connectivity upfront — fail before
   // provisioning an instance when the run can't reach the database.
@@ -1132,6 +1121,22 @@ export async function runFromDefinition(
   // resume; the existing-instance override is a within-run convenience and isn't saved.
   const executionOverride = await resolveExecutionOverride(executionGroups.slice(startCycleIndex), savedState);
   const forceLocalhost = executionOverride.kind === "localhost";
+
+  // Resolve AWS credentials for situational cycles that will run remotely — the
+  // test-driver's cbdinocluster call uses the cloud (AWS) deployer and credentials
+  // must be forwarded to the EC2 instance. Skip when localhost is chosen.
+  if (
+    !forceLocalhost &&
+    executionGroups.slice(startCycleIndex).some((group) => group.type === "situational")
+  ) {
+    const result = await resolveAwsCredentials();
+    if (typeof result === "string") {
+      fitCliError(`\n✗ ${result}`);
+      tracker.record("FatalToAll", result, preconditionCtx);
+      return finalizeRunFromDefinition([], [], undefined, tracker.worst, tracker.failureCount);
+    }
+    awsCredentials = result;
+  }
 
   // The "active" set tracks the cycle currently up so the outer finally tears down
   // (or offers to leave up) the right instance/cluster/performers. Completed,
