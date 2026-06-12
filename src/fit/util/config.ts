@@ -87,7 +87,7 @@ export interface FitCliCapellaConfig {
   endpoint?: string;
   /** Capella organization/tenant ID (env: CAPELLA_OID). */
   organizationId?: string;
-  /** Capella account password (env: CAPELLA_PASS). Unused in practice — the override token authenticates. */
+  /** Capella account password (env: CAPELLA_PASS). Forwarded to the remote box as CAPELLA_PASS for cbdinocluster init. Saved in plaintext. */
   password?: string;
   /** Internal override token (env: CAPELLA_OVERRIDE_TOKEN). */
   overrideToken?: string;

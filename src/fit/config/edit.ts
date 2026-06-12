@@ -254,7 +254,7 @@ async function promptForResultsDbPassword(existing?: FitCliConfig): Promise<stri
   return trimOptional(entered) ?? existingPassword;
 }
 
-async function promptForConfig(existing?: FitCliConfig): Promise<InitAnswers> {
+async function promptForConfig(existing?: FitCliConfig, configPath?: string): Promise<InitAnswers> {
   const githubUser = await promptForGithubUser(existing);
   const githubToken = await promptForGithubToken(existing);
   const resultsDbPassword = await promptForResultsDbPassword(existing);
@@ -281,7 +281,7 @@ async function promptForConfig(existing?: FitCliConfig): Promise<InitAnswers> {
       }
     : undefined;
 
-  const { configureCapella, capella } = await promptForCapella(existing);
+  const { configureCapella, capella } = await promptForCapella(existing, configPath);
 
   return {
     configureAws,
@@ -302,6 +302,7 @@ async function promptForConfig(existing?: FitCliConfig): Promise<InitAnswers> {
  */
 async function promptForCapella(
   existing?: FitCliConfig,
+  configPath?: string,
 ): Promise<{ configureCapella: boolean; capella?: CapellaInitAnswers }> {
   const hasExisting = existing?.capella !== undefined;
   const configureCapella = await confirm({
@@ -326,13 +327,25 @@ async function promptForCapella(
   const ask = (field: keyof CapellaInitAnswers, label: string) =>
     input({ promptId: `init.capella.${field}`, message: `${label}:`, default: defaults[field] });
 
+  console.warn(
+    `\nWarning: Capella password will be saved in plaintext in ${configPath ?? "~/.fit-cli/config.json5"}.\n` +
+    `Set CAPELLA_PASS in your environment to avoid storing it on disk.\n`,
+  );
+  const capellaPassword = await password({
+    promptId: "init.capella.password",
+    message: defaults.password && defaults.password !== "NotUsed"
+      ? "Capella password (leave blank to keep the current one):"
+      : "Capella password (leave blank to skip — set CAPELLA_PASS env var instead):",
+    mask: "*",
+  });
+
   return {
     configureCapella: true,
     capella: {
       username,
       endpoint: await ask("endpoint", "Capella endpoint"),
       organizationId: await ask("organizationId", "Capella organization ID"),
-      password: await ask("password", "Capella password"),
+      password: trimOptional(capellaPassword) ?? defaults.password,
       overrideToken: await ask("overrideToken", "Capella override token"),
       internalSupportToken: await ask("internalSupportToken", "Capella internal support token"),
     },
@@ -385,7 +398,7 @@ export function formatConfigForDisplay(config: FitCliConfig): string {
 
 export async function runEditWorkflow(path: string = defaultFitCliConfigPath()): Promise<string> {
   const existing = loadFitCliConfig(path);
-  const answers = await promptForConfig(existing.config);
+  const answers = await promptForConfig(existing.config, existing.path);
   const config = initAnswersToConfig(answers, existing.config);
   const savedPath = saveFitCliConfig(config, existing.path);
   console.log(`Saved fit-cli config to ${savedPath}`);
