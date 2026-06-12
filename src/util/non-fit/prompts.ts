@@ -38,18 +38,19 @@ function drainStdin(): void {
 }
 
 /**
- * Drain stdin, yield a turn of the event loop, then drain again. A single
- * synchronous {@link drainStdin} only flushes what's already buffered; bytes that
- * the terminal hands over a tick later (the tail end of a long scroll of output,
- * or a stray Enter the user fat-fingered while results streamed) land just after
- * it and would otherwise auto-resolve the next prompt to its default — the bug
- * where "Leave everything up?" reads No despite the user typing y. Draining
- * across an event-loop turn closes that window.
+ * Drain stdin across multiple event-loop turns so that stale bytes from a long
+ * scroll of output (or stray Enters the user pressed while results streamed) are
+ * all discarded before a prompt starts. A single synchronous {@link drainStdin}
+ * only flushes what the kernel has already handed to Node.js; bytes that arrive
+ * one or more ticks later would otherwise auto-resolve the next prompt to its
+ * default — the bug where "Leave everything up?" reads No despite the user
+ * typing y. A 50 ms gap after the initial drain gives all in-flight I/O time to
+ * settle; a final drain catches any stragglers that arrived during the sleep.
  */
 async function drainStdinSettled(): Promise<void> {
   if (!process.stdin.isTTY) return;
   drainStdin();
-  await new Promise<void>((resolve) => setImmediate(resolve));
+  await new Promise<void>((resolve) => setTimeout(resolve, 50));
   drainStdin();
 }
 type PasswordConfig = Parameters<typeof prompts.password>[0];
