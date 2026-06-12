@@ -39,11 +39,21 @@ export interface ClusterDef {
   cng: boolean;
 }
 
+export interface CbdinoclusterDockerDef {
+  "kv-memory"?: number;
+  "index-memory"?: number;
+  "fts-memory"?: number;
+  "cbas-memory"?: number;
+  "eventing-memory"?: number;
+}
+
 /** The cbdinocluster definition as a structured object (what goes under `config`). */
 export interface CbdinoclusterDef {
   nodes: { count: number; version: string; services: string[] }[];
   /** Present only when CNG/Protostellar support is wanted. */
   cao?: { "operator-version": string; "gateway-version": string };
+  /** Per-service RAM quotas for the docker deployer; omitted for other deployers. */
+  docker?: CbdinoclusterDockerDef;
 }
 
 /**

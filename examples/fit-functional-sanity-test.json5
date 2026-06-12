@@ -60,6 +60,10 @@
               services: ['kv', 'n1ql', 'index', 'fts'],
             },
           ],
+          docker: {
+            'kv-memory': 4096,
+            'fts-memory': 4096,
+          },
         },
         onClusterExists: 'useExisting',
       },

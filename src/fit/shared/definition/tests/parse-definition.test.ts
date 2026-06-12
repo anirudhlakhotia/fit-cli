@@ -319,6 +319,65 @@ fitConfigs:
   assert.equal(def.fitConfigs?.[0]?.id, "fit-config-0");
 });
 
+test("parses docker per-service RAM quotas on a cbdinocluster config", () => {
+  const def = parseDefinition(`
+version: 1
+type: fit
+instances:
+  - localhost: {}
+    clusters:
+      - cbdinocluster:
+          config:
+            nodes:
+              - count: 3
+                version: 8.1.0-2188
+                services: [kv, fts]
+            docker:
+              kv-memory: 4096
+              fts-memory: 4096
+        sessions:
+          - performer:
+              sdk: java
+            runs:
+              - type: functional
+                tests:
+                  run: all
+`);
+  assert.deepEqual(def.instances[0]?.clusters[0]?.cbdinocluster?.config.docker, {
+    "kv-memory": 4096,
+    "fts-memory": 4096,
+  });
+});
+
+test("rejects a non-positive-integer docker RAM quota", () => {
+  assert.throws(
+    () =>
+      parseDefinition(`
+version: 1
+type: fit
+instances:
+  - localhost: {}
+    clusters:
+      - cbdinocluster:
+          config:
+            nodes:
+              - count: 1
+                version: 8.1.0-2188
+                services: [kv]
+            docker:
+              kv-memory: 0
+        sessions:
+          - performer:
+              sdk: java
+            runs:
+              - type: functional
+                tests:
+                  run: all
+`),
+    (err: unknown) => err instanceof InvalidDefinitionError && /docker\.kv-memory/.test(err.message),
+  );
+});
+
 test("rejects clusterConfig mixed with inline cluster fields", () => {
   assert.throws(
     () =>
