@@ -654,6 +654,7 @@ export function validateDefinition(raw: unknown): FitDefinition {
   return {
     version: CURRENT_FIT_DEFINITION_VERSION,
     type: FIT_DEFINITION_TYPE,
+    ...(typeof raw.description === "string" ? { description: raw.description } : {}),
     ...(raw.setup !== undefined ? { setup: validateSharedSetup(raw.setup) } : {}),
     instances: raw.instances.map(validateInstance),
     ...(raw.clusterConfigs !== undefined ? { clusterConfigs: validateClusterConfigs(raw.clusterConfigs) } : {}),

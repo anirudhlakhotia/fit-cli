@@ -38,6 +38,7 @@ import {
   type SessionLifetime,
   type SituationalDatabaseMode,
 } from "./types.js";
+import { describeDefinition } from "./generate-desc.js";
 
 const CLUSTER_CONFIG_ID = "cluster-0";
 const FIT_CONFIG_ID = "fit-config-0";
@@ -302,13 +303,22 @@ export function buildFitDefinition(inputs: {
   const setup = inputs.gerritRef
     ? { repos: { "transactions-fit-performer": { gerritRef: inputs.gerritRef } } }
     : undefined;
-  return {
+  const base: FitDefinition = {
     version: CURRENT_FIT_DEFINITION_VERSION,
     type: FIT_DEFINITION_TYPE,
     ...(setup ? { setup } : {}),
     instances: [...inputs.instances],
     ...(inputs.clusterConfigs?.length ? { clusterConfigs: inputs.clusterConfigs } : {}),
     ...(inputs.fitConfigs?.length ? { fitConfigs: inputs.fitConfigs } : {}),
+  };
+  return {
+    version: base.version,
+    type: base.type,
+    description: describeDefinition(base),
+    ...(base.setup ? { setup: base.setup } : {}),
+    instances: base.instances,
+    ...(base.clusterConfigs ? { clusterConfigs: base.clusterConfigs } : {}),
+    ...(base.fitConfigs ? { fitConfigs: base.fitConfigs } : {}),
   };
 }
 

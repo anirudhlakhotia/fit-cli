@@ -17,8 +17,9 @@ import {
   extractResumeSelector,
   parseResumePoint,
 } from "../functional/run-from-definition/resume.js";
+import { describeDefinition } from "../shared/definition/generate-desc.js";
 
-const SUBCOMMANDS = ["execute", "validate"] as const;
+const SUBCOMMANDS = ["execute", "validate", "generate-desc"] as const;
 type Subcommand = (typeof SUBCOMMANDS)[number];
 
 const HELP = `Manage FIT definition files.
@@ -26,13 +27,15 @@ const HELP = `Manage FIT definition files.
 Usage:
   npm run definition -- execute <file.json5> [--resume-at=<point>] [resume selectors] [--root <dir>]
   npm run definition -- validate <file.json5>
+  npm run definition -- generate-desc <file.json5>
   npm run definition -- --help
 
 Both .json5 and .yaml definition files are accepted.
 
 Subcommands:
-  execute   Run FIT tests from a definition file.
-  validate  Parse and validate a definition file without running it.
+  execute        Run FIT tests from a definition file.
+  validate       Parse and validate a definition file without running it.
+  generate-desc  Print a compact description of a definition file (useful for CI labels).
 
 Resume points for execute:
   --resume-at=after-instance-creation   Reuse a running instance.
@@ -61,6 +64,23 @@ function countRuns(definition: ReturnType<typeof loadDefinition>): number {
 }
 
 if (isMain(import.meta.url)) {
+  // generate-desc must run before runCli so console.log is never patched with
+  // timestamps — the output needs to be machine-parseable.
+  if (process.argv[2] === "generate-desc") {
+    const path = process.argv[3];
+    if (!path) {
+      process.stderr.write("Usage: npm run definition -- generate-desc <file.json5>\n");
+      process.exit(2);
+    }
+    (async () => {
+      const resolvedPath = isDefinitionUrl(path) ? await cacheDefinition(path) : path;
+      const definition = loadDefinition(resolvedPath);
+      process.stdout.write(describeDefinition(definition) + "\n");
+    })().catch((err) => {
+      process.stderr.write((err instanceof Error ? err.message : String(err)) + "\n");
+      process.exit(1);
+    });
+  } else {
   runCli(async () => {
     // The global --interactive / --replay flags are read straight from
     // process.argv by the prompt session, so strip them here before we pick the
@@ -145,4 +165,5 @@ if (isMain(import.meta.url)) {
       resumeSelector,
     });
   });
+  }
 }

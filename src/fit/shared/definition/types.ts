@@ -160,6 +160,7 @@ export type InstanceLifetime =
 export interface FitDefinition {
   version: number;
   type: typeof FIT_DEFINITION_TYPE;
+  description?: string;
   instances: InstanceLifetime[];
   setup?: SharedSetup;
   clusterConfigs?: ClusterConfigRef[];
