@@ -39,13 +39,13 @@ jobs:
     steps:
       - name: Diagnostics1
         run: |
-          echo "App id: ${{ vars.CBFITFRAMEWORK_APP_ID }}"
+          echo "App id: ${{ secrets.CBFITFRAMEWORK_APP_ID }}"
 
       - name: Generate GitHub App token
         id: app-token
         uses: actions/create-github-app-token@v1
         with:
-          app-id: ${{ vars.CBFITFRAMEWORK_APP_ID }}
+          app-id: ${{ secrets.CBFITFRAMEWORK_APP_ID }}
           private-key: ${{ secrets.CBFITFRAMEWORK_PRIVATE_KEY }}
           owner: couchbaselabs
 
