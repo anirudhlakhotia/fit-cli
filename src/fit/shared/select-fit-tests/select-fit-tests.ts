@@ -83,12 +83,15 @@ export interface FitTestDomain {
   excludePrefix?: string;
   /** Maven `-Dtest` selector (a class, or Class#method) used by the sanity run mode. */
   sanitySelector: string;
+  /** Whether to offer "All transactions tests" / "All non-transactions tests" options. */
+  showTransactionOptions?: boolean;
 }
 
 /** The functional flow: everything except the situational package. */
 export const FUNCTIONAL_TEST_DOMAIN: FitTestDomain = {
   excludePrefix: SITUATIONAL_TEST_PATH_PREFIX,
   sanitySelector: "com.couchbase.client.kv.SanityTest",
+  showTransactionOptions: true,
 };
 
 /** The situational flow: only the situational package and its cbdino sanity test. */
@@ -334,8 +337,12 @@ async function askFitTestRunMode(domain: FitTestDomain, promptIdPrefix?: string)
     default: "all",
     choices: [
       { name: "Run everything", value: "all" },
-      { name: "All transactions tests", value: "all-transactions" },
-      { name: "All non-transactions tests", value: "all-non-transactions" },
+      ...(domain.showTransactionOptions
+        ? [
+            { name: "All transactions tests", value: "all-transactions" as FitTestRunMode },
+            { name: "All non-transactions tests", value: "all-non-transactions" as FitTestRunMode },
+          ]
+        : []),
       { name: "Run a single test", value: "single" },
       {
         name: `Run a single sanity test (${domain.sanitySelector})`,
