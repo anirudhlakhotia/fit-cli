@@ -1,6 +1,7 @@
-const RESET = "\u001b[0m";
-const RED = "\u001b[31m";
-const YELLOW = "\u001b[33m";
+const isTTY = process.stderr.isTTY ?? false;
+const RESET = isTTY ? "\u001b[0m" : "";
+const RED = isTTY ? "\u001b[31m" : "";
+const YELLOW = isTTY ? "\u001b[33m" : "";
 
 const baseConsoleError = console.error.bind(console);
 const baseConsoleWarn = console.warn.bind(console);
