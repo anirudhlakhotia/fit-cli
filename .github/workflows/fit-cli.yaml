@@ -45,7 +45,7 @@ jobs:
 
       - name: Generate GitHub App token
         id: app-token
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ secrets.CBFITFRAMEWORK_APP_ID }}
           private-key: ${{ secrets.CBFITFRAMEWORK_PRIVATE_KEY }}
@@ -59,6 +59,7 @@ jobs:
           role-session-name: gha-${{ github.actor }}-${{ github.run_id }}
           audience: sts.amazonaws.com
           retry-max-attempts: 3
+          role-duration-seconds: 43200
 
       - name: Diagnostics
         run: |
@@ -104,32 +105,28 @@ jobs:
           CAPELLA_OVERRIDE_TOKEN: ${{ secrets.CAP_OVERRIDE_TOKEN }}
           CAPELLA_INTERNAL_SUPPORT_TOKEN: ${{ secrets.CAP_INTERNAL_SUPPORT_TOKEN }}
         run: |
+          set -o pipefail
           cd fit-cli
           npm run definition -- execute ${{ inputs.definitionFile }} | tee /tmp/fit-cli-output.log
-          echo "last_line=$(tail -1 /tmp/fit-cli-output.log)" >> $GITHUB_OUTPUT
         id: run-fit-cli
 
-      # The FIT test-driver writes surefire JUnit XML, which fit-cli collects into
-      # each run's artifact dir (see collect-junit.ts). A run can produce many of
-      # these across instances/clusters/sessions, so we match them with a glob.
-      # if: always() — we still want the report when the test run step failed.
       - name: Publish JUnit results
         if: always()
-        uses: mikepenz/action-junit-report@v5
+        uses: mikepenz/action-junit-report@v6
         with:
           report_paths: '/tmp/fit-cli/**/surefire-reports/TEST-*.xml'
           check_name: FIT functional tests
           require_tests: false   # a definition may legitimately run no functional tests
+          detailed_summary: true
+          include_passed: true
 
       - name: Job summary
         if: always()
         run: |
           echo "## fit-cli Run Artifacts" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          if [ -n "${{ steps.run-fit-cli.outputs.last_line }}" ]; then
-            echo "**Result:** ${{ steps.run-fit-cli.outputs.last_line }}" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-          fi
+          echo "**fit-cli result:** ${{ steps.run-fit-cli.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
           echo "Artifacts are attached to [this run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) as \`fit-cli-run-${{ github.run_id }}\`." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Files" >> $GITHUB_STEP_SUMMARY

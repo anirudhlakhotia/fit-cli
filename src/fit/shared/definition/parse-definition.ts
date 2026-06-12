@@ -168,6 +168,26 @@ function validateClusterNode(value: unknown, path: string): CbdinoclusterDef["no
   };
 }
 
+/** Per-service RAM quotas (MB) the docker deployer understands. */
+const DOCKER_MEMORY_KEYS = [
+  "kv-memory",
+  "index-memory",
+  "fts-memory",
+  "cbas-memory",
+  "eventing-memory",
+] as const;
+
+function validateCbdinoclusterDocker(value: unknown, path: string): CbdinoclusterDef["docker"] {
+  const record = requireRecord(value, path);
+  const docker: NonNullable<CbdinoclusterDef["docker"]> = {};
+  for (const key of DOCKER_MEMORY_KEYS) {
+    if (record[key] !== undefined) {
+      docker[key] = requirePositiveInteger(record, key, `${path}.${key}`);
+    }
+  }
+  return docker;
+}
+
 function validateCbdinoclusterDef(value: unknown, path: string): CbdinoclusterDef {
   const record = requireRecord(value, path);
   if (!Array.isArray(record.nodes) || record.nodes.length === 0) {
@@ -182,6 +202,9 @@ function validateCbdinoclusterDef(value: unknown, path: string): CbdinoclusterDe
       "operator-version": requireString(cao, "operator-version", `${path}.cao.operator-version`),
       "gateway-version": requireString(cao, "gateway-version", `${path}.cao.gateway-version`),
     };
+  }
+  if (record.docker !== undefined) {
+    def.docker = validateCbdinoclusterDocker(record.docker, `${path}.docker`);
   }
   return def;
 }

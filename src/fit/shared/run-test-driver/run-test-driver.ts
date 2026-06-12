@@ -169,7 +169,12 @@ export function runTestDriverArgs(
     "--projects",
     "test-driver",
     "--also-make",
-    "-Dmaven.test.failure.ignore",
+    // =true is explicit on purpose: Maven must run *every* test rather than
+    // bailing on the first failure, and fit-cli decides pass/fail afterwards from
+    // the surefire counts (see didFitTestDriverPass / the FatalToSession raised
+    // when a run isn't ok). A bare -Dmaven.test.failure.ignore sets the property
+    // to "", which surefire can read as false — so spell out the value.
+    "-Dmaven.test.failure.ignore=true",
     "-Dsurefire.failIfNoSpecifiedTests=false",
     ...(selection.mavenTestSelector ? [`-Dtest=${selection.mavenTestSelector}`] : []),
     ...(fitConfigPath ? [`-Dfit.config=${fitConfigPath}`] : []),
