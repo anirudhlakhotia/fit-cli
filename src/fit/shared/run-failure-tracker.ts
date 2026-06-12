@@ -3,23 +3,26 @@ import type { RecordedFailure } from "../../util/non-fit/artifacts.js";
 
 const SEVERITY: Record<FailureClassification, number> = {
   NonFatal: 0,
-  FatalToSession: 1,
-  FatalToCluster: 2,
-  FatalToInstance: 3,
-  FatalToAll: 4,
+  FatalToRun: 1,
+  FatalToSession: 2,
+  FatalToCluster: 3,
+  FatalToInstance: 4,
+  FatalToAll: 5,
 };
 
 /**
  * Where a failure happened, in the vocabulary of a definition file: an instance
- * holds clusters, a cluster holds sessions. `clusterless` sessions (situational
- * runs) aren't tied to a cluster, so they carry a session but no cluster. All but
- * `instanceIndex` are optional — a failure raised before any run started (e.g. a
- * precondition check) only knows the instance, if that.
+ * holds clusters, a cluster holds sessions, and a session holds runs.
+ * `clusterless` sessions (situational runs) aren't tied to a cluster, so they
+ * carry a session but no cluster. All but `instanceIndex` are optional — a
+ * failure raised before any run started (e.g. a precondition check) only knows
+ * the instance, if that.
  */
 export interface FailureContext {
   instanceIndex: number;
   clusterIndex?: number;
   sessionIndex?: number;
+  runIndex?: number;
   clusterless?: boolean;
 }
 
@@ -44,7 +47,7 @@ export class RunFailureTracker {
 
   shouldExitNonZero(): boolean {
     return (
-      !!this.worstFailure && SEVERITY[this.worstFailure.classification as FailureClassification] >= SEVERITY.FatalToSession
+      !!this.worstFailure && SEVERITY[this.worstFailure.classification as FailureClassification] >= SEVERITY.FatalToRun
     );
   }
 }

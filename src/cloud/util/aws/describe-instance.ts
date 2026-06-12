@@ -4,9 +4,9 @@
  * the aws CLI; the JSON shaping lives in parse-instance.ts.
  *
  * Run on its own:
- *   npx tsx src/util/non-fit/aws/describe-instance.ts --id i-0123456789abcdef0
+ *   npx tsx src/cloud/util/aws/describe-instance.ts --id i-0123456789abcdef0
  */
-import { isMain, runCli } from "../cli.js";
+import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { awsJson, logAwsAction, prepareAwsCli } from "./aws-cli.js";
 import { parseInstances, type DescribeInstancesResponse, type InstanceInfo } from "./parse-instance.js";
 

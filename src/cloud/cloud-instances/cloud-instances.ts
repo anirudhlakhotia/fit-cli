@@ -9,12 +9,12 @@
  * npm run cloud-instances -- --help
  */
 import { isMain, runCli } from "../../util/non-fit/cli.js";
-import { logAwsAction, prepareAwsCli } from "../../util/non-fit/aws/aws-cli.js";
-import { AWS_REGION } from "../../util/non-fit/aws/aws-target.js";
-import { checkCredentials } from "../../util/non-fit/aws/identity.js";
-import { listInstances, LIVE_STATES } from "../../util/non-fit/aws/list-instances.js";
-import { terminateInstance } from "../../util/non-fit/aws/terminate-instance.js";
-import { describeInstance } from "../../util/non-fit/aws/describe-instance.js";
+import { logAwsAction, prepareAwsCli } from "../../cloud/util/aws/aws-cli.js";
+import { AWS_REGION } from "../../cloud/util/aws/aws-target.js";
+import { checkCredentials } from "../../cloud/util/aws/identity.js";
+import { listInstances, LIVE_STATES } from "../../cloud/util/aws/list-instances.js";
+import { terminateInstance } from "../../cloud/util/aws/terminate-instance.js";
+import { describeInstance } from "../../cloud/util/aws/describe-instance.js";
 import { confirm } from "../../util/non-fit/prompts.js";
 import { FIT_OWNER_TAG } from "../../fit/util/aws/fit-instance.js";
 import {
@@ -23,7 +23,7 @@ import {
   terminateInstanceCommand,
   type InstanceListContext,
 } from "../../fit/util/aws/lifecycle-warning.js";
-import { manageInstances, type InstanceQuery } from "../../util/non-fit/aws/manage-instances.js";
+import { manageInstances, type InstanceQuery } from "../../cloud/util/aws/manage-instances.js";
 
 const HELP = `Manage fit-cli EC2 instances.
 

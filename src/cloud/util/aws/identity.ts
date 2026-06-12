@@ -5,12 +5,12 @@
  * fails early with a clear message rather than midway through provisioning.
  *
  * Run on its own:
- *   npx tsx src/util/non-fit/aws/identity.ts
+ *   npx tsx src/cloud/util/aws/identity.ts
  *
  * Prints the caller identity, or the reason it couldn't be determined (exit 1).
  */
-import { isMain, runCli } from "../cli.js";
-import { capture } from "../proc.js";
+import { isMain, runCli } from "../../../util/non-fit/cli.js";
+import { capture } from "../../../util/non-fit/proc.js";
 import { awsJson, ensureAwsCli, logAwsAction, prepareAwsCli } from "./aws-cli.js";
 
 /** Who the current credentials belong to. */

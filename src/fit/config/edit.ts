@@ -3,7 +3,9 @@ import {
   CLOUD_INSTANCE_PURPOSES,
   DEFAULT_CAPELLA_SETTINGS,
   DEFAULT_CLOUD_INSTANCE_TYPES,
+  DEFAULT_OUTPUT_FORMAT,
   FIT_CLI_CONFIG_VERSION,
+  OUTPUT_FORMATS,
   defaultFitCliConfigPath,
   loadFitCliConfig,
   resolveGerritSshKey,
@@ -14,8 +16,10 @@ import {
   type FitCliCloudConfig,
   type FitCliConfig,
   type FitCliInstanceTypes,
+  type FitCliOutputConfig,
+  type OutputFormat,
 } from "../util/config.js";
-import { confirm, input, password } from "../../util/non-fit/prompts.js";
+import { confirm, input, password, select } from "../../util/non-fit/prompts.js";
 import type { AutoInitCliArgs } from "./config.js";
 
 /** The AWS default instance types, keyed by testing purpose. */
@@ -52,6 +56,8 @@ export interface InitAnswers {
   githubToken?: string;
   /** Readonly password for the hosted results database; empty/undefined to skip. */
   resultsDbPassword?: string;
+  /** Default format generated definition files are written in. */
+  outputFormat?: OutputFormat;
   /** Gerrit username; defaults to github.user when blank. */
   gerritUser?: string;
   /** Path to the SSH private key registered with Gerrit. */
@@ -123,8 +129,6 @@ function capellaDefaultsFromConfig(config?: FitCliConfig): CapellaInitAnswers {
     endpoint: c?.endpoint ?? DEFAULT_CAPELLA_SETTINGS.endpoint,
     organizationId: c?.organizationId ?? DEFAULT_CAPELLA_SETTINGS.organizationId,
     password: c?.password ?? DEFAULT_CAPELLA_SETTINGS.password,
-    overrideToken: c?.overrideToken ?? DEFAULT_CAPELLA_SETTINGS.overrideToken,
-    internalSupportToken: c?.internalSupportToken ?? DEFAULT_CAPELLA_SETTINGS.internalSupportToken,
   };
 }
 
@@ -151,13 +155,19 @@ export function initAnswersToConfig(answers: InitAnswers, existing?: FitCliConfi
     : undefined;
   // Preserve a hand-set username; edit only prompts for the password.
   const resultsDbPassword = trimOptional(answers.resultsDbPassword);
-  const resultsDbUsername = existing?.resultsDb?.username;
+  const resultsDbUsername = existing?.output?.resultsDb?.username;
   const resultsDb =
     resultsDbPassword || resultsDbUsername
       ? {
           ...(resultsDbPassword ? { password: resultsDbPassword } : {}),
           ...(resultsDbUsername ? { username: resultsDbUsername } : {}),
         }
+      : undefined;
+  // Group output-related settings (definition format + results DB) under `output`.
+  const outputFormat = answers.outputFormat ?? existing?.output?.format;
+  const output: FitCliOutputConfig | undefined =
+    outputFormat || resultsDb
+      ? { ...(outputFormat ? { format: outputFormat } : {}), ...(resultsDb ? { resultsDb } : {}) }
       : undefined;
 
   const gerritUser = trimOptional(answers.gerritUser);
@@ -178,7 +188,7 @@ export function initAnswersToConfig(answers: InitAnswers, existing?: FitCliConfi
     version: FIT_CLI_CONFIG_VERSION,
     ...(cloud ? { cloud } : {}),
     ...(github ? { github } : {}),
-    ...(resultsDb ? { resultsDb } : {}),
+    ...(output ? { output } : {}),
     ...(gerrit ? { gerrit } : {}),
     ...(capella ? { capella } : {}),
   };
@@ -241,7 +251,7 @@ async function promptForGerritSshKeyPath(existing?: FitCliConfig): Promise<strin
 }
 
 async function promptForResultsDbPassword(existing?: FitCliConfig): Promise<string | undefined> {
-  const existingPassword = existing?.resultsDb?.password ?? process.env.FIT_RESULTS_DB_PASSWORD;
+  const existingPassword = existing?.output?.resultsDb?.password ?? process.env.FIT_RESULTS_DB_PASSWORD;
   const shared = "faas.couchbase.com results database password, for storing dev FIT/SIT and FIT/PERF results"
   const entered = await password({
     promptId: "init.results-db.password",
@@ -254,10 +264,21 @@ async function promptForResultsDbPassword(existing?: FitCliConfig): Promise<stri
   return trimOptional(entered) ?? existingPassword;
 }
 
+async function promptForOutputFormat(existing?: FitCliConfig): Promise<OutputFormat> {
+  const current = existing?.output?.format ?? DEFAULT_OUTPUT_FORMAT;
+  return select<OutputFormat>({
+    promptId: "init.output.format",
+    message: "Default format to write generated definition files in:",
+    choices: OUTPUT_FORMATS.map((format) => ({ name: format, value: format })),
+    default: current,
+  });
+}
+
 async function promptForConfig(existing?: FitCliConfig, configPath?: string): Promise<InitAnswers> {
   const githubUser = await promptForGithubUser(existing);
   const githubToken = await promptForGithubToken(existing);
   const resultsDbPassword = await promptForResultsDbPassword(existing);
+  const outputFormat = await promptForOutputFormat(existing);
   const gerritUser = await promptForGerritUser(existing);
   const gerritSshKeyPath = await promptForGerritSshKeyPath(existing);
   const defaults = buildInitialDefaults(existing);
@@ -289,6 +310,7 @@ async function promptForConfig(existing?: FitCliConfig, configPath?: string): Pr
     githubUser,
     githubToken,
     resultsDbPassword,
+    outputFormat,
     gerritUser,
     gerritSshKeyPath,
     configureCapella,
@@ -347,8 +369,6 @@ async function promptForCapella(
       endpoint: endpoint,
       organizationId: await ask("organizationId", "Capella organization ID"),
       password: trimOptional(capellaPassword) ?? defaults.password,
-      overrideToken: await ask("overrideToken", "Capella override token"),
-      internalSupportToken: await ask("internalSupportToken", "Capella internal support token"),
     },
   };
 }
@@ -380,16 +400,22 @@ export function formatConfigForDisplay(config: FitCliConfig): string {
     ...(config.github
       ? { github: { ...config.github, ...(config.github.token ? { token: ELIDED } : {}) } }
       : {}),
-    ...(config.resultsDb
-      ? { resultsDb: { ...config.resultsDb, ...(config.resultsDb.password ? { password: ELIDED } : {}) } }
+    ...(config.output?.resultsDb
+      ? {
+          output: {
+            ...config.output,
+            resultsDb: {
+              ...config.output.resultsDb,
+              ...(config.output.resultsDb.password ? { password: ELIDED } : {}),
+            },
+          },
+        }
       : {}),
     ...(config.capella
       ? {
           capella: {
             ...config.capella,
             ...(config.capella.password ? { password: ELIDED } : {}),
-            ...(config.capella.overrideToken ? { overrideToken: ELIDED } : {}),
-            ...(config.capella.internalSupportToken ? { internalSupportToken: ELIDED } : {}),
           },
         }
       : {}),
@@ -472,10 +498,8 @@ function mask(value: string | undefined): string {
 
 const SECRET_FIELDS = new Set([
   "github.token",
-  "resultsDb.password",
+  "output.resultsDb.password",
   "capella.password",
-  "capella.overrideToken",
-  "capella.internalSupportToken",
 ]);
 
 /** Check whether a diagnostic-only env var is present, appending an entry to the log. */
@@ -635,13 +659,13 @@ export function buildAutoConfig(
     log.push({ field: "gerrit.*", source: "--disable-gerrit", found: false });
   }
 
-  // Results DB section
-  let resultsDb: FitCliConfig["resultsDb"] | undefined;
+  // Output section: default definition format + the hosted results-DB credentials.
+  let resultsDb: FitCliOutputConfig["resultsDb"] | undefined;
   if (!args.disableResultsDb) {
-    const pw = resolveField(log, "resultsDb.password", args.resultsDbPassword, "--results-db-password", [
+    const pw = resolveField(log, "output.resultsDb.password", args.resultsDbPassword, "--results-db-password", [
       { name: "FIT_RESULTS_DB_PASSWORD", value: env.FIT_RESULTS_DB_PASSWORD },
     ]);
-    const username = resolveField(log, "resultsDb.username", args.resultsDbUsername, "--results-db-username", [
+    const username = resolveField(log, "output.resultsDb.username", args.resultsDbUsername, "--results-db-username", [
       { name: "FIT_RESULTS_DB_USERNAME", value: env.FIT_RESULTS_DB_USERNAME },
     ]);
 
@@ -651,8 +675,20 @@ export function buildAutoConfig(
     };
     if (Object.keys(parts).length > 0) resultsDb = parts;
   } else {
-    log.push({ field: "resultsDb.*", source: "--disable-results-db", found: false });
+    log.push({ field: "output.resultsDb.*", source: "--disable-results-db", found: false });
   }
+
+  const formatValue = resolveField(log, "output.format", args.outputFormat, "--output-format", [
+    { name: "FIT_OUTPUT_FORMAT", value: env.FIT_OUTPUT_FORMAT },
+  ]);
+  const format =
+    formatValue && (OUTPUT_FORMATS as readonly string[]).includes(formatValue)
+      ? (formatValue as OutputFormat)
+      : undefined;
+  const output: FitCliOutputConfig | undefined =
+    format || resultsDb
+      ? { ...(format ? { format } : {}), ...(resultsDb ? { resultsDb } : {}) }
+      : undefined;
 
   // Capella section. Anchored on the username: with no username there's nothing
   // to log in as, so we skip the section entirely rather than write a block of
@@ -702,36 +738,12 @@ export function buildAutoConfig(
       ],
       DEFAULT_CAPELLA_SETTINGS.password,
     );
-    const overrideToken = resolveField(
-      log,
-      "capella.overrideToken",
-      args.capellaOverrideToken,
-      "--capella-override-token",
-      [
-        { name: "CAPELLA_OVERRIDE_TOKEN", value: env.CAPELLA_OVERRIDE_TOKEN },
-        { name: "CAP_OVERRIDE_TOKEN", value: env.CAP_OVERRIDE_TOKEN },
-      ],
-      DEFAULT_CAPELLA_SETTINGS.overrideToken,
-    );
-    const internalSupportToken = resolveField(
-      log,
-      "capella.internalSupportToken",
-      args.capellaInternalSupportToken,
-      "--capella-internal-support-token",
-      [
-        { name: "CAPELLA_INTERNAL_SUPPORT_TOKEN", value: env.CAPELLA_INTERNAL_SUPPORT_TOKEN },
-        { name: "CAP_INTERNAL_SUPPORT_TOKEN", value: env.CAP_INTERNAL_SUPPORT_TOKEN },
-      ],
-      DEFAULT_CAPELLA_SETTINGS.internalSupportToken,
-    );
 
       capella = {
         username,
         ...(endpoint ? { endpoint } : {}),
         ...(organizationId ? { organizationId } : {}),
         ...(capellaPassword ? { password: capellaPassword } : {}),
-        ...(overrideToken ? { overrideToken } : {}),
-        ...(internalSupportToken ? { internalSupportToken } : {}),
       };
     }
   }
@@ -740,7 +752,7 @@ export function buildAutoConfig(
     version: FIT_CLI_CONFIG_VERSION,
     ...(cloud ? { cloud } : {}),
     ...(github ? { github } : {}),
-    ...(resultsDb ? { resultsDb } : {}),
+    ...(output ? { output } : {}),
     ...(gerrit ? { gerrit } : {}),
     ...(capella ? { capella } : {}),
   };

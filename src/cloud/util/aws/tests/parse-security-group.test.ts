@@ -2,7 +2,7 @@
  * Unit tests for parseSecurityGroupId.
  *
  * Run on their own:
- *   node --import tsx --test src/util/non-fit/aws/tests/parse-security-group.test.ts
+ *   node --import tsx --test src/cloud/util/aws/tests/parse-security-group.test.ts
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";

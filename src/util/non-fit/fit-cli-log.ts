@@ -38,22 +38,60 @@ function stringify(arg: unknown): string {
   return String(arg);
 }
 
-function formatFitCliMessage(label: "FitCliError" | "FitCliWarn", color: string, args: unknown[]): string {
+/**
+ * Optional first argument to the warn/error helpers. When a `classification` is
+ * given it's appended to the label so the line reads `FitCliWarn/FatalToCluster:`
+ * (or `FitCliError/FatalToRun:`), making the failure's severity/scope visible at
+ * a glance. Kept as a plain string so this FIT-agnostic logging layer doesn't
+ * depend on the FIT `FailureClassification` type.
+ */
+export interface FitCliLogOptions {
+  classification?: string;
+}
+
+function isLogOptions(arg: unknown): arg is FitCliLogOptions {
+  return (
+    typeof arg === "object" &&
+    arg !== null &&
+    !Array.isArray(arg) &&
+    !(arg instanceof Error) &&
+    "classification" in arg
+  );
+}
+
+/** Peel an optional leading {@link FitCliLogOptions} off the variadic log args. */
+function splitLogArgs(args: unknown[]): { classification?: string; rest: unknown[] } {
+  if (args.length > 0 && isLogOptions(args[0])) {
+    const { classification } = args[0];
+    return { ...(classification ? { classification } : {}), rest: args.slice(1) };
+  }
+  return { rest: args };
+}
+
+function formatFitCliMessage(
+  label: "FitCliError" | "FitCliWarn",
+  color: string,
+  args: unknown[],
+  classification?: string,
+): string {
   const message = args.map(stringify).join(" ").trimEnd();
   const leadingNewlines = message.match(/^\n*/)?.[0] ?? "";
   const body = message
     .slice(leadingNewlines.length)
-    .replace(/^(?:FitCliError|FitCliWarn):\s*/, "")
+    .replace(/^(?:FitCliError|FitCliWarn)(?:\/\w+)?:\s*/, "")
     .replace(/^(?:✗|→)\s*/, "");
-  return `${leadingNewlines}${label}: ${color}${body}${RESET}`;
+  const fullLabel = classification ? `${label}/${classification}` : label;
+  return `${leadingNewlines}${fullLabel}: ${color}${body}${RESET}`;
 }
 
 export function formatFitCliError(...args: unknown[]): string {
-  return formatFitCliMessage("FitCliError", RED, args);
+  const { classification, rest } = splitLogArgs(args);
+  return formatFitCliMessage("FitCliError", RED, rest, classification);
 }
 
 export function formatFitCliWarn(...args: unknown[]): string {
-  return formatFitCliMessage("FitCliWarn", YELLOW, args);
+  const { classification, rest } = splitLogArgs(args);
+  return formatFitCliMessage("FitCliWarn", YELLOW, rest, classification);
 }
 
 export function formatTimestampedChunk(

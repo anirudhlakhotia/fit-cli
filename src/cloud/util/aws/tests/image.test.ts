@@ -2,7 +2,7 @@
  * Unit tests for pickLatestImageId.
  *
  * Run on their own:
- *   node --import tsx --test src/util/non-fit/aws/tests/image.test.ts
+ *   node --import tsx --test src/cloud/util/aws/tests/image.test.ts
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";

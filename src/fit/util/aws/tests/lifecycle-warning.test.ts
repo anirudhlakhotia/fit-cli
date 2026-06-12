@@ -9,7 +9,7 @@ import {
 test("terminateInstanceCommand includes the instance id", () => {
   assert.equal(
     terminateInstanceCommand("i-123"),
-    "npx tsx src/util/non-fit/aws/terminate-instance.ts --id i-123",
+    "npx tsx src/cloud/util/aws/terminate-instance.ts --id i-123",
   );
 });
 

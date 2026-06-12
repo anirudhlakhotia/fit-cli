@@ -8,16 +8,16 @@
  * tag), and the same owner — implicit, since describe-instances only ever sees the
  * account the current credentials belong to. This is the FIT-specific opinion (the
  * ownership tag, the wording of the warning); the listing plumbing it composes
- * lives in util/non-fit/aws.
+ * lives in cloud/util/aws.
  *
  * Run on its own:
  *   npx tsx src/fit/util/aws/warn-existing-instances.ts
  */
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
-import { logAwsAction, prepareAwsCli } from "../../../util/non-fit/aws/aws-cli.js";
-import { checkCredentials } from "../../../util/non-fit/aws/identity.js";
-import { listInstances, LIVE_STATES } from "../../../util/non-fit/aws/list-instances.js";
-import { type InstanceInfo } from "../../../util/non-fit/aws/parse-instance.js";
+import { logAwsAction, prepareAwsCli } from "../../../cloud/util/aws/aws-cli.js";
+import { checkCredentials } from "../../../cloud/util/aws/identity.js";
+import { listInstances, LIVE_STATES } from "../../../cloud/util/aws/list-instances.js";
+import { type InstanceInfo } from "../../../cloud/util/aws/parse-instance.js";
 import { fitCliWarn } from "../../../util/non-fit/fit-cli-log.js";
 import { FIT_OWNER_TAG } from "./fit-instance.js";
 import { formatExistingInstancesBanner, type InstanceListContext } from "./lifecycle-warning.js";

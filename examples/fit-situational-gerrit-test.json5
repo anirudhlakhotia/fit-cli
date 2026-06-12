@@ -20,15 +20,10 @@
         // FIT/SIT creates its own clusters via cbdinocluster; this init config must be present.
         cbdinocluster: {
           init: {
-            // This file will be uploaded verbatim into clean environments as ~/.cbdinocluster
-            config: {
-              version: 6,
-              docker: {
-                enabled: true,
-                network: 'fit',
-                host: 'unix:///var/run/docker.sock',
-              },
-            },
+            // Passed to `cbdinocluster init` on clean environments to set up ~/.cbdinocluster.
+            // SIT leaves Capella enabled (no --disable-capella); fit-cli appends your GitHub
+            // credentials and forwards your fit-cli Capella settings at runtime.
+            args: '--auto --disable-aws --disable-azure --disable-gcp --disable-k8s --disable-dns --docker-network fit',
           },
         },
       },

@@ -1,5 +1,5 @@
-import { type InstanceInfo } from "../../../util/non-fit/aws/parse-instance.js";
-import { AWS_REGION } from "../../../util/non-fit/aws/aws-target.js";
+import { type InstanceInfo } from "../../../cloud/util/aws/parse-instance.js";
+import { AWS_REGION } from "../../../cloud/util/aws/aws-target.js";
 
 function formatBanner(title: string, lines: string[]): string {
   const content = [title, ...lines];
@@ -13,7 +13,7 @@ function formatBanner(title: string, lines: string[]): string {
 }
 
 export function terminateInstanceCommand(instanceId: string): string {
-  return `npx tsx src/util/non-fit/aws/terminate-instance.ts --id ${instanceId}`;
+  return `npx tsx src/cloud/util/aws/terminate-instance.ts --id ${instanceId}`;
 }
 
 export function formatEc2DeletionResponsibilityBanner(

@@ -1,5 +1,5 @@
 /**
- * aws-cli — the thin shared layer the rest of util/non-fit/aws sits on. We drive
+ * aws-cli — the thin shared layer the rest of cloud/util/aws sits on. We drive
  * the real `aws` CLI (rather than an SDK), exactly as the cluster code drives
  * `cbdinocluster`: it keeps dependencies at zero, reuses the caller's existing
  * AWS config/credentials, and means every module here can be exercised on its
@@ -9,13 +9,13 @@
  * is not configurable.
  *
  * Run on its own (checks the aws CLI is usable):
- *   npx tsx src/util/non-fit/aws/aws-cli.ts
+ *   npx tsx src/cloud/util/aws/aws-cli.ts
  */
-import { isMain, runCli } from "../cli.js";
+import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { ensureFitCliConfigEnv } from "../../../fit/util/config.js";
-import { fitCliError } from "../fit-cli-log.js";
-import { capture } from "../proc.js";
-import { findOnPath } from "../which.js";
+import { fitCliError } from "../../../util/non-fit/fit-cli-log.js";
+import { capture } from "../../../util/non-fit/proc.js";
+import { findOnPath } from "../../../util/non-fit/which.js";
 import { AWS_REGION } from "./aws-target.js";
 
 /** Where to get the AWS CLI, shown when it can't be found on the PATH. */

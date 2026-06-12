@@ -8,6 +8,8 @@ Only add things to this file that are very very specific to LLMs.  Almost everyt
 - Do not commit or push or make branches unless explicitly instructed to.
 
 ## Worktrees
-- The basic pattern is I want to see your uncommitted changes in the worktree so I can review.  Then I'll ask you to merge them - which means commit and merge back to main, with a nice commit message.
-- When merging a worktree back to main, give it a nice commit message.
+- The basic pattern is I want to see your uncommitted changes in the worktree so I can review.  
+- Once you finish your work, include in your description of whether we're on a worktree and which one.
+- If I ask you to merge them: commit and merge back to main, as a single merge commit with a nice commit message.  Do not push.
+- If I ask you to stage them: put them on main, not committed, so I can test and review further.
 - Before creating a worktree, try to understand the problem enough first to give the worktree a useful name.

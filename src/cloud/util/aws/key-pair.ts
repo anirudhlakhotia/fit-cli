@@ -5,12 +5,12 @@
  * callers choose the name and where the key lands.
  *
  * Run on its own:
- *   npx tsx src/util/non-fit/aws/key-pair.ts --create my-key --out /tmp/my-key.pem
- *   npx tsx src/util/non-fit/aws/key-pair.ts --delete my-key
+ *   npx tsx src/cloud/util/aws/key-pair.ts --create my-key --out /tmp/my-key.pem
+ *   npx tsx src/cloud/util/aws/key-pair.ts --delete my-key
  */
 import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { isMain, runCli } from "../cli.js";
+import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { awsText, logAwsAction, prepareAwsCli } from "./aws-cli.js";
 
 /**

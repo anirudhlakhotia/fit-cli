@@ -22,9 +22,9 @@
 import { readFileSync } from "fs";
 import { join } from "path";
 import { isMain, runCli } from "../../util/non-fit/cli.js";
-import { prepareAwsCli } from "../../util/non-fit/aws/aws-cli.js";
-import { AWS_REGION } from "../../util/non-fit/aws/aws-target.js";
-import { describeInstance } from "../../util/non-fit/aws/describe-instance.js";
+import { prepareAwsCli } from "../../cloud/util/aws/aws-cli.js";
+import { AWS_REGION } from "../../cloud/util/aws/aws-target.js";
+import { describeInstance } from "../../cloud/util/aws/describe-instance.js";
 import { RemoteTarget } from "../../util/non-fit/remote-target.js";
 import { waitForSsh, type RemoteHost } from "../../util/non-fit/ssh.js";
 import type { RunOptions } from "../../util/non-fit/proc.js";

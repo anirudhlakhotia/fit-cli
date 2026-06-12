@@ -5,11 +5,11 @@
  * lives in parse-instance.ts.
  *
  * Run on its own:
- *   npx tsx src/util/non-fit/aws/list-instances.ts                                 # fit-cli=owned
- *   npx tsx src/util/non-fit/aws/list-instances.ts --tag env=ci
- *   npx tsx src/util/non-fit/aws/list-instances.ts --key fit-cli-abc123
+ *   npx tsx src/cloud/util/aws/list-instances.ts                                 # fit-cli=owned
+ *   npx tsx src/cloud/util/aws/list-instances.ts --tag env=ci
+ *   npx tsx src/cloud/util/aws/list-instances.ts --key fit-cli-abc123
  */
-import { isMain, runCli } from "../cli.js";
+import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { awsJson, logAwsAction, prepareAwsCli } from "./aws-cli.js";
 import { parseInstances, type DescribeInstancesResponse, type InstanceInfo } from "./parse-instance.js";
 

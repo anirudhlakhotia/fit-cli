@@ -1,7 +1,7 @@
 /**
  * fit-instance — provision a clean EC2 instance for a FIT run. This is the
  * FIT-specific glue that composes the generic AWS/SSH plumbing in
- * util/non-fit/aws and util/non-fit/ssh into "give me a box I can run FIT on,
+ * cloud/util/aws and util/non-fit/ssh into "give me a box I can run FIT on,
  * and a handle to tear it down". The reusable, FIT-agnostic pieces stay in
  * util/non-fit; only the opinions (instance defaults, the fit-cli ownership
  * tag, where the key lands) live here.
@@ -14,17 +14,17 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { artifactFromPath, type Artifact, type Detail } from "../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
-import { AWS_REGION, AWS_SUBNET_ID, AWS_VPC_ID } from "../../../util/non-fit/aws/aws-target.js";
-import { checkCredentials } from "../../../util/non-fit/aws/identity.js";
-import { findUbuntuAmi } from "../../../util/non-fit/aws/image.js";
-import { createInstance, waitForInstanceRunning, type BlockDeviceMapping } from "../../../util/non-fit/aws/create-instance.js";
-import { describeInstance } from "../../../util/non-fit/aws/describe-instance.js";
-import { findInstancesByKeyName } from "../../../util/non-fit/aws/list-instances.js";
-import { type InstanceInfo } from "../../../util/non-fit/aws/parse-instance.js";
-import { terminateInstance } from "../../../util/non-fit/aws/terminate-instance.js";
+import { AWS_REGION, AWS_SUBNET_ID, AWS_VPC_ID } from "../../../cloud/util/aws/aws-target.js";
+import { checkCredentials } from "../../../cloud/util/aws/identity.js";
+import { findUbuntuAmi } from "../../../cloud/util/aws/image.js";
+import { createInstance, waitForInstanceRunning, type BlockDeviceMapping } from "../../../cloud/util/aws/create-instance.js";
+import { describeInstance } from "../../../cloud/util/aws/describe-instance.js";
+import { findInstancesByKeyName } from "../../../cloud/util/aws/list-instances.js";
+import { type InstanceInfo } from "../../../cloud/util/aws/parse-instance.js";
+import { terminateInstance } from "../../../cloud/util/aws/terminate-instance.js";
 import { ensureFitCliConfigEnv } from "../config.js";
-import { createKeyPair, deleteKeyPair } from "../../../util/non-fit/aws/key-pair.js";
-import { ensureSecurityGroup } from "../../../util/non-fit/aws/security-group.js";
+import { createKeyPair, deleteKeyPair } from "../../../cloud/util/aws/key-pair.js";
+import { ensureSecurityGroup } from "../../../cloud/util/aws/security-group.js";
 import { instanceRunDir } from "../../../util/non-fit/replay.js";
 import { waitForSsh, type RemoteHost } from "../../../util/non-fit/ssh.js";
 import { RemoteTarget } from "../../../util/non-fit/remote-target.js";
@@ -40,6 +40,18 @@ export const FIT_OWNER_TAG = { key: "fit-cli", value: "owned" } as const;
 
 /** Login user for manual SSH. */
 export const FIT_INSTANCE_USER = "ubuntu";
+
+/**
+ * The EC2 `Name` tag (the display name in the AWS console) for a box fit-cli
+ * launches: `fit-cli`, the creating user, and the launch time in UTC down to the
+ * minute, so an instance is identifiable at a glance and sorts by launch time.
+ * e.g. `fit-cli-alice-20260612-1037`.
+ */
+export function fitInstanceName(creator: string, now: Date = new Date()): string {
+  const iso = now.toISOString(); // 2026-06-12T10:37:00.000Z
+  const stamp = `${iso.slice(0, 10).replace(/-/g, "")}-${iso.slice(11, 16).replace(":", "")}`;
+  return `fit-cli-${creator}-${stamp}`;
+}
 
 /**
  * Default instance type for FIT EC2 instances.
@@ -155,7 +167,11 @@ export async function provisionFitInstance(options: ProvisionOptions = {}): Prom
         keyName,
         securityGroupId,
         subnetId: AWS_SUBNET_ID,
-        tags: { [FIT_OWNER_TAG.key]: FIT_OWNER_TAG.value, "created-by": creatorTag },
+        tags: {
+          Name: fitInstanceName(creatorTag),
+          [FIT_OWNER_TAG.key]: FIT_OWNER_TAG.value,
+          "created-by": creatorTag,
+        },
         blockDeviceMappings: fitBlockDeviceMappings(),
       },
     );

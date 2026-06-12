@@ -45,7 +45,7 @@ export function defaultCbdinoclusterInitArgs(
  * `cbdinocluster init --auto` populates the `capella` block from the `CAPELLA_*`
  * environment variables fit-cli forwards to the box (see
  * `uploadRemoteCapellaConfig` / cbdinocluster's `cmd/init.go`, which reads
- * `CAPELLA_ENDPOINT/USER/PASS/OID/OVERRIDE_TOKEN/INTERNAL_SUPPORT_TOKEN`). With a
+ * `CAPELLA_ENDPOINT/USER/PASS/OID`). With a
  * `CAPELLA_USER` present, `--auto` enables and fills in Capella; without one it
  * leaves Capella disabled. AWS stays disabled here — the config patch flips
  * `aws.enabled` on afterwards (the cloud deployer needs both).

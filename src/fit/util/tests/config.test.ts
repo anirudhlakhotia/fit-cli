@@ -121,18 +121,36 @@ test("resolveGithubToken falls back to GITHUB_TOKEN then GH_TOKEN", () => {
   assert.equal(resolveGithubToken({ config: { version: FIT_CLI_CONFIG_VERSION }, env: {} }), undefined);
 });
 
-test("parses stored results-database credentials", () => {
+test("parses stored results-database credentials under output", () => {
+  const parsed = parseFitCliConfig(`{ version: 1, output: { resultsDb: { password: 's3cret', username: 'readonly' } } }`);
+
+  assert.deepEqual(parsed, {
+    version: FIT_CLI_CONFIG_VERSION,
+    output: { resultsDb: { password: "s3cret", username: "readonly" } },
+  });
+});
+
+test("folds a legacy top-level resultsDb into output.resultsDb", () => {
   const parsed = parseFitCliConfig(`{ version: 1, resultsDb: { password: 's3cret', username: 'readonly' } }`);
 
   assert.deepEqual(parsed, {
     version: FIT_CLI_CONFIG_VERSION,
-    resultsDb: { password: "s3cret", username: "readonly" },
+    output: { resultsDb: { password: "s3cret", username: "readonly" } },
   });
+});
+
+test("parses the default output format", () => {
+  const parsed = parseFitCliConfig(`{ version: 1, output: { format: 'yaml' } }`);
+  assert.deepEqual(parsed, { version: FIT_CLI_CONFIG_VERSION, output: { format: "yaml" } });
+});
+
+test("rejects an invalid output format", () => {
+  assert.throws(() => parseFitCliConfig(`{ version: 1, output: { format: 'toml' } }`), /output\.format/);
 });
 
 test("resolveResultsDbCredentials prefers config over the environment", () => {
   const credentials = resolveResultsDbCredentials({
-    config: { version: FIT_CLI_CONFIG_VERSION, resultsDb: { password: "from-config" } },
+    config: { version: FIT_CLI_CONFIG_VERSION, output: { resultsDb: { password: "from-config" } } },
     env: { FIT_RESULTS_DB_PASSWORD: "from-env", FIT_RESULTS_DB_USERNAME: "env-user" },
   });
   assert.deepEqual(credentials, { password: "from-config", username: "env-user" });
@@ -166,8 +184,6 @@ test("resolveCapellaConfig fills every field but username from defaults", () => 
     endpoint: DEFAULT_CAPELLA_SETTINGS.endpoint,
     organizationId: DEFAULT_CAPELLA_SETTINGS.organizationId,
     password: DEFAULT_CAPELLA_SETTINGS.password,
-    overrideToken: DEFAULT_CAPELLA_SETTINGS.overrideToken,
-    internalSupportToken: DEFAULT_CAPELLA_SETTINGS.internalSupportToken,
   });
 });
 

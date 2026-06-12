@@ -1,6 +1,6 @@
 This is a CLI tool to help make FIT easier to use.  It lets you:
 
-* Generate a YAML definition file that will let you run functional FIT tests against any SDK.  (And later: FIT/SIT and FIT/PERF)
+* Generate a YAML/JSON5 definition file that will let you run functional FIT tests against any SDK.  (And later: FIT/SIT and FIT/PERF)
 * Run a definition file locally.
 * Run a definition file on a clean AWS EC2 instance you can SSH onto.  This is the exactly same command CI will ultimately execute, so you can reproduce (and debug!) CI locally.
 
@@ -96,10 +96,13 @@ If you find any are broken due to refactorings then please ask an AI to "sweep t
 
 ## Scripts
 
+User-facing:
+- `npm run help` — show help.
 - `npm start` — run the interactive wizard.
-- `npm run dev` — run the wizard, restarting on file changes.
 - `npm run definition -- execute <file>` — run a definition file (see Resuming for the resume flags).
 - `npm run cloud-instances -- list | manage | delete | remove-all` — manage the EC2 instances fit-cli launched.
+
+For development:
 - `npm run typecheck` — type-check without emitting.
 - `npm run build` — compile TypeScript to `dist/`.
 - `npm test` — run the unit tests (node:test, via tsx).  Note - these always need to be kept instant - business logic only.  If it's slow, just don't test it.

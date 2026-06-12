@@ -20,7 +20,7 @@ import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { printWithoutTimestamps } from "../../../util/non-fit/fit-cli-log.js";
 import { confirm, input, qualifyPromptId } from "../../../util/non-fit/prompts.js";
 import { rootDirFromArgv } from "../../util/root.js";
-import { loadFitCliConfig } from "../../util/config.js";
+import { loadFitCliConfig, resolveOutputFormat } from "../../util/config.js";
 import { chooseSdk } from "../../../util/sdk/choose-sdk.js";
 import { askClusterDef } from "../../../cluster/cluster-create/ask-cluster-def.js";
 import { askClusterExistsPolicy } from "../../../cluster/cluster-create/ask-cluster-exists-policy.js";
@@ -106,7 +106,7 @@ export async function createFitFunctionalDefinition(rootDir: string, options?: {
     githubUser: loadFitCliConfig().config?.github?.user,
   });
 
-  const outputFormat = options?.format ?? "json5";
+  const outputFormat = options?.format ?? resolveOutputFormat();
   const result = writeFitFunctionalDefinition(definition, undefined, outputFormat);
   console.log(`\nWriting ${result.path}:\n`);
   printWithoutTimestamps(formatFitFunctionalDefinition(definition, outputFormat));

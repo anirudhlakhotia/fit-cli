@@ -10,9 +10,9 @@
  * image — no IAM permissions are needed to read public SSM parameters.
  *
  * Run on its own:
- *   npx tsx src/util/non-fit/aws/image.ts
+ *   npx tsx src/cloud/util/aws/image.ts
  */
-import { isMain, runCli } from "../cli.js";
+import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { awsJson, logAwsAction, prepareAwsCli } from "./aws-cli.js";
 
 /** Canonical's AWS account id — the trusted owner of official Ubuntu images. */

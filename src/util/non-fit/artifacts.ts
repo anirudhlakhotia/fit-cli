@@ -32,6 +32,7 @@ export interface RecordedFailure {
     instanceIndex: number;
     clusterIndex?: number;
     sessionIndex?: number;
+    runIndex?: number;
     clusterless?: boolean;
   };
 }
@@ -43,14 +44,15 @@ export interface RunOutput extends ArtifactCollection, DetailCollection {
 
 const FAILURE_SEVERITY: Record<string, number> = {
   NonFatal: 0,
-  FatalToSession: 1,
-  FatalToCluster: 2,
-  FatalToInstance: 3,
-  FatalToAll: 4,
+  FatalToRun: 1,
+  FatalToSession: 2,
+  FatalToCluster: 3,
+  FatalToInstance: 4,
+  FatalToAll: 5,
 };
 
 export function worstFailureShouldExitNonZero(failure: RecordedFailure): boolean {
-  return (FAILURE_SEVERITY[failure.classification] ?? 0) >= FAILURE_SEVERITY.FatalToSession;
+  return (FAILURE_SEVERITY[failure.classification] ?? 0) >= FAILURE_SEVERITY.FatalToRun;
 }
 
 export function formatFailureSummaryLine(failure: RecordedFailure, totalCount: number): string {
@@ -62,6 +64,7 @@ export function formatFailureSummaryLine(failure: RecordedFailure, totalCount: n
     // session but no cluster; functional runs show both.
     ...(!context.clusterless && context.clusterIndex !== undefined ? [`cluster ${context.clusterIndex + 1}`] : []),
     ...(context.sessionIndex !== undefined ? [`session ${context.sessionIndex + 1}`] : []),
+    ...(context.runIndex !== undefined ? [`run ${context.runIndex + 1}`] : []),
   ];
   return `Returning non-zero due to ${classification} error '${message}' on ${parts.join(", ")}${extra}`;
 }
@@ -135,8 +138,12 @@ export function reconcileArtifactsWithDir(artifactDir: string, explicit: readonl
   const known = new Set(combined.map((artifact) => artifact.filename));
   const extras: Artifact[] = discovered
     .filter((filename) => !known.has(filename))
+    // `_internal/` holds fit-cli's own bookkeeping (run-state.json, wrapper
+    // scripts, etc.) — implementation detail, not something to surface in the
+    // user-facing artifact table.
+    .filter((filename) => !filename.split(/[\\/]/).includes("_internal"))
     .sort()
-    .map((filename) => ({ filename, explanation: "User's prompt inputs" }));
+    .map((filename) => ({ filename, explanation: "(captured during the run)" }));
   return [...combined, ...extras];
 }
 

@@ -3,7 +3,7 @@
  * The interactive loop itself is exercised by hand / via replay.
  *
  * Run on their own:
- *   node --import tsx --test src/util/non-fit/aws/tests/manage-instances.test.ts
+ *   node --import tsx --test src/cloud/util/aws/tests/manage-instances.test.ts
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";

@@ -24,6 +24,7 @@ import { run } from "../../../util/non-fit/proc.js";
 import { posixQuote } from "../../../util/non-fit/remote-target.js";
 import { runRunDir, type DefinitionRunPath } from "../../../util/non-fit/replay.js";
 import type { ExecutionTarget } from "../../../util/non-fit/target.js";
+import { throwFatalToRun } from "../failure-classification.js";
 
 /**
  * Absolute path to the surefire JUnit XML directory the test-driver produces,
@@ -111,15 +112,15 @@ async function renderJunitReport(reportsDir: string, runDir: string): Promise<Ar
 
 /**
  * Copy the test-driver's JUnit XML from `sourceDir` into ARTIFACT_DIR/surefire-reports,
- * render an HTML report from it, and return artifacts for both. Best effort:
- * returns an empty list when no reports were produced, and still returns the XML
- * artifact if the HTML render fails.
+ * render an HTML report from it, and return artifacts for both. A run that
+ * produced no JUnit reports at all is treated as FatalToRun — the test-driver
+ * yielded no results, so there's nothing to trust. The HTML render is still best
+ * effort (the XML artifact is returned even if the render fails).
  */
 export async function collectJunitArtifacts(sourceDir: string, path: DefinitionRunPath): Promise<Artifact[]> {
   const xmlFiles = junitXmlFiles(sourceDir);
   if (xmlFiles.length === 0) {
-    console.warn(`\nNo JUnit reports found under ${sourceDir}; skipping JUnit artifacts.`);
-    return [];
+    throwFatalToRun(`No JUnit reports found under ${sourceDir} — the test-driver produced no results for this run.`);
   }
 
   const runDir = runRunDir(path);
@@ -148,7 +149,8 @@ export async function collectJunitArtifacts(sourceDir: string, path: DefinitionR
 
 /**
  * Copy JUnit XML off an execution target into ARTIFACT_DIR/surefire-reports,
- * render an HTML report from it locally, and return artifacts for both.
+ * render an HTML report from it locally, and return artifacts for both. As with
+ * {@link collectJunitArtifacts}, a run that produced no reports is FatalToRun.
  */
 export async function collectJunitArtifactsFromTarget(
   target: ExecutionTarget,
@@ -167,8 +169,7 @@ export async function collectJunitArtifactsFromTarget(
     ]),
   );
   if (xmlFiles.length === 0) {
-    console.warn(`\nNo JUnit reports found under ${sourceDir}; skipping JUnit artifacts.`);
-    return [];
+    throwFatalToRun(`No JUnit reports found under ${sourceDir} — the test-driver produced no results for this run.`);
   }
 
   const runDir = runRunDir(path);

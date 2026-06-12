@@ -11,6 +11,7 @@ import { loadDotenv } from "../../util/non-fit/dotenv.js";
 import { input, select } from "../../util/non-fit/prompts.js";
 import { ensurePromptSession, type PromptSession } from "../../util/non-fit/replay.js";
 import { createFitDefinition } from "../shared/create-definition/create-definition.js";
+import { resolveOutputFormat } from "../util/config.js";
 import { rootDirFromArgv } from "../util/root.js";
 import { runFromDefinition } from "../functional/run-from-definition/run-from-definition.js";
 import type { DefinitionFormat } from "../shared/definition/generate-definition.js";
@@ -98,7 +99,9 @@ export async function runWorkflow(choice: WorkflowChoice, rootDir: string, defin
 
 function extractOutputFormat(argv: readonly string[]): { format: DefinitionFormat; positionals: string[] } {
   const positionals: string[] = [];
-  let format: DefinitionFormat = "json5";
+  // Undefined until an explicit --output is seen; the config's output.format (then
+  // the baked-in default) supplies the fallback below.
+  let format: DefinitionFormat | undefined;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--output") {
@@ -118,7 +121,7 @@ function extractOutputFormat(argv: readonly string[]): { format: DefinitionForma
       positionals.push(arg);
     }
   }
-  return { format, positionals };
+  return { format: format ?? resolveOutputFormat(), positionals };
 }
 
 function checkPlatform(): void {

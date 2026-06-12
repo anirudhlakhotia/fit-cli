@@ -6,10 +6,10 @@
  *
  * Run on its own (the AMI/key/SG must already exist — see image.ts, key-pair.ts,
  * security-group.ts):
- *   npx tsx src/util/non-fit/aws/create-instance.ts \
+ *   npx tsx src/cloud/util/aws/create-instance.ts \
  *     --ami ami-0123 --type t3.micro --key my-key --sg sg-0123 [--subnet subnet-0123] [--tag fit-cli=owned] [--wait]
  */
-import { isMain, runCli } from "../cli.js";
+import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { awsJson, awsText, logAwsAction, prepareAwsCli } from "./aws-cli.js";
 import { parseInstances, type DescribeInstancesResponse } from "./parse-instance.js";
 

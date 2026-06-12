@@ -64,6 +64,25 @@ export interface FitCliResultsDbConfig {
   username?: string;
 }
 
+/** The formats a generated definition file can be written in. */
+export const OUTPUT_FORMATS = ["json5", "yaml"] as const;
+export type OutputFormat = (typeof OUTPUT_FORMATS)[number];
+
+/** Baked-in default output format, used when the config doesn't set one. */
+export const DEFAULT_OUTPUT_FORMAT: OutputFormat = "json5";
+
+/**
+ * Top-level `output` settings: how fit-cli renders things it produces, plus the
+ * hosted results database it writes test results to. `resultsDb` lives here (not
+ * at the top level) so everything output-related is grouped under one key.
+ */
+export interface FitCliOutputConfig {
+  /** Default format generated definition files are written in (json5 or yaml). */
+  format?: OutputFormat;
+  /** Readonly credentials for the hosted results database. */
+  resultsDb?: FitCliResultsDbConfig;
+}
+
 export interface FitCliGerritConfig {
   /** Gerrit username. Defaults to github.user when not set. */
   user?: string;
@@ -89,10 +108,6 @@ export interface FitCliCapellaConfig {
   organizationId?: string;
   /** Capella account password (env: CAPELLA_PASS). Forwarded to the remote box as CAPELLA_PASS for cbdinocluster init. Saved in plaintext. */
   password?: string;
-  /** Internal override token (env: CAPELLA_OVERRIDE_TOKEN). */
-  overrideToken?: string;
-  /** Internal support token (env: CAPELLA_INTERNAL_SUPPORT_TOKEN). */
-  internalSupportToken?: string;
 }
 
 /** Hardcoded defaults for every Capella field except `username` (which is per-user). */
@@ -100,16 +115,13 @@ export const DEFAULT_CAPELLA_SETTINGS = {
   endpoint: "https://api.dev.nonprod-project-avengers.com",
   organizationId: "6af08c0a-8cab-4c1c-b257-b521575c16d0",
   password: "NotUsed",
-  // Not entirely clear if next two are used
-  overrideToken: "the-secret-test-override-key",
-  internalSupportToken: "the-secret-token-for-internal-support",
 } as const;
 
 export interface FitCliConfig {
   version: 1;
   cloud?: FitCliCloudConfig;
   github?: FitCliGithubConfig;
-  resultsDb?: FitCliResultsDbConfig;
+  output?: FitCliOutputConfig;
   gerrit?: FitCliGerritConfig;
   capella?: FitCliCapellaConfig;
 }
@@ -248,17 +260,7 @@ export function validateFitCliConfig(raw: unknown): FitCliConfig {
       })
     : undefined;
 
-  const resultsDbValue = raw.resultsDb;
-  if (resultsDbValue !== undefined && !isRecord(resultsDbValue)) {
-    throw new InvalidFitCliConfigError(`Field "resultsDb" must be a mapping; got ${JSON.stringify(resultsDbValue)}`);
-  }
-
-  const resultsDb = resultsDbValue
-    ? compactRecord({
-        password: readOptionalString(resultsDbValue, "password", "resultsDb.password"),
-        username: readOptionalString(resultsDbValue, "username", "resultsDb.username"),
-      })
-    : undefined;
+  const output = validateOutputConfig(raw.output, raw.resultsDb);
 
   const gerritValue = raw.gerrit;
   if (gerritValue !== undefined && !isRecord(gerritValue)) {
@@ -283,8 +285,6 @@ export function validateFitCliConfig(raw: unknown): FitCliConfig {
         endpoint: readOptionalString(capellaValue, "endpoint", "capella.endpoint"),
         organizationId: readOptionalString(capellaValue, "organizationId", "capella.organizationId"),
         password: readOptionalString(capellaValue, "password", "capella.password"),
-        overrideToken: readOptionalString(capellaValue, "overrideToken", "capella.overrideToken"),
-        internalSupportToken: readOptionalString(capellaValue, "internalSupportToken", "capella.internalSupportToken"),
       })
     : undefined;
 
@@ -292,10 +292,53 @@ export function validateFitCliConfig(raw: unknown): FitCliConfig {
     version: FIT_CLI_CONFIG_VERSION,
     ...(cloud ? { cloud } : {}),
     ...(github && Object.keys(github).length > 0 ? { github } : {}),
-    ...(resultsDb && Object.keys(resultsDb).length > 0 ? { resultsDb } : {}),
+    ...(output ? { output } : {}),
     ...(gerrit && Object.keys(gerrit).length > 0 ? { gerrit } : {}),
     ...(capella && Object.keys(capella).length > 0 ? { capella } : {}),
   };
+}
+
+/**
+ * Validate and compact the `output` section. `format` must be one of
+ * {@link OUTPUT_FORMATS}. The results-database credentials live here; for
+ * backwards compatibility a `resultsDb` still found at the top level (the
+ * pre-`output` layout) is folded in when `output.resultsDb` is absent, so older
+ * configs keep working and re-saving rewrites them in the new shape. Returns
+ * undefined when nothing is configured.
+ */
+function validateOutputConfig(outputValue: unknown, legacyResultsDbValue: unknown): FitCliOutputConfig | undefined {
+  if (outputValue !== undefined && !isRecord(outputValue)) {
+    throw new InvalidFitCliConfigError(`Field "output" must be a mapping; got ${JSON.stringify(outputValue)}`);
+  }
+
+  let format: OutputFormat | undefined;
+  const formatValue = outputValue ? readOptionalString(outputValue, "format", "output.format") : undefined;
+  if (formatValue !== undefined && formatValue !== "") {
+    if (!(OUTPUT_FORMATS as readonly string[]).includes(formatValue)) {
+      throw new InvalidFitCliConfigError(
+        `Field "output.format" must be one of ${OUTPUT_FORMATS.join(", ")}; got ${JSON.stringify(formatValue)}`,
+      );
+    }
+    format = formatValue as OutputFormat;
+  }
+
+  const resultsDbValue = (isRecord(outputValue) ? outputValue.resultsDb : undefined) ?? legacyResultsDbValue;
+  const resultsDbPath = isRecord(outputValue) && outputValue.resultsDb !== undefined ? "output.resultsDb" : "resultsDb";
+  if (resultsDbValue !== undefined && !isRecord(resultsDbValue)) {
+    throw new InvalidFitCliConfigError(`Field "${resultsDbPath}" must be a mapping; got ${JSON.stringify(resultsDbValue)}`);
+  }
+  const resultsDb = resultsDbValue
+    ? compactRecord({
+        password: readOptionalString(resultsDbValue, "password", `${resultsDbPath}.password`),
+        username: readOptionalString(resultsDbValue, "username", `${resultsDbPath}.username`),
+      })
+    : undefined;
+
+  const parts: FitCliOutputConfig = {
+    ...(format ? { format } : {}),
+    ...(resultsDb && Object.keys(resultsDb).length > 0 ? { resultsDb } : {}),
+  };
+  return Object.keys(parts).length > 0 ? parts : undefined;
 }
 
 /** Validate and compact the `cloud` section. Returns undefined when it's empty. */
@@ -425,9 +468,21 @@ export function resolveResultsDbCredentials(
   const env = options.env ?? process.env;
   const config = options.config ?? loadFitCliConfig(options.path).config;
   return {
-    password: config?.resultsDb?.password ?? env.FIT_RESULTS_DB_PASSWORD,
-    username: config?.resultsDb?.username ?? env.FIT_RESULTS_DB_USERNAME,
+    password: config?.output?.resultsDb?.password ?? env.FIT_RESULTS_DB_PASSWORD,
+    username: config?.output?.resultsDb?.username ?? env.FIT_RESULTS_DB_USERNAME,
   };
+}
+
+/**
+ * The default format generated definition files are written in. Prefers
+ * `output.format` from the fit-cli config, then falls back to
+ * {@link DEFAULT_OUTPUT_FORMAT}. Loads the config itself when one isn't supplied.
+ */
+export function resolveOutputFormat(
+  options: { config?: FitCliConfig; path?: string } = {},
+): OutputFormat {
+  const config = options.config ?? loadFitCliConfig(options.path).config;
+  return config?.output?.format ?? DEFAULT_OUTPUT_FORMAT;
 }
 
 /** The Capella settings forwarded to a remote box, with every field resolved. */
@@ -437,8 +492,6 @@ export interface ResolvedCapellaConfig {
   endpoint: string;
   organizationId: string;
   password: string;
-  overrideToken: string;
-  internalSupportToken: string;
 }
 
 /** First non-empty trimmed env var among `names`, or undefined. */
@@ -470,14 +523,6 @@ export function resolveCapellaConfig(
     organizationId:
       c?.organizationId ?? firstEnv(env, ["CAPELLA_OID", "CAP_OID"]) ?? DEFAULT_CAPELLA_SETTINGS.organizationId,
     password: c?.password ?? firstEnv(env, ["CAPELLA_PASS", "CAP_PASS"]) ?? DEFAULT_CAPELLA_SETTINGS.password,
-    overrideToken:
-      c?.overrideToken ??
-      firstEnv(env, ["CAPELLA_OVERRIDE_TOKEN", "CAP_OVERRIDE_TOKEN"]) ??
-      DEFAULT_CAPELLA_SETTINGS.overrideToken,
-    internalSupportToken:
-      c?.internalSupportToken ??
-      firstEnv(env, ["CAPELLA_INTERNAL_SUPPORT_TOKEN", "CAP_INTERNAL_SUPPORT_TOKEN"]) ??
-      DEFAULT_CAPELLA_SETTINGS.internalSupportToken,
   };
 }
 

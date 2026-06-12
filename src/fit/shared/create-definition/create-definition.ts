@@ -10,7 +10,7 @@ import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { printWithoutTimestamps } from "../../../util/non-fit/fit-cli-log.js";
 import { qualifyPromptId, select } from "../../../util/non-fit/prompts.js";
 import { rootDirFromArgv } from "../../util/root.js";
-import { loadFitCliConfig } from "../../util/config.js";
+import { loadFitCliConfig, resolveOutputFormat } from "../../util/config.js";
 import { chooseSdk } from "../../../util/sdk/choose-sdk.js";
 import { askClusterDef } from "../../../cluster/cluster-create/ask-cluster-def.js";
 import { askClusterExistsPolicy } from "../../../cluster/cluster-create/ask-cluster-exists-policy.js";
@@ -80,7 +80,8 @@ async function chooseFunctionalConnectivity(promptIdPrefix: string): Promise<Fun
     message: "What do you want to FIT functional test against?",
     choices: [
       { name: "Operational, couchbase[s]://", value: "operational" },
-      { name: "Cloud Native Gateway, couchbase2://)", value: "cng" },
+      // CNG (Cloud Native Gateway, couchbase2://) is commented out for now.
+      // { name: "Cloud Native Gateway, couchbase2://)", value: "cng" },
     ],
   });
 }
@@ -421,7 +422,7 @@ export async function createFitDefinition(rootDir: string, options?: { format?: 
     [...(i.clusterlessSessions ?? []), ...i.clusters.flatMap((c) => c.sessions)].flatMap((s) => s.runs),
   );
   const hasSituational = allRuns.some((r) => r.type === "situational");
-  const outputFormat = options?.format ?? "json5";
+  const outputFormat = options?.format ?? resolveOutputFormat();
   const write = hasSituational ? writeFitSituationalDefinition : writeFitDefinition;
   const formatFn = hasSituational ? formatFitSituationalDefinition : formatFitDefinition;
   const result = write(definition, undefined, outputFormat);

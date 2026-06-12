@@ -15,7 +15,7 @@ import { collectJunitArtifacts } from "../run-test-driver/collect-junit.js";
 import { requiredReposForSdk } from "../../../util/sdk/ensure-sdk-workspace.js";
 import { ensureSdkWorkspace } from "../../../util/sdk/ensure-sdk-workspace.js";
 import type { Sdk } from "../../../util/sdk/sdks.js";
-import type { AwsCredentials } from "../../../util/non-fit/aws/identity.js";
+import type { AwsCredentials } from "../../../cloud/util/aws/identity.js";
 import { DEFAULT_PERFORMER_PORT } from "../../performers/util/performer-port.js";
 import { createRemoteFitExecutionContext } from "./remote-fit-execution-context.js";
 import { resolveGerritSshKey, type ResolvedCapellaConfig } from "../../util/config.js";
@@ -249,8 +249,6 @@ function capellaConfigScript(capella: ResolvedCapellaConfig): string {
       `export CAPELLA_ENDPOINT=${posixQuote(capella.endpoint)}`,
       `export CAPELLA_OID=${posixQuote(capella.organizationId)}`,
       `export CAPELLA_PASS=${posixQuote(capella.password)}`,
-      `export CAPELLA_OVERRIDE_TOKEN=${posixQuote(capella.overrideToken)}`,
-      `export CAPELLA_INTERNAL_SUPPORT_TOKEN=${posixQuote(capella.internalSupportToken)}`,
     ].join("\n") + "\n"
   );
 }

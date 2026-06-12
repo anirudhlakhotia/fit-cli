@@ -49,14 +49,13 @@ Edit options:
   --github-token <t>     GitHub PAT (env: GITHUB_TOKEN / GH_TOKEN).
   --results-db-password <p> Results DB password (env: FIT_RESULTS_DB_PASSWORD).
   --results-db-username <u> Results DB username (env: FIT_RESULTS_DB_USERNAME).
+  --output-format <fmt>  Default format for generated definition files: json5 or yaml (env: FIT_OUTPUT_FORMAT; default: json5).
   --gerrit-user <u>      Gerrit username (env: FIT_GERRIT_USER / GERRIT_USER; defaults to github.user).
   --gerrit-ssh-key <path> Path to SSH private key registered with Gerrit (env: FIT_GERRIT_KEY / GERRIT_SSH_KEY).
   --capella-username <u> Capella username for situational/SIT runs (env: CAPELLA_USER / CAP_USER). No default.
   --capella-endpoint <e> Capella endpoint (env: CAPELLA_ENDPOINT / CAP_END_POINT; default: api.dev.nonprod-project-avengers.com).
   --capella-oid <id>     Capella organization ID (env: CAPELLA_OID / CAP_OID; has a default).
   --capella-password <p> Capella password (env: CAPELLA_PASS / CAP_PASS; default: NotUsed).
-  --capella-override-token <t>          Capella override token (env: CAPELLA_OVERRIDE_TOKEN / CAP_OVERRIDE_TOKEN).
-  --capella-internal-support-token <t>  Capella internal support token (env: CAPELLA_INTERNAL_SUPPORT_TOKEN / CAP_INTERNAL_SUPPORT_TOKEN).
   --config-path <path>   Override config file path (default: ~/.fit-cli/config.json5).
   -h, --help             Show this help.`;
 
@@ -75,14 +74,13 @@ export interface AutoInitCliArgs {
   githubToken?: string;
   resultsDbPassword?: string;
   resultsDbUsername?: string;
+  outputFormat?: string;
   gerritUser?: string;
   gerritSshKeyPath?: string;
   capellaUsername?: string;
   capellaEndpoint?: string;
   capellaOrganizationId?: string;
   capellaPassword?: string;
-  capellaOverrideToken?: string;
-  capellaInternalSupportToken?: string;
   configPath: string;
 }
 
@@ -126,14 +124,13 @@ export function parseEditArgs(argv: string[]): AutoInitCliArgs {
   const githubToken = consumeValue(args, "--github-token");
   const resultsDbPassword = consumeValue(args, "--results-db-password");
   const resultsDbUsername = consumeValue(args, "--results-db-username");
+  const outputFormat = consumeValue(args, "--output-format");
   const gerritUser = consumeValue(args, "--gerrit-user");
   const gerritSshKeyPath = consumeValue(args, "--gerrit-ssh-key");
   const capellaUsername = consumeValue(args, "--capella-username");
   const capellaEndpoint = consumeValue(args, "--capella-endpoint");
   const capellaOrganizationId = consumeValue(args, "--capella-oid");
   const capellaPassword = consumeValue(args, "--capella-password");
-  const capellaOverrideToken = consumeValue(args, "--capella-override-token");
-  const capellaInternalSupportToken = consumeValue(args, "--capella-internal-support-token");
   const configPath = consumeValue(args, "--config-path") ?? defaultFitCliConfigPath();
 
   // Warn about unknown flags
@@ -158,14 +155,13 @@ export function parseEditArgs(argv: string[]): AutoInitCliArgs {
     githubToken,
     resultsDbPassword,
     resultsDbUsername,
+    outputFormat,
     gerritUser,
     gerritSshKeyPath,
     capellaUsername,
     capellaEndpoint,
     capellaOrganizationId,
     capellaPassword,
-    capellaOverrideToken,
-    capellaInternalSupportToken,
     configPath,
   };
 }

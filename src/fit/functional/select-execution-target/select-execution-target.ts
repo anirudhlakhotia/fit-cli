@@ -21,10 +21,10 @@ import { ensureFitCliConfigEnv, resolveCloudInstanceType, type CloudInstancePurp
 import { fitCliError, fitCliWarn } from "../../../util/non-fit/fit-cli-log.js";
 import { input, select } from "../../../util/non-fit/prompts.js";
 import { LocalTarget } from "../../../util/non-fit/local-target.js";
-import { checkCredentials } from "../../../util/non-fit/aws/identity.js";
-import { listInstances } from "../../../util/non-fit/aws/list-instances.js";
-import { terminateInstance } from "../../../util/non-fit/aws/terminate-instance.js";
-import { type InstanceInfo } from "../../../util/non-fit/aws/parse-instance.js";
+import { checkCredentials } from "../../../cloud/util/aws/identity.js";
+import { listInstances } from "../../../cloud/util/aws/list-instances.js";
+import { terminateInstance } from "../../../cloud/util/aws/terminate-instance.js";
+import { type InstanceInfo } from "../../../cloud/util/aws/parse-instance.js";
 import { type ExecutionTarget } from "../../../util/non-fit/target.js";
 import { FIT_INSTANCE_USER, provisionFitInstance } from "../../util/aws/fit-instance.js";
 import { RemoteTarget } from "../../../util/non-fit/remote-target.js";

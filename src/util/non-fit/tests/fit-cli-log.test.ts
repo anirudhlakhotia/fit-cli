@@ -28,6 +28,20 @@ test("formatFitCliError avoids duplicating an existing prefix", () => {
   );
 });
 
+test("formatFitCliError appends a failure classification to the label", () => {
+  assert.equal(
+    formatFitCliError({ classification: "FatalToRun" }, "\n✗ No JUnit reports"),
+    "\nFitCliError/FatalToRun: [31mNo JUnit reports[0m",
+  );
+});
+
+test("formatFitCliWarn appends a failure classification to the label", () => {
+  assert.equal(
+    formatFitCliWarn({ classification: "FatalToCluster" }, "Cluster sanity check failed"),
+    "FitCliWarn/FatalToCluster: [33mCluster sanity check failed[0m",
+  );
+});
+
 test("formatTimestampedChunk prefixes each non-empty line", () => {
   assert.deepEqual(
     formatTimestampedChunk("\nhello\nworld", true, () => "12:34:56"),

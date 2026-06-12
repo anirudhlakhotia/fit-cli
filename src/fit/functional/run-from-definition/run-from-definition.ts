@@ -43,7 +43,7 @@ import {
   type RunOutput,
 } from "../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
-import { fitCliError, fitCliWarn } from "../../../util/non-fit/fit-cli-log.js";
+import { fitCliError, fitCliWarn, printWithoutTimestamps } from "../../../util/non-fit/fit-cli-log.js";
 import { createLogFile } from "../../../util/non-fit/proc.js";
 import {
   defaultsToNonInteractive,
@@ -57,7 +57,7 @@ import { confirm, select } from "../../../util/non-fit/prompts.js";
 import { rootDirFromArgv } from "../../util/root.js";
 import { resolveCapellaConfig, resolveGithubCredentials, resolveResultsDbCredentials } from "../../util/config.js";
 import { terminateInstanceCommand } from "../../util/aws/lifecycle-warning.js";
-import { resolveAwsCredentials, type AwsCredentials } from "../../../util/non-fit/aws/identity.js";
+import { resolveAwsCredentials, type AwsCredentials } from "../../../cloud/util/aws/identity.js";
 import {
   localClusterCommandExecutor,
   type ClusterCommandExecutor,
@@ -140,6 +140,7 @@ import {
 } from "./resume.js";
 import {
   readRunState,
+  runStatePath,
   writeRunState,
   type ResumeClusterState,
   type ResumePerformerState,
@@ -731,7 +732,10 @@ function resumeSelectorFlags(selector: ResumeSelector): string[] {
 }
 
 function formatResumeCommand(point: ResumePoint, definitionPath: string, selector: ResumeSelector): string {
-  return `npm run definition -- execute --resume-at=${point} ${resumeSelectorFlags(selector).join(" ")} ${definitionPath}`.replace(/\s+/g, " ").trim();
+  // Always include --interactive: a resume is a hands-on debugging step, and the
+  // resumed run needs to be able to prompt (e.g. teardown choices) just like the
+  // original interactive run did.
+  return `npm run definition -- execute --interactive --resume-at=${point} ${resumeSelectorFlags(selector).join(" ")} ${definitionPath}`.replace(/\s+/g, " ").trim();
 }
 
 function resumeSelectorMatchesPath(selector: ResumeSelector, path: DefinitionRunPath): boolean {
@@ -762,12 +766,14 @@ function failureContextFromPath(path: DefinitionRunPath): FailureContext {
       instanceIndex: path.instanceIndex,
       clusterless: true,
       ...(path.sessionIndex !== undefined ? { sessionIndex: path.sessionIndex } : {}),
+      ...(path.runIndex !== undefined ? { runIndex: path.runIndex } : {}),
     };
   }
   return {
     instanceIndex: path.instanceIndex,
     ...(path.clusterIndex !== undefined ? { clusterIndex: path.clusterIndex } : {}),
     ...(path.sessionIndex !== undefined ? { sessionIndex: path.sessionIndex } : {}),
+    ...(path.runIndex !== undefined ? { runIndex: path.runIndex } : {}),
   };
 }
 
@@ -1057,6 +1063,7 @@ export async function runFromDefinition(
   if (resumeAt) {
     if (!savedState) {
       fitCliError(
+        { classification: "FatalToAll" },
         `\nresume: no saved run state found for ${definitionPath}. ` +
           "Run without --resume-at first, then choose to leave everything up.",
       );
@@ -1064,18 +1071,28 @@ export async function runFromDefinition(
       return finalizeRunFromDefinition([], [], undefined, tracker.worst, tracker.failureCount);
     }
     console.log(`  Resuming at: ${resumeAt}`);
+    // Show our working: a resume hinges on this interim bookkeeping file, so dump
+    // its path and contents — what target we'll reconnect to, which cluster and
+    // performers we'll reuse — rather than silently acting on it.
+    const statePath = runStatePath(dirname(resolve(definitionPath)));
+    console.log(`  Read saved run state from:\n    ${statePath}\n  Contents:`);
+    printWithoutTimestamps(`${JSON.stringify(savedState, null, 2)}\n`);
   }
   const startCycleIndex = savedState?.executionGroupIndex ?? 0;
   const startIterationIndex = savedState?.startRunIndex ?? 0;
   const expectedResumePath = executionGroups[startCycleIndex]?.runs[startIterationIndex]?.path;
   if (resumeAt && hasResumeSelector(resumeSelector)) {
     if (!expectedResumePath) {
-      fitCliError("\nresume: the saved run state points at a run that no longer exists in this definition.");
+      fitCliError(
+        { classification: "FatalToAll" },
+        "\nresume: the saved run state points at a run that no longer exists in this definition.",
+      );
       tracker.record("FatalToAll", "Saved run state points at a run that no longer exists", preconditionCtx);
       return finalizeRunFromDefinition([], [], undefined, tracker.worst, tracker.failureCount);
     }
     if (!resumeSelectorMatchesPath(resumeSelector, expectedResumePath)) {
       fitCliError(
+        { classification: "FatalToAll" },
         `\nresume: the requested path does not match the saved run state.\n` +
           `  Requested: ${resumeSelectorFlags(resumeSelector).join(" ")}\n` +
           `  Saved:     ${describeRunPath(expectedResumePath)}`,
@@ -1095,7 +1112,7 @@ export async function runFromDefinition(
   ) {
     const result = resolveGithubCredentials();
     if (typeof result === "string") {
-      fitCliError(`\n✗ ${result}`);
+      fitCliError({ classification: "FatalToAll" }, `\n✗ ${result}`);
       tracker.record("FatalToAll", result, preconditionCtx);
       return finalizeRunFromDefinition([], [], undefined, tracker.worst, tracker.failureCount);
     }
@@ -1116,13 +1133,14 @@ export async function runFromDefinition(
   if (needsHostedDatabase) {
     const database = buildHostedDatabase(resolveResultsDbCredentials({ env: {} }));
     if (!database) {
-      fitCliError(missingResultsDbPasswordMessage());
+      fitCliError({ classification: "FatalToAll" }, missingResultsDbPasswordMessage());
       tracker.record("FatalToAll", "Missing results database password in fit-cli config", preconditionCtx);
       return finalizeRunFromDefinition([], [], undefined, tracker.worst, tracker.failureCount);
     }
     console.log(`\nChecking connectivity to results database at ${HOSTED_RESULTS_DB_HOST}...`);
     if (!(await checkResultsDatabaseConnectivity())) {
       fitCliError(
+        { classification: "FatalToAll" },
         `\n✗ Cannot reach the results database at ${HOSTED_RESULTS_DB_HOST}:5432.\n` +
           `  Make sure you are connected to the vpn-public VPN.`,
       );
@@ -1160,7 +1178,7 @@ export async function runFromDefinition(
   ) {
     const result = await resolveAwsCredentials();
     if (typeof result === "string") {
-      fitCliError(`\n✗ ${result}`);
+      fitCliError({ classification: "FatalToAll" }, `\n✗ ${result}`);
       tracker.record("FatalToAll", result, preconditionCtx);
       return finalizeRunFromDefinition([], [], undefined, tracker.worst, tracker.failureCount);
     }
@@ -1207,7 +1225,7 @@ export async function runFromDefinition(
       artifacts.push(...targetOutcome.artifacts);
       details.push(...targetOutcome.details);
       if (!targetOutcome.ready) {
-        fitCliError(`\n✗ Could not acquire an execution target for execution group ${cycleIndex + 1}; skipping it.`);
+        fitCliError({ classification: "FatalToInstance" }, `\n✗ Could not acquire an execution target for execution group ${cycleIndex + 1}; skipping it.`);
         tracker.record("FatalToInstance", `Could not acquire an execution target for execution group ${cycleIndex + 1}`, failureContextFromPath(group.path));
         globalIterationIndex += group.runs.length;
         continue;
@@ -1345,12 +1363,17 @@ export async function runFromDefinition(
               }
             }
           } catch (err) {
-            if (err instanceof ClassifiedFailure && err.classification === "FatalToSession") {
+            // FatalToRun and FatalToSession both abandon just this run and let the
+            // next run in the group proceed; they differ only in scope/severity.
+            if (
+              err instanceof ClassifiedFailure &&
+              (err.classification === "FatalToRun" || err.classification === "FatalToSession")
+            ) {
               const nextStep = isLastIteration
-                ? "no more iterations in this execution group"
-                : "moving to the next iteration";
-              fitCliError(`\n✗ ${err.message} (FatalToSession — ${nextStep})`);
-              tracker.record("FatalToSession", err.message, failureContextFromPath(iteration.path));
+                ? "no more runs in this execution group"
+                : "moving to the next run";
+              fitCliError({ classification: err.classification }, `\n✗ ${err.message} (${nextStep})`);
+              tracker.record(err.classification, err.message, failureContextFromPath(iteration.path));
             } else {
               throw err;
             }
@@ -1359,7 +1382,7 @@ export async function runFromDefinition(
         }
       } catch (err) {
         if (err instanceof ClassifiedFailure && err.classification === "FatalToCluster") {
-          fitCliError(`\n✗ ${err.message} (FatalToCluster)`);
+          fitCliError({ classification: "FatalToCluster" }, `\n✗ ${err.message}`);
           tracker.record("FatalToCluster", err.message, failureContextFromPath(group.path));
           globalIterationIndex += activeCycle.runs.length;
 
@@ -1414,7 +1437,7 @@ export async function runFromDefinition(
     }
     } catch (err) {
       if (err instanceof ClassifiedFailure && err.classification === "FatalToAll") {
-        fitCliError(`\n✗ ${err.message} (FatalToAll — aborting run)`);
+        fitCliError({ classification: "FatalToAll" }, `\n✗ ${err.message} (aborting run)`);
         tracker.record("FatalToAll", err.message, activeResumePath ? failureContextFromPath(activeResumePath) : { instanceIndex: 0 });
       } else {
         throw err;

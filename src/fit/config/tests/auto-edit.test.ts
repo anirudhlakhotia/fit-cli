@@ -41,7 +41,7 @@ test("buildAutoConfig: all env vars set produces full config", () => {
       },
     },
     github: { user: "octocat", token: "ghp_secret" },
-    resultsDb: { password: "dbpass", username: "dbuser" },
+    output: { resultsDb: { password: "dbpass", username: "dbuser" } },
   });
 });
 
@@ -71,7 +71,7 @@ test("buildAutoConfig: --disable-results-db omits resultsDb section", () => {
 
   const { config } = buildAutoConfig({ args: baseArgs({ disableResultsDb: true }), env });
 
-  assert.equal(config.resultsDb, undefined);
+  assert.equal(config.output?.resultsDb, undefined);
 });
 
 test("buildAutoConfig: CLI arg overrides env var", () => {
@@ -96,7 +96,7 @@ test("buildAutoConfig: missing optional fields are omitted gracefully", () => {
   assert.equal(config.cloud?.aws?.profile, undefined);
   // github and resultsDb have no defaults, so they're omitted
   assert.equal(config.github, undefined);
-  assert.equal(config.resultsDb, undefined);
+  assert.equal(config.output?.resultsDb, undefined);
 });
 
 test("buildAutoConfig: GH_TOKEN is used as fallback for github.token", () => {
@@ -128,8 +128,6 @@ test("buildAutoConfig: CAP_* env (fit-app-deployment names) populates capella wi
     endpoint: "https://api.dev.nonprod-project-avengers.com",
     organizationId: "org-from-env",
     password: "NotUsed",
-    overrideToken: "the-secret-test-override-key",
-    internalSupportToken: "the-secret-token-for-internal-support",
   });
 });
 
