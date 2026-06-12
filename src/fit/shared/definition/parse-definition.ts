@@ -351,10 +351,13 @@ function validateDefinitionTests(value: unknown, path: string): DefinitionTests 
   if (value === undefined || value === "all") {
     return "all";
   }
+  if (value === "all-transactions" || value === "all-non-transactions") {
+    return value;
+  }
   if (isStringArray(value) && value.length > 0) {
     return value;
   }
-  throw new InvalidDefinitionError(`"${path}" must be "all" or a non-empty list of test class names; got ${JSON.stringify(value)}`);
+  throw new InvalidDefinitionError(`"${path}" must be "all", "all-transactions", "all-non-transactions", or a non-empty list of test class names; got ${JSON.stringify(value)}`);
 }
 
 function validateMaven(value: unknown, path: string): MavenOptions {

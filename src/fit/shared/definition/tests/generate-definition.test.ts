@@ -172,6 +172,32 @@ test("formatFitSituationalDefinition comments the clusterless sessions and runti
   assert.match(rendered, /\/\/ Merged onto ~\/\.cbdinocluster after `cbdinocluster init` runs/);
 });
 
+test("buildFitFunctionalDefinition emits a placeholder when the selection has a mode", () => {
+  const allNonTransactions: Parameters<typeof buildFitFunctionalDefinition>[2] = {
+    allTests: [],
+    selectedTests: [],
+    mavenTestSelector: "com.couchbase.client.kv.SanityTest",
+    mode: "all-non-transactions",
+  };
+  const definition = buildFitFunctionalDefinition(sdk, cluster, allNonTransactions);
+  const run = definition.instances[0]?.clusters[0]?.sessions[0]?.runs[0];
+  assert.equal(run?.tests.run, "all-non-transactions");
+
+  const allTransactions: Parameters<typeof buildFitFunctionalDefinition>[2] = {
+    allTests: [],
+    selectedTests: [],
+    mavenTestSelector: "com.couchbase.transactions.FooTest",
+    mode: "all-transactions",
+  };
+  const defTxn = buildFitFunctionalDefinition(sdk, cluster, allTransactions);
+  const runTxn = defTxn.instances[0]?.clusters[0]?.sessions[0]?.runs[0];
+  assert.equal(runTxn?.tests.run, "all-transactions");
+
+  // round-trip: the placeholder parses cleanly
+  assert.deepEqual(parseDefinition(formatFitDefinition(definition, "json5")), definition);
+  assert.deepEqual(parseDefinition(formatFitDefinition(defTxn, "yaml"), "yaml"), defTxn);
+});
+
 test("formatFitDefinition includes the nested instances key and fitConfigs comment (YAML)", () => {
   const rendered = formatFitDefinition(
     buildFitFunctionalDefinitionFrom({

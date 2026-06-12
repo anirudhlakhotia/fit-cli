@@ -28,8 +28,14 @@ export interface FitTestSelection {
   allTests: FitTestCase[];
   /** The tests the user chose to run. */
   selectedTests: FitTestCase[];
-  /** `undefined` means "run all tests". */
+  /** `undefined` means "run all tests" (or defer to `mode` at runtime). */
   mavenTestSelector?: string;
+  /**
+   * When set, the selection was made by a named mode rather than an explicit
+   * list.  The definition file stores this mode string and the runner resolves
+   * it to an explicit list at run time.
+   */
+  mode?: "all-transactions" | "all-non-transactions";
 }
 
 export interface FitTestSelectionSummary {
@@ -410,10 +416,24 @@ export async function promptForFitTestSelection(
 ): Promise<FitTestSelection> {
   const mode = await askFitTestRunMode(domain, promptIdPrefix);
   switch (mode) {
-    case "all-transactions":
-      return buildFitTestSelection(tests, tests.filter(isTransactionsTest).map((t) => t.className));
-    case "all-non-transactions":
-      return buildFitTestSelection(tests, tests.filter((t) => !isTransactionsTest(t)).map((t) => t.className));
+    case "all-transactions": {
+      const selected = tests.filter(isTransactionsTest);
+      return {
+        allTests: tests,
+        selectedTests: selected,
+        mavenTestSelector: selected.map((t) => t.className).join(",") || undefined,
+        mode: "all-transactions",
+      };
+    }
+    case "all-non-transactions": {
+      const selected = tests.filter((t) => !isTransactionsTest(t));
+      return {
+        allTests: tests,
+        selectedTests: selected,
+        mavenTestSelector: selected.map((t) => t.className).join(",") || undefined,
+        mode: "all-non-transactions",
+      };
+    }
     case "single":
       return await selectSingleFitTest(tests, promptIdPrefix);
     case "sanity":

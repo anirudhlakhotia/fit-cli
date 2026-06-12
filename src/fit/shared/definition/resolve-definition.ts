@@ -206,9 +206,13 @@ export function resolveDefinitionRefs(def: FitDefinition): FitDefinition {
 }
 
 function resolveTestsSelection(tests: TestsSection): FitTestSelection {
-  return tests.run === "all"
-    ? buildDefaultFitTestSelection()
-    : buildFitTestSelectionFromClassNames(tests.run);
+  if (tests.run === "all") {
+    return buildDefaultFitTestSelection();
+  }
+  if (tests.run === "all-transactions" || tests.run === "all-non-transactions") {
+    return { allTests: [], selectedTests: [], mode: tests.run };
+  }
+  return buildFitTestSelectionFromClassNames(tests.run);
 }
 
 const JUNIT_DISABLED_CONDITION = "org.junit.jupiter.api.condition.DisabledCondition";
