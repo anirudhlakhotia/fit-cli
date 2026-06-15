@@ -158,6 +158,11 @@ export async function provisionFitInstance(options: ProvisionOptions = {}): Prom
   const keyPath = join(instanceDir, `${keyName}.pem`);
   await createKeyPair(keyName, keyPath);
 
+  // Install EC2 Instance Connect so any team member with the
+  // ec2-instance-connect:SendSSHPublicKey IAM permission can SSH mid-run:
+  //   aws ec2-instance-connect ssh --instance-id <id> --os-user ubuntu --region <region>
+  const userData = "#!/bin/bash\napt-get update -y\napt-get install -y ec2-instance-connect";
+
   let instanceId: string | undefined;
   try {
     instanceId = await createInstance(
@@ -167,6 +172,7 @@ export async function provisionFitInstance(options: ProvisionOptions = {}): Prom
         keyName,
         securityGroupId,
         subnetId: AWS_SUBNET_ID,
+        userData,
         tags: {
           Name: fitInstanceName(creatorTag),
           [FIT_OWNER_TAG.key]: FIT_OWNER_TAG.value,
@@ -206,10 +212,15 @@ export async function provisionFitInstance(options: ProvisionOptions = {}): Prom
       artifactFromPath(keyPath, "SSH private key for the EC2 test instance"),
       artifactFromPath(infoPath, "EC2 test instance details (id, address, region)"),
     ];
+    const ec2icCommand = `aws ec2-instance-connect ssh --instance-id ${id} --os-user ${FIT_INSTANCE_USER} --region ${AWS_REGION}`;
     const details = [
       {
         label: "SSH debug command",
         value: `ssh -i ${keyPath} ${FIT_INSTANCE_USER}@${address}`,
+      },
+      {
+        label: "EC2 Instance Connect (no key needed — requires ec2-instance-connect:SendSSHPublicKey IAM permission)",
+        value: ec2icCommand,
       },
       {
         label: "Terminate instance command",
@@ -221,6 +232,8 @@ export async function provisionFitInstance(options: ProvisionOptions = {}): Prom
     fitCliWarn(`\n${formatEc2DeletionResponsibilityBanner(id, address, existingInstances, { account: creds.identity.account, creator: creatorTag })}\n`);
     console.log("Debug it directly with:");
     console.log(`  ssh -i ${keyPath} ${FIT_INSTANCE_USER}@${address}`);
+    console.log("Or via EC2 Instance Connect (no key needed — requires ec2-instance-connect:SendSSHPublicKey IAM permission):");
+    console.log(`  ${ec2icCommand}`);
     return { instanceId: id, address, keyPath, host, target: new RemoteTarget(host), artifacts, details, terminate };
   } catch (err) {
     // Don't leave a paid box (or its key) lying around if bring-up failed. If we
