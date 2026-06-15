@@ -91,11 +91,14 @@
                   //   },
                   // },
                   tests: {
-                    // Which FIT test-driver tests to run:
-                    //   'all'        run everything (the default)
-                    //   a list       run just those fully-qualified test classes
-                    run: 'all',
-                    // run: ['com.couchbase.client.kv.SanityTest'],
+                    // Which FIT test-driver tests to run. The final set is the union of
+                    // every preset's expansion with the explicit `classes` list:
+                    //   presets   any of 'all' | 'all-transactions' | 'all-non-transactions'
+                    //             ('all', or omitting both keys, runs everything)
+                    //   classes   fully-qualified test classes (or Class#method) to add on top
+                    presets: ['all'],
+                    // presets: ['all-non-transactions'],
+                    // classes: ['com.couchbase.client.kv.SanityTest'],
 
                     // Optional: Maven test groups to exclude (-DexcludedGroups). Omit to
                     // use the standard CI exclusions (situational, openshift, syncgateway).
@@ -115,7 +118,7 @@
             // session with its own performer and runs.
             // {
             //   performer: { sdk: 'python' },
-            //   runs: [{ type: 'functional', tests: { run: 'all' } }],
+            //   runs: [{ type: 'functional', tests: { presets: ['all'] } }],
             // },
           ],
         },
@@ -154,7 +157,7 @@
                 },
               },
               tests: {
-                run: 'all',
+                presets: ['all'],
               },
             },
           ],

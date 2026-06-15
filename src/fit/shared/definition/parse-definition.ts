@@ -20,6 +20,7 @@ import {
   FIT_DEFINITION_TYPE,
   FIT_RUN_TYPES,
   SITUATIONAL_DATABASE_MODES,
+  TEST_PRESETS,
   type AwsInstanceSetup,
   type CbdinoclusterInitSetup,
   type CbdinoclusterSetup,
@@ -27,7 +28,6 @@ import {
   type ClusterLifetime,
   type ClusterTls,
   type ConnectionClusterSetup,
-  type DefinitionTests,
   type FitConfigPiece,
   type FitConfigRef,
   type FitDefinition,
@@ -41,6 +41,7 @@ import {
   type SituationalDatabaseMode,
   type SituationalDatabaseSetup,
   type SituationalSection,
+  type TestPreset,
   type TestsSection,
   type UseExistingClusterSetup,
 } from "./types.js";
@@ -347,17 +348,24 @@ function validatePerformer(value: unknown, path: string): PerformerSetup {
   return performer;
 }
 
-function validateDefinitionTests(value: unknown, path: string): DefinitionTests {
-  if (value === undefined || value === "all") {
-    return "all";
+function isTestPreset(value: unknown): value is TestPreset {
+  return isString(value) && (TEST_PRESETS as readonly string[]).includes(value);
+}
+
+function validateTestPresets(value: unknown, path: string): TestPreset[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new InvalidDefinitionError(
+      `"${path}" must be a non-empty list of presets (${TEST_PRESETS.join(", ")}); got ${JSON.stringify(value)}`,
+    );
   }
-  if (value === "all-transactions" || value === "all-non-transactions") {
-    return value;
+  for (const entry of value) {
+    if (!isTestPreset(entry)) {
+      throw new InvalidDefinitionError(
+        `"${path}" entries must be one of ${TEST_PRESETS.join(", ")}; got ${JSON.stringify(entry)}`,
+      );
+    }
   }
-  if (isStringArray(value) && value.length > 0) {
-    return value;
-  }
-  throw new InvalidDefinitionError(`"${path}" must be "all", "all-transactions", "all-non-transactions", or a non-empty list of test class names; got ${JSON.stringify(value)}`);
+  return value as TestPreset[];
 }
 
 function validateMaven(value: unknown, path: string): MavenOptions {
@@ -380,7 +388,23 @@ function validateMaven(value: unknown, path: string): MavenOptions {
 
 function validateTestsSection(value: unknown, path: string): TestsSection {
   const record = requireRecord(value, path);
-  const tests: TestsSection = { run: validateDefinitionTests(record.run, `${path}.run`) };
+  if (record.run !== undefined) {
+    throw new InvalidDefinitionError(
+      `"${path}.run" is no longer supported; use "${path}.presets" (a list of ${TEST_PRESETS.join("/")}) and/or "${path}.classes" (a list of test class names).`,
+    );
+  }
+  const tests: TestsSection = {};
+  if (record.presets !== undefined) {
+    tests.presets = validateTestPresets(record.presets, `${path}.presets`);
+  }
+  if (record.classes !== undefined) {
+    if (!isStringArray(record.classes) || record.classes.length === 0) {
+      throw new InvalidDefinitionError(
+        `"${path}.classes" must be a non-empty list of test class names when present; got ${JSON.stringify(record.classes)}`,
+      );
+    }
+    tests.classes = record.classes;
+  }
   if (record.excludedGroups !== undefined) {
     if (!isStringArray(record.excludedGroups)) {
       throw new InvalidDefinitionError(`"${path}.excludedGroups" must be a list of strings when present; got ${JSON.stringify(record.excludedGroups)}`);

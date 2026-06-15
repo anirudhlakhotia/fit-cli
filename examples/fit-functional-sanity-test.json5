@@ -36,7 +36,7 @@
                   type: 'functional',
                   fitConfig: 'fit-config-0', // resolved from fitConfigs below
                   tests: {
-                    run: ['com.couchbase.client.kv.SanityTest'],
+                    classes: ['com.couchbase.client.kv.SanityTest'],
                   },
                 },
               ],

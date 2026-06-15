@@ -99,6 +99,7 @@ import {
 import { runTestDriver, type FitTestDriverSummary } from "../../shared/run-test-driver/run-test-driver.js";
 import {
   buildFitTestSelection,
+  buildFitTestSelectionFromClassNames,
   FUNCTIONAL_TEST_DOMAIN,
   isTransactionsTest,
   listFitTests,
@@ -235,22 +236,34 @@ export function finalizeRunFromDefinition(
 }
 
 /**
- * Resolve a deferred test-mode selection to a concrete class list.
+ * Resolve a deferred preset selection to a concrete class list.
  * Called right before running Maven so the performer repo is already available.
+ * Each preset is expanded against the listed tests and unioned together, then
+ * unioned with any explicit `extraClasses` (trusted even if not discovered, so a
+ * `Class#method` selector listed alongside a preset still reaches Maven).
  */
 async function resolveTestSelectionMode(
   selection: FitTestSelection,
   execution: FitExecutionContext,
 ): Promise<FitTestSelection> {
-  if (!selection.mode) {
+  if (!selection.presets?.length) {
     return selection;
   }
   const tests = await listFitTests(execution, FUNCTIONAL_TEST_DOMAIN);
-  const selectedClasses =
-    selection.mode === "all-transactions"
-      ? tests.filter(isTransactionsTest).map((t) => t.className)
-      : tests.filter((t) => !isTransactionsTest(t)).map((t) => t.className);
-  return buildFitTestSelection(tests, selectedClasses);
+  const presetClasses = new Set<string>();
+  for (const preset of selection.presets) {
+    const matched =
+      preset === "all-transactions"
+        ? tests.filter(isTransactionsTest)
+        : tests.filter((t) => !isTransactionsTest(t));
+    matched.forEach((t) => presetClasses.add(t.className));
+  }
+  const presetSelected = tests.filter((t) => presetClasses.has(t.className)).map((t) => t.className);
+  const extras = (selection.extraClasses ?? []).filter((c) => !presetClasses.has(c));
+  if (extras.length === 0) {
+    return buildFitTestSelection(tests, presetSelected);
+  }
+  return buildFitTestSelectionFromClassNames([...presetSelected, ...extras]);
 }
 
 /** Print what an iteration resolved to, so a CI log shows the run's inputs. */
@@ -260,8 +273,11 @@ function announce(
   fitPerformerGerritRef: string | undefined,
 ): void {
   const { testSelection } = run;
-  const testsLabel = testSelection.mode
-    ? `all ${testSelection.mode === "all-transactions" ? "transactions" : "non-transactions"} tests`
+  const presetLabels = (testSelection.presets ?? []).map((p) =>
+    p === "all-transactions" ? "all transactions tests" : "all non-transactions tests",
+  );
+  const testsLabel = presetLabels.length
+    ? [...presetLabels, ...(testSelection.extraClasses ?? [])].join(" + ")
     : testSelection.mavenTestSelector
       ? `${testSelection.selectedTests.length} test(s): ${testSelection.mavenTestSelector}`
       : "all tests";

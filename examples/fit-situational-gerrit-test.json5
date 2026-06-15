@@ -43,7 +43,7 @@
                 },
               },
               tests: {
-                run: ['com.couchbase.situational.tests.SanityTest'],
+                classes: ['com.couchbase.situational.tests.SanityTest'],
               },
             },
           ],

@@ -8,6 +8,6 @@ dist/
 *.swp
 *.kate-swp
 
-TODO.md
+working/
 .idea
 .factory

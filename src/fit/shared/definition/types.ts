@@ -85,15 +85,25 @@ export interface PerformerSetup {
   onPortInUse?: PortInUsePolicy;
 }
 
-export type DefinitionTests = "all" | "all-transactions" | "all-non-transactions" | string[];
+/** Named test presets that expand to a set of test classes. */
+export const TEST_PRESETS = ["all", "all-transactions", "all-non-transactions"] as const;
+export type TestPreset = (typeof TEST_PRESETS)[number];
 
 export interface MavenOptions {
   args?: string[];
   runDisabledTests?: boolean;
 }
 
+/**
+ * Which test-driver tests a run executes. The final set is the union of every
+ * preset's expansion with the explicit `classes`. Presets like
+ * `all-transactions` are expanded against the listed tests at run time; an
+ * `all` preset (or omitting both keys) means "run everything". `classes` lists
+ * fully-qualified test class names (or `Class#method` selectors) to add on top.
+ */
 export interface TestsSection {
-  run: DefinitionTests;
+  presets?: TestPreset[];
+  classes?: string[];
   excludedGroups?: string[];
   maven?: MavenOptions;
 }

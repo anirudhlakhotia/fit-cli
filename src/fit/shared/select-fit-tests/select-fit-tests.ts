@@ -28,15 +28,20 @@ export interface FitTestSelection {
   allTests: FitTestCase[];
   /** The tests the user chose to run. */
   selectedTests: FitTestCase[];
-  /** `undefined` means "run all tests" (or defer to `mode` at runtime). */
+  /** `undefined` means "run all tests" (or defer to `presets` at runtime). */
   mavenTestSelector?: string;
   /**
-   * When set, the selection was made by a named mode rather than an explicit
-   * list.  The definition file stores this mode string and the runner resolves
-   * it to an explicit list at run time.
+   * When set, the selection includes named presets whose expansion is deferred
+   * to run time (they need the listed tests on the box). The runner expands each
+   * against the discovered tests and unions the result with {@link extraClasses}.
    */
-  mode?: "all-transactions" | "all-non-transactions";
+  presets?: DeferredTestPreset[];
+  /** Explicit class names to union in after `presets` expand (deferred path only). */
+  extraClasses?: string[];
 }
+
+/** Presets whose expansion depends on the listed tests, so it's deferred to run time. */
+export type DeferredTestPreset = "all-transactions" | "all-non-transactions";
 
 export interface FitTestSelectionSummary {
   /** How many FIT test-driver tests were discovered. */
@@ -422,7 +427,7 @@ export async function promptForFitTestSelection(
         allTests: tests,
         selectedTests: selected,
         mavenTestSelector: selected.map((t) => t.className).join(",") || undefined,
-        mode: "all-transactions",
+        presets: ["all-transactions"],
       };
     }
     case "all-non-transactions": {
@@ -431,7 +436,7 @@ export async function promptForFitTestSelection(
         allTests: tests,
         selectedTests: selected,
         mavenTestSelector: selected.map((t) => t.className).join(",") || undefined,
-        mode: "all-non-transactions",
+        presets: ["all-non-transactions"],
       };
     }
     case "single":

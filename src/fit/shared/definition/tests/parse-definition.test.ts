@@ -29,7 +29,7 @@ instances:
             runs:
               - type: functional
                 tests:
-                  run: all
+                  presets: [all]
 `;
 
 test("parses a minimal nested functional definition", () => {
@@ -65,7 +65,7 @@ instances:
               database:
                 mode: hosted
             tests:
-              run: all
+              presets: [all]
 `);
   assert.equal(def.instances[0]?.clusterlessSessions?.[0]?.runs[0]?.type, "situational");
 });
@@ -92,7 +92,7 @@ instances:
             runs:
               - type: functional
                 tests:
-                  run: all
+                  presets: [all]
 `;
 
 test("parses a per-instance cbdinocluster init args string", () => {
@@ -131,7 +131,7 @@ instances:
             runs:
               - type: functional
                 tests:
-                  run: all
+                  presets: [all]
 `),
     (err: unknown) => err instanceof InvalidDefinitionError && /exactly one of "args" or "config"/.test(err.message),
   );
@@ -161,7 +161,7 @@ instances:
             runs:
               - type: functional
                 tests:
-                  run: all
+                  presets: [all]
 `),
     (err: unknown) => err instanceof InvalidDefinitionError && /args/.test(err.message),
   );
@@ -190,7 +190,7 @@ instances:
             runs:
               - type: functional
                 tests:
-                  run: all
+                  presets: [all]
 `),
     (err: unknown) => err instanceof InvalidDefinitionError && /setup\.cbdinocluster\.init/.test(err.message),
   );
@@ -243,7 +243,7 @@ instances:
         runs:
           - type: functional
             tests:
-              run: all
+              presets: [all]
 `),
     InvalidDefinitionError,
   );
@@ -267,7 +267,7 @@ instances:
               database:
                 mode: local
             tests:
-              run: all
+              presets: [all]
 `),
     InvalidDefinitionError,
   );
@@ -295,7 +295,7 @@ instances:
               - type: functional
                 fitConfig: "fit-config-0"
                 tests:
-                  run: all
+                  presets: [all]
 clusterConfigs:
   - id: "cluster-0"
     cbdinocluster:
@@ -341,7 +341,7 @@ instances:
             runs:
               - type: functional
                 tests:
-                  run: all
+                  presets: [all]
 `);
   assert.deepEqual(def.instances[0]?.clusters[0]?.cbdinocluster?.config.docker, {
     "kv-memory": 4096,
@@ -372,7 +372,7 @@ instances:
             runs:
               - type: functional
                 tests:
-                  run: all
+                  presets: [all]
 `),
     (err: unknown) => err instanceof InvalidDefinitionError && /docker\.kv-memory/.test(err.message),
   );
@@ -400,7 +400,7 @@ instances:
             runs:
               - type: functional
                 tests:
-                  run: all
+                  presets: [all]
 clusterConfigs: []
 `),
     (err: unknown) => err instanceof InvalidDefinitionError && /mix/.test(err.message),
@@ -423,7 +423,7 @@ instances:
             runs:
               - type: functional
                 tests:
-                  run: all
+                  presets: [all]
 clusterConfigs:
   - id: "cluster-0"
     cbdinocluster:
@@ -463,7 +463,7 @@ instances:
             runs:
               - type: functional
                 tests:
-                  run: all
+                  presets: [all]
 fitConfigs:
   - id: "fit-config-0"
     config:
@@ -476,9 +476,8 @@ fitConfigs:
   );
 });
 
-test("parses all-transactions and all-non-transactions test placeholders", () => {
-  for (const mode of ["all-transactions", "all-non-transactions"] as const) {
-    const def = parseDefinition(`
+function definitionWithTests(testsBody: string): string {
+  return `
 version: 1
 type: fit
 instances:
@@ -494,33 +493,38 @@ instances:
             runs:
               - type: functional
                 tests:
-                  run: ${mode}
-`);
-    assert.equal(def.instances[0]?.clusters[0]?.sessions[0]?.runs[0]?.tests.run, mode);
+${testsBody}
+`;
+}
+
+test("parses all-transactions and all-non-transactions preset placeholders", () => {
+  for (const preset of ["all-transactions", "all-non-transactions"] as const) {
+    const def = parseDefinition(definitionWithTests(`                  presets: [${preset}]`));
+    assert.deepEqual(def.instances[0]?.clusters[0]?.sessions[0]?.runs[0]?.tests.presets, [preset]);
   }
 });
 
-test("rejects an unknown tests.run string", () => {
+test("parses presets unioned with explicit classes", () => {
+  const def = parseDefinition(
+    definitionWithTests(
+      `                  presets: [all-non-transactions]\n                  classes:\n                    - com.couchbase.transactions.FooTest`,
+    ),
+  );
+  const tests = def.instances[0]?.clusters[0]?.sessions[0]?.runs[0]?.tests;
+  assert.deepEqual(tests?.presets, ["all-non-transactions"]);
+  assert.deepEqual(tests?.classes, ["com.couchbase.transactions.FooTest"]);
+});
+
+test("rejects an unknown preset", () => {
   assert.throws(
-    () =>
-      parseDefinition(`
-version: 1
-type: fit
-instances:
-  - localhost: {}
-    clusters:
-      - connection:
-          connectionString: couchbase://localhost
-          username: Administrator
-          password: password
-        sessions:
-          - performer:
-              sdk: java
-            runs:
-              - type: functional
-                tests:
-                  run: all-unknown
-`),
-    (err: unknown) => err instanceof InvalidDefinitionError && /tests.*run/.test(err.message),
+    () => parseDefinition(definitionWithTests(`                  presets: [all-unknown]`)),
+    (err: unknown) => err instanceof InvalidDefinitionError && /presets/.test(err.message),
+  );
+});
+
+test("rejects the legacy tests.run key", () => {
+  assert.throws(
+    () => parseDefinition(definitionWithTests(`                  run: all`)),
+    (err: unknown) => err instanceof InvalidDefinitionError && /run.*no longer supported/.test(err.message),
   );
 });

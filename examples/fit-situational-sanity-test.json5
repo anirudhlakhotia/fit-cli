@@ -36,7 +36,7 @@
                 },
               },
               tests: {
-                run: ['com.couchbase.situational.tests.VolumeTest#steadyStateKvGets'],
+                classes: ['com.couchbase.situational.tests.VolumeTest#steadyStateKvGets'],
               },
             },
           ],

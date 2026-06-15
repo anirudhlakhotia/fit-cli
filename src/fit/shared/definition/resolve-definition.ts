@@ -20,6 +20,7 @@ import {
 import {
   buildDefaultFitTestSelection,
   buildFitTestSelectionFromClassNames,
+  type DeferredTestPreset,
   type FitTestSelection,
 } from "../select-fit-tests/select-fit-tests.js";
 import {
@@ -206,13 +207,24 @@ export function resolveDefinitionRefs(def: FitDefinition): FitDefinition {
 }
 
 function resolveTestsSelection(tests: TestsSection): FitTestSelection {
-  if (tests.run === "all") {
+  const presets = tests.presets ?? [];
+  const classes = tests.classes ?? [];
+  // "all" (or omitting both keys) means run everything; it dominates any other entry.
+  if (presets.includes("all") || (presets.length === 0 && classes.length === 0)) {
     return buildDefaultFitTestSelection();
   }
-  if (tests.run === "all-transactions" || tests.run === "all-non-transactions") {
-    return { allTests: [], selectedTests: [], mode: tests.run };
+  const deferred = presets.filter((p): p is DeferredTestPreset => p !== "all");
+  if (deferred.length === 0) {
+    // Only explicit classes — resolve up front, no need to list tests on the box.
+    return buildFitTestSelectionFromClassNames(classes);
   }
-  return buildFitTestSelectionFromClassNames(tests.run);
+  // Deferred presets (optionally plus explicit classes) — expand on the box.
+  return {
+    allTests: [],
+    selectedTests: [],
+    presets: deferred,
+    ...(classes.length > 0 ? { extraClasses: classes } : {}),
+  };
 }
 
 const JUNIT_DISABLED_CONDITION = "org.junit.jupiter.api.condition.DisabledCondition";

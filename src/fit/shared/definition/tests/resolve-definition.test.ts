@@ -43,7 +43,7 @@ function definition(): FitDefinition {
             sessions: [
               {
                 performer: { sdk: "java" },
-                runs: [{ type: "functional", tests: { run: "all" }, fitConfig: { excludeTests: ["openshift"] } }],
+                runs: [{ type: "functional", tests: {}, fitConfig: { excludeTests: ["openshift"] } }],
               },
             ],
           },
@@ -93,7 +93,7 @@ test("resolveSession applies performer defaults and strips redundant clusterAcce
             clusterAccess: LOCAL_FIT_CONFIG.clusterAccess,
             excludeTests: ["openshift"],
           },
-          tests: { run: "all" },
+          tests: {},
         },
       ],
     } satisfies SessionLifetime,
@@ -114,7 +114,7 @@ test("resolveDefinition uses run-level fitConfig for useExisting clusters", () =
         clusters: [
           {
             useExisting: {},
-            sessions: [{ performer: { sdk: "java" }, runs: [{ type: "functional", tests: { run: "all" }, fitConfig: LOCAL_FIT_CONFIG }] }],
+            sessions: [{ performer: { sdk: "java" }, runs: [{ type: "functional", tests: {}, fitConfig: LOCAL_FIT_CONFIG }] }],
           },
         ],
       },
@@ -125,18 +125,18 @@ test("resolveDefinition uses run-level fitConfig for useExisting clusters", () =
 });
 
 test("excludedGroups override the default Maven args", () => {
-  assert.deepEqual(resolveMavenArgs({ run: "all", excludedGroups: ["situational", "openshift"] }), [
+  assert.deepEqual(resolveMavenArgs({ excludedGroups: ["situational", "openshift"] }), [
     "-DexcludedGroups=situational,openshift",
   ]);
 });
 
 test("omitting excludedGroups keeps the default Maven args", () => {
-  assert.deepEqual(resolveMavenArgs({ run: "all" }), [...DEFAULT_MAVEN_TEST_ARGS]);
+  assert.deepEqual(resolveMavenArgs({}), [...DEFAULT_MAVEN_TEST_ARGS]);
 });
 
 test("situational runs use the situational Maven args", () => {
-  assert.deepEqual(resolveSituationalMavenArgs({ run: "all" }), [...SITUATIONAL_MAVEN_TEST_ARGS]);
-  assert.deepEqual(resolveSituationalMavenArgs({ run: "all", excludedGroups: ["openshift"] }), [
+  assert.deepEqual(resolveSituationalMavenArgs({}), [...SITUATIONAL_MAVEN_TEST_ARGS]);
+  assert.deepEqual(resolveSituationalMavenArgs({ excludedGroups: ["openshift"] }), [
     "-Dgroups=situational,cbDino",
     "-DexcludedGroups=openshift",
   ]);
@@ -152,7 +152,7 @@ test("resolveDefinitionRefs replaces clusterConfig string ref with inline fields
         clusters: [
           {
             clusterConfig: "cluster-0",
-            sessions: [{ performer: { sdk: "java" }, runs: [{ type: "functional", tests: { run: "all" } }] }],
+            sessions: [{ performer: { sdk: "java" }, runs: [{ type: "functional", tests: {} }] }],
           },
         ],
       },
@@ -183,7 +183,7 @@ test("resolveDefinitionRefs replaces fitConfig string ref with inline config", (
         clusters: [
           {
             connection: { connectionString: "couchbase://localhost", username: "Administrator", password: "password", tls: null },
-            sessions: [{ performer: { sdk: "java" }, runs: [{ type: "functional", fitConfig: "fit-config-0", tests: { run: "all" } }] }],
+            sessions: [{ performer: { sdk: "java" }, runs: [{ type: "functional", fitConfig: "fit-config-0", tests: {} }] }],
           },
         ],
       },
@@ -207,7 +207,7 @@ test("resolveDefinitionRefs throws on unknown clusterConfig ref", () => {
             clusters: [
               {
                 clusterConfig: "nonexistent",
-                sessions: [{ performer: { sdk: "java" }, runs: [{ type: "functional", tests: { run: "all" } }] }],
+                sessions: [{ performer: { sdk: "java" }, runs: [{ type: "functional", tests: {} }] }],
               },
             ],
           },
@@ -229,7 +229,7 @@ test("resolveDefinitionRefs throws on unknown fitConfig ref", () => {
             clusters: [
               {
                 connection: { connectionString: "couchbase://localhost", username: "Administrator", password: "password", tls: null },
-                sessions: [{ performer: { sdk: "java" }, runs: [{ type: "functional", fitConfig: "nonexistent", tests: { run: "all" } }] }],
+                sessions: [{ performer: { sdk: "java" }, runs: [{ type: "functional", fitConfig: "nonexistent", tests: {} }] }],
               },
             ],
           },

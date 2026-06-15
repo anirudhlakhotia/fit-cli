@@ -37,6 +37,7 @@ import {
   type InstanceMode,
   type SessionLifetime,
   type SituationalDatabaseMode,
+  type TestsSection,
 } from "./types.js";
 import { describeDefinition } from "./generate-desc.js";
 
@@ -162,15 +163,17 @@ function buildCbdinoclusterInit(cng: boolean, githubUser?: string): Cbdinocluste
   };
 }
 
-function buildTests(selection: FitTestSelection) {
-  if (selection.mode) {
-    return { run: selection.mode } as const;
+function buildTests(selection: FitTestSelection): TestsSection {
+  if (selection.presets?.length) {
+    return {
+      presets: selection.presets,
+      ...(selection.extraClasses?.length ? { classes: selection.extraClasses } : {}),
+    };
   }
-  return {
-    run: selection.mavenTestSelector
-      ? selection.selectedTests.map((test) => test.className)
-      : "all",
-  } as const;
+  if (selection.mavenTestSelector) {
+    return { classes: selection.selectedTests.map((test) => test.className) };
+  }
+  return { presets: ["all"] };
 }
 
 function buildPerformerSession(

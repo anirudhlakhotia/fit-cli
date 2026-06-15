@@ -27,12 +27,18 @@ function describeClusterSource(cluster: ClusterLifetime): string {
 }
 
 function describeRunTests(run: FitRun): string {
-  if (run.tests.run === "all") return "";
-  const classes = run.tests.run as string[];
-  if (classes.length === 1) {
-    return `,${classes[0].split(".").at(-1) ?? classes[0]}`;
+  const { presets, classes } = run.tests;
+  const parts: string[] = [];
+  // "all" (and omitting both keys) is the implicit default, so it adds no suffix.
+  for (const preset of presets ?? []) {
+    if (preset !== "all") parts.push(preset);
   }
-  return `,${classes.length} tests`;
+  if (classes?.length === 1) {
+    parts.push(classes[0].split(".").at(-1) ?? classes[0]);
+  } else if (classes && classes.length > 1) {
+    parts.push(`${classes.length} tests`);
+  }
+  return parts.length ? `,${parts.join("+")}` : "";
 }
 
 function describeSession(session: SessionLifetime): string {
