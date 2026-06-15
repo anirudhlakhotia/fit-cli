@@ -1,37 +1,45 @@
 /**
- * Workflow: choose where situational test results are stored. The hosted
- * database on faas.couchbase.com is the recommended default (no local database
- * or results UI to run); the alternative is a local Docker database, which this
- * workflow can set up via ../setup-local-database.
+ * Workflow: choose where situational test results are stored. The hosted database
+ * (the results environment selected in the definition file — "dev"=faas,
+ * "prod"=performance-sdk; default dev) is the recommended default; the alternative
+ * is a local Docker database, which this workflow can set up via ../setup-local-database.
  *
- * The hosted database's password is secret, so it's taken from the
- * fit-cli config (`resultsDb.password` in ~/.fit-cli/config.json5), falling back
- * to the FIT_RESULTS_DB_PASSWORD environment variable (a `.env` file is loaded
- * automatically) rather than prompted for and logged. Ask on #the-fit-stop for
- * the password — see .env.example.
+ * The hosted database's password is secret and comes from that results environment's
+ * AWS Secrets Manager secret (see resolveResultsDbCredentials / environments.json5),
+ * resolved with the ambient AWS credentials rather than prompted for or stored.
  *
  * Run on its own (add --root <dir> to point elsewhere):
- *   npx tsx src/fit/situational/choose-results-database/choose-results-database.ts
+ *   bun run src/fit/situational/choose-results-database/choose-results-database.ts
  */
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { type RunOutput } from "../../../util/non-fit/artifacts.js";
-import { loadDotenv } from "../../../util/non-fit/dotenv.js";
-import { resolveResultsDbCredentials } from "../../util/config.js";
+import { resolveResultsDbCredentials, DEFAULT_RESULTS_ENV, type ResolvedResultsDbCredentials } from "../../util/config.js";
 import { fitCliError } from "../../../util/non-fit/fit-cli-log.js";
 import { capture } from "../../../util/non-fit/proc.js";
 import { qualifyPromptId, select } from "../../../util/non-fit/prompts.js";
+import { loadEnvironments } from "../../util/environments.js";
 import { rootDirFromArgv } from "../../util/root.js";
 import { type ResultsDatabase } from "../../shared/util/results-database.js";
 import { setupLocalDatabase } from "../setup-local-database/setup-local-database.js";
 
-export const HOSTED_RESULTS_DB_HOST = "faas.couchbase.com";
-export const HOSTED_RESULTS_DB_JDBC = `jdbc:postgresql://${HOSTED_RESULTS_DB_HOST}:5432/perf`;
+/** Default hosted results host, used for connectivity defaults and JDBC parsing fallbacks. */
+export const DEFAULT_RESULTS_HOST = "faas.couchbase.com";
 export const HOSTED_RESULTS_DB_USERNAME = "postgres";
-/** Environment variable used as a fallback for the hosted results-DB password. */
-export const RESULTS_DB_PASSWORD_ENV = "FIT_RESULTS_DB_PASSWORD";
 
-/** Where situational results show up once a run has produced data. */
-export const SITUATIONAL_RESULTS_URL = "https://performance-sdk.couchbase.com/results/situational";
+/** JDBC URL for the Postgres results database on `host`. */
+export function resultsDbJdbc(host: string): string {
+  return `jdbc:postgresql://${host}:5432/perf`;
+}
+
+/** Where situational results show up once a run has produced data (the UI on `host`). */
+export function situationalResultsUrl(host: string): string {
+  return `https://${host}/results/situational`;
+}
+
+/** Extract the host from a results-DB JDBC URL, falling back to the default. */
+export function resultsHostFromJdbc(jdbc: string): string {
+  return /\/\/([^:/]+)/.exec(jdbc)?.[1] ?? DEFAULT_RESULTS_HOST;
+}
 
 export type ResultsDatabaseMode = "hosted" | "local";
 
@@ -41,115 +49,90 @@ export type ResultsDatabaseOutcome =
   | (RunOutput & { ready: false });
 
 /**
- * Build the hosted database connection from resolved credentials, or `undefined`
- * if no password is available. Pure (takes the credentials in) so it's easy to
- * unit test; see {@link resolveResultsDbCredentials} for where they come from.
+ * Build the hosted database connection from resolved credentials. Pure (takes the
+ * credentials in) so it's easy to unit test; see {@link resolveResultsDbCredentials}
+ * for where they come from (the JDBC host selects the results environment).
  */
-export function buildHostedDatabase(
-  credentials: { password?: string; username?: string } = {},
-): ResultsDatabase | undefined {
-  const password = credentials.password?.trim();
-  if (!password) {
-    return undefined;
-  }
+export function buildHostedDatabase(credentials: ResolvedResultsDbCredentials): ResultsDatabase {
   return {
-    jdbc: HOSTED_RESULTS_DB_JDBC,
-    username: credentials.username?.trim() || HOSTED_RESULTS_DB_USERNAME,
-    password,
+    jdbc: resultsDbJdbc(credentials.host),
+    username: credentials.username,
+    password: credentials.password,
   };
 }
 
 /**
- * TCP connectivity probe: returns true if the hosted results database is
- * reachable on its PostgreSQL port, false if not (VPN likely not active).
- * Pass a `captureCommand` to run the check from a remote execution context.
+ * TCP connectivity probe: returns true if the hosted results database is reachable
+ * on its PostgreSQL port, false if not (VPN likely not active). Pass a
+ * `captureCommand` to run the check from a remote execution context.
  */
 export async function checkResultsDatabaseConnectivity(
   captureCommand?: (cmd: string, args: string[]) => Promise<string>,
+  host: string = DEFAULT_RESULTS_HOST,
 ): Promise<boolean> {
   const run = captureCommand ?? ((cmd: string, args: string[]) => capture(cmd, args));
   try {
-    await run("nc", ["-z", "-w", "5", HOSTED_RESULTS_DB_HOST, "5432"]);
+    await run("nc", ["-z", "-w", "5", host, "5432"]);
     return true;
   } catch {
     return false;
   }
 }
 
-/**
- * The single message shown whenever the hosted results database password is
- * missing, so every caller fails the same way. Kept deliberately short: where
- * the password lives in the config file is an implementation detail — the user
- * just needs to know who to ask and which command to run.
- */
-export function missingResultsDbPasswordMessage(): string {
-  return (
-    `\n✗ The hosted results database on ${HOSTED_RESULTS_DB_HOST} needs a password.\n` +
-    "  Ask on #the-fit-stop for it, then run `bun run config -- edit` inside the fit-cli dir\n" +
-    "  to set up your config file (~/.fit-cli/config.json5).\n" +
-    `  You must also be on the vpn-public VPN to reach ${HOSTED_RESULTS_DB_HOST}.`
-  );
+/** Where situational results will be stored: a hosted environment (with its host), or local Docker. */
+export interface ResultsTarget {
+  mode: ResultsDatabaseMode;
+  /** The chosen results environment; only set when mode is "hosted". */
+  resultsEnvironment?: string;
 }
 
-export async function chooseResultsDatabaseMode(promptIdPrefix?: string): Promise<ResultsDatabaseMode> {
-  return select<ResultsDatabaseMode>({
-    promptId: qualifyPromptId("situational.database.mode", promptIdPrefix),
-    message: "Where should situational test results be stored?",
-    default: "hosted",
-    choices: [
-      {
-        name: `Hosted database on ${HOSTED_RESULTS_DB_HOST} (recommended — nothing to run locally)`,
-        value: "hosted",
-      },
-      { name: "A local database in Docker (this tool will set it up)", value: "local" },
-    ],
+/**
+ * Single prompt for where situational results go: each hosted results environment
+ * (showing the host data lands on), or a local Docker database. Combines the
+ * hosted-vs-local and which-environment choices so the user picks once. Sourced
+ * from environments.json5.
+ */
+export async function chooseResultsTarget(promptIdPrefix?: string): Promise<ResultsTarget> {
+  const results = loadEnvironments().results;
+  const hostedChoices = Object.entries(results).map(([name, env]) => {
+    const recommended = name === DEFAULT_RESULTS_ENV ? " (for iterating)" : " (for 'production' results)";
+    return { name: `Hosted "${name}" results database at ${env.host ?? "(host not set)"}${recommended}`, value: `hosted:${name}` };
   });
+  const choice = await select<string>({
+    promptId: qualifyPromptId("situational.database.target", promptIdPrefix),
+    message: "Where should situational test results be stored?",
+    default: `hosted:${DEFAULT_RESULTS_ENV}`,
+    choices: [...hostedChoices, { name: "A local database in Docker (this tool will set it up)", value: "local" }],
+  });
+  if (choice === "local") return { mode: "local" };
+  return { mode: "hosted", resultsEnvironment: choice.slice("hosted:".length) };
 }
 
-/** Resolve the hosted database, explaining how to fix a missing password. */
-function resolveHostedDatabase(): ResultsDatabaseOutcome {
-  loadDotenv();
-  const database = buildHostedDatabase(resolveResultsDbCredentials());
-  if (!database) {
-    fitCliError(missingResultsDbPasswordMessage());
+/** Resolve the hosted database for a results environment from AWS Secrets Manager. */
+async function resolveHostedDatabase(block: string): Promise<ResultsDatabaseOutcome> {
+  try {
+    const credentials = await resolveResultsDbCredentials({ block });
+    console.log(`\n✓ Using the "${block}" hosted results database at ${credentials.host}.`);
+    return {
+      ready: true,
+      database: buildHostedDatabase(credentials),
+      artifacts: [],
+      details: [{ label: "Results database", value: credentials.host }],
+    };
+  } catch (err) {
+    fitCliError(`${(err as Error).message}\n  You must also be on the vpn-public VPN to reach the database.`);
     return { ready: false, artifacts: [], details: [] };
   }
-  console.log(`\n✓ Using the hosted results database at ${HOSTED_RESULTS_DB_HOST}.`);
-  return {
-    ready: true,
-    database,
-    artifacts: [],
-    details: [{ label: "Results database", value: HOSTED_RESULTS_DB_HOST }],
-  };
 }
 
 /**
- * Resolve the hosted database from the fit-cli config only — no `.env` /
- * environment-variable fallback. Used by the definition-driven situational run,
- * where the password must come from the saved config rather than ambient env.
- */
-function resolveHostedDatabaseFromConfig(): ResultsDatabaseOutcome {
-  const database = buildHostedDatabase(resolveResultsDbCredentials({ env: {} }));
-  if (!database) {
-    fitCliError(missingResultsDbPasswordMessage());
-    return { ready: false, artifacts: [], details: [] };
-  }
-  console.log(`\n✓ Using the hosted results database at ${HOSTED_RESULTS_DB_HOST}.`);
-  return {
-    ready: true,
-    database,
-    artifacts: [],
-    details: [{ label: "Results database", value: HOSTED_RESULTS_DB_HOST }],
-  };
-}
-
-/**
- * Resolve a results database for a non-interactive (definition-driven) run from
- * a mode named in the file: `hosted` (password from fit-cli config only) or
- * `local` (stood up in Docker). Nothing is prompted for.
+ * Resolve a results database for a non-interactive (definition-driven) run: the
+ * `mode` from the file (`hosted` or `local`) and the selected results `block`.
+ * Nothing is prompted for.
  */
 export async function resolveResultsDatabase(
   mode: "hosted" | "local",
+  block: string,
   rootDir: string,
 ): Promise<ResultsDatabaseOutcome> {
   if (mode === "local") {
@@ -159,14 +142,14 @@ export async function resolveResultsDatabase(
     }
     return { ready: true, database: local.database, artifacts: local.artifacts, details: local.details };
   }
-  return resolveHostedDatabaseFromConfig();
+  return resolveHostedDatabase(block);
 }
 
-/** Choose a results database: the hosted one, or a freshly set-up local one. */
+/** Choose a results database interactively: a hosted environment, or a freshly set-up local one. */
 export async function chooseResultsDatabase(rootDir: string): Promise<ResultsDatabaseOutcome> {
-  const mode = await chooseResultsDatabaseMode();
-  if (mode === "hosted") {
-    return resolveHostedDatabase();
+  const target = await chooseResultsTarget();
+  if (target.mode === "hosted") {
+    return resolveHostedDatabase(target.resultsEnvironment ?? DEFAULT_RESULTS_ENV);
   }
 
   const local = await setupLocalDatabase(rootDir);

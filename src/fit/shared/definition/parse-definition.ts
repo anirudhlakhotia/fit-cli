@@ -391,12 +391,27 @@ function isSituationalDatabaseMode(value: unknown): value is SituationalDatabase
   return isString(value) && (SITUATIONAL_DATABASE_MODES as readonly string[]).includes(value);
 }
 
+/**
+ * Validate an optional environment-name selector (capellaEnvironment / resultsEnvironment).
+ * Only checks it's a string here; whether the named environment actually exists is checked
+ * at run time against environments.json5 (resolveCapellaConfig / resolveResultsDbCredentials).
+ */
+function optionalEnvironmentName(record: Record<string, unknown>, key: string, path: string): string | undefined {
+  const value = record[key];
+  if (value === undefined) return undefined;
+  if (!isString(value)) {
+    throw new InvalidDefinitionError(`"${path}.${key}" must be a string; got ${JSON.stringify(value)}`);
+  }
+  return value;
+}
+
 function validateSituationalDatabase(value: unknown, path: string): SituationalDatabaseSetup {
   const record = requireRecord(value, path);
   if (!isSituationalDatabaseMode(record.mode)) {
     throw new InvalidDefinitionError(`"${path}.mode" must be one of ${SITUATIONAL_DATABASE_MODES.join(", ")}; got ${JSON.stringify(record.mode)}`);
   }
-  return { mode: record.mode };
+  const resultsEnvironment = optionalEnvironmentName(record, "resultsEnvironment", path);
+  return { mode: record.mode, ...(resultsEnvironment !== undefined ? { resultsEnvironment } : {}) };
 }
 
 function validateSituationalSection(value: unknown, path: string): SituationalSection {
@@ -555,6 +570,15 @@ function validateInstanceSetup(value: unknown, path: string): InstanceSetup | un
       throw new InvalidDefinitionError(`Missing required field: ${path}.cbdinocluster.init`);
     }
     setup.cbdinocluster = { init: validateCbdinoclusterInit(cbdinocluster.init, `${path}.cbdinocluster.init`) };
+  }
+  const capellaEnvironment = optionalEnvironmentName(record, "capellaEnvironment", path);
+  if (capellaEnvironment !== undefined) {
+    // It selects the Capella creds for cbdinocluster provisioning, so it's a no-op
+    // without one — fail fast rather than silently ignore it.
+    if (setup.cbdinocluster === undefined) {
+      throw new InvalidDefinitionError(`"${path}.capellaEnvironment" requires "${path}.cbdinocluster".`);
+    }
+    setup.capellaEnvironment = capellaEnvironment;
   }
   return setup;
 }

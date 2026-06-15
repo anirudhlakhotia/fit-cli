@@ -10,7 +10,6 @@ function baseArgs(overrides: Partial<AutoInitCliArgs> = {}): AutoInitCliArgs {
     dryRun: false,
     disableAws: false,
     disableGithub: false,
-    disableResultsDb: false,
     disableGerrit: false,
     disableCapella: false,
     configPath: "/tmp/test-config.json5",
@@ -26,8 +25,6 @@ test("buildAutoConfig: all env vars set produces full config", () => {
     FIT_EC2_INSTANCE_TYPE_PERF: "m6i.4xlarge",
     GITHUB_USER: "octocat",
     GITHUB_TOKEN: "ghp_secret",
-    FIT_RESULTS_DB_PASSWORD: "dbpass",
-    FIT_RESULTS_DB_USERNAME: "dbuser",
   };
 
   const { config } = buildAutoConfig({ args: baseArgs(), env });
@@ -41,7 +38,6 @@ test("buildAutoConfig: all env vars set produces full config", () => {
       },
     },
     github: { user: "octocat", token: "ghp_secret" },
-    output: { resultsDb: { password: "dbpass", username: "dbuser" } },
   });
 });
 
@@ -66,14 +62,6 @@ test("buildAutoConfig: --disable-github omits github section", () => {
   assert.equal(config.github, undefined);
 });
 
-test("buildAutoConfig: --disable-results-db omits resultsDb section", () => {
-  const env = { FIT_RESULTS_DB_PASSWORD: "secret" };
-
-  const { config } = buildAutoConfig({ args: baseArgs({ disableResultsDb: true }), env });
-
-  assert.equal(config.output?.resultsDb, undefined);
-});
-
 test("buildAutoConfig: CLI arg overrides env var", () => {
   const env = { GITHUB_USER: "env-user" };
 
@@ -94,9 +82,8 @@ test("buildAutoConfig: missing optional fields are omitted gracefully", () => {
   assert.equal(config.cloud?.aws?.instanceTypes?.functional, "c5.2xlarge");
   assert.equal(config.cloud?.aws?.instanceTypes?.perf, "c5.4xlarge");
   assert.equal(config.cloud?.aws?.profile, undefined);
-  // github and resultsDb have no defaults, so they're omitted
+  // github has no defaults, so it's omitted
   assert.equal(config.github, undefined);
-  assert.equal(config.output?.resultsDb, undefined);
 });
 
 test("buildAutoConfig: GH_TOKEN is used as fallback for github.token", () => {
@@ -115,19 +102,18 @@ test("buildAutoConfig: GITHUB_TOKEN takes precedence over GH_TOKEN", () => {
   assert.equal(config.github?.token, "ghp_primary");
 });
 
-test("buildAutoConfig: CAP_* env (fit-app-deployment names) populates capella with defaults filled in", () => {
+test("buildAutoConfig: CAP_* env (fit-app-deployment names) populates the personal capella credentials", () => {
   const env = {
     CAP_USER: "graham.pople@couchbase.com",
-    CAP_OID: "org-from-env",
+    CAP_PASS: "secret-pw",
   };
 
   const { config } = buildAutoConfig({ args: baseArgs(), env });
 
+  // endpoint/oid are no longer stored in config — they come from environments.json5.
   assert.deepEqual(config.capella, {
     username: "graham.pople@couchbase.com",
-    endpoint: "https://api.dev.nonprod-project-avengers.com",
-    organizationId: "org-from-env",
-    password: "NotUsed",
+    password: "secret-pw",
   });
 });
 

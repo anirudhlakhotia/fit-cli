@@ -7,7 +7,6 @@
 # Run
 # ------------
 # gh workflow run fit-cli.yaml --ref <your-branch> --field definitionFile="https://gist.githubusercontent.com/programmatix/<gist-id>/raw" --repo couchbaselabs/fit-cli
-# Note: use gist.githubusercontent.com/…/raw (not gist.github.com) to get raw content, not the HTML page.
 name: Run FIT with fit-cli
 
 on:
@@ -17,25 +16,12 @@ on:
         description: A fit-cli definition file e.g. "https://gist.githubusercontent.com/programmatix/<gist-id>/raw" or "examples/fit-functional-sanity-test.json5" (local to fit-cli). Use gist.githubusercontent.com/…/raw, not gist.github.com. To generate one, clone the fit-cli project and follow the README.
         type: string
         default: examples/fit-functional-sanity-test.json5
-      capellaEnvironment:
-        description: Used for FIT/SIT testing against Capella
-        type: choice
-        default: capella-env-dev
-        options:
-          - capella-env-dev
-#          - capella-env-stage
-  # Allow other repos to call this workflow with `uses: couchbaselabs/fit-cli/.github/workflows/fit-cli.yaml@main`.
-  # Inputs mirror workflow_dispatch above; note workflow_call does not support `type: choice`, so capellaEnvironment is a string here.
   workflow_call:
     inputs:
       definitionFile:
         description: A fit-cli definition file e.g. "https://gist.githubusercontent.com/programmatix/<gist-id>/raw" or "examples/fit-functional-sanity-test.json5" (local to fit-cli). Use gist.githubusercontent.com/…/raw, not gist.github.com. To generate one, clone the fit-cli project and follow the README.
         type: string
         default: examples/fit-functional-sanity-test.json5
-      capellaEnvironment:
-        description: Used for FIT/SIT testing against Capella (one of the configured Capella environments, e.g. capella-env-dev)
-        type: string
-        default: capella-env-dev
 
 permissions:
   id-token: write   # required for GitHub OIDC
@@ -46,8 +32,6 @@ permissions:
 jobs:
   run-fit-cli:
     runs-on: [ubuntu-latest]
-    # Bind to the chosen Capella environment so its CAP_* variables resolve below.
-    environment: ${{ inputs.capellaEnvironment }}
     steps:
       # Obtain a GitHub token that has permissions to check out private repos (transactions-fit-performer)
       # (The {{ secrets.GITHUB_TOKEN }} that GHA automatically provides is valid only for the current repo.)
@@ -59,7 +43,7 @@ jobs:
           private-key: ${{ secrets.CBFITFRAMEWORK_PRIVATE_KEY }}
           owner: couchbaselabs
 
-      # Use OIDC to assume an AWS role fit-cli-role that has all the permissions needed to create instances etc.
+      # Use OIDC to assume an AWS role fit-cli-role that has all the permissions needed to create instances, get secrets etc.
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v6
         with:
@@ -90,13 +74,6 @@ jobs:
           # Instead we use a hardcoded github PAT (the author's).  Migrating to a Github App in future would be better.
           GITHUB_TOKEN: ${{ secrets.FIT_CLI_GITHUB_PAT }}
           GITHUB_USER: ${{ secrets.FIT_CLI_GITHUB_USER }}
-          # Capella settings from the chosen environment, which will end up in ~/.fit-cli/config.json5
-          CAPELLA_USER: ${{ vars.CAP_USER }}
-          CAPELLA_ENDPOINT: ${{ vars.CAP_END_POINT }}
-          CAPELLA_OID: ${{ vars.CAP_OID }}
-          CAPELLA_PASS: ${{ vars.CAP_PASS }}
-          CAPELLA_OVERRIDE_TOKEN: ${{ vars.CAP_OVERRIDE_TOKEN }}
-          CAPELLA_INTERNAL_SUPPORT_TOKEN: ${{ vars.CAP_INTERNAL_SUPPORT_TOKEN }}
         run: |
           git clone --branch ${{ github.ref_name }} https://github.com/couchbaselabs/fit-cli.git
           cd fit-cli

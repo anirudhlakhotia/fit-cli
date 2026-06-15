@@ -2,10 +2,9 @@
 /**
  * Top-level dispatcher for the `config` bun script.
  *
- * bun run config -- edit [--auto] [--dry-run] [--disable-aws] [--disable-github] [--disable-results-db]
+ * bun run config -- edit [--auto] [--dry-run] [--disable-aws] [--disable-github]
  *                        [--aws-profile <p>] [--aws-instance-type <t>]
  *                        [--github-user <u>] [--github-token <t>]
- *                        [--results-db-password <p>] [--results-db-username <u>]
  *                        [--config-path <path>]
  * bun run config -- show [--config-path <path>]
  * bun run config -- --help
@@ -35,7 +34,6 @@ Edit options:
   --dry-run              Show what would be written without touching the config file.
   --disable-aws          Skip writing the aws section.
   --disable-github       Skip writing the github section.
-  --disable-results-db   Skip writing the resultsDb section.
   --disable-gerrit       Skip writing the gerrit section.
   --disable-capella      Skip writing the capella section.
   --aws-profile <p>      AWS profile (env: AWS_PROFILE).
@@ -47,16 +45,15 @@ Edit options:
                          (env: FIT_EC2_INSTANCE_TYPE_PERF / FIT_EC2_INSTANCE_TYPE, default: c5.4xlarge).
   --github-user <u>      GitHub username (env: GITHUB_USER).
   --github-token <t>     GitHub PAT (env: GITHUB_TOKEN / GH_TOKEN).
-  --results-db-password <p> Results DB password (env: FIT_RESULTS_DB_PASSWORD).
-  --results-db-username <u> Results DB username (env: FIT_RESULTS_DB_USERNAME).
   --output-format <fmt>  Default format for generated definition files: json5 or yaml (env: FIT_OUTPUT_FORMAT; default: json5).
   --gerrit-user <u>      Gerrit username (env: FIT_GERRIT_USER / GERRIT_USER; defaults to github.user).
   --gerrit-ssh-key <path> Path to SSH private key registered with Gerrit (env: FIT_GERRIT_KEY / GERRIT_SSH_KEY).
-  --capella-username <u> Capella username for situational/SIT runs (env: CAPELLA_USER / CAP_USER). No default.
-  --capella-endpoint <e> Capella endpoint (env: CAPELLA_ENDPOINT / CAP_END_POINT; default: api.dev.nonprod-project-avengers.com).
-  --capella-oid <id>     Capella organization ID (env: CAPELLA_OID / CAP_OID; has a default).
-  --capella-password <p> Capella password (env: CAPELLA_PASS / CAP_PASS; default: NotUsed).
+  --capella-username <u> Your Capella username for situational/SIT runs (env: CAPELLA_USER / CAP_USER).
+  --capella-password <p> Your Capella password (env: CAPELLA_PASS / CAP_PASS).
   --config-path <path>   Override config file path (default: ~/.fit-cli/config.json5).
+                         (Capella endpoint/oid and the results-DB credentials are no longer set here —
+                          they come from environments.json5 + AWS Secrets Manager, keyed by the
+                          environment selected in the definition file.)
   -h, --help             Show this help.`;
 
 export interface AutoInitCliArgs {
@@ -64,7 +61,6 @@ export interface AutoInitCliArgs {
   dryRun: boolean;
   disableAws: boolean;
   disableGithub: boolean;
-  disableResultsDb: boolean;
   disableGerrit: boolean;
   disableCapella: boolean;
   awsProfile?: string;
@@ -72,14 +68,10 @@ export interface AutoInitCliArgs {
   awsInstanceTypes?: FitCliInstanceTypes;
   githubUser?: string;
   githubToken?: string;
-  resultsDbPassword?: string;
-  resultsDbUsername?: string;
   outputFormat?: string;
   gerritUser?: string;
   gerritSshKeyPath?: string;
   capellaUsername?: string;
-  capellaEndpoint?: string;
-  capellaOrganizationId?: string;
   capellaPassword?: string;
   configPath: string;
 }
@@ -110,7 +102,6 @@ export function parseEditArgs(argv: string[]): AutoInitCliArgs {
   const dryRun = consumeFlag(args, "--dry-run");
   const disableAws = consumeFlag(args, "--disable-aws");
   const disableGithub = consumeFlag(args, "--disable-github");
-  const disableResultsDb = consumeFlag(args, "--disable-results-db");
   const disableGerrit = consumeFlag(args, "--disable-gerrit");
   const disableCapella = consumeFlag(args, "--disable-capella");
 
@@ -122,14 +113,10 @@ export function parseEditArgs(argv: string[]): AutoInitCliArgs {
   }
   const githubUser = consumeValue(args, "--github-user");
   const githubToken = consumeValue(args, "--github-token");
-  const resultsDbPassword = consumeValue(args, "--results-db-password");
-  const resultsDbUsername = consumeValue(args, "--results-db-username");
   const outputFormat = consumeValue(args, "--output-format");
   const gerritUser = consumeValue(args, "--gerrit-user");
   const gerritSshKeyPath = consumeValue(args, "--gerrit-ssh-key");
   const capellaUsername = consumeValue(args, "--capella-username");
-  const capellaEndpoint = consumeValue(args, "--capella-endpoint");
-  const capellaOrganizationId = consumeValue(args, "--capella-oid");
   const capellaPassword = consumeValue(args, "--capella-password");
   const configPath = consumeValue(args, "--config-path") ?? defaultFitCliConfigPath();
 
@@ -146,21 +133,16 @@ export function parseEditArgs(argv: string[]): AutoInitCliArgs {
     dryRun,
     disableAws,
     disableGithub,
-    disableResultsDb,
     disableGerrit,
     disableCapella,
     awsProfile,
     ...(Object.keys(awsInstanceTypes).length > 0 ? { awsInstanceTypes } : {}),
     githubUser,
     githubToken,
-    resultsDbPassword,
-    resultsDbUsername,
     outputFormat,
     gerritUser,
     gerritSshKeyPath,
     capellaUsername,
-    capellaEndpoint,
-    capellaOrganizationId,
     capellaPassword,
     configPath,
   };

@@ -27,6 +27,7 @@ import {
   DEFAULT_CLUSTER_EXISTS_POLICY,
   type ClusterExistsPolicy,
 } from "../../../cluster/cluster-create/cluster-exists-policy.js";
+import { DEFAULT_CAPELLA_ENV, DEFAULT_RESULTS_ENV } from "../../util/config.js";
 import type { CbdinoclusterDef } from "../../../cluster/cluster-create/build-cluster-def.js";
 import { loadDefinition } from "./parse-definition.js";
 import type {
@@ -70,6 +71,8 @@ export interface ResolvedFunctionalRun extends ResolvedRunCommon {
 export interface ResolvedSituationalRun extends ResolvedRunCommon {
   type: "situational";
   databaseMode: SituationalDatabaseMode;
+  /** Results environment (key under `results` in environments.json5); default "dev". */
+  resultsEnvironment: string;
 }
 
 export type ResolvedRun = ResolvedFunctionalRun | ResolvedSituationalRun;
@@ -105,6 +108,8 @@ export interface ResolvedInstancePlan {
   clusters: ResolvedClusterPlan[];
   cbdinoclusterInit?: CbdinoclusterInitSetup;
   clusterlessSessions: ResolvedSessionPlan[];
+  /** Resolved Capella environment for this instance (instance.setup.capellaEnvironment → "dev"). */
+  capellaEnvironment: string;
 }
 
 export interface ResolvedDefinition {
@@ -127,6 +132,7 @@ export interface ResolvedFunctionalExecutionRun extends ResolvedExecutionRunComm
 export interface ResolvedSituationalExecutionRun extends ResolvedExecutionRunCommon {
   type: "situational";
   databaseMode: SituationalDatabaseMode;
+  resultsEnvironment: string;
 }
 
 export type ResolvedExecutionRun = ResolvedFunctionalExecutionRun | ResolvedSituationalExecutionRun;
@@ -139,6 +145,7 @@ export interface ResolvedFunctionalExecutionGroup {
   cng: boolean;
   cluster?: SelectedCluster;
   cbdinocluster?: ResolvedCbdinocluster;
+  capellaEnvironment: string;
   runs: ResolvedFunctionalExecutionRun[];
 }
 
@@ -147,6 +154,7 @@ export interface ResolvedSituationalExecutionGroup {
   path: DefinitionRunPath;
   instance: ResolvedInstance;
   cbdinoclusterInit: CbdinoclusterInitSetup;
+  capellaEnvironment: string;
   runs: ResolvedSituationalExecutionRun[];
 }
 
@@ -361,6 +369,7 @@ function resolveRun(run: FitRun, stripClusterAccess: boolean): ResolvedRunWithou
       testSelection: resolveTestsSelection(run.tests),
       extraMavenArgs: resolveSituationalMavenArgs(run.tests),
       databaseMode: run.situational.database.mode,
+      resultsEnvironment: run.situational.database.resultsEnvironment ?? DEFAULT_RESULTS_ENV,
     };
   }
   return {
@@ -432,6 +441,7 @@ export function resolveInstancePlan(instance: InstanceLifetime, instanceIndex: n
     ...(instance.setup?.cbdinocluster !== undefined ? { cbdinoclusterInit: { ...instance.setup.cbdinocluster.init } } : {}),
     clusterlessSessions: (instance.clusterlessSessions ?? []).map((session, sessionIndex) =>
       resolveSession(session, { instanceIndex, sessionIndex, clusterlessSession: true }, false)),
+    capellaEnvironment: instance.setup?.capellaEnvironment ?? DEFAULT_CAPELLA_ENV,
   };
 }
 
@@ -465,6 +475,7 @@ export function buildExecutionGroups(instances: ResolvedInstancePlan[]): Resolve
             },
           }
         : {}),
+      capellaEnvironment: instance.capellaEnvironment,
       runs: cluster.sessions.flatMap((session) =>
         session.runs
           .filter((run): run is ResolvedFunctionalRun => run.type === "functional")
@@ -490,6 +501,7 @@ export function buildExecutionGroups(instances: ResolvedInstancePlan[]): Resolve
             path: { instanceIndex: instance.path.instanceIndex, sessionIndex: instance.clusterlessSessions[0]?.path.sessionIndex, clusterlessSession: true },
             instance: instance.instance,
             cbdinoclusterInit: instance.cbdinoclusterInit,
+            capellaEnvironment: instance.capellaEnvironment,
             runs: instance.clusterlessSessions.flatMap((session) =>
               session.runs
                 .filter((run): run is ResolvedSituationalRun => run.type === "situational")
@@ -504,6 +516,7 @@ export function buildExecutionGroups(instances: ResolvedInstancePlan[]): Resolve
                   testSelection: run.testSelection,
                   extraMavenArgs: run.extraMavenArgs,
                   databaseMode: run.databaseMode,
+                  resultsEnvironment: run.resultsEnvironment,
                 })),
             ),
           },

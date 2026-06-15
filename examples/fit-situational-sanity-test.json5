@@ -15,10 +15,16 @@
           init: {
             // Passed to `cbdinocluster init` on clean environments to set up ~/.cbdinocluster.
             // SIT leaves Capella enabled (no --disable-capella); fit-cli appends your GitHub
-            // credentials and forwards your fit-cli Capella settings at runtime.
+            // credentials and forwards the resolved Capella settings at runtime.
             args: '--auto --disable-aws --disable-azure --disable-gcp --disable-k8s --disable-dns --docker-network fit',
           },
         },
+        // Which Capella environment this box's clusters are created in (a key under `capella`
+        // in environments.json5). One box = one ~/.cbdinocluster identity, so it lives here
+        // alongside the cbdinocluster setup. Omit for the default 'dev'. Credentials are fetched
+        // from that environment's AWS Secrets Manager secret (your personal CAPELLA_USER/PASS
+        // or `config edit` creds take precedence locally).
+        capellaEnvironment: 'dev',
       },
       // Sessions not tied to any particular cluster (the name distinguishes these from sessions nested under clusters:)
       clusterlessSessions: [
@@ -33,6 +39,11 @@
               situational: {
                 database: {
                   mode: 'hosted',
+                  // Which results environment to store/view results in (a key under `results`
+                  // in environments.json5: 'dev'=faas.couchbase.com, 'prod'=performance-sdk).
+                  // Omit for the default 'dev'. The DB password is fetched from that
+                  // environment's AWS Secrets Manager secret at run time.
+                  resultsEnvironment: 'prod',
                 },
               },
               tests: {

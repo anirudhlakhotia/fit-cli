@@ -55,7 +55,7 @@ import {
 } from "../../../util/non-fit/replay.js";
 import { confirm, select } from "../../../util/non-fit/prompts.js";
 import { rootDirFromArgv } from "../../util/root.js";
-import { resolveCapellaConfig, resolveGithubCredentials, resolveResultsDbCredentials } from "../../util/config.js";
+import { DEFAULT_CAPELLA_ENV, resolveCapellaConfig, resolveGithubCredentials, resolveResultsDbCredentials } from "../../util/config.js";
 import { terminateInstanceCommand } from "../../util/aws/lifecycle-warning.js";
 import { uploadRunArtifacts } from "../../util/aws/upload-run-artifacts.js";
 import { resolveAwsCredentials, type AwsCredentials } from "../../../cloud/util/aws/identity.js";
@@ -109,12 +109,10 @@ import {
   type FitTestSelection,
 } from "../../shared/select-fit-tests/select-fit-tests.js";
 import {
-  buildHostedDatabase,
   checkResultsDatabaseConnectivity,
-  HOSTED_RESULTS_DB_HOST,
-  missingResultsDbPasswordMessage,
   resolveResultsDatabase,
-  SITUATIONAL_RESULTS_URL,
+  resultsHostFromJdbc,
+  situationalResultsUrl,
 } from "../../situational/choose-results-database/choose-results-database.js";
 import {
   detectClusterDockerEnvironment,
@@ -563,7 +561,7 @@ export async function runSituationalTests(
       "(usually `dinonet`) so it can reach the cluster cbdino creates.",
   );
 
-  const database = await resolveResultsDatabaseFn(run.databaseMode, execution.rootDir);
+  const database = await resolveResultsDatabaseFn(run.databaseMode, run.resultsEnvironment, execution.rootDir);
   if (!database.ready) {
     return { artifacts: database.artifacts, details: database.details };
   }
@@ -598,8 +596,11 @@ export async function runSituationalTests(
     ...testRun.details,
   );
 
-  console.log(`\nWhen this run produces data, view it at:\n  ${SITUATIONAL_RESULTS_URL}`);
-  details.push({ label: "Results UI", value: SITUATIONAL_RESULTS_URL });
+  // Derive the UI URL from the chosen database's host so it matches where data
+  // actually lands (dev vs prod), rather than a fixed constant.
+  const resultsUrl = situationalResultsUrl(resultsHostFromJdbc(database.database.jdbc));
+  console.log(`\nWhen this run produces data, view it at:\n  ${resultsUrl}`);
+  details.push({ label: "Results UI", value: resultsUrl });
   dependencies.recordResult?.({
     path: run.path,
     sdk: run.sdk.name,
@@ -1176,23 +1177,36 @@ export async function runFromDefinition(
         group.runs.some((run) => run.databaseMode === "hosted"),
     );
   if (needsHostedDatabase) {
-    const database = buildHostedDatabase(resolveResultsDbCredentials({ env: {} }));
-    if (!database) {
-      fitCliError({ classification: "FatalToAll" }, missingResultsDbPasswordMessage());
-      tracker.record("FatalToAll", "Missing results database password in fit-cli config", preconditionCtx);
-      return finalizeRunFromDefinition([], [], undefined, tracker.worst, tracker.failureCount);
+    // Each hosted situational run names a results environment; validate every distinct
+    // one upfront (credentials resolvable from AWS + the DB reachable) before provisioning.
+    const resultsEnvs = new Set<string>();
+    for (const group of executionGroups.slice(startCycleIndex)) {
+      if (group.type !== "situational") continue;
+      for (const run of group.runs) {
+        if (run.databaseMode === "hosted") resultsEnvs.add(run.resultsEnvironment);
+      }
     }
-    console.log(`\nChecking connectivity to results database at ${HOSTED_RESULTS_DB_HOST}...`);
-    if (!(await checkResultsDatabaseConnectivity())) {
-      fitCliError(
-        { classification: "FatalToAll" },
-        `\n✗ Cannot reach the results database at ${HOSTED_RESULTS_DB_HOST}:5432.\n` +
-          `  Make sure you are connected to the vpn-public VPN.`,
-      );
-      tracker.record("FatalToAll", `Cannot reach results database at ${HOSTED_RESULTS_DB_HOST}:5432`, preconditionCtx);
-      return finalizeRunFromDefinition([], [], undefined, tracker.worst, tracker.failureCount);
+    for (const block of resultsEnvs) {
+      let host: string;
+      try {
+        ({ host } = await resolveResultsDbCredentials({ block }));
+      } catch (err) {
+        fitCliError({ classification: "FatalToAll" }, `\n✗ ${(err as Error).message}`);
+        tracker.record("FatalToAll", `Cannot resolve results database credentials for "${block}"`, preconditionCtx);
+        return finalizeRunFromDefinition([], [], undefined, tracker.worst, tracker.failureCount);
+      }
+      console.log(`\nChecking connectivity to the "${block}" results database at ${host}...`);
+      if (!(await checkResultsDatabaseConnectivity(undefined, host))) {
+        fitCliError(
+          { classification: "FatalToAll" },
+          `\n✗ Cannot reach the results database at ${host}:5432.\n` +
+            `  Make sure you are connected to the vpn-public VPN.`,
+        );
+        tracker.record("FatalToAll", `Cannot reach results database at ${host}:5432`, preconditionCtx);
+        return finalizeRunFromDefinition([], [], undefined, tracker.worst, tracker.failureCount);
+      }
+      console.log(`  ✓ Reached ${host}.`);
     }
-    console.log(`  ✓ Reached ${HOSTED_RESULTS_DB_HOST}.`);
   }
 
   const artifacts: Artifact[] = [];
@@ -1304,14 +1318,22 @@ export async function runFromDefinition(
 
       try {
         if (cycleNeedsHostedDatabase && execution.kind === "remote") {
-          console.log(`\nChecking results database connectivity from the remote instance...`);
-          if (!(await checkResultsDatabaseConnectivity((cmd, args) => execution.capture(cmd, args)))) {
-            throwFatalToCluster(
-              `The remote instance cannot reach the results database at ${HOSTED_RESULTS_DB_HOST}:5432. ` +
-                `Make sure the instance has network access to reach the database (VPN / security-group rules).`,
-            );
+          const blocks = new Set(
+            group.type === "situational"
+              ? group.runs.filter((run) => run.databaseMode === "hosted").map((run) => run.resultsEnvironment)
+              : [],
+          );
+          for (const block of blocks) {
+            const { host } = await resolveResultsDbCredentials({ block });
+            console.log(`\nChecking "${block}" results database connectivity from the remote instance...`);
+            if (!(await checkResultsDatabaseConnectivity((cmd, args) => execution.capture(cmd, args), host))) {
+              throwFatalToCluster(
+                `The remote instance cannot reach the results database at ${host}:5432. ` +
+                  `Make sure the instance has network access to reach the database (VPN / security-group rules).`,
+              );
+            }
+            console.log(`  ✓ Reached ${host} from the remote instance.`);
           }
-          console.log(`  ✓ Reached ${HOSTED_RESULTS_DB_HOST} from the remote instance.`);
         }
 
         if (group.type === "functional") {
@@ -1345,12 +1367,14 @@ export async function runFromDefinition(
             // (run via a login shell sourcing ~/.profile) picks them up and writes the
             // capella block. Without a username it can't enable Capella, so fail clearly
             // rather than letting `cbdinocluster allocate` later fail with "no deployers".
-            const capella = resolveCapellaConfig();
-            if (!capella.username) {
+            const capellaEnvironment = group.type === "situational" ? group.capellaEnvironment : DEFAULT_CAPELLA_ENV;
+            let capella;
+            try {
+              capella = await resolveCapellaConfig({ block: capellaEnvironment });
+            } catch (err) {
               throwFatalToCluster(
-                "Situational runs allocate Capella clusters, which needs a Capella username. " +
-                  "Set capella.username in ~/.fit-cli/config.json5 (run `bun run config -- edit`) " +
-                  "or provide CAPELLA_USER/CAP_USER in the environment.",
+                `Situational runs allocate Capella clusters, but the "${capellaEnvironment}" Capella ` +
+                  `credentials couldn't be resolved: ${(err as Error).message}`,
               );
             }
             await uploadRemoteCapellaConfig(execution.target, execution.rootDir, capella);

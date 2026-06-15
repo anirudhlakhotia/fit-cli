@@ -1,7 +1,6 @@
 import JSON5 from "json5";
 import {
   CLOUD_INSTANCE_PURPOSES,
-  DEFAULT_CAPELLA_SETTINGS,
   DEFAULT_CLOUD_INSTANCE_TYPES,
   DEFAULT_OUTPUT_FORMAT,
   FIT_CLI_CONFIG_VERSION,
@@ -54,8 +53,6 @@ export interface InitAnswers {
   githubUser?: string;
   /** GitHub token for cloning the private FIT repos; empty/undefined to skip. */
   githubToken?: string;
-  /** Readonly password for the hosted results database; empty/undefined to skip. */
-  resultsDbPassword?: string;
   /** Default format generated definition files are written in. */
   outputFormat?: OutputFormat;
   /** Gerrit username; defaults to github.user when blank. */
@@ -126,9 +123,7 @@ function capellaDefaultsFromConfig(config?: FitCliConfig): CapellaInitAnswers {
   const c = config?.capella;
   return {
     username: c?.username ?? "",
-    endpoint: c?.endpoint ?? DEFAULT_CAPELLA_SETTINGS.endpoint,
-    organizationId: c?.organizationId ?? DEFAULT_CAPELLA_SETTINGS.organizationId,
-    password: c?.password ?? DEFAULT_CAPELLA_SETTINGS.password,
+    password: c?.password ?? "",
   };
 }
 
@@ -153,22 +148,10 @@ export function initAnswersToConfig(answers: InitAnswers, existing?: FitCliConfi
   const github = user || token
     ? { ...(user ? { user } : {}), ...(token ? { token } : {}) }
     : undefined;
-  // Preserve a hand-set username; edit only prompts for the password.
-  const resultsDbPassword = trimOptional(answers.resultsDbPassword);
-  const resultsDbUsername = existing?.output?.resultsDb?.username;
-  const resultsDb =
-    resultsDbPassword || resultsDbUsername
-      ? {
-          ...(resultsDbPassword ? { password: resultsDbPassword } : {}),
-          ...(resultsDbUsername ? { username: resultsDbUsername } : {}),
-        }
-      : undefined;
-  // Group output-related settings (definition format + results DB) under `output`.
+  // Definition output format lives under `output`. Results-DB credentials are no
+  // longer stored in config — they come from AWS Secrets Manager at run time.
   const outputFormat = answers.outputFormat ?? existing?.output?.format;
-  const output: FitCliOutputConfig | undefined =
-    outputFormat || resultsDb
-      ? { ...(outputFormat ? { format: outputFormat } : {}), ...(resultsDb ? { resultsDb } : {}) }
-      : undefined;
+  const output: FitCliOutputConfig | undefined = outputFormat ? { format: outputFormat } : undefined;
 
   const gerritUser = trimOptional(answers.gerritUser);
   const gerritSshKeyPath = trimOptional(answers.gerritSshKeyPath);
@@ -250,20 +233,6 @@ async function promptForGerritSshKeyPath(existing?: FitCliConfig): Promise<strin
   return trimOptional(entered) ?? (existing?.gerrit?.sshKeyPath);
 }
 
-async function promptForResultsDbPassword(existing?: FitCliConfig): Promise<string | undefined> {
-  const existingPassword = existing?.output?.resultsDb?.password ?? process.env.FIT_RESULTS_DB_PASSWORD;
-  const shared = "faas.couchbase.com results database password, for storing dev FIT/SIT and FIT/PERF results"
-  const entered = await password({
-    promptId: "init.results-db.password",
-    message: existingPassword
-      ? `${shared} (leave blank to keep the current one):`
-      : `${shared} (leave blank to skip — ask on #the-fit-stop):`,
-    mask: "*",
-  });
-  // A blank entry keeps whatever is already configured, mirroring the token prompt.
-  return trimOptional(entered) ?? existingPassword;
-}
-
 async function promptForOutputFormat(existing?: FitCliConfig): Promise<OutputFormat> {
   const current = existing?.output?.format ?? DEFAULT_OUTPUT_FORMAT;
   return select<OutputFormat>({
@@ -277,7 +246,6 @@ async function promptForOutputFormat(existing?: FitCliConfig): Promise<OutputFor
 async function promptForConfig(existing?: FitCliConfig, configPath?: string): Promise<InitAnswers> {
   const githubUser = await promptForGithubUser(existing);
   const githubToken = await promptForGithubToken(existing);
-  const resultsDbPassword = await promptForResultsDbPassword(existing);
   const outputFormat = await promptForOutputFormat(existing);
   const gerritUser = await promptForGerritUser(existing);
   const gerritSshKeyPath = await promptForGerritSshKeyPath(existing);
@@ -309,7 +277,6 @@ async function promptForConfig(existing?: FitCliConfig, configPath?: string): Pr
     ...(aws ? { aws } : {}),
     githubUser,
     githubToken,
-    resultsDbPassword,
     outputFormat,
     gerritUser,
     gerritSshKeyPath,
@@ -338,15 +305,14 @@ async function promptForCapella(
     return { configureCapella: false };
   }
 
+  // Only your PERSONAL credentials are stored; the endpoint/org id are per-environment
+  // and come from environments.json5 (selected by the definition's capellaEnvironment).
   const defaults = capellaDefaultsFromConfig(existing);
-  const ask = (field: keyof CapellaInitAnswers, label: string) =>
-      input({ promptId: `init.capella.${field}`, message: `${label}:`, default: defaults[field] });
-  const endpoint = await ask("endpoint", "Capella endpoint (defaults to development - https://dev.nonprod-project-avengers.com/)");
   const username = await input({
     promptId: "init.capella.username",
     message: defaults.username
         ? `Capella username (leave blank to keep "${defaults.username}"):`
-        : "Capella username (usually your Couchbase email for that Capella endpoint/environment):",
+        : "Capella username (usually your Couchbase email for the dev Capella environment):",
     default: defaults.username,
   });
 
@@ -356,7 +322,7 @@ async function promptForCapella(
   );
   const capellaPassword = await password({
     promptId: "init.capella.password",
-    message: defaults.password && defaults.password !== "NotUsed"
+    message: defaults.password
       ? "Capella password (leave blank to keep the current one):"
       : "Capella password (leave blank to skip — set CAPELLA_PASS env var instead):",
     mask: "*",
@@ -366,8 +332,6 @@ async function promptForCapella(
     configureCapella: true,
     capella: {
       username,
-      endpoint: endpoint,
-      organizationId: await ask("organizationId", "Capella organization ID"),
       password: trimOptional(capellaPassword) ?? defaults.password,
     },
   };
@@ -399,17 +363,6 @@ export function formatConfigForDisplay(config: FitCliConfig): string {
     ...config,
     ...(config.github
       ? { github: { ...config.github, ...(config.github.token ? { token: ELIDED } : {}) } }
-      : {}),
-    ...(config.output?.resultsDb
-      ? {
-          output: {
-            ...config.output,
-            resultsDb: {
-              ...config.output.resultsDb,
-              ...(config.output.resultsDb.password ? { password: ELIDED } : {}),
-            },
-          },
-        }
       : {}),
     ...(config.capella
       ? {
@@ -498,7 +451,6 @@ function mask(value: string | undefined): string {
 
 const SECRET_FIELDS = new Set([
   "github.token",
-  "output.resultsDb.password",
   "capella.password",
 ]);
 
@@ -659,25 +611,8 @@ export function buildAutoConfig(
     log.push({ field: "gerrit.*", source: "--disable-gerrit", found: false });
   }
 
-  // Output section: default definition format + the hosted results-DB credentials.
-  let resultsDb: FitCliOutputConfig["resultsDb"] | undefined;
-  if (!args.disableResultsDb) {
-    const pw = resolveField(log, "output.resultsDb.password", args.resultsDbPassword, "--results-db-password", [
-      { name: "FIT_RESULTS_DB_PASSWORD", value: env.FIT_RESULTS_DB_PASSWORD },
-    ]);
-    const username = resolveField(log, "output.resultsDb.username", args.resultsDbUsername, "--results-db-username", [
-      { name: "FIT_RESULTS_DB_USERNAME", value: env.FIT_RESULTS_DB_USERNAME },
-    ]);
-
-    const parts = {
-      ...(pw ? { password: pw } : {}),
-      ...(username ? { username } : {}),
-    };
-    if (Object.keys(parts).length > 0) resultsDb = parts;
-  } else {
-    log.push({ field: "output.resultsDb.*", source: "--disable-results-db", found: false });
-  }
-
+  // Output section: default definition format. Results-DB credentials come from
+  // AWS Secrets Manager now (keyed by the definition's resultsEnvironment), not config.
   const formatValue = resolveField(log, "output.format", args.outputFormat, "--output-format", [
     { name: "FIT_OUTPUT_FORMAT", value: env.FIT_OUTPUT_FORMAT },
   ]);
@@ -685,15 +620,11 @@ export function buildAutoConfig(
     formatValue && (OUTPUT_FORMATS as readonly string[]).includes(formatValue)
       ? (formatValue as OutputFormat)
       : undefined;
-  const output: FitCliOutputConfig | undefined =
-    format || resultsDb
-      ? { ...(format ? { format } : {}), ...(resultsDb ? { resultsDb } : {}) }
-      : undefined;
+  const output: FitCliOutputConfig | undefined = format ? { format } : undefined;
 
-  // Capella section. Anchored on the username: with no username there's nothing
-  // to log in as, so we skip the section entirely rather than write a block of
-  // bare defaults into every config. The defaults still apply at use time via
-  // resolveCapellaConfig().
+  // Capella section: PERSONAL credentials only (username/password). The endpoint and
+  // org id are per-environment and come from environments.json5 at run time. Anchored
+  // on the username: with none there's nothing to log in as, so we skip the section.
   let capella: FitCliConfig["capella"] | undefined;
   if (args.disableCapella) {
     log.push({ field: "capella.*", source: "--disable-capella", found: false });
@@ -705,44 +636,13 @@ export function buildAutoConfig(
     if (!username) {
       log.push({ field: "capella.*", source: "(no username)", found: false });
     } else {
-    const endpoint = resolveField(
-      log,
-      "capella.endpoint",
-      args.capellaEndpoint,
-      "--capella-endpoint",
-      [
-        { name: "CAPELLA_ENDPOINT", value: env.CAPELLA_ENDPOINT },
-        { name: "CAP_END_POINT", value: env.CAP_END_POINT },
-      ],
-      DEFAULT_CAPELLA_SETTINGS.endpoint,
-    );
-    const organizationId = resolveField(
-      log,
-      "capella.organizationId",
-      args.capellaOrganizationId,
-      "--capella-oid",
-      [
-        { name: "CAPELLA_OID", value: env.CAPELLA_OID },
-        { name: "CAP_OID", value: env.CAP_OID },
-      ],
-      DEFAULT_CAPELLA_SETTINGS.organizationId,
-    );
-    const capellaPassword = resolveField(
-      log,
-      "capella.password",
-      args.capellaPassword,
-      "--capella-password",
-      [
+      const capellaPassword = resolveField(log, "capella.password", args.capellaPassword, "--capella-password", [
         { name: "CAPELLA_PASS", value: env.CAPELLA_PASS },
         { name: "CAP_PASS", value: env.CAP_PASS },
-      ],
-      DEFAULT_CAPELLA_SETTINGS.password,
-    );
+      ]);
 
       capella = {
         username,
-        ...(endpoint ? { endpoint } : {}),
-        ...(organizationId ? { organizationId } : {}),
         ...(capellaPassword ? { password: capellaPassword } : {}),
       };
     }

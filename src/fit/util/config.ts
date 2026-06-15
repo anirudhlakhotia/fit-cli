@@ -4,6 +4,14 @@ import { dirname, join, resolve } from "node:path";
 import JSON5 from "json5";
 import YAML from "yaml";
 import { confirm } from "../../util/non-fit/prompts.js";
+import { loadEnvironments, type EnvironmentsFile } from "./environments.js";
+import { getJsonSecret } from "../../cloud/util/aws/secrets.js";
+
+/** Default environment block names (the "dev" blocks in environments.json5). */
+export const DEFAULT_CAPELLA_ENV = "dev";
+export const DEFAULT_RESULTS_ENV = "dev";
+/** Default user for the hosted results database when the secret doesn't override it. */
+const DEFAULT_RESULTS_DB_USERNAME = "postgres";
 
 export const FIT_CLI_CONFIG_VERSION = 1;
 export const FIT_CLI_CONFIG_DIRNAME = ".fit-cli";
@@ -61,13 +69,6 @@ export interface FitCliGithubConfig {
   token?: string;
 }
 
-export interface FitCliResultsDbConfig {
-  /** Readonly password for the hosted results database (secret). */
-  password?: string;
-  /** Optional username override; defaults to the hosted database's default user. */
-  username?: string;
-}
-
 /** The formats a generated definition file can be written in. */
 export const OUTPUT_FORMATS = ["json5", "yaml"] as const;
 export type OutputFormat = (typeof OUTPUT_FORMATS)[number];
@@ -76,15 +77,15 @@ export type OutputFormat = (typeof OUTPUT_FORMATS)[number];
 export const DEFAULT_OUTPUT_FORMAT: OutputFormat = "json5";
 
 /**
- * Top-level `output` settings: how fit-cli renders things it produces, plus the
- * hosted results database it writes test results to. `resultsDb` lives here (not
- * at the top level) so everything output-related is grouped under one key.
+ * Top-level `output` settings: how fit-cli renders things it produces.
+ *
+ * Results-database credentials are NOT stored here — they're fetched at run time
+ * from AWS Secrets Manager, keyed by the results environment selected in the
+ * definition file (see environments.json5 / resolveResultsDbCredentials).
  */
 export interface FitCliOutputConfig {
   /** Default format generated definition files are written in (json5 or yaml). */
   format?: OutputFormat;
-  /** Readonly credentials for the hosted results database. */
-  resultsDb?: FitCliResultsDbConfig;
 }
 
 export interface FitCliGerritConfig {
@@ -104,22 +105,11 @@ export interface FitCliGerritConfig {
  * well-known values in {@link DEFAULT_CAPELLA_SETTINGS} and rarely need changing.
  */
 export interface FitCliCapellaConfig {
-  /** Capella account the deployer logs in as (env: CAPELLA_USER). No default — required for situational runs. */
+  /** Your Capella account (env: CAPELLA_USER / CAP_USER). */
   username?: string;
-  /** Capella control-plane endpoint (env: CAPELLA_ENDPOINT). */
-  endpoint?: string;
-  /** Capella organization/tenant ID (env: CAPELLA_OID). */
-  organizationId?: string;
-  /** Capella account password (env: CAPELLA_PASS). Forwarded to the remote box as CAPELLA_PASS for cbdinocluster init. Saved in plaintext. */
+  /** Your Capella account password (env: CAPELLA_PASS / CAP_PASS). */
   password?: string;
 }
-
-/** Hardcoded defaults for every Capella field except `username` (which is per-user). */
-export const DEFAULT_CAPELLA_SETTINGS = {
-  endpoint: "https://api.dev.nonprod-project-avengers.com",
-  organizationId: "6af08c0a-8cab-4c1c-b257-b521575c16d0",
-  password: "NotUsed",
-} as const;
 
 export interface FitCliConfig {
   version: 1;
@@ -264,7 +254,7 @@ export function validateFitCliConfig(raw: unknown): FitCliConfig {
       })
     : undefined;
 
-  const output = validateOutputConfig(raw.output, raw.resultsDb);
+  const output = validateOutputConfig(raw.output);
 
   const gerritValue = raw.gerrit;
   if (gerritValue !== undefined && !isRecord(gerritValue)) {
@@ -286,8 +276,6 @@ export function validateFitCliConfig(raw: unknown): FitCliConfig {
   const capella = capellaValue
     ? compactRecord({
         username: readOptionalString(capellaValue, "username", "capella.username"),
-        endpoint: readOptionalString(capellaValue, "endpoint", "capella.endpoint"),
-        organizationId: readOptionalString(capellaValue, "organizationId", "capella.organizationId"),
         password: readOptionalString(capellaValue, "password", "capella.password"),
       })
     : undefined;
@@ -304,13 +292,13 @@ export function validateFitCliConfig(raw: unknown): FitCliConfig {
 
 /**
  * Validate and compact the `output` section. `format` must be one of
- * {@link OUTPUT_FORMATS}. The results-database credentials live here; for
- * backwards compatibility a `resultsDb` still found at the top level (the
- * pre-`output` layout) is folded in when `output.resultsDb` is absent, so older
- * configs keep working and re-saving rewrites them in the new shape. Returns
- * undefined when nothing is configured.
+ * {@link OUTPUT_FORMATS}. Returns undefined when nothing is configured.
+ *
+ * Results-database credentials used to live here (`output.resultsDb` / a legacy
+ * top-level `resultsDb`); they're now fetched from AWS Secrets Manager, so any
+ * such key in an older config is simply ignored.
  */
-function validateOutputConfig(outputValue: unknown, legacyResultsDbValue: unknown): FitCliOutputConfig | undefined {
+function validateOutputConfig(outputValue: unknown): FitCliOutputConfig | undefined {
   if (outputValue !== undefined && !isRecord(outputValue)) {
     throw new InvalidFitCliConfigError(`Field "output" must be a mapping; got ${JSON.stringify(outputValue)}`);
   }
@@ -326,23 +314,7 @@ function validateOutputConfig(outputValue: unknown, legacyResultsDbValue: unknow
     format = formatValue as OutputFormat;
   }
 
-  const resultsDbValue = (isRecord(outputValue) ? outputValue.resultsDb : undefined) ?? legacyResultsDbValue;
-  const resultsDbPath = isRecord(outputValue) && outputValue.resultsDb !== undefined ? "output.resultsDb" : "resultsDb";
-  if (resultsDbValue !== undefined && !isRecord(resultsDbValue)) {
-    throw new InvalidFitCliConfigError(`Field "${resultsDbPath}" must be a mapping; got ${JSON.stringify(resultsDbValue)}`);
-  }
-  const resultsDb = resultsDbValue
-    ? compactRecord({
-        password: readOptionalString(resultsDbValue, "password", `${resultsDbPath}.password`),
-        username: readOptionalString(resultsDbValue, "username", `${resultsDbPath}.username`),
-      })
-    : undefined;
-
-  const parts: FitCliOutputConfig = {
-    ...(format ? { format } : {}),
-    ...(resultsDb && Object.keys(resultsDb).length > 0 ? { resultsDb } : {}),
-  };
-  return Object.keys(parts).length > 0 ? parts : undefined;
+  return format ? { format } : undefined;
 }
 
 /** Validate and compact the `cloud` section. Returns undefined when it's empty. */
@@ -459,22 +431,47 @@ export function resolveGithubCredentials(
   return { user, token };
 }
 
+/** Hosted results-database connection details for a results environment. */
+export interface ResolvedResultsDbCredentials {
+  host: string;
+  username: string;
+  password: string;
+}
+
 /**
- * The hosted results-database readonly credentials. We prefer the values saved
- * in the fit-cli config, then fall back to the FIT_RESULTS_DB_* environment
- * variables (loaded from a `.env`), so existing setups keep working. The password
- * is a secret, so it's resolved on demand (like the GitHub token) rather than
- * pushed into the process env. Loads the config itself when one isn't supplied.
+ * Resolve the hosted results-database credentials for a results environment
+ * (a key under `results` in environments.json5; default "dev"). The host is the
+ * non-secret registry value; the password (and optional username) come from that
+ * environment's AWS Secrets Manager secret. Throws with an actionable message
+ * when the environment is unknown/unprovisioned or the secret can't be read.
  */
-export function resolveResultsDbCredentials(
-  options: { config?: FitCliConfig; path?: string; env?: NodeJS.ProcessEnv } = {},
-): { password?: string; username?: string } {
-  const env = options.env ?? process.env;
-  const config = options.config ?? loadFitCliConfig(options.path).config;
-  return {
-    password: config?.output?.resultsDb?.password ?? env.FIT_RESULTS_DB_PASSWORD,
-    username: config?.output?.resultsDb?.username ?? env.FIT_RESULTS_DB_USERNAME,
-  };
+export async function resolveResultsDbCredentials(
+  options: {
+    block?: string;
+    environments?: EnvironmentsFile;
+    fetchSecret?: (secretId: string) => Promise<Record<string, string>>;
+  } = {},
+): Promise<ResolvedResultsDbCredentials> {
+  const block = options.block ?? DEFAULT_RESULTS_ENV;
+  const environments = options.environments ?? loadEnvironments();
+  const fetchSecret = options.fetchSecret ?? getJsonSecret;
+  const entry = environments.results[block];
+  if (!entry) {
+    throw new InvalidFitCliConfigError(`Unknown results environment "${block}" — not defined in environments.json5.`);
+  }
+  const host = entry.host?.trim();
+  if (!host) {
+    throw new InvalidFitCliConfigError(`Results environment "${block}" has no host set in environments.json5.`);
+  }
+  if (!entry.secretId) {
+    throw new InvalidFitCliConfigError(`Results environment "${block}" has no secretId in environments.json5.`);
+  }
+  const secret = await fetchSecret(entry.secretId);
+  const password = secret.password?.trim();
+  if (!password) {
+    throw new InvalidFitCliConfigError(`AWS secret "${entry.secretId}" (results "${block}") has no "password" field.`);
+  }
+  return { host, username: secret.username?.trim() || DEFAULT_RESULTS_DB_USERNAME, password };
 }
 
 /**
@@ -508,26 +505,67 @@ function firstEnv(env: NodeJS.ProcessEnv, names: string[]): string | undefined {
 }
 
 /**
- * Resolve the Capella control-plane settings for the situational cloud deployer.
- * Priority per field: fit-cli config → `CAPELLA_*`/`CAP_*` env var → hardcoded
- * default ({@link DEFAULT_CAPELLA_SETTINGS}). `username` has no default, so it's
- * undefined unless configured or present in the environment. The `CAP_*` aliases
- * match the GitHub Actions variable names used by fit-app-deployment. Loads the
- * config itself when one isn't supplied.
+ * Resolve the Capella control-plane settings for a Capella environment (a key
+ * under `capella` in environments.json5; default "dev").
+ *
+ * endpoint/organizationId are the non-secret registry values. Credentials prefer
+ * your PERSONAL account (capella.* in config, or the CAPELLA_ / CAP_ env vars) so
+ * local runs deploy as you; with none configured they fall back to the shared
+ * per-env service account in AWS Secrets Manager (and warn). Throws when the
+ * environment is unknown/unprovisioned or no credentials can be resolved.
  */
-export function resolveCapellaConfig(
-  options: { config?: FitCliConfig; path?: string; env?: NodeJS.ProcessEnv } = {},
-): ResolvedCapellaConfig {
+export async function resolveCapellaConfig(
+  options: {
+    block?: string;
+    config?: FitCliConfig;
+    path?: string;
+    env?: NodeJS.ProcessEnv;
+    environments?: EnvironmentsFile;
+    fetchSecret?: (secretId: string) => Promise<Record<string, string>>;
+  } = {},
+): Promise<ResolvedCapellaConfig> {
+  const block = options.block ?? DEFAULT_CAPELLA_ENV;
   const env = options.env ?? process.env;
   const config = options.config ?? loadFitCliConfig(options.path).config;
+  const environments = options.environments ?? loadEnvironments();
+  const fetchSecret = options.fetchSecret ?? getJsonSecret;
+
+  const entry = environments.capella[block];
+  if (!entry) {
+    throw new InvalidFitCliConfigError(`Unknown Capella environment "${block}" — not defined in environments.json5.`);
+  }
+  const endpoint = entry.endpoint?.trim();
+  const organizationId = entry.oid?.trim();
+  if (!endpoint || !organizationId) {
+    const missing = [!endpoint && "endpoint", !organizationId && "oid"].filter(Boolean).join(", ");
+    throw new InvalidFitCliConfigError(
+      `Capella environment "${block}" isn't fully provisioned in environments.json5 (missing ${missing}).`,
+    );
+  }
+
   const c = config?.capella;
-  return {
-    username: c?.username ?? firstEnv(env, ["CAPELLA_USER", "CAP_USER"]),
-    endpoint: c?.endpoint ?? firstEnv(env, ["CAPELLA_ENDPOINT", "CAP_END_POINT"]) ?? DEFAULT_CAPELLA_SETTINGS.endpoint,
-    organizationId:
-      c?.organizationId ?? firstEnv(env, ["CAPELLA_OID", "CAP_OID"]) ?? DEFAULT_CAPELLA_SETTINGS.organizationId,
-    password: c?.password ?? firstEnv(env, ["CAPELLA_PASS", "CAP_PASS"]) ?? DEFAULT_CAPELLA_SETTINGS.password,
-  };
+  let username = c?.username ?? firstEnv(env, ["CAPELLA_USER", "CAP_USER"]);
+  let password = c?.password ?? firstEnv(env, ["CAPELLA_PASS", "CAP_PASS"]);
+  if (!username || !password) {
+    if (!entry.secretId) {
+      throw new InvalidFitCliConfigError(
+        `Capella environment "${block}" has no secretId in environments.json5 and no personal credentials are configured.`,
+      );
+    }
+    console.warn(
+      `⚠ No personal Capella credentials configured — using the shared "${block}" service account from AWS Secrets Manager.\n` +
+        `  Run \`bun run config -- edit\` (or set CAPELLA_USER/CAPELLA_PASS) to deploy under your own account.`,
+    );
+    const secret = await fetchSecret(entry.secretId);
+    username = username || secret.username?.trim();
+    password = password || secret.password?.trim();
+  }
+  if (!username || !password) {
+    throw new InvalidFitCliConfigError(
+      `Could not resolve Capella credentials for "${block}": no personal credentials, and the AWS secret is missing username/password.`,
+    );
+  }
+  return { username, endpoint, organizationId, password };
 }
 
 const CANDIDATE_GERRIT_SSH_KEY_NAMES = ["id_rsa", "id_ed25519", "id_ecdsa"];

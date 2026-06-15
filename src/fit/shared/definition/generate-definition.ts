@@ -76,6 +76,10 @@ export interface SituationalDefinitionInputs {
   onPortInUse?: PortInUsePolicy;
   selection: FitTestSelection;
   databaseMode: SituationalDatabaseMode;
+  /** Results environment for the hosted DB (key under `results` in environments.json5). Omitted ⇒ "dev". */
+  resultsEnvironment?: string;
+  /** Capella environment to create clusters in (key under `capella` in environments.json5). Omitted ⇒ "dev". */
+  capellaEnvironment?: string;
   instance?: InstanceMode;
 }
 
@@ -279,15 +283,21 @@ function buildSituationalFitConfig(databaseMode: SituationalDatabaseMode): FitCo
 }
 
 function buildSituationalInstance(inputs: SituationalDefinitionInputs): InstanceLifetime {
+  // Emit whatever was explicitly chosen (the builder always asks now), so the file
+  // records the selection even when it's the default.
+  const includeResultsEnv = inputs.resultsEnvironment !== undefined;
+  const includeCapellaEnv = inputs.capellaEnvironment !== undefined;
   return {
     ...(inputs.instance ?? { localhost: {} }),
     // Situational runs `cbdinocluster init` for the docker/github base (like the
     // functional path), then merges the capella/aws blocks init can't express.
-    // It's per-instance setup, applied once on the box (see InstanceSetup).
+    // It's per-instance setup, applied once on the box (see InstanceSetup). The
+    // Capella environment lives here too — one box, one ~/.cbdinocluster identity.
     setup: {
       cbdinocluster: {
         init: { args: situationalCbdinoclusterInitArgs(), configPatch: situationalCbdinoclusterConfigPatch() },
       },
+      ...(includeCapellaEnv ? { capellaEnvironment: inputs.capellaEnvironment } : {}),
     },
     clusters: [],
     clusterlessSessions: [
@@ -299,7 +309,10 @@ function buildSituationalInstance(inputs: SituationalDefinitionInputs): Instance
             fitConfig: FIT_CONFIG_ID,
             tests: buildTests(inputs.selection),
             situational: {
-              database: { mode: inputs.databaseMode },
+              database: {
+                mode: inputs.databaseMode,
+                ...(includeResultsEnv ? { resultsEnvironment: inputs.resultsEnvironment } : {}),
+              },
             },
           },
         ],

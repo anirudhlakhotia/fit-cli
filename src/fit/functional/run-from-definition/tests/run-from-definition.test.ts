@@ -27,6 +27,7 @@ function functionalCycle(): ResolvedFunctionalExecutionGroup {
     instance: { kind: "localhost" },
     clusterMode: "cbdinocluster",
     cng: false,
+    capellaEnvironment: "dev",
     cbdinocluster: {
       config: { nodes: [{ count: 1, version: "8.1.0-2188", services: ["kv"] }] },
       onClusterExists: "destroyAndRecreate",
@@ -230,6 +231,7 @@ function situationalIteration(): ResolvedSituationalExecutionRun {
     onPortInUse: "restart",
     extraMavenArgs: ["-Dgroups=situational,cbDino"],
     databaseMode: "hosted",
+    resultsEnvironment: "dev",
   };
 }
 

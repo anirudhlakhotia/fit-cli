@@ -19,10 +19,9 @@ import { askPortInUsePolicy } from "../../performers/util/ask-port-in-use-policy
 import { askFitGerritRef, chooseDefinitionCluster } from "../../functional/create-definition/create-definition.js";
 import { printDefinitionRunGuidance } from "../definition/run-guidance.js";
 import { extractPushGistVisibility, pushGist, type GistVisibility } from "../definition/push-gist.js";
-import {
-  chooseResultsDatabaseMode,
-  type ResultsDatabaseMode,
-} from "../../situational/choose-results-database/choose-results-database.js";
+import { chooseResultsTarget } from "../../situational/choose-results-database/choose-results-database.js";
+import { loadEnvironments } from "../../util/environments.js";
+import { DEFAULT_CAPELLA_ENV } from "../../util/config.js";
 import {
   buildFitDefinition,
   buildFitFunctionalDefinitionFrom,
@@ -335,6 +334,20 @@ function functionalDefinitionCluster(instance: InstanceLifetime, clusterConfigs:
   };
 }
 
+/** Prompt for which Capella environment to deploy clusters in, sourced from environments.json5. */
+async function chooseCapellaEnvironment(promptIdPrefix: string): Promise<string> {
+  const capella = loadEnvironments().capella;
+  const names = Object.keys(capella);
+  if (names.length === 0) return DEFAULT_CAPELLA_ENV;
+  // Always prompt (even with a single environment) so the choice is explicit and confirmed.
+  return select<string>({
+    promptId: qualifyPromptId("situational.capella.environment", promptIdPrefix),
+    message: "Which Capella environment should clusters be created in?",
+    default: names.includes(DEFAULT_CAPELLA_ENV) ? DEFAULT_CAPELLA_ENV : names[0],
+    choices: names.map((name) => ({ name: `${name} — ${capella[name].endpoint ?? "(endpoint not set)"}`, value: name })),
+  });
+}
+
 async function addSituationalRun(
   rootDir: string,
   state: DefinitionBuilderState,
@@ -346,7 +359,9 @@ async function addSituationalRun(
   const sdk = await chooseSdk("Which SDK do you want to test with FIT situational?", promptIdPrefix);
   const version = await askVersion(promptIdPrefix);
   const onPortInUse = await askPortInUsePolicy(promptIdPrefix);
-  const databaseMode: ResultsDatabaseMode = await chooseResultsDatabaseMode(promptIdPrefix);
+  // One prompt for where results go (hosted env, with its host, or local); then the Capella env.
+  const { mode: databaseMode, resultsEnvironment } = await chooseResultsTarget(promptIdPrefix);
+  const capellaEnvironment = await chooseCapellaEnvironment(promptIdPrefix);
   const selection = await selectFitTests(execution, SITUATIONAL_TEST_DOMAIN, promptIdPrefix);
 
   const currentInstance = lastSituationalInstance(state);
@@ -360,6 +375,8 @@ async function addSituationalRun(
       ...(version ? { version } : {}),
       onPortInUse,
       databaseMode,
+      ...(resultsEnvironment ? { resultsEnvironment } : {}),
+      capellaEnvironment,
       selection,
     });
     currentInstance.clusterlessSessions.push(collectSubDefClusterlessSession(existingFitConfigId, subDef));
@@ -374,6 +391,8 @@ async function addSituationalRun(
     ...(version ? { version } : {}),
     onPortInUse,
     databaseMode,
+    ...(resultsEnvironment ? { resultsEnvironment } : {}),
+    capellaEnvironment,
     selection,
   });
   const generatedInstance = collectSubDefInstance(state, subDef);

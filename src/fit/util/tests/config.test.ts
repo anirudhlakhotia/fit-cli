@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import {
-  DEFAULT_CAPELLA_SETTINGS,
   DEFAULT_CLOUD_INSTANCE_TYPES,
   FIT_CLI_CONFIG_VERSION,
   UnsupportedFitCliConfigVersionError,
@@ -121,21 +120,18 @@ test("resolveGithubToken falls back to GITHUB_TOKEN then GH_TOKEN", () => {
   assert.equal(resolveGithubToken({ config: { version: FIT_CLI_CONFIG_VERSION }, env: {} }), undefined);
 });
 
-test("parses stored results-database credentials under output", () => {
-  const parsed = parseFitCliConfig(`{ version: 1, output: { resultsDb: { password: 's3cret', username: 'readonly' } } }`);
+const TEST_ENVIRONMENTS = {
+  capella: { dev: { endpoint: "https://dev.example", oid: "oid-dev", secretId: "cap/dev" } },
+  results: { dev: { host: "dev.db.example", secretId: "res/dev" } },
+};
+const noFetch = (): Promise<Record<string, string>> => Promise.reject(new Error("should not fetch the AWS secret"));
 
-  assert.deepEqual(parsed, {
+test("ignores results-database credentials in config (now resolved from AWS Secrets Manager)", () => {
+  assert.deepEqual(parseFitCliConfig(`{ version: 1, output: { resultsDb: { password: 's' } } }`), {
     version: FIT_CLI_CONFIG_VERSION,
-    output: { resultsDb: { password: "s3cret", username: "readonly" } },
   });
-});
-
-test("folds a legacy top-level resultsDb into output.resultsDb", () => {
-  const parsed = parseFitCliConfig(`{ version: 1, resultsDb: { password: 's3cret', username: 'readonly' } }`);
-
-  assert.deepEqual(parsed, {
+  assert.deepEqual(parseFitCliConfig(`{ version: 1, resultsDb: { password: 's' } }`), {
     version: FIT_CLI_CONFIG_VERSION,
-    output: { resultsDb: { password: "s3cret", username: "readonly" } },
   });
 });
 
@@ -148,66 +144,88 @@ test("rejects an invalid output format", () => {
   assert.throws(() => parseFitCliConfig(`{ version: 1, output: { format: 'toml' } }`), /output\.format/);
 });
 
-test("resolveResultsDbCredentials prefers config over the environment", () => {
-  const credentials = resolveResultsDbCredentials({
-    config: { version: FIT_CLI_CONFIG_VERSION, output: { resultsDb: { password: "from-config" } } },
-    env: { FIT_RESULTS_DB_PASSWORD: "from-env", FIT_RESULTS_DB_USERNAME: "env-user" },
+test("resolveResultsDbCredentials takes the host from the registry and the password from the secret", async () => {
+  const creds = await resolveResultsDbCredentials({
+    block: "dev",
+    environments: TEST_ENVIRONMENTS,
+    fetchSecret: () => Promise.resolve({ password: "s3cret" }),
   });
-  assert.deepEqual(credentials, { password: "from-config", username: "env-user" });
+  assert.deepEqual(creds, { host: "dev.db.example", username: "postgres", password: "s3cret" });
 });
 
-test("resolveResultsDbCredentials falls back to FIT_RESULTS_DB_* env vars", () => {
-  assert.deepEqual(
-    resolveResultsDbCredentials({
-      config: { version: FIT_CLI_CONFIG_VERSION },
-      env: { FIT_RESULTS_DB_PASSWORD: "env-pass" },
-    }),
-    { password: "env-pass", username: undefined },
+test("resolveResultsDbCredentials uses the secret's username when present", async () => {
+  const creds = await resolveResultsDbCredentials({
+    block: "dev",
+    environments: TEST_ENVIRONMENTS,
+    fetchSecret: () => Promise.resolve({ password: "p", username: "readonly" }),
+  });
+  assert.equal(creds.username, "readonly");
+});
+
+test("resolveResultsDbCredentials rejects an unknown results environment", async () => {
+  await assert.rejects(
+    resolveResultsDbCredentials({ block: "nope", environments: TEST_ENVIRONMENTS, fetchSecret: noFetch }),
+    /Unknown results environment "nope"/,
   );
 });
 
-test("parses a stored capella section", () => {
-  const parsed = parseFitCliConfig(`{
-  version: 1,
-  capella: { username: "graham.pople@couchbase.com", organizationId: "org-123" },
-}`);
-  assert.deepEqual(parsed.capella, { username: "graham.pople@couchbase.com", organizationId: "org-123" });
+test("parses a stored capella section (personal credentials only)", () => {
+  const parsed = parseFitCliConfig(`{ version: 1, capella: { username: "graham.pople@couchbase.com", password: "pw" } }`);
+  assert.deepEqual(parsed.capella, { username: "graham.pople@couchbase.com", password: "pw" });
 });
 
-test("resolveCapellaConfig fills every field but username from defaults", () => {
-  const resolved = resolveCapellaConfig({
-    config: { version: FIT_CLI_CONFIG_VERSION, capella: { username: "me@cb.com" } },
+test("resolveCapellaConfig prefers personal config credentials, with registry endpoint/oid", async () => {
+  const resolved = await resolveCapellaConfig({
+    block: "dev",
+    environments: TEST_ENVIRONMENTS,
+    config: { version: FIT_CLI_CONFIG_VERSION, capella: { username: "me@cb.com", password: "pw" } },
     env: {},
+    fetchSecret: noFetch,
   });
   assert.deepEqual(resolved, {
     username: "me@cb.com",
-    endpoint: DEFAULT_CAPELLA_SETTINGS.endpoint,
-    organizationId: DEFAULT_CAPELLA_SETTINGS.organizationId,
-    password: DEFAULT_CAPELLA_SETTINGS.password,
+    password: "pw",
+    endpoint: "https://dev.example",
+    organizationId: "oid-dev",
   });
 });
 
-test("resolveCapellaConfig prefers config, then CAPELLA_*/CAP_* env, then default", () => {
-  const fromConfig = resolveCapellaConfig({
-    config: { version: FIT_CLI_CONFIG_VERSION, capella: { username: "cfg", endpoint: "https://cfg" } },
-    env: { CAPELLA_ENDPOINT: "https://env", CAPELLA_USER: "envuser" },
-  });
-  assert.equal(fromConfig.username, "cfg");
-  assert.equal(fromConfig.endpoint, "https://cfg");
-
-  const fromEnv = resolveCapellaConfig({
+test("resolveCapellaConfig prefers CAPELLA_*/CAP_* env over the shared account", async () => {
+  const resolved = await resolveCapellaConfig({
+    block: "dev",
+    environments: TEST_ENVIRONMENTS,
     config: { version: FIT_CLI_CONFIG_VERSION },
-    env: { CAP_USER: "graham", CAP_OID: "org-from-cap" },
+    env: { CAPELLA_USER: "envuser", CAPELLA_PASS: "envpass" },
+    fetchSecret: noFetch,
   });
-  assert.equal(fromEnv.username, "graham");
-  assert.equal(fromEnv.organizationId, "org-from-cap");
-  assert.equal(fromEnv.endpoint, DEFAULT_CAPELLA_SETTINGS.endpoint);
+  assert.equal(resolved.username, "envuser");
+  assert.equal(resolved.password, "envpass");
+  assert.equal(resolved.endpoint, "https://dev.example");
 });
 
-test("resolveCapellaConfig leaves username undefined when nothing provides one", () => {
-  const resolved = resolveCapellaConfig({ config: { version: FIT_CLI_CONFIG_VERSION }, env: {} });
-  assert.equal(resolved.username, undefined);
-  assert.equal(resolved.endpoint, DEFAULT_CAPELLA_SETTINGS.endpoint);
+test("resolveCapellaConfig falls back to the shared AWS service account when no personal creds", async () => {
+  const resolved = await resolveCapellaConfig({
+    block: "dev",
+    environments: TEST_ENVIRONMENTS,
+    config: { version: FIT_CLI_CONFIG_VERSION },
+    env: {},
+    fetchSecret: () => Promise.resolve({ username: "svc-account", password: "svc-pw" }),
+  });
+  assert.equal(resolved.username, "svc-account");
+  assert.equal(resolved.password, "svc-pw");
+});
+
+test("resolveCapellaConfig throws for an unprovisioned environment", async () => {
+  await assert.rejects(
+    resolveCapellaConfig({
+      block: "stage",
+      environments: { capella: { stage: { endpoint: null, oid: null, secretId: "cap/stage" } }, results: {} },
+      config: { version: FIT_CLI_CONFIG_VERSION },
+      env: {},
+      fetchSecret: noFetch,
+    }),
+    /isn't fully provisioned/,
+  );
 });
 
 test("rejects unsupported newer config versions", () => {

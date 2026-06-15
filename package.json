@@ -13,6 +13,7 @@
     "replay": "bun src/util/non-fit/replay-entry.ts --replay",
     "definition": "bun src/fit/definition/definition.ts",
     "cloud-instances": "bun src/cloud/cloud-instances/cloud-instances.ts",
+    "secrets": "bun src/cloud/util/aws/secrets-cli.ts",
     "dev": "bun --watch src/fit/main/main.ts",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
@@ -24,6 +25,7 @@
     "bun": ">=1.0"
   },
   "dependencies": {
+    "@aws-sdk/client-secrets-manager": "^3.1068.0",
     "@inquirer/prompts": "^7.2.0",
     "json5": "^2.2.3",
     "xunit-viewer": "^10.6.1",

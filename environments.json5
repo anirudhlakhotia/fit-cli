@@ -1,0 +1,36 @@
+{
+  // Per-environment registry. Holds only NON-secret values plus a POINTER (secretId)
+  // to where the secrets live in AWS Secrets Manager — no secret values are committed.
+  //
+  // Which environment a run uses is chosen in the definition file:
+  //   capella  → instances[*].clusters[*].capellaEnvironment
+  //              (cascades: cluster → instance → top-level definition.capellaEnvironment → 'dev')
+  //   results  → runs[*].situational.database.resultsEnvironment   (default 'dev')
+  //
+  // Secrets are fetched at run time from AWS Secrets Manager (us-west-2) using the same
+  // AWS credentials fit-cli already needs to create instances — so CI and laptops resolve
+  // identically. Access is controlled purely by IAM on these secrets
+  // (CI's fit-cli-role + developers' SSO role need secretsmanager:GetSecretValue).
+  //   capella secret JSON → { "username": "...", "password": "..." }
+  //   results secret JSON → { "password": "..." }   (username defaults to "postgres")
+  //
+  // Capella creds specifically: a developer's own creds (from `config edit` / CAPELLA_* env)
+  // take precedence locally; with none configured we fall back to the shared account in the
+  // secret (and warn). Results creds always come from the secret.
+  //
+  // A null non-secret value means "not yet provided" — selecting that block fails fast.
+  capella: {
+    dev: {
+      endpoint: "https://api.dev.nonprod-project-avengers.com",
+      oid: "6af08c0a-8cab-4c1c-b257-b521575c16d0",
+      secretId: "fit-cli/capella/dev",
+    },
+    // (todo): add the other envs once dev is working well
+  },
+  results: {
+    // hosted-dev: Postgres results DB on :5432/perf, results UI under /results/situational.
+    dev: { host: "faas.couchbase.com", secretId: "fit-cli/results/dev" },
+    // production results.
+    prod: { host: "performance-sdk.couchbase.com", secretId: "fit-cli/results/prod" },
+  },
+}

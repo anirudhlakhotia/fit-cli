@@ -56,6 +56,13 @@ export interface CbdinoclusterSetup {
  */
 export interface InstanceSetup {
   cbdinocluster?: { init: CbdinoclusterInitSetup };
+  /**
+   * Capella environment this instance's clusters are created in (a key under
+   * `capella` in environments.json5 — e.g. "dev", "stage"). Lives here because
+   * `cbdinocluster init` configures one `~/.cbdinocluster` (and so one Capella
+   * identity) per instance/box. Defaults to "dev".
+   */
+  capellaEnvironment?: string;
 }
 
 export interface AwsInstanceSetup {
@@ -116,6 +123,12 @@ export type SituationalDatabaseMode = (typeof SITUATIONAL_DATABASE_MODES)[number
 
 export interface SituationalDatabaseSetup {
   mode: SituationalDatabaseMode;
+  /**
+   * Which results environment to store/view results in (a key under `results` in
+   * environments.json5 — e.g. "dev"=faas, "prod"=performance-sdk). Only meaningful
+   * when mode is "hosted". Defaults to "dev".
+   */
+  resultsEnvironment?: string;
 }
 
 export interface SituationalSection {
