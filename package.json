@@ -8,12 +8,12 @@
   },
   "scripts": {
     "help": "printf 'Top-level commands:\\n  bun start               — interactive wizard\\n  bun run config          — manage configuration\\n  bun run definition      — run/validate a definition file\\n  bun run cloud-instances — manage cloud instances\\n'",
-    "start": "tsx src/fit/main/main.ts",
-    "config": "tsx src/fit/config/config.ts",
-    "replay": "tsx src/util/non-fit/replay-entry.ts --replay",
-    "definition": "tsx src/fit/definition/definition.ts",
-    "cloud-instances": "tsx src/cloud/cloud-instances/cloud-instances.ts",
-    "dev": "tsx watch src/fit/main/main.ts",
+    "start": "bun src/fit/main/main.ts",
+    "config": "bun src/fit/config/config.ts",
+    "replay": "bun src/util/non-fit/replay-entry.ts --replay",
+    "definition": "bun src/fit/definition/definition.ts",
+    "cloud-instances": "bun src/cloud/cloud-instances/cloud-instances.ts",
+    "dev": "bun --watch src/fit/main/main.ts",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
@@ -21,7 +21,7 @@
     "test": "node --import tsx --test 'src/**/tests/*.test.ts'"
   },
   "engines": {
-    "node": ">=20"
+    "bun": ">=1.0"
   },
   "dependencies": {
     "@inquirer/prompts": "^7.2.0",
