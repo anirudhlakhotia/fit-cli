@@ -3,8 +3,6 @@ name: Build binaries
 on:
   push:
     branches: [main]
-  release:
-    types: [created]
   workflow_call:
     outputs:
       artifact-name:
@@ -45,10 +43,14 @@ jobs:
           path: dist/fit-*
           retention-days: 7
 
-      - name: Attach to GitHub release
-        if: github.event_name == 'release'
+      - name: Update latest pre-release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
-          gh release upload ${{ github.event.release.tag_name }} \
+          gh release delete latest --yes --cleanup-tag 2>/dev/null || true
+          gh release create latest \
+            --prerelease \
+            --title "Latest (tip of main)" \
+            --notes "Automatically updated on every push to main. Install with: CHANNEL=latest curl -fsSL https://raw.githubusercontent.com/couchbaselabs/fit-cli/main/install.sh | bash" \
             dist/fit-linux-x64 \
             dist/fit-linux-arm64 \
             dist/fit-darwin-x64 \

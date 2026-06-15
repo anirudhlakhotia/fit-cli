@@ -4,6 +4,8 @@ set -euo pipefail
 REPO="couchbaselabs/fit-cli"
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
 BINARY_NAME="fit"
+# stable (default) = manually promoted release; latest = tip of main (pre-release)
+CHANNEL="${CHANNEL:-stable}"
 
 detect_target() {
   local os arch
@@ -36,18 +38,9 @@ main() {
   target="$(detect_target)"
 
   echo "Detected platform: $target"
+  echo "Installing fit-cli ($CHANNEL)..."
 
-  local version
-  version="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | sed 's/.*"tag_name": *"\(.*\)".*/\1/')"
-
-  if [[ -z "$version" ]]; then
-    echo "Could not determine latest release version." >&2
-    exit 1
-  fi
-
-  echo "Installing fit-cli $version..."
-
-  local url="https://github.com/${REPO}/releases/download/${version}/${target}"
+  local url="https://github.com/${REPO}/releases/download/${CHANNEL}/${target}"
   local tmp
   tmp="$(mktemp)"
 
