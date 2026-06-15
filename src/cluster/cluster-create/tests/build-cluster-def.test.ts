@@ -2,7 +2,7 @@
  * Unit tests for buildClusterDef.
  *
  * Run on their own:
- *   npm test
+ *   bun test
  *   node --import tsx --test src/workflows/cluster/cluster-create/tests/build-cluster-def.test.ts
  */
 import assert from "node:assert/strict";

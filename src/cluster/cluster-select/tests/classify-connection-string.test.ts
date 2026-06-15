@@ -2,7 +2,7 @@
  * Unit tests for classifyConnectionString.
  *
  * Run on their own:
- *   npm test
+ *   bun test
  *   node --import tsx --test src/workflows/cluster/cluster-select/tests/classify-connection-string.test.ts
  */
 import assert from "node:assert/strict";

@@ -3,7 +3,7 @@
  * filesystem-touching resolveRootDir is exercised by the step CLIs instead).
  *
  * Run on their own:
- *   npm test
+ *   bun test
  *   node --import tsx --test src/util/fit/tests/root.test.ts
  */
 import assert from "node:assert/strict";

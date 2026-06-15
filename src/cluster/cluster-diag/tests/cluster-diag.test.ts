@@ -2,7 +2,7 @@
  * Unit tests for clusterDiagUrl.
  *
  * Run on their own:
- *   npm test
+ *   bun test
  *   node --import tsx --test src/workflows/cluster/cluster-diag/tests/cluster-diag.test.ts
  */
 import assert from "node:assert/strict";

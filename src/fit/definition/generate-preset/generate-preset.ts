@@ -1,11 +1,11 @@
 /**
- * `npm run definition -- generate-preset` — emit a ready-to-run definition file
+ * `bun run definition -- generate-preset` — emit a ready-to-run definition file
  * from a named preset template, parameterised by SDK, cluster version, and
  * (optionally) a performer Docker image tag.
  *
  * Usage:
- *   npm run definition -- generate-preset --type preset-functional-tests --sdk java --cluster-version 7.6.5
- *   npm run definition -- generate-preset --type preset-functional-tests --sdk java --cluster-version 8.0.0 --performer-image-name main
+ *   bun run definition -- generate-preset --type preset-functional-tests --sdk java --cluster-version 7.6.5
+ *   bun run definition -- generate-preset --type preset-functional-tests --sdk java --cluster-version 8.0.0 --performer-image-name main
  */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";

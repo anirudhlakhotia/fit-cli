@@ -59,7 +59,7 @@ export function formatEc2DeletionResponsibilityBanner(
       `  aws --region ${AWS_REGION} ec2 terminate-instances --instance-ids ${allIds.join(" ")}`,
       "",
       "Or manage them interactively with:",
-      `  npm run cloud-instances -- manage`,
+      `  bun run cloud-instances -- manage`,
     );
   }
   return formatBanner("EC2 LIFECYCLE WARNING", lines);
@@ -106,7 +106,7 @@ export function formatExistingInstancesBanner(
     `  aws --region ${AWS_REGION} ec2 terminate-instances --instance-ids ${instances.map((inst) => inst.instanceId).join(" ")}`,
     "",
     "Or manage them interactively with:",
-    `  npm run cloud-instances -- manage`,
+    `  bun run cloud-instances -- manage`,
   );
   return formatBanner("EXISTING FIT-CLI INSTANCES", lines);
 }

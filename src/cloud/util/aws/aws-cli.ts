@@ -27,7 +27,7 @@ export async function prepareAwsCli(): Promise<void> {
   const hasExplicitCredentials = Boolean(process.env.AWS_ACCESS_KEY_ID);
   await ensureFitCliConfigEnv({
     promptId: "aws.config.create",
-    promptMessage: "No fit-cli config found. Run `npm run config -- edit` now before continuing with this AWS command?",
+    promptMessage: "No fit-cli config found. Run `bun run config -- edit` now before continuing with this AWS command?",
     promptIfMissing: hasExplicitCredentials ? false : undefined,
   });
 }

@@ -2,7 +2,7 @@
  * Unit tests for requiredReposForSdk.
  *
  * Run on their own:
- *   npm test
+ *   bun test
  *   node --import tsx --test src/util/sdk/tests/ensure-sdk-workspace.test.ts
  */
 import assert from "node:assert/strict";

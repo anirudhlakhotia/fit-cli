@@ -118,7 +118,7 @@ export interface ProvisionOptions {
 export async function provisionFitInstance(options: ProvisionOptions = {}): Promise<ProvisionedInstance> {
   await ensureFitCliConfigEnv({
     promptId: "fit-instance.config.create",
-    promptMessage: "No fit-cli config found. Run `npm run config -- edit` now before provisioning an EC2 instance?",
+    promptMessage: "No fit-cli config found. Run `bun run config -- edit` now before provisioning an EC2 instance?",
   });
   const creds = await checkCredentials();
   if (!creds.ok) {

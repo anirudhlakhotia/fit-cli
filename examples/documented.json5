@@ -3,10 +3,10 @@
 // A definition file is a repeatable, hand-editable description of one or more
 // FIT execution lifetimes. Run it with:
 //
-//   npm run definition -- execute examples/documented.json5
+//   bun run definition -- execute examples/documented.json5
 //
 // Validate a file without running it:
-//   npm run definition -- validate examples/documented.json5
+//   bun run definition -- validate examples/documented.json5
 //
 // Both .json5 and .yaml formats are accepted.
 {

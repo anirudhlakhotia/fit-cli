@@ -2,7 +2,7 @@
  * Unit tests for buildFitConfiguration.
  *
  * Run on their own:
- *   npm test
+ *   bun test
  *   node --import tsx --test src/workflows/fit-functional/util/tests/build-fit-configuration.test.ts
  */
 import assert from "node:assert/strict";

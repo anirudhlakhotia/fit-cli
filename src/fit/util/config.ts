@@ -241,7 +241,7 @@ export function validateFitCliConfig(raw: unknown): FitCliConfig {
       );
     }
     throw new UnsupportedFitCliConfigVersionError(
-      `Config file version ${version} is no longer supported. Recreate ${FIT_CLI_CONFIG_BASENAME} with \`npm run config -- edit\`.`,
+      `Config file version ${version} is no longer supported. Recreate ${FIT_CLI_CONFIG_BASENAME} with \`bun run config -- edit\`.`,
     );
   }
 
@@ -429,7 +429,7 @@ export function loadFitCliConfig(path: string = defaultFitCliConfigPath()): FitC
  * The GitHub token used to clone the private FIT repos. We prefer the value
  * saved in the fit-cli config, then fall back to the usual environment variables,
  * so that someone who already exports GITHUB_TOKEN/GH_TOKEN doesn't have to run
- * `npm run config -- edit`. Loads the config itself when a parsed config isn't supplied.
+ * `bun run config -- edit`. Loads the config itself when a parsed config isn't supplied.
  */
 export function resolveGithubToken(
   options: { config?: FitCliConfig; path?: string; env?: NodeJS.ProcessEnv } = {},
@@ -454,7 +454,7 @@ export function resolveGithubCredentials(
   const token = config?.github?.token;
   if (!user || !token) {
     const missing = [!user && "github.user", !token && "github.token"].filter(Boolean).join(" and ");
-    return `${missing} must be set in ~/.fit-cli/config.json5 — run \`npm run config -- edit\` to configure it.`;
+    return `${missing} must be set in ~/.fit-cli/config.json5 — run \`bun run config -- edit\` to configure it.`;
   }
   return { user, token };
 }
@@ -636,7 +636,7 @@ export async function ensureFitCliConfigEnv(
         promptId: options.promptId ?? "fit-cli.config.create",
         message:
           options.promptMessage ??
-          `No fit-cli config found at ${path}. Run \`npm run config -- edit\` now?`,
+          `No fit-cli config found at ${path}. Run \`bun run config -- edit\` now?`,
         default: true,
       });
   if (!create) {
