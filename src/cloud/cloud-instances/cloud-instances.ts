@@ -5,7 +5,7 @@
  * npm run cloud-instances -- list
  * npm run cloud-instances -- manage [--tag key=value] [--key <key-name>]
  * npm run cloud-instances -- delete <instance-id> [--force]
- * npm run cloud-instances -- remove-all [--all-users] [--force]
+ * npm run cloud-instances -- remove-all [--all-users] [--older-than <duration>] [--dry-run] [--force]
  * npm run cloud-instances -- --help
  */
 import { isMain, runCli } from "../../util/non-fit/cli.js";
@@ -15,6 +15,7 @@ import { checkCredentials } from "../../cloud/util/aws/identity.js";
 import { listInstances, LIVE_STATES } from "../../cloud/util/aws/list-instances.js";
 import { terminateInstance } from "../../cloud/util/aws/terminate-instance.js";
 import { describeInstance } from "../../cloud/util/aws/describe-instance.js";
+import { formatAge, instanceAgeMs, parseDuration, selectAgedOut } from "../../cloud/util/aws/instance-age.js";
 import { confirm } from "../../util/non-fit/prompts.js";
 import { FIT_OWNER_TAG } from "../../fit/util/aws/fit-instance.js";
 import {
@@ -31,7 +32,7 @@ Usage:
   npm run cloud-instances -- list
   npm run cloud-instances -- manage [--tag key=value] [--key <key-name>]
   npm run cloud-instances -- delete <instance-id> [--force]
-  npm run cloud-instances -- remove-all [--all-users] [--force]
+  npm run cloud-instances -- remove-all [--all-users] [--older-than <duration>] [--dry-run] [--force]
   npm run cloud-instances -- --help
 
 Subcommands:
@@ -39,7 +40,15 @@ Subcommands:
   manage      Interactively browse and act on instances (terminate, view details).
   delete      Terminate an instance by id (prompts for confirmation unless --force).
   remove-all  Terminate every fit-cli instance you created (add --all-users for
-              everyone's; prompts for confirmation unless --force).`;
+              everyone's; prompts for confirmation unless --force).
+
+remove-all options:
+  --all-users        Include instances created by everyone, not just you.
+  --older-than <d>   Only reap instances launched at least this long ago, e.g.
+                     24h, 90m, 2d. Boxes whose age can't be determined are kept.
+  --dry-run          List what would be terminated, then exit without touching it.
+  --force            Skip the confirmation prompt (required for unattended runs,
+                     e.g. the scheduled cleanup workflow).`;
 
 async function cmdList(argv: string[]): Promise<void> {
   await prepareAwsCli();
@@ -143,12 +152,22 @@ function callerCreator(identity: { arn: string; userId: string }): string {
 async function cmdRemoveAll(argv: string[]): Promise<void> {
   const allUsers = argv.includes("--all-users");
   const force = argv.includes("--force");
+  const dryRun = argv.includes("--dry-run");
+  const olderThanIndex = argv.indexOf("--older-than");
+  const olderThanArg = olderThanIndex !== -1 ? argv[olderThanIndex + 1] : undefined;
+  if (olderThanIndex !== -1 && !olderThanArg) {
+    throw new Error("--older-than needs a duration, e.g. --older-than 24h.");
+  }
+  // Parse up front so a bad duration fails before we touch AWS.
+  const cutoffMs = olderThanArg !== undefined ? parseDuration(olderThanArg) : undefined;
   await prepareAwsCli();
 
   logAwsAction("Removing fit-cli EC2 instances", {
     tag: `${FIT_OWNER_TAG.key}=${FIT_OWNER_TAG.value}`,
     states: LIVE_STATES,
     scope: allUsers ? "all users" : "current user",
+    ...(olderThanArg !== undefined ? { olderThan: olderThanArg } : {}),
+    ...(dryRun ? { dryRun: true } : {}),
   });
 
   const creds = await checkCredentials();
@@ -163,15 +182,41 @@ async function cmdRemoveAll(argv: string[]): Promise<void> {
   }
 
   const all = await listInstances(FIT_OWNER_TAG);
-  const mine = allUsers ? all : all.filter((instance) => instance.creator === context?.creator);
+  const scoped = allUsers ? all : all.filter((instance) => instance.creator === context?.creator);
+
+  // Age-gate when asked. Anything younger than the cutoff (or whose age we can't
+  // determine) is left alone — see selectAgedOut.
+  let mine = scoped;
+  if (cutoffMs !== undefined) {
+    const now = Date.now();
+    const { reap, keep } = selectAgedOut(scoped, cutoffMs, now);
+    mine = reap;
+    if (keep.length > 0) {
+      console.log(
+        `Skipping ${keep.length} instance(s) younger than ${olderThanArg} (or with unknown age): ` +
+          keep
+            .map((i) => {
+              const age = instanceAgeMs(i, now);
+              return `${i.instanceId} (${age === undefined ? "age unknown" : formatAge(age)})`;
+            })
+            .join(", "),
+      );
+    }
+  }
 
   if (mine.length === 0) {
     const scope = allUsers ? "" : ` created by ${context?.creator}`;
-    console.log(`No fit-cli EC2 instances${scope} found in ${AWS_REGION}.`);
+    const ageNote = cutoffMs !== undefined ? ` older than ${olderThanArg}` : "";
+    console.log(`No fit-cli EC2 instances${scope}${ageNote} found in ${AWS_REGION}.`);
     return;
   }
 
   console.log(formatExistingInstancesBanner(mine, context));
+
+  if (dryRun) {
+    console.log(`\nDry run — would terminate ${mine.length} instance(s); leaving them running.`);
+    return;
+  }
 
   if (!force) {
     const confirmed = await confirm({

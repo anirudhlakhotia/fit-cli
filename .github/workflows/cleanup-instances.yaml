@@ -1,0 +1,93 @@
+# Scheduled cleanup of abandoned fit-cli EC2 instances.
+# ----------------------------------------------------
+# fit-cli tags every instance it launches with `fit-cli=owned` (plus a Name and a
+# created-by tag). Boxes are meant to be torn down at the end of a run, but failed
+# or interrupted runs leak them, and they bill by the hour. This reaps any box
+# older than the TTL so nothing lingers indefinitely.
+#
+# Safety: we only terminate instances launched at least `olderThan` ago, so a
+# long-running FIT/SIT suite started within that window is never killed mid-run.
+#
+# Manual run (e.g. to preview without terminating):
+#   gh workflow run cleanup-instances.yaml --field dryRun=true --repo couchbaselabs/fit-cli
+#   gh workflow run cleanup-instances.yaml --field olderThan=12h --repo couchbaselabs/fit-cli
+name: Cleanup old fit-cli EC2 instances
+
+on:
+  schedule:
+    # Every 6 hours, on the hour (UTC). Combined with the 24h TTL a box lives ~30h max.
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      olderThan:
+        description: Only reap instances launched at least this long ago, e.g. 24h, 12h, 2d.
+        type: string
+        default: 24h
+      dryRun:
+        description: Preview what would be terminated without actually terminating anything.
+        type: boolean
+        default: false
+
+# Don't pile up overlapping cleanups; a new run supersedes an in-flight one.
+concurrency:
+  group: cleanup-instances
+  cancel-in-progress: true
+
+permissions:
+  id-token: write   # required for GitHub OIDC
+  contents: read
+
+jobs:
+  cleanup-instances:
+    runs-on: [ubuntu-latest]
+    steps:
+      - name: Checkout fit-cli
+        uses: actions/checkout@v4
+
+      # Use OIDC to assume fit-cli-role.
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-region: us-west-2
+          role-to-assume: arn:aws:iam::958525475024:role/fit-cli-role
+          role-session-name: gha-cleanup-${{ github.run_id }}
+          audience: sts.amazonaws.com
+          retry-max-attempts: 3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+
+      - name: Install fit-cli dependencies
+        run: npm ci
+
+      - name: Reap old instances
+        env:
+          # schedule events carry no inputs, so fall back to the defaults below.
+          OLDER_THAN: ${{ inputs.olderThan || '24h' }}
+          DRY_RUN: ${{ inputs.dryRun || false }}
+        run: |
+          set -o pipefail
+          ARGS=(remove-all --all-users --older-than "$OLDER_THAN")
+          if [ "$DRY_RUN" = "true" ]; then
+            ARGS+=(--dry-run)
+          else
+            ARGS+=(--force)
+          fi
+          echo "Running: npm run cloud-instances -- ${ARGS[*]}"
+          npm run cloud-instances -- "${ARGS[@]}" | tee /tmp/cleanup-output.log
+
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "## fit-cli instance cleanup"
+            echo ""
+            echo "- **Older than:** ${{ inputs.olderThan || '24h' }}"
+            echo "- **Dry run:** ${{ inputs.dryRun || false }}"
+            echo ""
+            echo '```'
+            cat /tmp/cleanup-output.log 2>/dev/null || echo "(no output captured)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
