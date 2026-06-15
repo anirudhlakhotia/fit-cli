@@ -65,16 +65,15 @@ jobs:
           echo "Github run_id: ${{ github.run_id }}"
           aws sts get-caller-identity
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
+      - uses: oven-sh/setup-bun@v2
         with:
-          node-version: lts/*
+          bun-version: latest
 
       - name: Clone and setup fit-cli
         env:
           # Not working yet
-#          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
-#          GITHUB_USER: x-access-token
+          #          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          #          GITHUB_USER: x-access-token
           # secrets.GITHUB_TOKEN contains a short-lived token bound to this repo, so we can't use it for e.g. checking out transactions-fit-performer
           # Instead we use a hardcoded github PAT (the author's).  Migrating to a Github App in future would be better.
           GITHUB_TOKEN: ${{ secrets.FIT_CLI_GITHUB_PAT }}
@@ -89,8 +88,8 @@ jobs:
         run: |
           git clone --branch ${{ github.ref_name }} https://github.com/couchbaselabs/fit-cli.git
           cd fit-cli
-          npm ci
-          npm run config -- edit --auto
+          bun install --frozen-lockfile
+          bun run config edit --auto
 
       - name: Run fit-cli
         env:
@@ -101,7 +100,7 @@ jobs:
         run: |
           set -o pipefail
           cd fit-cli
-          npm run definition -- execute ${{ inputs.definitionFile }} | tee /tmp/fit-cli-output.log
+          bun run definition execute ${{ inputs.definitionFile }} | tee /tmp/fit-cli-output.log
         id: run-fit-cli
 
       # https://github.com/marketplace/actions/junit-report-action
@@ -124,7 +123,7 @@ jobs:
 
       - name: Job summary
         if: always()
-        run: .github/scripts/job-summary.sh "${{ steps.run-fit-cli.outcome }}"
+        run: fit-cli/.github/scripts/job-summary.sh "${{ steps.run-fit-cli.outcome }}"
 
       - name: Upload run artifacts
         if: always()
