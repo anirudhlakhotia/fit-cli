@@ -230,9 +230,15 @@ export function finalizeRunFromDefinition(
 ): RunOutput {
   const combined = combineArtifacts(artifacts);
   const guide = writeAgentsGuide(combined, runDir);
+  const allDetails = combineDetails(details);
+  // Hoist call-to-action details (e.g. Results UI) to the top of the table so
+  // they're the first thing a reader sees, separated from the rest by a blank row.
+  const ctas = allDetails.filter((d) => d.callToAction);
+  const rest = allDetails.filter((d) => !d.callToAction);
+  const orderedDetails: Detail[] = ctas.length > 0 ? [...ctas, { label: "", value: "" }, ...rest] : rest;
   return {
     artifacts: combineArtifacts(combined, [guide.artifact]),
-    details: combineDetails(details),
+    details: orderedDetails,
     ...(worstFailure ? { worstFailure, failureCount: failureCount ?? 1 } : {}),
   };
 }
@@ -600,7 +606,7 @@ export async function runSituationalTests(
   // actually lands (dev vs prod), rather than a fixed constant.
   const resultsUrl = situationalResultsUrl(resultsHostFromJdbc(database.database.jdbc));
   console.log(`\nWhen this run produces data, view it at:\n  ${resultsUrl}`);
-  details.push({ label: "Results UI", value: resultsUrl });
+  details.push({ label: "Results UI", value: resultsUrl, callToAction: true });
   dependencies.recordResult?.({
     path: run.path,
     sdk: run.sdk.name,

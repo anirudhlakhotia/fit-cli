@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import {
   artifactFromPath,
   formatArtifactsSection,
+  formatCallToActionBanner,
   formatDetailsSection,
   combineRunOutputs,
   reconcileArtifactsWithDir,
@@ -67,6 +68,11 @@ export function runCli(main: () => Promise<void | Partial<RunOutput>>): void {
     .then(async () => {
       if (summaryOutput) {
         console.log(`\n${summaryOutput}`);
+      }
+      for (const detail of runOutput?.details ?? []) {
+        if (detail.callToAction) {
+          console.log(`\n${formatCallToActionBanner(detail.label, detail.value)}`);
+        }
       }
       if (runOutput?.worstFailure && worstFailureShouldExitNonZero(runOutput.worstFailure)) {
         fitCliError(formatFailureSummaryLine(runOutput.worstFailure, runOutput.failureCount ?? 1));

@@ -18,6 +18,8 @@ export interface ArtifactCollection {
 export interface Detail {
   label: string;
   value: string;
+  /** When true, also rendered as a highlighted banner after the run summary tables. */
+  callToAction?: true;
 }
 
 export interface DetailCollection {
@@ -238,7 +240,11 @@ export function formatDetailsTable(details: readonly Detail[]): string | undefin
   return [
     `${labelHeader.padEnd(labelWidth)} | ${valueHeader}`,
     `${"-".repeat(labelWidth)}-+-${"-".repeat(valueWidth)}`,
-    ...details.map((detail) => `${detail.label.padEnd(labelWidth)} | ${detail.value}`),
+    ...details.map((detail) =>
+      detail.label === "" && detail.value === ""
+        ? `${" ".repeat(labelWidth)}   `
+        : `${detail.label.padEnd(labelWidth)} | ${detail.value}`,
+    ),
   ].join("\n");
 }
 
@@ -275,4 +281,37 @@ export function formatDetailsSection(details: readonly Detail[]): string | undef
   }
 
   return [table].join("\n");
+}
+
+/**
+ * Wrap a URL with an OSC 8 terminal hyperlink so it's clickable in supporting
+ * terminals (iTerm2, GNOME Terminal, VS Code). Falls back to the plain URL
+ * string in terminals that don't handle OSC 8 — the escape sequences are
+ * invisible there rather than printed as garbage.
+ */
+function terminalHyperlink(url: string): string {
+  return `\x1b]8;;${url}\x07${url}\x1b]8;;\x07`;
+}
+
+/**
+ * Render a call-to-action detail as a highlighted box with a terminal hyperlink
+ * (OSC 8) for the value when it looks like a URL.
+ *
+ * Example output:
+ *   ╔══════════════════════════════════════════════════╗
+ *   ║  Results UI:                                     ║
+ *   ║  https://faas.couchbase.com/results/situational  ║
+ *   ╚══════════════════════════════════════════════════╝
+ */
+export function formatCallToActionBanner(label: string, value: string): string {
+  const header = `${label}:`;
+  // innerWidth = 2 (left pad) + content + 2 (right pad)
+  const innerWidth = Math.max(header.length, value.length) + 4;
+  const top = `╔${"═".repeat(innerWidth)}╗`;
+  const bottom = `╚${"═".repeat(innerWidth)}╝`;
+  const padLine = (text: string, visibleLength: number) =>
+    `║  ${text}${" ".repeat(innerWidth - visibleLength - 2)}║`;
+  const isUrl = /^https?:\/\//.test(value);
+  const displayValue = isUrl ? terminalHyperlink(value) : value;
+  return [top, padLine(header, header.length), padLine(displayValue, value.length), bottom].join("\n");
 }
