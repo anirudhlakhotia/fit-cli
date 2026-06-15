@@ -57,7 +57,7 @@ test("extractReplayFlag supports replay defaults mode", () => {
   });
 });
 
-test("extractReplayFlag picks up npm replay defaults for the replay script", () => {
+test("extractReplayFlag picks up replay defaults for the replay script", () => {
   assert.deepEqual(
     extractReplayFlag(["--replay", "/tmp/run.json"], {
       npm_lifecycle_event: "replay",
@@ -72,7 +72,7 @@ test("extractReplayFlag picks up npm replay defaults for the replay script", () 
   );
 });
 
-test("extractReplayFlag can take the replay logfile from npm config when needed", () => {
+test("extractReplayFlag can take the replay logfile from bun run config when needed", () => {
   assert.deepEqual(
     extractReplayFlag(["--replay"], {
       npm_lifecycle_event: "replay",

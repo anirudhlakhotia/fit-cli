@@ -54,13 +54,11 @@ jobs:
           audience: sts.amazonaws.com
           retry-max-attempts: 3
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: lts/*
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
 
       - name: Install fit-cli dependencies
-        run: npm ci
+        run: bun install --frozen-lockfile
 
       - name: Reap old instances
         env:
@@ -75,8 +73,8 @@ jobs:
           else
             ARGS+=(--force)
           fi
-          echo "Running: npm run cloud-instances -- ${ARGS[*]}"
-          npm run cloud-instances -- "${ARGS[@]}" | tee /tmp/cleanup-output.log
+          echo "Running: bun run cloud-instances -- ${ARGS[*]}"
+          bun run cloud-instances -- "${ARGS[@]}" | tee /tmp/cleanup-output.log
 
       - name: Job summary
         if: always()

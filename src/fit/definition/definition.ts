@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * Top-level dispatcher for the `definition` npm script.
+ * Top-level dispatcher for the `definition` bun script.
  *
- * npm run definition -- execute <file.yaml> [--resume-at=<point>] [resume selectors] [--root <dir>]
- * npm run definition -- validate <file.yaml>
+ * bun run definition -- execute <file.yaml> [--resume-at=<point>] [resume selectors] [--root <dir>]
+ * bun run definition -- validate <file.yaml>
  */
 import { existsSync } from "node:fs";
 import { isMain, runCli } from "../../util/non-fit/cli.js";
@@ -26,11 +26,11 @@ type Subcommand = (typeof SUBCOMMANDS)[number];
 const HELP = `Manage FIT definition files.
 
 Usage:
-  npm run definition -- execute <file.json5> [--resume-at=<point>] [resume selectors] [--root <dir>]
-  npm run definition -- validate <file.json5>
-  npm run definition -- generate-desc <file.json5>
-  npm run definition -- generate-preset --type <preset> --sdk <sdk> --cluster-version <version> [--performer-image-name <tag>]
-  npm run definition -- --help
+  bun run definition -- execute <file.json5> [--resume-at=<point>] [resume selectors] [--root <dir>]
+  bun run definition -- validate <file.json5>
+  bun run definition -- generate-desc <file.json5>
+  bun run definition -- generate-preset --type <preset> --sdk <sdk> --cluster-version <version> [--performer-image-name <tag>]
+  bun run definition -- --help
 
 Both .json5 and .yaml definition files are accepted.
 
@@ -79,7 +79,7 @@ if (isMain(import.meta.url)) {
   if (process.argv[2] === "generate-desc") {
     const path = process.argv[3];
     if (!path) {
-      process.stderr.write("Usage: npm run definition -- generate-desc <file.json5>\n");
+      process.stderr.write("Usage: bun run definition -- generate-desc <file.json5>\n");
       process.exit(2);
     }
     (async () => {
@@ -134,7 +134,7 @@ if (isMain(import.meta.url)) {
     if (subcommand === "validate") {
       const [path] = rest;
       if (!path) {
-        console.error("Usage: npm run definition -- validate <file.json5>");
+        console.error("Usage: bun run definition -- validate <file.json5>");
         process.exit(2);
       }
       if (isDefinitionUrl(path)) {
@@ -158,7 +158,7 @@ if (isMain(import.meta.url)) {
     const [definitionPath, ...extra] = afterSelector;
     if (!definitionPath || extra.length > 0) {
       console.error(
-        "Usage: npm run definition -- execute <file.yaml> [--resume-at=<point>] [resume selectors] [--root <dir>]\n" +
+        "Usage: bun run definition -- execute <file.yaml> [--resume-at=<point>] [resume selectors] [--root <dir>]\n" +
           "  --resume-at: after-instance-creation | after-remote-preparation | after-cluster-creation | after-performer\n" +
           "  resume selectors: --resume-instance=<n> --resume-cluster=<n> --resume-session=<n> --resume-clusterless-session=<n> --resume-run=<n>",
       );

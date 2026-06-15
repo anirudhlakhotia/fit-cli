@@ -2,7 +2,7 @@
  * Unit tests for ask-credentials prompt policy.
  *
  * Run on their own:
- *   npm test
+ *   bun test
  *   node --import tsx --test src/workflows/cluster/cluster-select/tests/ask-credentials.test.ts
  */
 import assert from "node:assert/strict";

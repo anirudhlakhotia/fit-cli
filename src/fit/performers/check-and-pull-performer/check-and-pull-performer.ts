@@ -93,7 +93,7 @@ export async function checkAndPullPerformer(
       `\nFailed to pull the ${sdk.name} performer image ${imageName}: ${(err as Error).message}` +
         (githubToken
           ? ""
-          : "\nAdd a GitHub token with read:packages scope via `npm run config -- edit`, GITHUB_TOKEN, or GH_TOKEN, then try again."),
+          : "\nAdd a GitHub token with read:packages scope via `bun run config -- edit`, GITHUB_TOKEN, or GH_TOKEN, then try again."),
     );
     return false;
   }

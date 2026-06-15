@@ -23,7 +23,7 @@ export function buildReplayDispatch(
   const { replayRequested, replayDefaults, replayFile, positionals } = extractReplayFlag(argv);
   if (!replayRequested || !replayFile) {
     throw new Error(
-      "Missing replay log file. Usage: npm run replay <logfile> or npm run replay --defaults <logfile>",
+      "Missing replay log file. Usage: bun run replay <logfile> or bun run replay --defaults <logfile>",
     );
   }
 

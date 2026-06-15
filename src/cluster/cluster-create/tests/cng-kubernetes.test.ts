@@ -2,7 +2,7 @@
  * Unit tests for the pure CNG Kubernetes helpers.
  *
  * Run on their own:
- *   npm test
+ *   bun test
  *   node --import tsx --test src/workflows/cluster/cluster-create/tests/cng-kubernetes.test.ts
  */
 import assert from "node:assert/strict";

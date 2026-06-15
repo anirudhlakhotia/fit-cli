@@ -85,7 +85,7 @@ export async function checkResultsDatabaseConnectivity(
 export function missingResultsDbPasswordMessage(): string {
   return (
     `\n✗ The hosted results database on ${HOSTED_RESULTS_DB_HOST} needs a password.\n` +
-    "  Ask on #the-fit-stop for it, then run `npm run config -- edit` inside the fit-cli dir\n" +
+    "  Ask on #the-fit-stop for it, then run `bun run config -- edit` inside the fit-cli dir\n" +
     "  to set up your config file (~/.fit-cli/config.json5).\n" +
     `  You must also be on the vpn-public VPN to reach ${HOSTED_RESULTS_DB_HOST}.`
   );

@@ -2,11 +2,11 @@
 /**
  * Top-level entry for managing fit-cli EC2 instances.
  *
- * npm run cloud-instances -- list
- * npm run cloud-instances -- manage [--tag key=value] [--key <key-name>]
- * npm run cloud-instances -- delete <instance-id> [--force]
- * npm run cloud-instances -- remove-all [--all-users] [--older-than <duration>] [--dry-run] [--force]
- * npm run cloud-instances -- --help
+ * bun run cloud-instances -- list
+ * bun run cloud-instances -- manage [--tag key=value] [--key <key-name>]
+ * bun run cloud-instances -- delete <instance-id> [--force]
+ * bun run cloud-instances -- remove-all [--all-users] [--older-than <duration>] [--dry-run] [--force]
+ * bun run cloud-instances -- --help
  */
 import { isMain, runCli } from "../../util/non-fit/cli.js";
 import { logAwsAction, prepareAwsCli } from "../../cloud/util/aws/aws-cli.js";
@@ -29,11 +29,11 @@ import { manageInstances, type InstanceQuery } from "../../cloud/util/aws/manage
 const HELP = `Manage fit-cli EC2 instances.
 
 Usage:
-  npm run cloud-instances -- list
-  npm run cloud-instances -- manage [--tag key=value] [--key <key-name>]
-  npm run cloud-instances -- delete <instance-id> [--force]
-  npm run cloud-instances -- remove-all [--all-users] [--older-than <duration>] [--dry-run] [--force]
-  npm run cloud-instances -- --help
+  bun run cloud-instances -- list
+  bun run cloud-instances -- manage [--tag key=value] [--key <key-name>]
+  bun run cloud-instances -- delete <instance-id> [--force]
+  bun run cloud-instances -- remove-all [--all-users] [--older-than <duration>] [--dry-run] [--force]
+  bun run cloud-instances -- --help
 
 Subcommands:
   list        Show all fit-cli instances with their status and cost context.
@@ -110,7 +110,7 @@ async function cmdManage(argv: string[]): Promise<void> {
 async function cmdDelete(argv: string[]): Promise<void> {
   const instanceId = argv.find((arg) => !arg.startsWith("-"));
   if (!instanceId) {
-    throw new Error("Usage: npm run cloud-instances -- delete <instance-id> [--force]");
+    throw new Error("Usage: bun run cloud-instances -- delete <instance-id> [--force]");
   }
 
   const force = argv.includes("--force");

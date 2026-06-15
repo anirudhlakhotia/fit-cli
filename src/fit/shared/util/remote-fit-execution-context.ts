@@ -88,7 +88,7 @@ export async function createRemoteFitExecutionContext(
     } else {
       console.log(
         "\n⚠ No GitHub token found — the private FIT repos will fail to clone.\n" +
-          "  Add one with `npm run config -- edit`, or set GITHUB_TOKEN / GH_TOKEN, then try again.",
+          "  Add one with `bun run config -- edit`, or set GITHUB_TOKEN / GH_TOKEN, then try again.",
       );
     }
 

@@ -2,7 +2,7 @@
  * Unit tests for parseClusterIds.
  *
  * Run on their own:
- *   npm test
+ *   bun test
  *   node --import tsx --test src/workflows/cluster/cluster-select/tests/parse-cluster-ids.test.ts
  */
 import assert from "node:assert/strict";

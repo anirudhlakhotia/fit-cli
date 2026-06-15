@@ -11,9 +11,9 @@ export function definitionRunGuidance(definitionPath: string): string {
 
   return (
     `\nRun it later with:\n` +
-    `  npm run definition -- execute --interactive ${definitionPath}\n` +
+    `  bun run definition -- execute --interactive ${definitionPath}\n` +
     `\nOr non-interactively (e.g. on CI), taking the default answer to every prompt:\n` +
-    `  npm run definition -- execute ${definitionPath}` +
+    `  bun run definition -- execute ${definitionPath}` +
     gistInstructions
   );
 }

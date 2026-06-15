@@ -2,7 +2,7 @@
  * Unit tests for buildPerformerArgs.
  *
  * Run on their own:
- *   npm test
+ *   bun test
  *   node --import tsx --test src/workflows/performers/build-performer/tests/build-performer.test.ts
  */
 import assert from "node:assert/strict";

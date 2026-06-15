@@ -171,7 +171,7 @@ export async function main(): Promise<RunOutput> {
     return true;
   });
   if (positionals.length > 1) {
-    throw new Error("Usage: npm start [definition-file.json5] [--output yaml|json5] [--push-gist [public|private]] [--root <dir>]");
+    throw new Error("Usage: bun start [definition-file.json5] [--output yaml|json5] [--push-gist [public|private]] [--root <dir>]");
   }
   if (positionals[0]) {
     ensurePromptSession().setWorkflow("run-definition");

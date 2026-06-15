@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 /**
- * Top-level dispatcher for the `config` npm script.
+ * Top-level dispatcher for the `config` bun script.
  *
- * npm run config -- edit [--auto] [--dry-run] [--disable-aws] [--disable-github] [--disable-results-db]
+ * bun run config -- edit [--auto] [--dry-run] [--disable-aws] [--disable-github] [--disable-results-db]
  *                        [--aws-profile <p>] [--aws-instance-type <t>]
  *                        [--github-user <u>] [--github-token <t>]
  *                        [--results-db-password <p>] [--results-db-username <u>]
  *                        [--config-path <path>]
- * npm run config -- show [--config-path <path>]
- * npm run config -- --help
+ * bun run config -- show [--config-path <path>]
+ * bun run config -- --help
  */
 import { isMain, runCli } from "../../util/non-fit/cli.js";
 import { runAutoEdit, runEditWorkflow, formatConfigForDisplay } from "./edit.js";
@@ -22,9 +22,9 @@ import {
 const HELP = `Manage fit-cli configuration.
 
 Usage:
-  npm run config -- edit [options]
-  npm run config -- show [--config-path <path>]
-  npm run config -- --help
+  bun run config -- edit [options]
+  bun run config -- show [--config-path <path>]
+  bun run config -- --help
 
 Subcommands:
   edit   Create or update the fit-cli config file (interactive by default).

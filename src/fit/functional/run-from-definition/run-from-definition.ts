@@ -16,11 +16,11 @@
  * workspace, standing up a cluster and building a performer are all slow, so a
  * run can leave them up and a later invocation can `--resume-at` a point to
  * reuse everything up to it instead of redoing the work:
- *   npm run definition -- execute <file.yaml>                                          # everything
- *   npm run definition -- execute --resume-at=after-instance-creation <file>  # reuse instance
- *   npm run definition -- execute --resume-at=after-remote-preparation <file>  # reuse prepared box
- *   npm run definition -- execute --resume-at=after-cluster-creation <file>    # reuse cluster
- *   npm run definition -- execute --resume-at=after-performer <file>           # reuse cluster + performer
+ *   bun run definition -- execute <file.yaml>                                          # everything
+ *   bun run definition -- execute --resume-at=after-instance-creation <file>  # reuse instance
+ *   bun run definition -- execute --resume-at=after-remote-preparation <file>  # reuse prepared box
+ *   bun run definition -- execute --resume-at=after-cluster-creation <file>    # reuse cluster
+ *   bun run definition -- execute --resume-at=after-performer <file>           # reuse cluster + performer
  *
  * Run on its own (add --root <dir> to point at another workspace):
  *   npx tsx src/fit/functional/run-from-definition/run-from-definition.ts <file.yaml>
@@ -756,7 +756,7 @@ function formatResumeCommand(point: ResumePoint, definitionPath: string, selecto
   // Always include --interactive: a resume is a hands-on debugging step, and the
   // resumed run needs to be able to prompt (e.g. teardown choices) just like the
   // original interactive run did.
-  return `npm run definition -- execute --interactive --resume-at=${point} ${resumeSelectorFlags(selector).join(" ")} ${definitionPath}`.replace(/\s+/g, " ").trim();
+  return `bun run definition -- execute --interactive --resume-at=${point} ${resumeSelectorFlags(selector).join(" ")} ${definitionPath}`.replace(/\s+/g, " ").trim();
 }
 
 function resumeSelectorMatchesPath(selector: ResumeSelector, path: DefinitionRunPath): boolean {
@@ -1003,7 +1003,7 @@ async function teardownRun(inputs: TeardownInputs): Promise<void> {
 
 /**
  * Whether this run is interactive (so we can prompt) or running with default
- * answers (CI). Mirrors how PromptSession decides its mode: the `definition` npm
+ * answers (CI). Mirrors how PromptSession decides its mode: the `definition` bun
  * script and the run-from-definition entrypoint default to non-interactive unless
  * `--interactive` is passed.
  */
@@ -1335,7 +1335,7 @@ export async function runFromDefinition(
             if (!capella.username) {
               throwFatalToCluster(
                 "Situational runs allocate Capella clusters, which needs a Capella username. " +
-                  "Set capella.username in ~/.fit-cli/config.json5 (run `npm run config -- edit`) " +
+                  "Set capella.username in ~/.fit-cli/config.json5 (run `bun run config -- edit`) " +
                   "or provide CAPELLA_USER/CAP_USER in the environment.",
               );
             }
@@ -1505,7 +1505,7 @@ if (isMain(import.meta.url)) {
     const [definitionPath, ...extra] = rest;
     if (!definitionPath || extra.length > 0) {
       console.error(
-        "Primary usage: npm run definition -- execute <file.yaml> [--resume-at=<point>] [--resume-instance=<n>] [--resume-cluster=<n>] [--resume-session=<n>] [--resume-clusterless-session=<n>] [--resume-run=<n>] [--root <dir>]\n" +
+        "Primary usage: bun run definition -- execute <file.yaml> [--resume-at=<point>] [--resume-instance=<n>] [--resume-cluster=<n>] [--resume-session=<n>] [--resume-clusterless-session=<n>] [--resume-run=<n>] [--root <dir>]\n" +
           "Direct:        tsx src/workflows/fit-functional/run-from-definition/run-from-definition.ts <file.yaml> [--resume-at=<point>] [resume selectors]\n" +
           "  --resume-at: after-instance-creation | after-remote-preparation | after-cluster-creation | after-performer",
       );

@@ -7,7 +7,7 @@
     "fit": "./dist/index.js"
   },
   "scripts": {
-    "help": "printf 'Top-level commands:\\n  npm start               — interactive wizard\\n  npm run config          — manage configuration\\n  npm run definition      — run/validate a definition file\\n  npm run cloud-instances — manage cloud instances\\n'",
+    "help": "printf 'Top-level commands:\\n  bun start               — interactive wizard\\n  bun run config          — manage configuration\\n  bun run definition      — run/validate a definition file\\n  bun run cloud-instances — manage cloud instances\\n'",
     "start": "tsx src/fit/main/main.ts",
     "config": "tsx src/fit/config/config.ts",
     "replay": "tsx src/util/non-fit/replay-entry.ts --replay",
