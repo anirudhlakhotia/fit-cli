@@ -20,6 +20,7 @@
   //
   // A null non-secret value means "not yet provided" — selecting that block fails fast.
   // bun run secrets set capella/dev password='<password>'
+  // bun run secrets set results/dev password='<password>'
   capella: {
     dev: {
       endpoint: "https://api.dev.nonprod-project-avengers.com",

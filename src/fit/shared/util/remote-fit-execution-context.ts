@@ -31,6 +31,37 @@ import {
 } from "./remote-fit-run.js";
 import { resolveGerritSshKey } from "../../util/config.js";
 
+const REMOTE_APT_ENV = "DEBIAN_FRONTEND=noninteractive";
+
+export function remoteAptWaitCommand(): string {
+  return [
+    "if command -v cloud-init >/dev/null 2>&1; then sudo -n cloud-init status --wait >/dev/null; fi",
+    "for _ in $(seq 1 60); do",
+    "  if ! pgrep -x apt >/dev/null 2>&1 && ! pgrep -x apt-get >/dev/null 2>&1 && ! pgrep -x dpkg >/dev/null 2>&1 && ! pgrep -f unattended-upgrade >/dev/null 2>&1; then",
+    "    exit 0",
+    "  fi",
+    "  sleep 2",
+    "done",
+    "echo 'Timed out waiting for apt/dpkg activity to finish.' >&2",
+    "pgrep -a -x apt >&2 || true",
+    "pgrep -a -x apt-get >&2 || true",
+    "pgrep -a -x dpkg >&2 || true",
+    "pgrep -a -f unattended-upgrade >&2 || true",
+    "exit 1",
+  ].join("; ");
+}
+
+export function remoteAptCleanupCommand(): string {
+  return [
+    "sudo -n find /var/lib/apt/lists -mindepth 1 -maxdepth 1 ! -name lock -exec rm -rf -- {} +",
+    "sudo -n install -d -m 755 /var/lib/apt/lists/partial",
+  ].join("; ");
+}
+
+export function remoteAptGetCommand(args: string): string {
+  return `sudo -n env ${REMOTE_APT_ENV} apt-get -o DPkg::Lock::Timeout=120 ${args}`;
+}
+
 /**
  * Build a FitExecutionContext that runs against a remote box over SSH. Preparing
  * the box installs the FIT dependencies (git, docker, JDK), wires a passwordless
@@ -54,20 +85,21 @@ export async function createRemoteFitExecutionContext(
     await target.run("mkdir", ["-p", rootDir]);
 
     console.log("\nInstalling the remote FIT dependencies...");
-    // DEBIAN_FRONTEND avoids interactive prompts during package installation.
-    const aptEnv = "DEBIAN_FRONTEND=noninteractive";
     // Clear stale/corrupt apt lists baked into the AMI before updating — a malformed
     // InRelease file causes GPG signature splitting to fail even on a fresh instance.
-    await target.runHiddenUntilFailure("sh", ["-lc", `sudo -n rm -rf /var/lib/apt/lists/*`], undefined, {
-      display: "rm -rf /var/lib/apt/lists/*",
+    await target.runHiddenUntilFailure("sh", ["-lc", remoteAptWaitCommand()], undefined, {
+      display: "wait for cloud-init/apt",
     });
-    await target.runHiddenUntilFailure("sh", ["-lc", `sudo -n ${aptEnv} apt-get update`], undefined, {
+    await target.runHiddenUntilFailure("sh", ["-lc", remoteAptCleanupCommand()], undefined, {
+      display: "clear /var/lib/apt/lists contents",
+    });
+    await target.runHiddenUntilFailure("sh", ["-lc", remoteAptGetCommand("update")], undefined, {
       display: "apt-get update",
     });
     await target.runHiddenUntilFailure("sh", [
       "-lc",
       // JDK 17+ needed for jenkins-sdk ./gradlew
-      `sudo -n ${aptEnv} apt-get install -y git docker.io openjdk-17-jdk-headless lsof`,
+      remoteAptGetCommand("install -y git docker.io openjdk-17-jdk-headless lsof"),
     ], undefined, { display: "apt-get install git docker.io openjdk-17-jdk-headless lsof" });
     // Allow running Docker without sudo
     await target.run("sudo", ["usermod", "-aG", "docker", "ubuntu"]);

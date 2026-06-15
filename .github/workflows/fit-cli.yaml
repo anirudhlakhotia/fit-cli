@@ -82,8 +82,7 @@ jobs:
 
       - name: Run fit-cli
         env:
-#          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
-#          GITHUB_USER: x-access-token
+          # We have to use a PAT rather than a GitHub App token because the latter cannot be granted packages permissions, so cannot obtain e.g. GHRC server images.
           GITHUB_TOKEN: ${{ secrets.FIT_CLI_GITHUB_PAT }}
           GITHUB_USER: ${{ secrets.FIT_CLI_GITHUB_USER }}
         run: |
