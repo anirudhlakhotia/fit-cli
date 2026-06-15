@@ -64,6 +64,7 @@ import {
 } from "../../../cluster/cluster-create/allocate-cluster.js";
 import { runClusterDiag } from "../../../cluster/cluster-diag/cluster-diag.js";
 import { prepareCbdinoclusterInit, removeCluster, setupDeclarativeCluster } from "../../../cluster/cluster-create/setup-declarative-cluster.js";
+import { collectClusterLogs } from "../../../cluster/cluster-cbcollect/cluster-cbcollect.js";
 import { installCbdinoclusterRemote } from "../../../cluster/cluster-create/install-cbdinocluster.js";
 import { defaultCbdinoclusterInitConfig } from "../../../cluster/cluster-create/default-cbdinocluster-init-config.js";
 import {
@@ -366,10 +367,11 @@ export async function setupCluster(
     return { group, artifacts: [], details: [] };
   }
   if (group.cbdinocluster) {
+    const clusterDir = clusterRunDir(group.path.instanceIndex, group.path.clusterIndex ?? 0);
     const outcome = await setupDeclarativeClusterFn(
       { ...group.cbdinocluster, cng: group.cng, githubCredentials },
       execution,
-      clusterRunDir(group.path.instanceIndex, group.path.clusterIndex ?? 0),
+      clusterDir,
     );
     const clusterState: ResumeClusterState | undefined = outcome.cluster
       ? {
@@ -377,6 +379,7 @@ export async function setupCluster(
           allocated: outcome.allocated,
           ...(outcome.clusterId ? { clusterId: outcome.clusterId } : {}),
           ...(outcome.cbdinocluster ? { cbdinoclusterCommand: outcome.cbdinocluster } : {}),
+          logsDir: join(clusterDir, "server-logs"),
         }
       : undefined;
     return {
@@ -838,6 +841,9 @@ async function disposeCycleResources(
       await stopManagedPerformer(execution, performer);
     }
     if (clusterState?.allocated && clusterState.clusterId && clusterState.cbdinoclusterCommand) {
+      if (clusterState.logsDir) {
+        await collectClusterLogs(clusterState.cbdinoclusterCommand, clusterState.clusterId, clusterState.logsDir, execution);
+      }
       await removeCluster(clusterState.cbdinoclusterCommand, clusterState.clusterId, execution);
     }
   }
@@ -981,6 +987,9 @@ async function teardownRun(inputs: TeardownInputs): Promise<void> {
       await stopManagedPerformer(execution, performer);
     }
     if (clusterState?.allocated && clusterState.clusterId && clusterState.cbdinoclusterCommand) {
+      if (clusterState.logsDir) {
+        await collectClusterLogs(clusterState.cbdinoclusterCommand, clusterState.clusterId, clusterState.logsDir, execution);
+      }
       await removeCluster(clusterState.cbdinoclusterCommand, clusterState.clusterId, execution);
     }
   }

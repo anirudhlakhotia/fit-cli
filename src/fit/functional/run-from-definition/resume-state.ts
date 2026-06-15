@@ -39,6 +39,8 @@ export interface ResumeClusterState {
   clusterId?: string;
   /** The cbdinocluster command (path) on the target, for teardown removal. */
   cbdinoclusterCommand?: string;
+  /** The cluster's artifacts dir, where cbcollect diagnostics are gathered before removal. */
+  logsDir?: string;
 }
 
 /** A performer a previous run left running, per run. */
