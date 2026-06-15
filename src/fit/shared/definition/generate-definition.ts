@@ -134,6 +134,11 @@ function buildCbdinoclusterFitConfig(cng: boolean): FitConfigPiece {
         hostname: "host.docker.internal",
       },
     },
+    bucketConfig: {
+      numReplicas: 1,
+      bucketType: "couchbase",
+      storage: "couchstore",
+    },
     excludeTests: ["situational"],
   };
 }
@@ -402,6 +407,8 @@ function commentLinesFor(key: string, value: unknown, parentKey: string | undefi
       return parentKey === "init"
         ? ["Merged onto ~/.cbdinocluster after `cbdinocluster init` runs — for config init can't set via flags (e.g. capella/aws)."]
         : [];
+    case "bucketConfig":
+      return ["numReplicas >= 1 is required for FTS tests to pass."];
     case "fitConfigs":
       return [
         "Each fitConfig is used as a base when generating FITConfiguration.json.  Anything here will be copied into the config (unless overwritten by fit-cli).",
