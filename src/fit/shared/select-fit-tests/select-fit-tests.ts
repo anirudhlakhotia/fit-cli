@@ -38,6 +38,8 @@ export interface FitTestSelection {
   presets?: DeferredTestPreset[];
   /** Explicit class names to union in after `presets` expand (deferred path only). */
   extraClasses?: string[];
+  /** Package names chosen via the "Run tests in a package" picker; serialised as `packages:` in definition files. */
+  selectedPackages?: string[];
 }
 
 /** Presets whose expansion depends on the listed tests, so it's deferred to run time. */
@@ -417,6 +419,7 @@ async function selectByPackage(tests: FitTestCase[], promptIdPrefix?: string): P
   return {
     allTests: tests,
     selectedTests,
+    selectedPackages,
     mavenTestSelector: selectedTests.map((t) => t.className).join(",") || undefined,
   };
 }

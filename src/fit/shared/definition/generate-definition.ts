@@ -175,6 +175,9 @@ function buildTests(selection: FitTestSelection): TestsSection {
       ...(selection.extraClasses?.length ? { classes: selection.extraClasses } : {}),
     };
   }
+  if (selection.selectedPackages?.length) {
+    return { packages: selection.selectedPackages };
+  }
   if (selection.mavenTestSelector) {
     return { classes: selection.selectedTests.map((test) => test.className) };
   }
