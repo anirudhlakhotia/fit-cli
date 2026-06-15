@@ -1,24 +1,56 @@
 /**
- * upload-directory — copy a local directory tree to S3, recursively. Thin
- * plumbing over `aws s3 cp --recursive`: it uses only PutObject (no bucket
- * listing, unlike `aws s3 sync`), so a write-only role is enough. Like the rest
- * of this directory it knows nothing about FIT — callers pick the bucket/key.
+ * upload-directory — copy a local directory tree to S3, recursively. Uses
+ * PutObject per file (no bucket listing, unlike s3 sync), so a write-only role
+ * is enough. Like the rest of this directory it knows nothing about FIT —
+ * callers pick the bucket/key.
  *
  * Run on its own:
  *   npx tsx src/cloud/util/aws/upload-directory.ts ./local s3://my-bucket/prefix
  */
+import { createReadStream, readdirSync } from "node:fs";
+import { join, relative } from "node:path";
+import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
-import { runHiddenUntilFailure } from "../../../util/non-fit/proc.js";
 import { prepareAwsCli } from "./aws-cli.js";
-import { AWS_REGION } from "./aws-target.js";
+import { s3Client } from "./aws-clients.js";
+
+function* walkDir(dir: string): Generator<string> {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      yield* walkDir(full);
+    } else {
+      yield full;
+    }
+  }
+}
+
+function parseS3Uri(uri: string): { bucket: string; prefix: string } {
+  const match = uri.match(/^s3:\/\/([^/]+)\/?(.*)$/);
+  if (!match) {
+    throw new Error(`Invalid S3 URI: ${uri}`);
+  }
+  return { bucket: match[1], prefix: match[2] ?? "" };
+}
 
 /**
- * Recursively upload `localDir` to `s3Uri` (e.g. s3://bucket/prefix). Hides the
- * aws CLI's noisy progress output and only surfaces it on failure. Rejects if the
- * upload fails.
+ * Recursively upload `localDir` to `s3Uri` (e.g. s3://bucket/prefix). Logs
+ * each uploaded file. Rejects if any upload fails.
  */
 export async function uploadDirectoryToS3(localDir: string, s3Uri: string): Promise<void> {
-  await runHiddenUntilFailure("aws", ["s3", "cp", localDir, s3Uri, "--recursive", "--region", AWS_REGION], process.cwd(), { quiet: true });
+  const { bucket, prefix } = parseS3Uri(s3Uri);
+  const files = [...walkDir(localDir)];
+  console.log(`Uploading ${files.length} file(s) to ${s3Uri}...`);
+  for (const file of files) {
+    const relPath = relative(localDir, file).replace(/\\/g, "/");
+    const key = prefix ? `${prefix}/${relPath}` : relPath;
+    await s3Client.send(new PutObjectCommand({
+      Bucket: bucket,
+      Key: key,
+      Body: createReadStream(file),
+    }));
+    console.log(`  ${relPath}`);
+  }
 }
 
 if (isMain(import.meta.url)) {

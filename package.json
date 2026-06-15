@@ -25,7 +25,13 @@
     "bun": ">=1.0"
   },
   "dependencies": {
+    "@aws-sdk/client-ec2": "^3.1069.0",
+    "@aws-sdk/client-s3": "^3.1069.0",
     "@aws-sdk/client-secrets-manager": "^3.1068.0",
+    "@aws-sdk/client-ssm": "^3.1069.0",
+    "@aws-sdk/client-sts": "^3.1069.0",
+    "@aws-sdk/credential-providers": "^3.1069.0",
+    "@aws-sdk/lib-storage": "^3.1069.0",
     "@inquirer/prompts": "^7.2.0",
     "json5": "^2.2.3",
     "xunit-viewer": "^10.6.1",

@@ -12,9 +12,16 @@
  *   npx tsx src/cloud/util/aws/security-group.ts --name fit-cli --ports 22 [--vpc vpc-0123]
  *   npx tsx src/cloud/util/aws/security-group.ts --delete sg-0123456789abcdef0
  */
+import {
+  AuthorizeSecurityGroupIngressCommand,
+  CreateSecurityGroupCommand,
+  DeleteSecurityGroupCommand,
+  DescribeSecurityGroupsCommand,
+} from "@aws-sdk/client-ec2";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
-import { awsJson, logAwsAction, prepareAwsCli } from "./aws-cli.js";
-import { parseSecurityGroupId, type DescribeSecurityGroupsResponse } from "./parse-security-group.js";
+import { logAwsAction, prepareAwsCli } from "./aws-cli.js";
+import { ec2Client } from "./aws-clients.js";
+import { parseSecurityGroupId } from "./parse-security-group.js";
 
 /** What to ensure about a security group. */
 export interface SecurityGroupSpec {
@@ -28,66 +35,31 @@ export interface SecurityGroupSpec {
   vpcId?: string;
 }
 
-/**
- * Build the describe-security-groups filters for a name (optionally scoped to a
- * VPC). Pure so the vpc-id scoping can be unit tested.
- */
-export function securityGroupFilters(name: string, vpcId?: string): string[] {
-  const filters = [`Name=group-name,Values=${name}`];
-  if (vpcId) {
-    filters.push(`Name=vpc-id,Values=${vpcId}`);
-  }
-  return filters;
-}
-
-/**
- * Build the `aws ec2 create-security-group` argument list. Pure so the optional
- * `--vpc-id` can be unit tested.
- */
-export function createSecurityGroupArgs(spec: SecurityGroupSpec): string[] {
-  const args = [
-    "ec2",
-    "create-security-group",
-    "--group-name",
-    spec.name,
-    "--description",
-    spec.description ?? spec.name,
-  ];
-  if (spec.vpcId) {
-    args.push("--vpc-id", spec.vpcId);
-  }
-  return args;
-}
-
 /** Find the id of an existing security group by name, or null if there isn't one. */
 async function findSecurityGroup(name: string, vpcId?: string): Promise<string | null> {
-  const response = await awsJson<DescribeSecurityGroupsResponse>([
-    "ec2",
-    "describe-security-groups",
-    "--filters",
-    ...securityGroupFilters(name, vpcId),
-  ]);
+  const filters = [{ Name: "group-name", Values: [name] }];
+  if (vpcId) {
+    filters.push({ Name: "vpc-id", Values: [vpcId] });
+  }
+  const response = await ec2Client.send(new DescribeSecurityGroupsCommand({ Filters: filters }));
   return parseSecurityGroupId(response);
 }
 
 /** Open one inbound TCP port to 0.0.0.0/0, ignoring an already-present rule. */
 async function authorizeIngress(groupId: string, port: number): Promise<void> {
   try {
-    await awsJson([
-      "ec2",
-      "authorize-security-group-ingress",
-      "--group-id",
-      groupId,
-      "--protocol",
-      "tcp",
-      "--port",
-      String(port),
-      "--cidr",
-      "0.0.0.0/0",
-    ]);
+    await ec2Client.send(new AuthorizeSecurityGroupIngressCommand({
+      GroupId: groupId,
+      IpPermissions: [{
+        IpProtocol: "tcp",
+        FromPort: port,
+        ToPort: port,
+        IpRanges: [{ CidrIp: "0.0.0.0/0" }],
+      }],
+    }));
   } catch (err) {
     // The rule already existing is exactly the state we want — anything else is real.
-    if (!(err instanceof Error && err.message.includes("InvalidPermission.Duplicate"))) {
+    if (!(err instanceof Error && err.name === "InvalidPermission.Duplicate")) {
       throw err;
     }
   }
@@ -101,8 +73,12 @@ async function authorizeIngress(groupId: string, port: number): Promise<void> {
 export async function ensureSecurityGroup(spec: SecurityGroupSpec): Promise<string> {
   let groupId = await findSecurityGroup(spec.name, spec.vpcId);
   if (!groupId) {
-    const created = await awsJson<{ GroupId: string }>(createSecurityGroupArgs(spec));
-    groupId = created.GroupId;
+    const created = await ec2Client.send(new CreateSecurityGroupCommand({
+      GroupName: spec.name,
+      Description: spec.description ?? spec.name,
+      ...(spec.vpcId ? { VpcId: spec.vpcId } : {}),
+    }));
+    groupId = created.GroupId ?? "";
   }
   for (const port of spec.ingressPorts) {
     await authorizeIngress(groupId, port);
@@ -112,7 +88,7 @@ export async function ensureSecurityGroup(spec: SecurityGroupSpec): Promise<stri
 
 /** Delete a security group by id. */
 export async function deleteSecurityGroup(groupId: string): Promise<void> {
-  await awsJson(["ec2", "delete-security-group", "--group-id", groupId]);
+  await ec2Client.send(new DeleteSecurityGroupCommand({ GroupId: groupId }));
 }
 
 if (isMain(import.meta.url)) {

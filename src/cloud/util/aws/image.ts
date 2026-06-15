@@ -12,8 +12,11 @@
  * Run on its own:
  *   npx tsx src/cloud/util/aws/image.ts
  */
+import { DescribeImagesCommand } from "@aws-sdk/client-ec2";
+import { GetParametersCommand } from "@aws-sdk/client-ssm";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
-import { awsJson, logAwsAction, prepareAwsCli } from "./aws-cli.js";
+import { logAwsAction, prepareAwsCli } from "./aws-cli.js";
+import { ec2Client, ssmClient } from "./aws-clients.js";
 
 /** Canonical's AWS account id — the trusted owner of official Ubuntu images. */
 export const CANONICAL_OWNER_ID = "099720109477";
@@ -49,19 +52,21 @@ export function pickLatestImageId(images: readonly AmiImage[]): string | null {
  */
 export async function findUbuntuAmi(): Promise<string> {
   try {
-    const response = await awsJson<{ Images?: AmiImage[] }>(
-      [
-        "ec2",
-        "describe-images",
-        "--owners",
-        CANONICAL_OWNER_ID,
-        "--filters",
-        `Name=name,Values=${UBUNTU_2204_NAME_PATTERN}`,
-        "Name=state,Values=available",
-        "Name=architecture,Values=x86_64",
+    const response = await ec2Client.send(new DescribeImagesCommand({
+      Owners: [CANONICAL_OWNER_ID],
+      Filters: [
+        { Name: "name", Values: [UBUNTU_2204_NAME_PATTERN] },
+        { Name: "state", Values: ["available"] },
+        { Name: "architecture", Values: ["x86_64"] },
       ],
+    }));
+    const ami = pickLatestImageId(
+      (response.Images ?? []).map((img) => ({
+        ImageId: img.ImageId ?? "",
+        CreationDate: img.CreationDate,
+        Name: img.Name,
+      })),
     );
-    const ami = pickLatestImageId(response.Images ?? []);
     if (!ami) {
       throw new Error("No Ubuntu 22.04 amd64 AMI found — check the region and your account permissions.");
     }
@@ -72,9 +77,7 @@ export async function findUbuntuAmi(): Promise<string> {
     // even when ec2:DescribeImages is not allowed.
     try {
       const ssmPath = "/aws/service/canonical/ubuntu/server/22.04/stable/current/amd64/hvm/ebs-gp2/ami-id";
-      const result = await awsJson<{ Parameters?: { Value?: string }[]; InvalidParameters?: string[] }>(
-        ["ssm", "get-parameters", "--names", ssmPath],
-      );
+      const result = await ssmClient.send(new GetParametersCommand({ Names: [ssmPath] }));
       const amiId = result.Parameters?.[0]?.Value;
       if (!amiId) {
         throw new Error(`SSM parameter ${ssmPath} returned no value.`, { cause: describeErr });

@@ -1,7 +1,7 @@
 /**
  * list-instances — find non-terminated EC2 instances, either by a tag (default
  * the fit-cli ownership tag, so you can see boxes left running) or by the key
- * pair they were launched with. Pure plumbing over the aws CLI; the JSON shaping
+ * pair they were launched with. Pure plumbing over the EC2 SDK; the JSON shaping
  * lives in parse-instance.ts.
  *
  * Run on its own:
@@ -9,12 +9,14 @@
  *   npx tsx src/cloud/util/aws/list-instances.ts --tag env=ci
  *   npx tsx src/cloud/util/aws/list-instances.ts --key fit-cli-abc123
  */
+import { DescribeInstancesCommand } from "@aws-sdk/client-ec2";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
-import { awsJson, logAwsAction, prepareAwsCli } from "./aws-cli.js";
-import { parseInstances, type DescribeInstancesResponse, type InstanceInfo } from "./parse-instance.js";
+import { logAwsAction, prepareAwsCli } from "./aws-cli.js";
+import { ec2Client } from "./aws-clients.js";
+import { parseInstances, type InstanceInfo } from "./parse-instance.js";
 
 /** Instance states worth listing — everything except terminated. */
-export const LIVE_STATES = "pending,running,stopping,stopped";
+export const LIVE_STATES = ["pending", "running", "stopping", "stopped"];
 
 /**
  * List instances carrying a given tag (default the fit-cli ownership tag),
@@ -23,15 +25,12 @@ export const LIVE_STATES = "pending,running,stopping,stopped";
 export async function listInstances(
   tag: { key: string; value: string } = { key: "fit-cli", value: "owned" },
 ): Promise<InstanceInfo[]> {
-  const response = await awsJson<DescribeInstancesResponse>(
-    [
-      "ec2",
-      "describe-instances",
-      "--filters",
-      `Name=tag:${tag.key},Values=${tag.value}`,
-      `Name=instance-state-name,Values=${LIVE_STATES}`,
+  const response = await ec2Client.send(new DescribeInstancesCommand({
+    Filters: [
+      { Name: `tag:${tag.key}`, Values: [tag.value] },
+      { Name: "instance-state-name", Values: LIVE_STATES },
     ],
-  );
+  }));
   return parseInstances(response);
 }
 
@@ -42,15 +41,12 @@ export async function listInstances(
  * captured the instance id.
  */
 export async function findInstancesByKeyName(keyName: string): Promise<InstanceInfo[]> {
-  const response = await awsJson<DescribeInstancesResponse>(
-    [
-      "ec2",
-      "describe-instances",
-      "--filters",
-      `Name=key-name,Values=${keyName}`,
-      `Name=instance-state-name,Values=${LIVE_STATES}`,
+  const response = await ec2Client.send(new DescribeInstancesCommand({
+    Filters: [
+      { Name: "key-name", Values: [keyName] },
+      { Name: "instance-state-name", Values: LIVE_STATES },
     ],
-  );
+  }));
   return parseInstances(response);
 }
 

@@ -10,8 +10,10 @@
  */
 import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { CreateKeyPairCommand, DeleteKeyPairCommand } from "@aws-sdk/client-ec2";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
-import { awsText, logAwsAction, prepareAwsCli } from "./aws-cli.js";
+import { logAwsAction, prepareAwsCli } from "./aws-cli.js";
+import { ec2Client } from "./aws-clients.js";
 
 /**
  * Create an EC2 key pair named `name` and write its private key to `outPath`
@@ -19,9 +21,8 @@ import { awsText, logAwsAction, prepareAwsCli } from "./aws-cli.js";
  * so this is the one chance to save it.
  */
 export async function createKeyPair(name: string, outPath: string): Promise<string> {
-  const keyMaterial = await awsText(
-    ["ec2", "create-key-pair", "--key-name", name, "--query", "KeyMaterial"],
-  );
+  const response = await ec2Client.send(new CreateKeyPairCommand({ KeyName: name }));
+  const keyMaterial = response.KeyMaterial ?? "";
   mkdirSync(dirname(outPath), { recursive: true, mode: 0o700 });
   writeFileSync(outPath, `${keyMaterial}\n`, { mode: 0o600 });
   chmodSync(outPath, 0o600);
@@ -33,7 +34,7 @@ export async function createKeyPair(name: string, outPath: string): Promise<stri
  * a key pair that doesn't exist is a no-op as far as EC2 is concerned.
  */
 export async function deleteKeyPair(name: string): Promise<void> {
-  await awsText(["ec2", "delete-key-pair", "--key-name", name]);
+  await ec2Client.send(new DeleteKeyPairCommand({ KeyName: name }));
 }
 
 if (isMain(import.meta.url)) {

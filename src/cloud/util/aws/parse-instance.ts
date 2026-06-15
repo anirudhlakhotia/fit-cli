@@ -3,11 +3,11 @@
  * the fields we use. Pure logic, separated from the IO in instance.ts so it can
  * be unit tested (see tests/parse-instance.test.ts).
  *
- * It handles both shapes the aws CLI returns, because they differ:
- *   describe-instances nests instances inside reservations:
- *     { "Reservations": [ { "Instances": [ { "InstanceId": ..., ... } ] } ] }
- *   run-instances returns the launched instances at the top level:
- *     { "Instances": [ { "InstanceId": ..., ... } ] }
+ * It handles both shapes the SDK returns, because they differ:
+ *   DescribeInstances nests instances inside reservations:
+ *     { Reservations: [ { Instances: [ { InstanceId: ..., ... } ] } ] }
+ *   RunInstances returns the launched instances at the top level:
+ *     { Instances: [ { InstanceId: ..., ... } ] }
  */
 
 /** The bits of an EC2 instance we care about. */
@@ -36,7 +36,7 @@ interface RawInstance {
   PublicDnsName?: string;
   PublicIpAddress?: string;
   InstanceType?: string;
-  LaunchTime?: string;
+  LaunchTime?: string | Date;
   Tags?: Array<{ Key?: string; Value?: string }>;
 }
 
@@ -75,7 +75,7 @@ export function parseInstances(response: DescribeInstancesResponse): InstanceInf
       publicIp: instance.PublicIpAddress || undefined,
       ...(tag("Name") ? { name: tag("Name") } : {}),
       ...(instance.InstanceType ? { instanceType: instance.InstanceType } : {}),
-      ...(instance.LaunchTime ? { launchTime: instance.LaunchTime } : {}),
+      ...(instance.LaunchTime ? { launchTime: instance.LaunchTime instanceof Date ? instance.LaunchTime.toISOString() : instance.LaunchTime } : {}),
       ...(tag("created-by") ? { creator: tag("created-by") } : {}),
     });
   }

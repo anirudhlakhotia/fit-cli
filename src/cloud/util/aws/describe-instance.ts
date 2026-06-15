@@ -1,20 +1,20 @@
 /**
  * describe-instance — look up a single EC2 instance by id, returning the fields
  * we use (state, public address) or null if it isn't found. Pure plumbing over
- * the aws CLI; the JSON shaping lives in parse-instance.ts.
+ * the EC2 SDK; the JSON shaping lives in parse-instance.ts.
  *
  * Run on its own:
  *   npx tsx src/cloud/util/aws/describe-instance.ts --id i-0123456789abcdef0
  */
+import { DescribeInstancesCommand } from "@aws-sdk/client-ec2";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
-import { awsJson, logAwsAction, prepareAwsCli } from "./aws-cli.js";
-import { parseInstances, type DescribeInstancesResponse, type InstanceInfo } from "./parse-instance.js";
+import { logAwsAction, prepareAwsCli } from "./aws-cli.js";
+import { ec2Client } from "./aws-clients.js";
+import { parseInstances, type InstanceInfo } from "./parse-instance.js";
 
 /** Describe a single instance, or null if it isn't found. */
 export async function describeInstance(instanceId: string): Promise<InstanceInfo | null> {
-  const response = await awsJson<DescribeInstancesResponse>(
-    ["ec2", "describe-instances", "--instance-ids", instanceId],
-  );
+  const response = await ec2Client.send(new DescribeInstancesCommand({ InstanceIds: [instanceId] }));
   return parseInstances(response)[0] ?? null;
 }
 

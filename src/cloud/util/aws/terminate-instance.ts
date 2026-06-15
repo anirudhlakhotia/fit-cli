@@ -1,17 +1,19 @@
 /**
  * terminate-instance — terminate an EC2 instance by id. Pure plumbing over the
- * aws CLI. Terminating an already-terminated instance is a no-op as far as EC2
+ * EC2 SDK. Terminating an already-terminated instance is a no-op as far as EC2
  * is concerned, so this is safe to call in cleanup paths.
  *
  * Run on its own:
  *   npx tsx src/cloud/util/aws/terminate-instance.ts --id i-0123456789abcdef0
  */
+import { TerminateInstancesCommand } from "@aws-sdk/client-ec2";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
-import { awsJson, logAwsAction, prepareAwsCli } from "./aws-cli.js";
+import { logAwsAction, prepareAwsCli } from "./aws-cli.js";
+import { ec2Client } from "./aws-clients.js";
 
 /** Terminate an instance by id. */
 export async function terminateInstance(instanceId: string): Promise<void> {
-  await awsJson(["ec2", "terminate-instances", "--instance-ids", instanceId]);
+  await ec2Client.send(new TerminateInstancesCommand({ InstanceIds: [instanceId] }));
 }
 
 if (isMain(import.meta.url)) {

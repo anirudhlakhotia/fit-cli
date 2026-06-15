@@ -1,17 +1,19 @@
 /**
- * identity — check that AWS credentials are present and working, by asking who
- * we are with `aws sts get-caller-identity`. This is the preflight the EC2
- * workflow runs before trying to launch anything, so a missing/expired key
- * fails early with a clear message rather than midway through provisioning.
+ * identity — check that AWS credentials are present and working. This is the
+ * preflight the EC2 workflow runs before trying to launch anything, so a
+ * missing/expired key fails early with a clear message rather than midway
+ * through provisioning.
  *
  * Run on its own:
  *   npx tsx src/cloud/util/aws/identity.ts
  *
  * Prints the caller identity, or the reason it couldn't be determined (exit 1).
  */
+import { GetCallerIdentityCommand } from "@aws-sdk/client-sts";
+import { fromNodeProviderChain } from "@aws-sdk/credential-providers";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
-import { capture } from "../../../util/non-fit/proc.js";
-import { awsJson, ensureAwsCli, logAwsAction, prepareAwsCli } from "./aws-cli.js";
+import { logAwsAction, prepareAwsCli } from "./aws-cli.js";
+import { stsClient } from "./aws-clients.js";
 
 /** Who the current credentials belong to. */
 export interface CallerIdentity {
@@ -28,18 +30,20 @@ export type CredentialsCheck =
 /**
  * Resolve the current AWS caller identity, or a failure with a human-readable
  * reason. Returns `ok: false` (rather than throwing) for the expected cases —
- * the aws CLI not being installed, or credentials being absent/invalid — so the
- * workflow can report and offer the local path instead.
+ * credentials being absent or invalid — so the workflow can report and offer
+ * the local path instead.
  */
 export async function checkCredentials(): Promise<CredentialsCheck> {
-  if (!ensureAwsCli()) {
-    return { ok: false, message: "The AWS CLI is not installed." };
-  }
   try {
-    const raw = await awsJson<{ Account: string; Arn: string; UserId: string }>(
-      ["sts", "get-caller-identity"],
-    );
-    return { ok: true, identity: { account: raw.Account, arn: raw.Arn, userId: raw.UserId } };
+    const response = await stsClient.send(new GetCallerIdentityCommand({}));
+    return {
+      ok: true,
+      identity: {
+        account: response.Account ?? "",
+        arn: response.Arn ?? "",
+        userId: response.UserId ?? "",
+      },
+    };
   } catch (err) {
     return { ok: false, message: err instanceof Error ? err.message : String(err) };
   }
@@ -58,7 +62,7 @@ export interface AwsCredentials {
  * on success, or an error-message string on failure.
  *
  * Prefers explicit env vars (fastest, covers CI / STS / assumed-role sessions);
- * falls back to `aws configure get` for profile-based credentials.
+ * falls back to the SDK credential provider chain for profile-based credentials.
  */
 export async function resolveAwsCredentials(
   env: NodeJS.ProcessEnv = process.env,
@@ -82,26 +86,20 @@ export async function resolveAwsCredentials(
     return { accessKeyId, secretAccessKey, ...(sessionToken ? { sessionToken } : {}) };
   }
 
-  // Fall back to `aws configure get` for profile-based credentials (~/.aws/credentials).
+  // Fall back to the SDK credential provider chain for profile-based credentials.
   try {
-    const keyId = (await capture("aws", ["configure", "get", "aws_access_key_id"])).trim();
-    const secret = (await capture("aws", ["configure", "get", "aws_secret_access_key"])).trim();
-    if (!keyId || !secret) {
+    const creds = await fromNodeProviderChain()();
+    if (!creds.accessKeyId || !creds.secretAccessKey) {
       return (
         "AWS credentials were validated but their raw values could not be read. " +
         "Please export AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY explicitly."
       );
     }
-    let sessionToken: string | undefined;
-    try {
-      const raw = (await capture("aws", ["configure", "get", "aws_session_token"])).trim();
-      if (raw) {
-        sessionToken = raw;
-      }
-    } catch {
-      // Session token is optional; ignore if absent.
-    }
-    return { accessKeyId: keyId, secretAccessKey: secret, ...(sessionToken ? { sessionToken } : {}) };
+    return {
+      accessKeyId: creds.accessKeyId,
+      secretAccessKey: creds.secretAccessKey,
+      ...(creds.sessionToken ? { sessionToken: creds.sessionToken } : {}),
+    };
   } catch (err) {
     return (
       "AWS credentials were validated but could not be read for forwarding. " +
@@ -114,7 +112,7 @@ export async function resolveAwsCredentials(
 if (isMain(import.meta.url)) {
   runCli(async () => {
     await prepareAwsCli();
-    logAwsAction("Checking AWS credentials", { operation: "sts get-caller-identity" });
+    logAwsAction("Checking AWS credentials", { operation: "sts:GetCallerIdentity" });
     const result = await checkCredentials();
     if (!result.ok) {
       console.error(`✗ ${result.message}`);
