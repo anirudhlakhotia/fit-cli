@@ -16,7 +16,9 @@ import JSON5 from "json5";
 export interface CapellaEnvironment {
   endpoint?: string | null;
   oid?: string | null;
-  /** AWS Secrets Manager id/ARN holding { username, password } for this Capella environment. */
+  /** The (shared, non-secret) Capella account username for this environment. */
+  username?: string | null;
+  /** AWS Secrets Manager id/ARN holding { password } for this Capella environment. */
   secretId?: string | null;
 }
 

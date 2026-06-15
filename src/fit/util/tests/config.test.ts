@@ -121,7 +121,7 @@ test("resolveGithubToken falls back to GITHUB_TOKEN then GH_TOKEN", () => {
 });
 
 const TEST_ENVIRONMENTS = {
-  capella: { dev: { endpoint: "https://dev.example", oid: "oid-dev", secretId: "cap/dev" } },
+  capella: { dev: { endpoint: "https://dev.example", oid: "oid-dev", username: "sdk_qe@couchbase.com", secretId: "cap/dev" } },
   results: { dev: { host: "dev.db.example", secretId: "res/dev" } },
 };
 const noFetch = (): Promise<Record<string, string>> => Promise.reject(new Error("should not fetch the AWS secret"));
@@ -203,16 +203,28 @@ test("resolveCapellaConfig prefers CAPELLA_*/CAP_* env over the shared account",
   assert.equal(resolved.endpoint, "https://dev.example");
 });
 
-test("resolveCapellaConfig falls back to the shared AWS service account when no personal creds", async () => {
+test("resolveCapellaConfig uses the shared registry username + the secret's password when no personal creds", async () => {
   const resolved = await resolveCapellaConfig({
     block: "dev",
     environments: TEST_ENVIRONMENTS,
     config: { version: FIT_CLI_CONFIG_VERSION },
     env: {},
-    fetchSecret: () => Promise.resolve({ username: "svc-account", password: "svc-pw" }),
+    fetchSecret: () => Promise.resolve({ password: "svc-pw" }),
   });
-  assert.equal(resolved.username, "svc-account");
+  assert.equal(resolved.username, "sdk_qe@couchbase.com"); // from environments.json5, not the secret
   assert.equal(resolved.password, "svc-pw");
+});
+
+test("resolveCapellaConfig keeps the registry username even when a personal password is set", async () => {
+  const resolved = await resolveCapellaConfig({
+    block: "dev",
+    environments: TEST_ENVIRONMENTS,
+    config: { version: FIT_CLI_CONFIG_VERSION, capella: { password: "my-pw" } },
+    env: {},
+    fetchSecret: noFetch,
+  });
+  assert.equal(resolved.username, "sdk_qe@couchbase.com");
+  assert.equal(resolved.password, "my-pw");
 });
 
 test("resolveCapellaConfig throws for an unprovisioned environment", async () => {

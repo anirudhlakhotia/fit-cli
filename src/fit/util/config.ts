@@ -508,11 +508,12 @@ function firstEnv(env: NodeJS.ProcessEnv, names: string[]): string | undefined {
  * Resolve the Capella control-plane settings for a Capella environment (a key
  * under `capella` in environments.json5; default "dev").
  *
- * endpoint/organizationId are the non-secret registry values. Credentials prefer
- * your PERSONAL account (capella.* in config, or the CAPELLA_ / CAP_ env vars) so
- * local runs deploy as you; with none configured they fall back to the shared
- * per-env service account in AWS Secrets Manager (and warn). Throws when the
- * environment is unknown/unprovisioned or no credentials can be resolved.
+ * endpoint/organizationId/username are the non-secret registry values (username is
+ * the shared account for the environment). Only the password is a secret: a personal
+ * one (capella.password in config, or CAPELLA_PASS / CAP_PASS) takes precedence, else
+ * we fall back to the shared account password in AWS Secrets Manager (and warn). A
+ * personal username can still be set to override the shared one. Throws when the
+ * environment is unknown/unprovisioned or no password can be resolved.
  */
 export async function resolveCapellaConfig(
   options: {
@@ -544,26 +545,27 @@ export async function resolveCapellaConfig(
   }
 
   const c = config?.capella;
-  let username = c?.username ?? firstEnv(env, ["CAPELLA_USER", "CAP_USER"]);
+  // Username is the shared, non-secret account from the registry, overridable by personal config/env.
+  let username = c?.username ?? firstEnv(env, ["CAPELLA_USER", "CAP_USER"]) ?? entry.username?.trim();
+  // Password: personal first, else the shared account password from the secret.
   let password = c?.password ?? firstEnv(env, ["CAPELLA_PASS", "CAP_PASS"]);
-  if (!username || !password) {
+  if (!password) {
     if (!entry.secretId) {
       throw new InvalidFitCliConfigError(
-        `Capella environment "${block}" has no secretId in environments.json5 and no personal credentials are configured.`,
+        `Capella environment "${block}" has no secretId in environments.json5 and no personal password is configured.`,
       );
     }
     console.warn(
-      `⚠ No personal Capella credentials configured — using the shared "${block}" service account from AWS Secrets Manager.\n` +
-        `  Run \`bun run config -- edit\` (or set CAPELLA_USER/CAPELLA_PASS) to deploy under your own account.`,
+      `⚠ No personal Capella password configured — using the shared "${block}" account password from AWS Secrets Manager.\n` +
+        `  Set CAPELLA_PASS (or run \`bun run config -- edit\`) to use your own.`,
     );
     const secret = await fetchSecret(entry.secretId);
-    username = username || secret.username?.trim();
-    password = password || secret.password?.trim();
+    password = secret.password?.trim();
+    username = username ?? secret.username?.trim();
   }
   if (!username || !password) {
-    throw new InvalidFitCliConfigError(
-      `Could not resolve Capella credentials for "${block}": no personal credentials, and the AWS secret is missing username/password.`,
-    );
+    const missing = [!username && "username", !password && "password"].filter(Boolean).join(", ");
+    throw new InvalidFitCliConfigError(`Could not resolve Capella ${missing} for "${block}".`);
   }
   return { username, endpoint, organizationId, password };
 }
