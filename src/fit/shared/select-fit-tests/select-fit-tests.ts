@@ -363,7 +363,7 @@ async function askFitTestRunMode(domain: FitTestDomain, promptIdPrefix?: string)
           ]
         : []),
       ...(domain.showStandardQePreset
-        ? [{ name: "Standard QE Set", value: "standard-qe" as FitTestRunMode }]
+        ? [{ name: "Standard QE set", value: "standard-qe" as FitTestRunMode }]
         : []),
       { name: "Run a single test", value: "single" },
       {
