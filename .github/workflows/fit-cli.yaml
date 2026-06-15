@@ -24,6 +24,18 @@ on:
         options:
           - capella-env-dev
 #          - capella-env-stage
+  # Allow other repos to call this workflow with `uses: couchbaselabs/fit-cli/.github/workflows/fit-cli.yaml@main`.
+  # Inputs mirror workflow_dispatch above; note workflow_call does not support `type: choice`, so capellaEnvironment is a string here.
+  workflow_call:
+    inputs:
+      definitionFile:
+        description: A fit-cli definition file e.g. "https://gist.githubusercontent.com/programmatix/<gist-id>/raw" or "examples/fit-functional-sanity-test.json5" (local to fit-cli). Use gist.githubusercontent.com/…/raw, not gist.github.com. To generate one, clone the fit-cli project and follow the README.
+        type: string
+        default: examples/fit-functional-sanity-test.json5
+      capellaEnvironment:
+        description: Used for FIT/SIT testing against Capella (one of the configured Capella environments, e.g. capella-env-dev)
+        type: string
+        default: capella-env-dev
 
 permissions:
   id-token: write   # required for GitHub OIDC
