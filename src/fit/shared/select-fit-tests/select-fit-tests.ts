@@ -98,6 +98,8 @@ export interface FitTestDomain {
   sanitySelector: string;
   /** Whether to offer "All transactions tests" / "All non-transactions tests" options. */
   showTransactionOptions?: boolean;
+  /** Whether to offer the Standard QE Set preset (CbDinoRebalanceTest, non-PL). */
+  showStandardQePreset?: boolean;
 }
 
 /** The functional flow: everything except the situational package. */
@@ -111,7 +113,11 @@ export const FUNCTIONAL_TEST_DOMAIN: FitTestDomain = {
 export const SITUATIONAL_TEST_DOMAIN: FitTestDomain = {
   includePrefix: SITUATIONAL_TEST_PATH_PREFIX,
   sanitySelector: "com.couchbase.situational.tests.VolumeTest#steadyStateKvGets",
+  showStandardQePreset: true,
 };
+
+/** Fully-qualified class name for the Standard QE Set's rebalance test. */
+export const STANDARD_QE_REBALANCE_CLASS = "com.couchbase.situational.tests.CbDinoRebalanceTest";
 
 const TEST_LISTING_ARGS = [
   "-q",
@@ -340,7 +346,7 @@ export function deserializeSelectedFitTestsFromReplay(
   return response;
 }
 
-type FitTestRunMode = "all" | "all-transactions" | "all-non-transactions" | "single" | "multiple" | "package" | "sanity";
+type FitTestRunMode = "all" | "all-transactions" | "all-non-transactions" | "standard-qe" | "single" | "multiple" | "package" | "sanity";
 
 /** Ask whether to run everything, a single searchable test, a sanity test, or a chosen subset. */
 async function askFitTestRunMode(domain: FitTestDomain, promptIdPrefix?: string): Promise<FitTestRunMode> {
@@ -355,6 +361,9 @@ async function askFitTestRunMode(domain: FitTestDomain, promptIdPrefix?: string)
             { name: "All transactions tests", value: "all-transactions" as FitTestRunMode },
             { name: "All non-transactions tests", value: "all-non-transactions" as FitTestRunMode },
           ]
+        : []),
+      ...(domain.showStandardQePreset
+        ? [{ name: "Standard QE Set", value: "standard-qe" as FitTestRunMode }]
         : []),
       { name: "Run a single test", value: "single" },
       {
@@ -472,6 +481,8 @@ export async function promptForFitTestSelection(
         presets: ["all-non-transactions"],
       };
     }
+    case "standard-qe":
+      return buildFitTestSelectionFromClassNames([STANDARD_QE_REBALANCE_CLASS]);
     case "single":
       return await selectSingleFitTest(tests, promptIdPrefix);
     case "sanity":
