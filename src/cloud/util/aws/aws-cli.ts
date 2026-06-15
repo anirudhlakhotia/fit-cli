@@ -23,9 +23,12 @@ export const AWS_CLI_URL = "https://docs.aws.amazon.com/cli/latest/userguide/get
 
 /** Load config sources so credentials/env are in place before running aws commands. */
 export async function prepareAwsCli(): Promise<void> {
+  // Config only contributes AWS_PROFILE; skip prompt when explicit creds are already set (e.g. GHA OIDC).
+  const hasExplicitCredentials = Boolean(process.env.AWS_ACCESS_KEY_ID);
   await ensureFitCliConfigEnv({
     promptId: "aws.config.create",
     promptMessage: "No fit-cli config found. Run `npm run config -- edit` now before continuing with this AWS command?",
+    promptIfMissing: hasExplicitCredentials ? false : undefined,
   });
 }
 
