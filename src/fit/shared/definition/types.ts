@@ -100,9 +100,12 @@ export interface MavenOptions {
  * `all-transactions` are expanded against the listed tests at run time; an
  * `all` preset (or omitting both keys) means "run everything". `classes` lists
  * fully-qualified test class names (or `Class#method` selectors) to add on top.
+ * `packages` lists Java package prefixes; each is expanded to a `pkg.*` Maven
+ * wildcard selector and unioned with `classes`.
  */
 export interface TestsSection {
   presets?: TestPreset[];
+  packages?: string[];
   classes?: string[];
   excludedGroups?: string[];
   maven?: MavenOptions;

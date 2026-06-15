@@ -359,6 +359,14 @@ function validateTestsSection(value: unknown, path: string): TestsSection {
   if (record.presets !== undefined) {
     tests.presets = validateTestPresets(record.presets, `${path}.presets`);
   }
+  if (record.packages !== undefined) {
+    if (!isStringArray(record.packages) || record.packages.length === 0) {
+      throw new InvalidDefinitionError(
+        `"${path}.packages" must be a non-empty list of Java package names when present; got ${JSON.stringify(record.packages)}`,
+      );
+    }
+    tests.packages = record.packages;
+  }
   if (record.classes !== undefined) {
     if (!isStringArray(record.classes) || record.classes.length === 0) {
       throw new InvalidDefinitionError(

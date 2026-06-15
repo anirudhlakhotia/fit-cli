@@ -6,6 +6,7 @@ import {
   buildDefaultFitTestSelection,
   buildFitTestSelection,
   deserializeSelectedFitTestsFromReplay,
+  extractFitTestPackages,
   filterFitTests,
   fitTestSearchSource,
   formatFitTestSelectionOutput,
@@ -394,4 +395,13 @@ test("parseFitTests with a situational domain keeps only situational tests", () 
 test("buildSanityFitTestSelection passes a Class#method sanity selector straight to Maven", () => {
   const selection = buildSanityFitTestSelection([], SITUATIONAL_DOMAIN);
   assert.equal(selection.mavenTestSelector, "com.couchbase.situational.tests.VolumeTest#steadyStateKvGets");
+});
+
+test("extractFitTestPackages returns sorted unique package names", () => {
+  const tests: FitTestCase[] = [
+    { fileName: "ATest.java", relativePath: "java/com/couchbase/client/kv/ATest.java", className: "com.couchbase.client.kv.ATest" },
+    { fileName: "BTest.java", relativePath: "java/com/couchbase/client/kv/BTest.java", className: "com.couchbase.client.kv.BTest" },
+    { fileName: "CTest.java", relativePath: "java/com/couchbase/transactions/CTest.java", className: "com.couchbase.transactions.CTest" },
+  ];
+  assert.deepEqual(extractFitTestPackages(tests), ["com.couchbase.client.kv", "com.couchbase.transactions"]);
 });

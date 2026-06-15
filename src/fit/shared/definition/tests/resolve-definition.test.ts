@@ -124,6 +124,66 @@ test("resolveDefinition uses run-level fitConfig for useExisting clusters", () =
   assert.equal(resolved.instances[0]?.clusters[0]?.cluster?.defaultHostname, "localhost");
 });
 
+test("packages are expanded to Maven wildcard selectors", () => {
+  const resolved = resolveDefinition({
+    version: 1,
+    type: "fit",
+    instances: [
+      {
+        localhost: {},
+        clusters: [
+          {
+            connection: {
+              connectionString: "couchbase://localhost",
+              username: "Administrator",
+              password: "password",
+              tls: null,
+            },
+            sessions: [
+              {
+                performer: { sdk: "java" },
+                runs: [{ type: "functional", tests: { packages: ["com.couchbase.client.kv", "com.couchbase.transactions"] } }],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  });
+  const testSelection = resolved.instances[0]?.clusters[0]?.sessions[0]?.runs[0]?.testSelection;
+  assert.equal(testSelection?.mavenTestSelector, "com.couchbase.client.kv.*,com.couchbase.transactions.*");
+});
+
+test("packages combined with classes produce a unified selector", () => {
+  const resolved = resolveDefinition({
+    version: 1,
+    type: "fit",
+    instances: [
+      {
+        localhost: {},
+        clusters: [
+          {
+            connection: {
+              connectionString: "couchbase://localhost",
+              username: "Administrator",
+              password: "password",
+              tls: null,
+            },
+            sessions: [
+              {
+                performer: { sdk: "java" },
+                runs: [{ type: "functional", tests: { packages: ["com.couchbase.client.kv"], classes: ["com.couchbase.other.ExplicitTest"] } }],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  });
+  const testSelection = resolved.instances[0]?.clusters[0]?.sessions[0]?.runs[0]?.testSelection;
+  assert.equal(testSelection?.mavenTestSelector, "com.couchbase.other.ExplicitTest,com.couchbase.client.kv.*");
+});
+
 test("excludedGroups override the default Maven args", () => {
   assert.deepEqual(resolveMavenArgs({ excludedGroups: ["situational", "openshift"] }), [
     "-DexcludedGroups=situational,openshift",

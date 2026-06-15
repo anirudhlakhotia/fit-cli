@@ -505,6 +505,23 @@ ${testsBody}
 `;
 }
 
+test("parses packages list", () => {
+  const def = parseDefinition(
+    definitionWithTests(
+      `                  packages:\n                    - com.couchbase.client.kv\n                    - com.couchbase.transactions`,
+    ),
+  );
+  const tests = def.instances[0]?.clusters[0]?.sessions[0]?.runs[0]?.tests;
+  assert.deepEqual(tests?.packages, ["com.couchbase.client.kv", "com.couchbase.transactions"]);
+});
+
+test("rejects an empty packages list", () => {
+  assert.throws(
+    () => parseDefinition(definitionWithTests(`                  packages: []`)),
+    (err: unknown) => err instanceof InvalidDefinitionError && /packages/.test(err.message),
+  );
+});
+
 test("parses all-transactions and all-non-transactions preset placeholders", () => {
   for (const preset of ["all-transactions", "all-non-transactions"] as const) {
     const def = parseDefinition(definitionWithTests(`                  presets: [${preset}]`));

@@ -338,7 +338,7 @@ export function deserializeSelectedFitTestsFromReplay(
   return response;
 }
 
-type FitTestRunMode = "all" | "all-transactions" | "all-non-transactions" | "single" | "multiple" | "sanity";
+type FitTestRunMode = "all" | "all-transactions" | "all-non-transactions" | "single" | "multiple" | "package" | "sanity";
 
 /** Ask whether to run everything, a single searchable test, a sanity test, or a chosen subset. */
 async function askFitTestRunMode(domain: FitTestDomain, promptIdPrefix?: string): Promise<FitTestRunMode> {
@@ -360,6 +360,7 @@ async function askFitTestRunMode(domain: FitTestDomain, promptIdPrefix?: string)
         value: "sanity",
       },
       { name: "Pick multiple tests", value: "multiple" },
+      { name: "Run tests in a package", value: "package" },
     ],
   });
 }
@@ -389,6 +390,35 @@ async function selectSingleFitTest(tests: FitTestCase[], promptIdPrefix?: string
     source: fitTestSearchSource(tests),
   });
   return buildFitTestSelection(tests, [className]);
+}
+
+/** Extract the unique package names from a list of test cases (everything before the class name). */
+export function extractFitTestPackages(tests: readonly FitTestCase[]): string[] {
+  const packages = new Set<string>();
+  for (const test of tests) {
+    const lastDot = test.className.lastIndexOf(".");
+    if (lastDot > 0) {
+      packages.add(test.className.slice(0, lastDot));
+    }
+  }
+  return [...packages].sort();
+}
+
+/** Package picker: checkbox list of unique packages, none pre-selected. */
+async function selectByPackage(tests: FitTestCase[], promptIdPrefix?: string): Promise<FitTestSelection> {
+  const packages = extractFitTestPackages(tests);
+  const selectedPackages = await checkbox<string>({
+    promptId: qualifyPromptId("fit.tests.package", promptIdPrefix),
+    message: "Which packages do you want to run?",
+    choices: packages.map((pkg) => ({ name: pkg, value: pkg, checked: false })),
+    required: true,
+  });
+  const selectedTests = tests.filter((t) => selectedPackages.some((pkg) => t.className.startsWith(`${pkg}.`)));
+  return {
+    allTests: tests,
+    selectedTests,
+    mavenTestSelector: selectedTests.map((t) => t.className).join(",") || undefined,
+  };
 }
 
 /** Multi-test picker: the checkbox list, all tests pre-selected. */
@@ -445,6 +475,8 @@ export async function promptForFitTestSelection(
       return buildSanityFitTestSelection(tests, domain);
     case "multiple":
       return await selectMultipleFitTests(tests, promptIdPrefix);
+    case "package":
+      return await selectByPackage(tests, promptIdPrefix);
     default:
       return buildDefaultFitTestSelection();
   }

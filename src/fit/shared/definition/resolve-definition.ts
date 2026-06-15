@@ -208,17 +208,18 @@ export function resolveDefinitionRefs(def: FitDefinition): FitDefinition {
 
 function resolveTestsSelection(tests: TestsSection): FitTestSelection {
   const presets = tests.presets ?? [];
-  const classes = tests.classes ?? [];
-  // "all" (or omitting both keys) means run everything; it dominates any other entry.
+  const packageSelectors = (tests.packages ?? []).map((pkg) => `${pkg}.*`);
+  const classes = [...(tests.classes ?? []), ...packageSelectors];
+  // "all" (or omitting all keys) means run everything; it dominates any other entry.
   if (presets.includes("all") || (presets.length === 0 && classes.length === 0)) {
     return buildDefaultFitTestSelection();
   }
   const deferred = presets.filter((p): p is DeferredTestPreset => p !== "all");
   if (deferred.length === 0) {
-    // Only explicit classes — resolve up front, no need to list tests on the box.
+    // Only explicit classes/packages — resolve up front, no need to list tests on the box.
     return buildFitTestSelectionFromClassNames(classes);
   }
-  // Deferred presets (optionally plus explicit classes) — expand on the box.
+  // Deferred presets (optionally plus explicit classes/packages) — expand on the box.
   return {
     allTests: [],
     selectedTests: [],
