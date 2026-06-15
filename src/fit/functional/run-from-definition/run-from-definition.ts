@@ -57,6 +57,7 @@ import { confirm, select } from "../../../util/non-fit/prompts.js";
 import { rootDirFromArgv } from "../../util/root.js";
 import { resolveCapellaConfig, resolveGithubCredentials, resolveResultsDbCredentials } from "../../util/config.js";
 import { terminateInstanceCommand } from "../../util/aws/lifecycle-warning.js";
+import { uploadRunArtifacts } from "../../util/aws/upload-run-artifacts.js";
 import { resolveAwsCredentials, type AwsCredentials } from "../../../cloud/util/aws/identity.js";
 import {
   localClusterCommandExecutor,
@@ -1490,6 +1491,9 @@ export async function runFromDefinition(
       performerStates: activePerformerStates,
       results: runResults,
     });
+    // Best-effort: ship the run's artifacts to S3 after teardown (so anything
+    // teardown writes is included). Runs only inside GitHub Actions; never throws.
+    await uploadRunArtifacts(runDir);
   }
 }
 

@@ -115,7 +115,8 @@ jobs:
           check_name: FIT functional tests
           require_tests: false   # a definition may legitimately run no functional tests
           detailed_summary: true
-          include_passed: true
+          # Unfortunately this is required as otherwise we blow a 1024k $GITHUB_STEP_SUMMARY limit. The full JUnit output is in the artifacts (and S3).
+          include_passed: false
 
       - name: Job summary
         if: always()
