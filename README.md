@@ -18,37 +18,43 @@ Everything else is expected to work, bugs excepted.
 
 ## Getting started
 
-Install `npm` if you don't have it already, following https://docs.npmjs.com/downloading-and-installing-node-js-and-npm or doing one of these:
+Install the `fit` binary:
 
-```
-# On Linux and Mac, install nvm first:
-curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.4/install.sh | bash
-
-# Then use nvm to install node and npm:  
-nvm install 24
+```sh
+curl -fsSL https://raw.githubusercontent.com/couchbaselabs/fit-cli/main/install.sh | bash
 ```
 
-Install other dependencies:
-* Optional: If you want to run in clean AWS EC2 enviroments, need to install the AWS CLI (https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) and configure it.
+This downloads the right binary for your OS and puts it in `/usr/local/bin/fit`. No Node, nvm, or npm needed.
+
+Optional: if you want to run on clean AWS EC2 environments, install the AWS CLI (https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) and configure it.
 
 Then:
 
 ```sh
-# One-off install of dependencies
-npm ci
-
 # One-off configuration
-npm run config -- edit
-# Or this for CI:
-# npm run config -- init --auto 
+fit config edit
 
 # Start the interactive wizard
-npm start
+fit start
 
 # Or to see all commands
-npm help 
+fit help
 ```
 The interactive wizard will guide you through the available options in a (crosses fingers) self-documenting way.
+
+### Contributing / running from source
+
+If you're working on fit-cli itself, install Bun with `curl -fsSL https://bun.sh/install | bash` and then:
+
+```sh
+bun install
+
+# One-off configuration
+bun run config edit
+
+# Start the interactive wizard
+bun run start
+```
 
 If you hit any problems, either ask on #the-fit-stop or consider just giving it to an LLM with something like:
 
@@ -60,7 +66,7 @@ Please read /tmp/fit-cli/<folder name>/AGENTS.md and investigate the failure.
 The output will guide you through how to resume where a failure happened, something like:
 
 ```
-npm run definition -- --resume-at=after-cluster-creation examples/test.yaml
+fit definition execute --resume-at=after-cluster-creation examples/test.yaml
 ```
 
 This can save valuable time when iterating a definition file.  It will try its best to resume, including checking that preceding steps such as cluster creation are resumable from.
@@ -88,7 +94,7 @@ The AWS region and VPC are fixed (region `us-west-2`, VPC `cbqerunners-vpc`) and
 To make debugging and development easier, most files have a header comment showing how to run it directly, e.g.
 
 ```
-npx tsx src/steps/ensure-repo.ts fit-performer
+bun src/steps/ensure-repo.ts fit-performer
 ```
 Note these aren't intended to be stable CLI commands.  They are just for transient debugging and development.  Paths may change, things may break, don't call these directly from CI - add a proper stable definition file if you need that.
 
@@ -96,16 +102,16 @@ If you find any are broken due to refactorings then please ask an AI to "sweep t
 
 ## Scripts
 
-User-facing:
-- `npm run help` — show help.
-- `npm start` — run the interactive wizard.
-- `npm run definition -- execute <file>` — run a definition file (see Resuming for the resume flags).
-- `npm run cloud-instances -- list | manage | delete | remove-all` — manage the EC2 instances fit-cli launched.
+User-facing (using the installed binary):
+- `fit help` — show help.
+- `fit start` — run the interactive wizard.
+- `fit definition execute <file>` — run a definition file (see Resuming for the resume flags).
+- `fit cloud-instances list | manage | delete | remove-all` — manage the EC2 instances fit-cli launched.
 
-For development:
-- `npm run typecheck` — type-check without emitting.
-- `npm run build` — compile TypeScript to `dist/`.
-- `npm test` — run the unit tests (node:test, via tsx).  Note - these always need to be kept instant - business logic only.  If it's slow, just don't test it.
+For development (from source with Bun):
+- `bun run typecheck` — type-check without emitting.
+- `bun run build` — compile TypeScript to `dist/`.
+- `bun run test` — run the unit tests.  Note - these always need to be kept instant - business logic only.  If it's slow, just don't test it.
 
 ## Capella
 When running locally, we use Capella creds from your fit-cli config.  Generally you just need to provide your email address.  We default to using Capella's production environment.
@@ -114,7 +120,7 @@ When running on CI, the user chooses what Capella environment to use (stage, dev
 ## General rules
 Everyone - AI and human - please follow these as best you can.
 
-- Run `npm run lint` and `npm run typecheck` and `npm test` after writing code.
+- Run `bun run lint` and `bun run typecheck` and `bun run test` after writing code.
 
 ### Stability
 This project aims to strike a balance between actively encouraging collaboration, and the need for a stable and reliable tool - particularly as it is used from CLI.
@@ -134,7 +140,7 @@ Inputs and outputs from steps are ideally clear and well-defined.
 
 Each step should be runnable independently from the CLI wherever possible - see 'mini cli tools' below.  
 This is for debugging and development rather than intended for end-users. 
-End-users should be starting at `npm start`.
+End-users should be starting at `fit start`.
 
 ### ROOT_DIR
 - Everything file-based is relative to a ROOT_DIR (see "ROOT_DIR" below): the FIT repos live directly under it and the generated config is written under it. It defaults to the parent of the current directory and can be overridden with `--root <dir>` or the `FIT_ROOT` env var.
@@ -155,7 +161,7 @@ version: 1
 type: fit-functional-tests
 ```
 These allow us to drive repeatable workflows, much more reliably than replay files.
-See `examples/documented.yaml` for an annotated example; run one with `npm run definition <file.yaml>`.
+See `examples/documented.yaml` for an annotated example; run one with `fit definition execute <file.yaml>`.
 
 Definition file rules while generating:
 - If there are fields that are added later at runtime, add a very short comment saying that.  
@@ -190,7 +196,7 @@ Definition file rules while generating:
 - For anything that can work on remote instances, make sure they support the `--dir /tmp/fit-cli/20260609-162046/instances/0` syntax.
 
 ### Top-level commands
-These are ones in package.json e.g. `npm run definition [execute|validate]`.
+These are ones exposed as `fit` subcommands e.g. `fit definition [execute|validate]`.
 Unlike Mini CLI these _are_ meant to be stable.  We should try not to break.
 All top-level commands have at least one subcommand.  This gives room to expand in future.
 
@@ -212,7 +218,7 @@ This leads us either to Docker or using cloud instances, and the latter is both 
 It's important that whatever inputs a user gives to a workflow be saved and be reusable, for both debugging and re-running.
 Each fit-cli should create a user log file under /tmp/fit-cli with a unique name.  Display this name.
 Associate each user prompt with a unique id.  Save the prompt id and the user's response into the log file.
-The user can replay that with `npm run replay <logfile>`.
+The user can replay that with `fit replay <logfile>`.
 Note that replays are inherently less reliable than definition files, since workflows change, and should be regarded as somewhat experimental and perhaps buggy at present.  So definition files are recommended usually.
 
 ### yaml and json5
@@ -243,7 +249,7 @@ Nb the need for later removal does mean it can't be stored internally purely as 
 - Automatically use new temporary keys (`aws ec2 create-key-pair`).
 - Lifetime: we give the user the option on whether to delete the instance at the end, or leave it running for debugging.
   There is no built-in TTL system for EC2 so we make it very clear the user has to delete instances if they choose to leave them running.
-- To clean up afterwards: `npm run cloud-instances -- list` shows what's still running, and `npm run cloud-instances -- remove-all` terminates every `fit-cli`-owned instance you created.
+- To clean up afterwards: `fit cloud-instances list` shows what's still running, and `fit cloud-instances remove-all` terminates every `fit-cli`-owned instance you created.
 
 ### Running processes
 #### Logging
