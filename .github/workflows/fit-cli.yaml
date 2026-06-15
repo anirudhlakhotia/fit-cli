@@ -37,13 +37,9 @@ jobs:
     # Bind to the chosen Capella environment so its CAP_* variables resolve below.
     environment: ${{ inputs.capellaEnvironment }}
     steps:
-      - name: Diagnostics
-        env:
-          ALL_INPUTS: ${{ toJSON(inputs) }}
+      - name: Diagnostics1
         run: |
           echo "App id: ${{ secrets.CBFITFRAMEWORK_APP_ID }}"
-          echo "Job params (inputs):"
-          echo "$ALL_INPUTS"
 
       # Obtain a GitHub token that has permissions to check out private repos (transactions-fit-performer)
       - name: Generate GitHub App token
@@ -66,12 +62,7 @@ jobs:
           role-duration-seconds: 43200
 
       - name: Diagnostics
-        env:
-          ALL_INPUTS: ${{ toJSON(inputs) }}
         run: |
-          echo "App id: ${{ secrets.CBFITFRAMEWORK_APP_ID }}"
-          echo "Job params (inputs):"
-          echo "$ALL_INPUTS"
           echo "Key prefix: ${AWS_ACCESS_KEY_ID:0:4}"
           echo "Github actor: ${{ github.actor }}"
           echo "Github run_id: ${{ github.run_id }}"
@@ -128,17 +119,7 @@ jobs:
 
       - name: Job summary
         if: always()
-        run: |
-          echo "## fit-cli Run Artifacts" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**fit-cli result:** ${{ steps.run-fit-cli.outcome }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Artifacts are attached to [this run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) as \`fit-cli-run-${{ github.run_id }}\`." >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Files" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          find /tmp/fit-cli -type f 2>/dev/null | sort >> $GITHUB_STEP_SUMMARY || echo "(none)" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
+        run: .github/scripts/job-summary.sh "${{ steps.run-fit-cli.outcome }}"
 
       - name: Upload run artifacts
         if: always()
