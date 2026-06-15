@@ -17,9 +17,10 @@ test("situational init args leave Capella enabled so `init --auto` populates it 
   assert.match(args, /--disable-aws/);
 });
 
-test("situational config patch only enables aws and must NOT carry a capella block", () => {
+test("situational config patch enables aws with region and must NOT carry a capella block", () => {
   // A capella block here would shallow-overwrite the one `init --auto` wrote from env.
   const patch = situationalCbdinoclusterConfigPatch();
-  assert.deepEqual(patch, { aws: { enabled: "true" } });
+  assert.equal((patch as any).aws?.enabled, "true");
+  assert.ok((patch as any).aws?.region, "region must be set — cbdinocluster cleanup fails with 'Missing Region' without it");
   assert.equal("capella" in patch, false);
 });

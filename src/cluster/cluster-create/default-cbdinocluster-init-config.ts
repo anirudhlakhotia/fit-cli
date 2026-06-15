@@ -1,4 +1,5 @@
 import type { PieceData } from "../../util/non-fit/config-pieces.js";
+import { AWS_REGION } from "../../cloud/util/aws/aws-target.js";
 
 /** The docker network clean FIT environments allocate their clusters on. */
 export const DEFAULT_CBDINOCLUSTER_DOCKER_NETWORK = "fit";
@@ -113,8 +114,12 @@ export function defaultSituationalCbdinoclusterInitConfig(): PieceData {
  * make init load AWS credentials it doesn't have yet. fit-cli runs
  * `cbdinocluster init` (which enables `capella` from the forwarded `CAPELLA_*`
  * env — see {@link situationalCbdinoclusterInitArgs}) and then shallow-merges
- * this `aws.enabled` flag on top of the resulting `~/.cbdinocluster` (see
+ * this patch on top of the resulting `~/.cbdinocluster` (see
  * `mergeRemoteCbdinoclusterConfig`).
+ *
+ * The region must be set alongside `enabled` — without it, `cbdinocluster
+ * cleanup` attempts to enumerate VPC endpoints and fails with "Missing Region"
+ * even when `enablePrivateEndpoint` is false and nothing was created.
  *
  * Note: this must NOT include a `capella` block — the merge is shallow at the
  * top level, so any `capella` key here would replace the one init populated from
@@ -124,6 +129,7 @@ export function situationalCbdinoclusterConfigPatch(): PieceData {
   return {
     aws: {
       enabled: "true",
+      region: AWS_REGION,
     },
   };
 }
