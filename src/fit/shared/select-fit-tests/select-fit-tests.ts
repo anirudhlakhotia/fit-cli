@@ -43,7 +43,7 @@ export interface FitTestSelection {
 }
 
 /** Presets whose expansion depends on the listed tests, so it's deferred to run time. */
-export type DeferredTestPreset = "all-transactions" | "all-non-transactions";
+export type DeferredTestPreset = "all-transactions" | "all-non-transactions" | "standard-qe";
 
 export interface FitTestSelectionSummary {
   /** How many FIT test-driver tests were discovered. */
@@ -482,7 +482,7 @@ export async function promptForFitTestSelection(
       };
     }
     case "standard-qe":
-      return buildFitTestSelectionFromClassNames([STANDARD_QE_REBALANCE_CLASS]);
+      return { allTests: [], selectedTests: [], presets: ["standard-qe"] };
     case "single":
       return await selectSingleFitTest(tests, promptIdPrefix);
     case "sanity":

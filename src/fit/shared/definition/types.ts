@@ -86,7 +86,7 @@ export interface PerformerSetup {
 }
 
 /** Named test presets that expand to a set of test classes. */
-export const TEST_PRESETS = ["all", "all-transactions", "all-non-transactions"] as const;
+export const TEST_PRESETS = ["all", "all-transactions", "all-non-transactions", "standard-qe"] as const;
 export type TestPreset = (typeof TEST_PRESETS)[number];
 
 export interface MavenOptions {

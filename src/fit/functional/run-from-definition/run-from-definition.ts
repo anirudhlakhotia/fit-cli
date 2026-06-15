@@ -105,6 +105,7 @@ import {
   FUNCTIONAL_TEST_DOMAIN,
   isTransactionsTest,
   listFitTests,
+  STANDARD_QE_REBALANCE_CLASS,
   type FitTestSelection,
 } from "../../shared/select-fit-tests/select-fit-tests.js";
 import {
@@ -523,6 +524,18 @@ export async function runTests(
   return { artifacts, details };
 }
 
+/** Expand situational named presets into concrete class selectors. */
+function expandSituationalPresets(selection: FitTestSelection): FitTestSelection {
+  if (!selection.presets?.length) return selection;
+  const classes: string[] = [];
+  for (const preset of selection.presets) {
+    if (preset === "standard-qe") {
+      classes.push(STANDARD_QE_REBALANCE_CLASS);
+    }
+  }
+  return buildFitTestSelectionFromClassNames(classes);
+}
+
 /**
  * The run step for a situational iteration. cbdino builds and manages the
  * cluster from inside the test-driver, so there's no cluster to diagnose or
@@ -569,9 +582,10 @@ export async function runSituationalTests(
   artifacts.push(...fitConfig.artifacts);
   details.push(...fitConfig.details);
 
+  const testSelection = expandSituationalPresets(run.testSelection);
   const testRun = await runTestDriverFn(
     execution,
-    run.testSelection,
+    testSelection,
     run.path,
     fitConfig.path,
     run.extraMavenArgs,
