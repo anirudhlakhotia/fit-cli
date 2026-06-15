@@ -21,6 +21,7 @@ import {
 } from "../../shared/definition/generate-definition.js";
 import type { FitDefinition, SessionLifetime } from "../../shared/definition/types.js";
 import { printDefinitionRunGuidance } from "../../shared/definition/run-guidance.js";
+import { pushGist, type GistVisibility } from "../../shared/definition/push-gist.js";
 
 export const PRESET_TYPES = ["preset-functional-tests"] as const;
 export type PresetType = (typeof PRESET_TYPES)[number];
@@ -76,10 +77,11 @@ export interface GeneratePresetArgs {
   clusterVersion: string;
   performerImageName?: string;
   format?: DefinitionFormat;
+  pushGistVisibility?: GistVisibility;
 }
 
-export function generatePreset(args: GeneratePresetArgs): void {
-  const { type, sdkValue, clusterVersion, performerImageName, format } = args;
+export async function generatePreset(args: GeneratePresetArgs): Promise<void> {
+  const { type, sdkValue, clusterVersion, performerImageName, format, pushGistVisibility } = args;
   const sdk = sdkByValue(sdkValue);
   if (!sdk) {
     throw new Error(`Unknown SDK: ${sdkValue}`);
@@ -89,10 +91,18 @@ export function generatePreset(args: GeneratePresetArgs): void {
   const definition = applyPresetParams(template, sdkValue, clusterVersion, performerImageName);
   const outputFormat = format ?? resolveOutputFormat();
   const result = writeFitDefinition(definition, undefined, outputFormat);
+  const formatted = formatFitDefinition(definition, outputFormat);
 
   console.log(`\nWriting ${result.path}:\n`);
-  printWithoutTimestamps(formatFitDefinition(definition, outputFormat));
+  printWithoutTimestamps(formatted);
   console.log(`\n✓ Wrote ${result.path}`);
+
+  if (pushGistVisibility) {
+    console.log(`\nPushing ${pushGistVisibility} gist…`);
+    const gist = await pushGist(result.path, formatted, pushGistVisibility);
+    console.log(`✓ Gist created: ${gist.url}`);
+  }
+
   printDefinitionRunGuidance(result.path);
 }
 
@@ -102,6 +112,7 @@ export function parseGeneratePresetArgs(argv: string[]): GeneratePresetArgs {
   let sdkValue: string | undefined;
   let clusterVersion: string | undefined;
   let performerImageName: string | undefined;
+  let pushGistVisibility: GistVisibility | undefined;
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -121,6 +132,21 @@ export function parseGeneratePresetArgs(argv: string[]): GeneratePresetArgs {
       performerImageName = argv[++i];
     } else if (arg.startsWith("--performer-image-name=")) {
       performerImageName = arg.slice("--performer-image-name=".length);
+    } else if (arg === "--push-gist") {
+      // Optional value: --push-gist [public|private]; default public.
+      const next = argv[i + 1];
+      if (next === "public" || next === "private") {
+        pushGistVisibility = next;
+        i++;
+      } else {
+        pushGistVisibility = "public";
+      }
+    } else if (arg.startsWith("--push-gist=")) {
+      const val = arg.slice("--push-gist=".length);
+      if (val !== "public" && val !== "private") {
+        throw new Error(`--push-gist value must be "public" or "private", got: ${val}`);
+      }
+      pushGistVisibility = val;
     } else {
       throw new Error(`Unexpected argument: ${arg}`);
     }
@@ -136,5 +162,5 @@ export function parseGeneratePresetArgs(argv: string[]): GeneratePresetArgs {
   }
   if (!clusterVersion) throw new Error("--cluster-version is required");
 
-  return { type, sdkValue: sdkValue as SdkValue, clusterVersion, performerImageName };
+  return { type, sdkValue: sdkValue as SdkValue, clusterVersion, performerImageName, pushGistVisibility };
 }

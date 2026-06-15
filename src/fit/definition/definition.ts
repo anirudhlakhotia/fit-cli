@@ -45,6 +45,7 @@ generate-preset options:
   --sdk <sdk>                   SDK to test (java, kotlin, scala, cpp, dotnet, go, node, python, ruby, rust)
   --cluster-version <version>   Couchbase Server version to allocate (e.g. 7.6.5, 8.0.0)
   --performer-image-name <tag>  Docker image tag for the performer (e.g. main, 4.2.0). Defaults to the SDK default.
+  --push-gist [public|private]  After writing the file, create a GitHub Gist (default: public). Requires a GitHub token in the fit-cli config or GITHUB_TOKEN / GH_TOKEN.
 
 Resume points for execute:
   --resume-at=after-instance-creation   Reuse a running instance.
@@ -126,7 +127,7 @@ if (isMain(import.meta.url)) {
         console.error((err as Error).message);
         process.exit(2);
       }
-      generatePreset(args);
+      await generatePreset(args);
       return;
     }
 

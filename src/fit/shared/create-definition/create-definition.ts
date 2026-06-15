@@ -18,6 +18,7 @@ import { askVersion } from "../../performers/build-performer/ask-version.js";
 import { askPortInUsePolicy } from "../../performers/util/ask-port-in-use-policy.js";
 import { askFitGerritRef, chooseDefinitionCluster } from "../../functional/create-definition/create-definition.js";
 import { printDefinitionRunGuidance } from "../definition/run-guidance.js";
+import { extractPushGistVisibility, pushGist, type GistVisibility } from "../definition/push-gist.js";
 import {
   chooseResultsDatabaseMode,
   type ResultsDatabaseMode,
@@ -382,7 +383,7 @@ async function addSituationalRun(
   state.instances.push(generatedInstance);
 }
 
-export async function createFitDefinition(rootDir: string, options?: { format?: DefinitionFormat }): Promise<RunOutput> {
+export async function createFitDefinition(rootDir: string, options?: { format?: DefinitionFormat; pushGistVisibility?: GistVisibility }): Promise<RunOutput> {
   console.log(
     "\nThis builds a reusable fit definition file. Nothing is set up — no cluster is allocated, no performer built, no tests run.\n",
   );
@@ -427,9 +428,17 @@ export async function createFitDefinition(rootDir: string, options?: { format?: 
   const write = hasSituational ? writeFitSituationalDefinition : writeFitDefinition;
   const formatFn = hasSituational ? formatFitSituationalDefinition : formatFitDefinition;
   const result = write(definition, undefined, outputFormat);
+  const formatted = formatFn(definition, outputFormat);
   console.log(`\nWriting ${result.path}:\n`);
-  printWithoutTimestamps(formatFn(definition, outputFormat));
+  printWithoutTimestamps(formatted);
   console.log(`\n✓ Wrote ${result.path}`);
+
+  if (options?.pushGistVisibility) {
+    console.log(`\nPushing ${options.pushGistVisibility} gist…`);
+    const gist = await pushGist(result.path, formatted, options.pushGistVisibility);
+    console.log(`✓ Gist created: ${gist.url}`);
+  }
+
   printDefinitionRunGuidance(result.path);
 
   return { artifacts: [result.artifact], details: [] };
@@ -437,7 +446,8 @@ export async function createFitDefinition(rootDir: string, options?: { format?: 
 
 if (isMain(import.meta.url)) {
   runCli(async () => {
-    const { rootDir } = rootDirFromArgv(process.argv.slice(2));
-    return createFitDefinition(rootDir);
+    const { rootDir, positionals } = rootDirFromArgv(process.argv.slice(2));
+    const pushGistVisibility = extractPushGistVisibility(positionals);
+    return createFitDefinition(rootDir, { pushGistVisibility });
   });
 }

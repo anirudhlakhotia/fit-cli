@@ -15,6 +15,7 @@ import { resolveOutputFormat } from "../util/config.js";
 import { rootDirFromArgv } from "../util/root.js";
 import { runFromDefinition } from "../functional/run-from-definition/run-from-definition.js";
 import type { DefinitionFormat } from "../shared/definition/generate-definition.js";
+import { extractPushGistVisibility, type GistVisibility } from "../shared/definition/push-gist.js";
 
 const WORKFLOW_PROMPT_MESSAGE = "What would you like to do?";
 
@@ -88,10 +89,10 @@ export async function askDefinitionPath(): Promise<string> {
   return definitionPath.trim();
 }
 
-export async function runWorkflow(choice: WorkflowChoice, rootDir: string, definitionPath?: string, format?: DefinitionFormat): Promise<RunOutput> {
+export async function runWorkflow(choice: WorkflowChoice, rootDir: string, definitionPath?: string, format?: DefinitionFormat, pushGistVisibility?: GistVisibility): Promise<RunOutput> {
   switch (choice) {
     case "create-definition":
-      return createFitDefinition(rootDir, { format });
+      return createFitDefinition(rootDir, { format, pushGistVisibility });
     case "run-definition":
       return runFromDefinition(definitionPath ?? await askDefinitionPath(), rootDir);
   }
@@ -157,16 +158,27 @@ export async function main(): Promise<RunOutput> {
   loadDotenv();
 
   const { format, positionals: afterOutput } = extractOutputFormat(process.argv.slice(2));
-  const { rootDir, positionals } = rootDirFromArgv(afterOutput);
+  const { rootDir, positionals: afterRoot } = rootDirFromArgv(afterOutput);
+  const pushGistVisibility = extractPushGistVisibility(afterRoot);
+  // Remove --push-gist (and its optional value) from positionals so the length
+  // check and definition-path detection below work cleanly.
+  const positionals = afterRoot.filter((arg, i) => {
+    if (arg === "--push-gist") return false;
+    if (arg === "public" || arg === "private") {
+      return afterRoot[i - 1] !== "--push-gist";
+    }
+    if (arg.startsWith("--push-gist=")) return false;
+    return true;
+  });
   if (positionals.length > 1) {
-    throw new Error("Usage: npm start [definition-file.json5] [--output yaml|json5] [--root <dir>]");
+    throw new Error("Usage: npm start [definition-file.json5] [--output yaml|json5] [--push-gist [public|private]] [--root <dir>]");
   }
   if (positionals[0]) {
     ensurePromptSession().setWorkflow("run-definition");
     return runFromDefinition(positionals[0], rootDir);
   }
   const choice = await chooseWorkflow();
-  return runWorkflow(choice, rootDir, positionals[0], format);
+  return runWorkflow(choice, rootDir, positionals[0], format, pushGistVisibility);
 }
 
 if (isMain(import.meta.url)) {
