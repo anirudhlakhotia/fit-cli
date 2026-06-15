@@ -27,7 +27,11 @@ export type CloudProvider = (typeof CLOUD_PROVIDERS)[number];
 /** Baked-in default instance type per purpose, used when the config omits one. */
 export const DEFAULT_CLOUD_INSTANCE_TYPES: Record<CloudProvider, Record<CloudInstancePurpose, string>> = {
   aws: {
-    functional: "c5.xlarge",
+    // 16 GiB / 8 vCPU. Functional runs put 3 Couchbase nodes (sharing the host's
+    // RAM under the docker deployer) plus the SDK performer and the Maven test
+    // driver on one box; 8 GiB (c5.xlarge) left the box thrashing/OOMing partway
+    // through a full all-non-transactions run, dropping the SSH session.
+    functional: "c5.2xlarge",
     situational: "c5.xlarge",
     perf: "c5.4xlarge",
   },

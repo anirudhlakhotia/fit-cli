@@ -60,6 +60,12 @@
               services: ['kv', 'n1ql', 'index', 'fts'],
             },
           ],
+          // Per-service RAM quotas (MB) for the docker deployer. On a single host the 3
+          // nodes share the instance's RAM, and cbdinocluster rejects a total quota above
+          // ~80% of the node's visible RAM. These quotas (kv + fts + index's 256 default
+          // = 8448MB) need the default functional instance (c5.2xlarge, 16 GiB) — they
+          // don't fit on an 8 GiB box. Lower them, or bump aws.instanceType, for a smaller
+          // instance.
           docker: {
             'kv-memory': 4096,
             'fts-memory': 4096,

@@ -91,7 +91,7 @@ test("buildAutoConfig: missing optional fields are omitted gracefully", () => {
   const { config } = buildAutoConfig({ args: baseArgs(), env });
 
   // cloud.aws gets defaults for instance types, so it's present
-  assert.equal(config.cloud?.aws?.instanceTypes?.functional, "c5.xlarge");
+  assert.equal(config.cloud?.aws?.instanceTypes?.functional, "c5.2xlarge");
   assert.equal(config.cloud?.aws?.instanceTypes?.perf, "c5.4xlarge");
   assert.equal(config.cloud?.aws?.profile, undefined);
   // github and resultsDb have no defaults, so they're omitted

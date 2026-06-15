@@ -40,7 +40,7 @@ Edit options:
   --disable-capella      Skip writing the capella section.
   --aws-profile <p>      AWS profile (env: AWS_PROFILE).
   --aws-instance-type-functional <t>  EC2 instance type for functional tests
-                         (env: FIT_EC2_INSTANCE_TYPE_FUNCTIONAL / FIT_EC2_INSTANCE_TYPE, default: c5.xlarge).
+                         (env: FIT_EC2_INSTANCE_TYPE_FUNCTIONAL / FIT_EC2_INSTANCE_TYPE, default: c5.2xlarge).
   --aws-instance-type-situational <t> EC2 instance type for situational (SIT) tests
                          (env: FIT_EC2_INSTANCE_TYPE_SITUATIONAL / FIT_EC2_INSTANCE_TYPE, default: c5.xlarge).
   --aws-instance-type-perf <t>        EC2 instance type for performance (PERF) tests
