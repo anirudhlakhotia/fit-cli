@@ -18,7 +18,7 @@ Everything else is expected to work, bugs excepted.
 
 ## Getting started
 
-Install the `fit` binary:
+Install the stable version of the [`fit` binary](https://github.com/couchbaselabs/fit-cli/releases):
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/couchbaselabs/fit-cli/main/install.sh | bash
@@ -62,18 +62,7 @@ If you hit any problems, either ask on #the-fit-stop or consider just giving it 
 Please read /tmp/fit-cli/<folder name>/AGENTS.md and investigate the failure.
 ```
 
-## Resuming
-The output will guide you through how to resume where a failure happened, something like:
-
-```
-fit definition execute --resume-at=after-cluster-creation examples/test.yaml
-```
-
-This can save valuable time when iterating a definition file.  It will try its best to resume, including checking that preceding steps such as cluster creation are resumable from.
-
-But note that this is somewhat temperamental and experimental.  You may hit issues and patches are welcome.
-
-You can also get very far by just rerunning the full definition file and using the performer onPortInUse and cluster useExisting settings to reuse existing resources.
+LLMs can also be used to investigate GitHub Action runs - just point them at the URL.
 
 ## Running on a cloud instance (AWS EC2)
 
@@ -88,6 +77,19 @@ The AWS region and VPC are fixed (region `us-west-2`, VPC `cbqerunners-vpc`) and
 * Ensures compatibility with the existing sdkqe-github-runners-tf work that allows testing private endpoints.
 * Simplifies and derisks where to look for user's instances for cleanup.
 * It means we always have a VPC and avoid hitting VPCIdNotSpecified if the user specifies a region that does not have a default one.
+
+### Resuming
+The output will guide you through how to resume where a failure happened, something like:
+
+```
+fit definition execute --resume-at=after-cluster-creation examples/test.yaml
+```
+
+This can save valuable time when iterating a definition file.  It will try its best to resume, including checking that preceding steps such as cluster creation are resumable from.
+
+But note that this is somewhat temperamental and experimental.  You may hit issues and patches are welcome.
+
+You can also get very far by just rerunning the full definition file and using the performer onPortInUse and cluster useExisting settings to reuse existing resources.
 
 ## Running a single step or flow
 
@@ -124,10 +126,11 @@ Everyone - AI and human - please follow these as best you can.
 
 ### Stability
 This project aims to strike a balance between actively encouraging collaboration, and the need for a stable and reliable tool - particularly as it is used from CLI.
-There are two tools here - stable definition files (covered elsewhere), and the `stable` Git tag.
-The `stable` tag is used from CI and by anyone preferring stability over latest features.  
-It is intended that the tag is only a few weeks at most behind main: the aim is to catch glaring problems from new code, rather than guarantee zero regressions.
-So please update the tag regularly - whenever you have been running the tool for a few days without issue, for instance.
+There is a `stable` and a `latest` version of the tool, and their installation instructions can be found here https://github.com/couchbaselabs/fit-cli/releases.
+CI and these instructions default to `stable`.
+`latest` reflects `main` and is built on each commit.
+It is intended that the stable version is only a few days at most behind main: the aim is to catch glaring problems from new code, rather than guarantee zero regressions.
+So please feel free to run https://github.com/couchbaselabs/fit-cli/actions/workflows/promote-stable.yaml regularly - whenever you have been running the tool for a few days without issue, for instance.
 
 ### Documentation
 While this project is generally very LLM-friendly - please keep project docs such as this README human-written, clear and concise.
