@@ -65,7 +65,8 @@ export async function askClusterDef(options: AskClusterDefOptions = {}): Promise
   const version = await input({
     promptId: "cluster.create.server-version",
     message: "Which Couchbase Server version?",
-    default: "8.1.0-2188",
+    // Temp, working around https://couchbase.slack.com/archives/C05LNBVQRE3/p1781539981409679
+    default: "8.0.2-5322",
   });
 
   const services = await checkbox<string>({
