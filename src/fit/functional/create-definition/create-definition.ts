@@ -28,6 +28,7 @@ import { selectCluster } from "../../../cluster/cluster-select/cluster-select.js
 import { askVersion } from "../../performers/build-performer/ask-version.js";
 import { askPortInUsePolicy } from "../../performers/util/ask-port-in-use-policy.js";
 import { createLocalFitExecutionContext } from "../../shared/util/remote-fit-run.js";
+import { printDefinitionRunGuidance } from "../../shared/definition/run-guidance.js";
 import { selectFitTests } from "../../shared/select-fit-tests/select-fit-tests.js";
 import {
   buildFitFunctionalDefinitionFrom,
@@ -111,10 +112,7 @@ export async function createFitFunctionalDefinition(rootDir: string, options?: {
   console.log(`\nWriting ${result.path}:\n`);
   printWithoutTimestamps(formatFitFunctionalDefinition(definition, outputFormat));
   console.log(`\n✓ Wrote ${result.path}`);
-  console.log(`\nRun it later with:\n  
-  npm run definition -- --interactive ${result.path}\n
-  Or if on CI choose default options with:\n
-  npm run definition ${result.path}`);
+  printDefinitionRunGuidance(result.path);
 
   return { artifacts: [result.artifact], details: [] };
 }

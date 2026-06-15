@@ -37,11 +37,8 @@ jobs:
     # Bind to the chosen Capella environment so its CAP_* variables resolve below.
     environment: ${{ inputs.capellaEnvironment }}
     steps:
-      - name: Diagnostics1
-        run: |
-          echo "App id: ${{ secrets.CBFITFRAMEWORK_APP_ID }}"
-
       # Obtain a GitHub token that has permissions to check out private repos (transactions-fit-performer)
+      # (The {{ secrets.GITHUB_TOKEN }} that GHA automatically provides is valid only for the current repo.)
       - name: Generate GitHub App token
         id: app-token
         uses: actions/create-github-app-token@v3
@@ -117,8 +114,8 @@ jobs:
           require_tests: false   # a definition may legitimately run no functional tests
           detailed_summary: true
           # Unfortunately this is required as otherwise we blow a 1024k $GITHUB_STEP_SUMMARY limit. The full JUnit output is in the artifacts (and S3).
-          # todo - not sure if true
-          # include_passed: false
+          # todo - not sure if true, trying includinbg passed results for now
+          include_passed: true
           comment: true
           group_suite: true
           include_time_in_summary: true

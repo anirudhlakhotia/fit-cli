@@ -18,8 +18,9 @@ import {
   parseResumePoint,
 } from "../functional/run-from-definition/resume.js";
 import { describeDefinition } from "../shared/definition/generate-desc.js";
+import { generatePreset, parseGeneratePresetArgs, PRESET_TYPES } from "./generate-preset/generate-preset.js";
 
-const SUBCOMMANDS = ["execute", "validate", "generate-desc"] as const;
+const SUBCOMMANDS = ["execute", "validate", "generate-desc", "generate-preset"] as const;
 type Subcommand = (typeof SUBCOMMANDS)[number];
 
 const HELP = `Manage FIT definition files.
@@ -28,14 +29,22 @@ Usage:
   npm run definition -- execute <file.json5> [--resume-at=<point>] [resume selectors] [--root <dir>]
   npm run definition -- validate <file.json5>
   npm run definition -- generate-desc <file.json5>
+  npm run definition -- generate-preset --type <preset> --sdk <sdk> --cluster-version <version> [--performer-image-name <tag>]
   npm run definition -- --help
 
 Both .json5 and .yaml definition files are accepted.
 
 Subcommands:
-  execute        Run FIT tests from a definition file.
-  validate       Parse and validate a definition file without running it.
-  generate-desc  Print a compact description of a definition file (useful for CI labels).
+  execute         Run FIT tests from a definition file.
+  validate        Parse and validate a definition file without running it.
+  generate-desc   Print a compact description of a definition file (useful for CI labels).
+  generate-preset Emit a ready-to-run definition file from a preset template.
+
+generate-preset options:
+  --type <preset>               Preset to generate. Known presets: ${PRESET_TYPES.join(", ")}
+  --sdk <sdk>                   SDK to test (java, kotlin, scala, cpp, dotnet, go, node, python, ruby, rust)
+  --cluster-version <version>   Couchbase Server version to allocate (e.g. 7.6.5, 8.0.0)
+  --performer-image-name <tag>  Docker image tag for the performer (e.g. main, 4.2.0). Defaults to the SDK default.
 
 Resume points for execute:
   --resume-at=after-instance-creation   Reuse a running instance.
@@ -107,6 +116,18 @@ if (isMain(import.meta.url)) {
       console.error(`Unknown subcommand: ${subcommand}\n`);
       console.error(HELP);
       process.exit(2);
+    }
+
+    if (subcommand === "generate-preset") {
+      let args;
+      try {
+        args = parseGeneratePresetArgs(rest);
+      } catch (err) {
+        console.error((err as Error).message);
+        process.exit(2);
+      }
+      generatePreset(args);
+      return;
     }
 
     if (subcommand === "validate") {

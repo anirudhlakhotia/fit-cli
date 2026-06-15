@@ -17,6 +17,7 @@ import { askClusterExistsPolicy } from "../../../cluster/cluster-create/ask-clus
 import { askVersion } from "../../performers/build-performer/ask-version.js";
 import { askPortInUsePolicy } from "../../performers/util/ask-port-in-use-policy.js";
 import { askFitGerritRef, chooseDefinitionCluster } from "../../functional/create-definition/create-definition.js";
+import { printDefinitionRunGuidance } from "../definition/run-guidance.js";
 import {
   chooseResultsDatabaseMode,
   type ResultsDatabaseMode,
@@ -429,18 +430,7 @@ export async function createFitDefinition(rootDir: string, options?: { format?: 
   console.log(`\nWriting ${result.path}:\n`);
   printWithoutTimestamps(formatFn(definition, outputFormat));
   console.log(`\n✓ Wrote ${result.path}`);
-  const ciInstructions =
-    `\nTo run on CI via https://github.com/couchbaselabs/fit-cli, upload as a gist and trigger in one step:\n` +
-    `  GIST_URL=$(gh gist create ${result.path} --desc "fit-cli FIT definition")\\\n` +
-    `  gh workflow run fit-cli.yaml --repo couchbaselabs/fit-cli --field definitionFile="\${GIST_URL/gist.github.com/gist.githubusercontent.com}/raw"`;
-
-  console.log(
-    `\nRun it later with:\n` +
-      `  npm run definition -- execute --interactive ${result.path}\n` +
-      `\nOr non-interactively (e.g. on CI), taking the default answer to every prompt:\n` +
-      `  npm run definition -- execute ${result.path}` +
-      ciInstructions,
-  );
+  printDefinitionRunGuidance(result.path);
 
   return { artifacts: [result.artifact], details: [] };
 }
