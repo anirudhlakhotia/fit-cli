@@ -148,6 +148,7 @@ import {
   type ResumeTargetState,
   type RunState,
 } from "./resume-state.js";
+import { updateGhaRunTitle } from "../../util/gha.js";
 
 /** True for a functional iteration that has resolved to a concrete cluster. */
 function functionalWithCluster(
@@ -1070,9 +1071,13 @@ export async function runFromDefinition(
   const tracker = new RunFailureTracker();
   const { resumeAt, resumeSelector = {} } = options;
   const phases = phasesForResumePoint(resumeAt);
-  const resolved = resolveDefinition(loadDefinition(definitionPath));
+  const definition = loadDefinition(definitionPath);
+  const resolved = resolveDefinition(definition);
   const executionGroups = buildExecutionGroups(resolved.instances);
   console.log(`\nRunning FIT tests from definition:\n  ${definitionPath}`);
+  if (definition.description) {
+    await updateGhaRunTitle(definition.description);
+  }
 
   const preconditionCtx: FailureContext = { instanceIndex: 0 };
   const savedState = resumeAt ? readRunState(dirname(resolve(definitionPath))) : undefined;

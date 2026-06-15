@@ -29,6 +29,7 @@ permissions:
   id-token: write   # required for GitHub OIDC
   contents: read
   checks: write     # required for action-junit-report to post the JUnit check run / annotations
+  actions: write    # required to update the workflow run display_title
 
 jobs:
   run-fit-cli:
