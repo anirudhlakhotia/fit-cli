@@ -15,6 +15,7 @@ import {
 import { installFitCliConsoleFormatting, fitCliError } from "./fit-cli-log.js";
 import { startSessionLog, startDebugLog } from "./proc.js";
 import { ensurePromptSession } from "./replay.js";
+import { emitGhaArtifactNotice } from "../../fit/util/gha.js";
 
 /**
  * Shared plumbing for the small per-step CLIs. Every file under steps/ exports
@@ -74,6 +75,7 @@ export function runCli(main: () => Promise<void | Partial<RunOutput>>): void {
           console.log(`\n${formatCallToActionBanner(detail.label, detail.value)}`);
         }
       }
+      emitGhaArtifactNotice();
       if (runOutput?.worstFailure && worstFailureShouldExitNonZero(runOutput.worstFailure)) {
         fitCliError(formatFailureSummaryLine(runOutput.worstFailure, runOutput.failureCount ?? 1));
         await Promise.all([sessionLog.flush(), debugLog.flush()]);
