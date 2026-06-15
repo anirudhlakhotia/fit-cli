@@ -12,6 +12,8 @@ test("remoteAptWaitCommand waits for cloud-init and apt activity to finish", () 
   assert.match(command, /pgrep -x apt-get/);
   assert.match(command, /pgrep -x dpkg/);
   assert.match(command, /sleep 2/);
+  assert.doesNotMatch(command, /do;/);
+  assert.doesNotMatch(command, /then;/);
 });
 
 test("remoteAptCleanupCommand clears apt lists without deleting the lock file", () => {

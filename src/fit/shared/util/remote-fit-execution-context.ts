@@ -34,21 +34,22 @@ import { resolveGerritSshKey } from "../../util/config.js";
 const REMOTE_APT_ENV = "DEBIAN_FRONTEND=noninteractive";
 
 export function remoteAptWaitCommand(): string {
-  return [
-    "if command -v cloud-init >/dev/null 2>&1; then sudo -n cloud-init status --wait >/dev/null; fi",
-    "for _ in $(seq 1 60); do",
-    "  if ! pgrep -x apt >/dev/null 2>&1 && ! pgrep -x apt-get >/dev/null 2>&1 && ! pgrep -x dpkg >/dev/null 2>&1 && ! pgrep -f unattended-upgrade >/dev/null 2>&1; then",
-    "    exit 0",
-    "  fi",
-    "  sleep 2",
-    "done",
-    "echo 'Timed out waiting for apt/dpkg activity to finish.' >&2",
-    "pgrep -a -x apt >&2 || true",
-    "pgrep -a -x apt-get >&2 || true",
-    "pgrep -a -x dpkg >&2 || true",
-    "pgrep -a -f unattended-upgrade >&2 || true",
-    "exit 1",
-  ].join("; ");
+  return `
+if command -v cloud-init >/dev/null 2>&1; then
+  sudo -n cloud-init status --wait >/dev/null
+fi
+for _ in $(seq 1 60); do
+  if ! pgrep -x apt >/dev/null 2>&1 && ! pgrep -x apt-get >/dev/null 2>&1 && ! pgrep -x dpkg >/dev/null 2>&1 && ! pgrep -f unattended-upgrade >/dev/null 2>&1; then
+    exit 0
+  fi
+  sleep 2
+done
+echo 'Timed out waiting for apt/dpkg activity to finish.' >&2
+pgrep -a -x apt >&2 || true
+pgrep -a -x apt-get >&2 || true
+pgrep -a -x dpkg >&2 || true
+pgrep -a -f unattended-upgrade >&2 || true
+exit 1`.trim();
 }
 
 export function remoteAptCleanupCommand(): string {
