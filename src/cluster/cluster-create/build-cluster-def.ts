@@ -68,13 +68,23 @@ function dockerMemoryForServices(services: string[]): CbdinoclusterDockerDef | u
   return Object.keys(docker).length > 0 ? docker : undefined;
 }
 
-/** The cbdinocluster definition as a structured object (what goes under `config`). */
+/**
+ * The cbdinocluster definition as a structured object (what goes under `config`).
+ *
+ * This block is passed through to the `cbdinocluster` CLI verbatim — fit-cli does
+ * not strip or reshape it — so any cbdinocluster cluster-def key is accepted, even
+ * ones fit-cli doesn't model (hence the open index signature). The fields named
+ * below are the ones fit-cli itself reads: `nodes`/`cao` to describe the cluster
+ * and pick the default deployer, `docker` for the generated RAM quotas.
+ */
 export interface CbdinoclusterDef {
   nodes: { count: number; version: string; services: string[] }[];
   /** Present only when CNG/Protostellar support is wanted. */
   cao?: { "operator-version": string; "gateway-version": string };
   /** Per-service RAM quotas for the docker deployer; omitted for other deployers. */
   docker?: CbdinoclusterDockerDef;
+  /** Pass-through: any other cbdinocluster cluster-def keys are forwarded as-is. */
+  [key: string]: unknown;
 }
 
 /**

@@ -349,10 +349,8 @@ instances:
   });
 });
 
-test("rejects a non-positive-integer docker RAM quota", () => {
-  assert.throws(
-    () =>
-      parseDefinition(`
+test("passes the cbdinocluster config block through verbatim, including unmodelled keys", () => {
+  const def = parseDefinition(`
 version: 1
 type: fit
 instances:
@@ -364,8 +362,12 @@ instances:
               - count: 1
                 version: 8.1.0-2188
                 services: [kv]
+                extra-node-key: keep-me
             docker:
-              kv-memory: 0
+              kv-memory: 4096
+            columnar: true
+            some-future-cbdino-key:
+              nested: value
         sessions:
           - performer:
               sdk: java
@@ -373,9 +375,15 @@ instances:
               - type: functional
                 tests:
                   presets: [all]
-`),
-    (err: unknown) => err instanceof InvalidDefinitionError && /docker\.kv-memory/.test(err.message),
-  );
+`);
+  // The whole block is forwarded as-is — fit-cli neither strips unknown top-level
+  // keys nor reshapes nodes — so the cbdinocluster CLI sees exactly what was written.
+  assert.deepEqual(def.instances[0]?.clusters[0]?.cbdinocluster?.config, {
+    nodes: [{ count: 1, version: "8.1.0-2188", services: ["kv"], "extra-node-key": "keep-me" }],
+    docker: { "kv-memory": 4096 },
+    columnar: true,
+    "some-future-cbdino-key": { nested: "value" },
+  });
 });
 
 test("rejects clusterConfig mixed with inline cluster fields", () => {

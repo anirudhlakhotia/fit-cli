@@ -156,58 +156,20 @@ function isClusterExistsPolicy(value: unknown): value is ClusterExistsPolicy {
   return isString(value) && (CLUSTER_EXISTS_POLICIES as readonly string[]).includes(value);
 }
 
-function validateClusterNode(value: unknown, path: string): CbdinoclusterDef["nodes"][number] {
-  const record = requireRecord(value, path);
-  const services = record.services;
-  if (!isStringArray(services) || services.length === 0) {
-    throw new InvalidDefinitionError(`"${path}.services" must be a non-empty list; got ${JSON.stringify(services)}`);
-  }
-  return {
-    count: requirePositiveInteger(record, "count", `${path}.count`),
-    version: requireString(record, "version", `${path}.version`),
-    services,
-  };
-}
-
-/** Per-service RAM quotas (MB) the docker deployer understands. */
-const DOCKER_MEMORY_KEYS = [
-  "kv-memory",
-  "index-memory",
-  "fts-memory",
-  "cbas-memory",
-  "eventing-memory",
-] as const;
-
-function validateCbdinoclusterDocker(value: unknown, path: string): CbdinoclusterDef["docker"] {
-  const record = requireRecord(value, path);
-  const docker: NonNullable<CbdinoclusterDef["docker"]> = {};
-  for (const key of DOCKER_MEMORY_KEYS) {
-    if (record[key] !== undefined) {
-      docker[key] = requirePositiveInteger(record, key, `${path}.${key}`);
-    }
-  }
-  return docker;
-}
-
+/**
+ * The cbdinocluster `config` block is passed through to the `cbdinocluster` CLI
+ * verbatim (it's YAML-stringified straight into the def file at allocate time), so
+ * we don't reshape it or reject keys fit-cli doesn't model — any valid cbdinocluster
+ * cluster-def field is forwarded as-is. We only check that the block is a
+ * JSON-compatible mapping (so it serialises cleanly) with a non-empty `nodes` list,
+ * which cbdinocluster requires and fit-cli reads downstream to describe the cluster.
+ */
 function validateCbdinoclusterDef(value: unknown, path: string): CbdinoclusterDef {
   const record = requireRecord(value, path);
   if (!Array.isArray(record.nodes) || record.nodes.length === 0) {
     throw new InvalidDefinitionError(`"${path}.nodes" must be a non-empty list; got ${JSON.stringify(record.nodes)}`);
   }
-  const def: CbdinoclusterDef = {
-    nodes: record.nodes.map((node, index) => validateClusterNode(node, `${path}.nodes[${index}]`)),
-  };
-  if (record.cao !== undefined) {
-    const cao = requireRecord(record.cao, `${path}.cao`);
-    def.cao = {
-      "operator-version": requireString(cao, "operator-version", `${path}.cao.operator-version`),
-      "gateway-version": requireString(cao, "gateway-version", `${path}.cao.gateway-version`),
-    };
-  }
-  if (record.docker !== undefined) {
-    def.docker = validateCbdinoclusterDocker(record.docker, `${path}.docker`);
-  }
-  return def;
+  return validateJsonLike(record, path) as unknown as CbdinoclusterDef;
 }
 
 function validateCbdinoclusterInit(value: unknown, path: string): CbdinoclusterInitSetup {
