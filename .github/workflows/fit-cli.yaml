@@ -107,6 +107,7 @@ jobs:
           npm run definition -- execute ${{ inputs.definitionFile }} | tee /tmp/fit-cli-output.log
         id: run-fit-cli
 
+      # https://github.com/marketplace/actions/junit-report-action
       - name: Publish JUnit results
         if: always()
         uses: mikepenz/action-junit-report@v6
@@ -118,6 +119,11 @@ jobs:
           # Unfortunately this is required as otherwise we blow a 1024k $GITHUB_STEP_SUMMARY limit. The full JUnit output is in the artifacts (and S3).
           # todo - not sure if true
           # include_passed: false
+          comment: true
+          group_suite: true
+          include_time_in_summary: true
+          include_empty_in_summary: true
+          annotations_limit: 100 # More than this probably isn't useful anyway
 
       - name: Job summary
         if: always()
