@@ -98,12 +98,13 @@ jobs:
         with:
           report_paths: '/tmp/fit-cli/**/surefire-reports/TEST-*.xml'
           check_name: FIT functional tests
+          # Nb all the comments below will be tidied away once finalised the params
           require_tests: false   # a definition may legitimately run no functional tests
           detailed_summary: true
           # Unfortunately this is required as otherwise we blow a 1024k $GITHUB_STEP_SUMMARY limit. The full JUnit output is in the artifacts (and S3).
           # todo - not sure if true, trying includinbg passed results for now
           include_passed: true
-          comment: true
+#          comment: true # This requires a PR to attach to, not what we want
           group_suite: true
           include_time_in_summary: true
           include_empty_in_summary: true
