@@ -29,7 +29,7 @@ Usage:
   bun run definition -- execute <file.json5> [--resume-at=<point>] [resume selectors] [--root <dir>]
   bun run definition -- validate <file.json5>
   bun run definition -- generate-desc <file.json5>
-  bun run definition -- generate-preset --type <preset> --sdk <sdk> --cluster-version <version> [--performer-image-name <tag>]
+  bun run definition -- generate-preset --type <preset> --cluster-version <version> --performer-image-name <image> [--output <path>]
   bun run definition -- --help
 
 Both .json5 and .yaml definition files are accepted.
@@ -42,9 +42,9 @@ Subcommands:
 
 generate-preset options:
   --type <preset>               Preset to generate. Known presets: ${PRESET_TYPES.join(", ")}
-  --sdk <sdk>                   SDK to test (java, kotlin, scala, cpp, dotnet, go, node, python, ruby, rust)
   --cluster-version <version>   Couchbase Server version to allocate (e.g. 7.6.5, 8.0.0)
-  --performer-image-name <tag>  Docker image tag for the performer (e.g. main, 4.2.0). Defaults to the SDK default.
+  --performer-image-name <image>  SDK-specific performer image ref (e.g. java-fit-performer:refs-changes-67-246067-3 or ghcr.io/couchbase/java-fit-performer:refs-changes-67-246067-3).
+  --output <path>               Write the generated definition to an explicit path instead of the default run dir.
   --push-gist [public|private]  After writing the file, create a GitHub Gist (default: public). Requires a GitHub token in the fit-cli config or GITHUB_TOKEN / GH_TOKEN.
 
 Resume points for execute:

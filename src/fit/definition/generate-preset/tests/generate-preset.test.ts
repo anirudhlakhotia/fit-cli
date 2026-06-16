@@ -1,0 +1,64 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { parseGeneratePresetArgs } from "../generate-preset.js";
+
+test("parseGeneratePresetArgs derives sdk from performer image and accepts output", () => {
+  const args = parseGeneratePresetArgs([
+    "--type",
+    "preset-functional-tests",
+    "--cluster-version",
+    "7.6.5",
+    "--performer-image-name",
+    "java-fit-performer:refs-changes-67-246067-3",
+    "--output",
+    "/tmp/generated-fit.yaml",
+  ]);
+
+  assert.deepEqual(args, {
+    type: "preset-functional-tests",
+    sdkValue: "java",
+    clusterVersion: "7.6.5",
+    performerImageName: "refs-changes-67-246067-3",
+    outputPath: "/tmp/generated-fit.yaml",
+    pushGistVisibility: undefined,
+  });
+});
+
+test("parseGeneratePresetArgs accepts equals-style output flag", () => {
+  const args = parseGeneratePresetArgs([
+    "--type=preset-functional-tests",
+    "--cluster-version=8.0.0",
+    "--performer-image-name=ghcr.io/couchbase/java-fit-performer:refs-changes-67-246067-3",
+    "--output=/tmp/generated-fit.yaml",
+  ]);
+
+  assert.equal(args.type, "preset-functional-tests");
+  assert.equal(args.sdkValue, "java");
+  assert.equal(args.clusterVersion, "8.0.0");
+  assert.equal(args.performerImageName, "refs-changes-67-246067-3");
+  assert.equal(args.outputPath, "/tmp/generated-fit.yaml");
+});
+
+test("parseGeneratePresetArgs requires an sdk-specific performer image name", () => {
+  assert.throws(
+    () =>
+      parseGeneratePresetArgs([
+        "--type=preset-functional-tests",
+        "--cluster-version=8.0.0",
+      ]),
+    /--performer-image-name is required and must include an SDK-specific image/,
+  );
+});
+
+test("parseGeneratePresetArgs rejects the removed sdk flag", () => {
+  assert.throws(
+    () =>
+      parseGeneratePresetArgs([
+        "--type=preset-functional-tests",
+        "--sdk=java",
+        "--cluster-version=8.0.0",
+        "--performer-image-name=java-fit-performer:refs-changes-67-246067-3",
+      ]),
+    /Unexpected argument: --sdk=java/,
+  );
+});

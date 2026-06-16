@@ -1,15 +1,13 @@
 /**
  * `bun run definition -- generate-preset` — emit a ready-to-run definition file
- * from a named preset template, parameterised by SDK, cluster version, and
- * (optionally) a performer Docker image tag.
+ * from a named preset template, parameterised by performer image and cluster version.
  *
  * Usage:
- *   bun run definition -- generate-preset --type preset-functional-tests --sdk java --cluster-version 7.6.5
- *   bun run definition -- generate-preset --type preset-functional-tests --sdk java --cluster-version 8.0.0 --performer-image-name main
+ *   bun run definition -- generate-preset --type preset-functional-tests --cluster-version 8.0.0 --performer-image-name java-fit-performer:refs-changes-67-246067-3
  */
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { join, dirname } from "node:path";
+import { join, dirname, resolve } from "node:path";
 import YAML from "yaml";
 import { printWithoutTimestamps } from "../../../util/non-fit/fit-cli-log.js";
 import { resolveOutputFormat } from "../../util/config.js";
@@ -33,6 +31,9 @@ export function isPresetType(value: string): value is PresetType {
 const PRESET_TEMPLATE_FILES: Record<PresetType, string> = {
   "preset-functional-tests": "preset-functional-tests.yaml",
 };
+
+const SDK_IMAGE_NAME_PATTERN =
+  /^(?:ghcr\.io\/[^/]+\/)?(?<sdk>[a-z0-9]+)-fit-performer:(?<tag>[A-Za-z0-9_][A-Za-z0-9._-]{0,127})$/;
 
 function loadPresetTemplate(type: PresetType): string {
   const presetsDir = join(dirname(fileURLToPath(import.meta.url)), "../presets");
@@ -76,12 +77,13 @@ export interface GeneratePresetArgs {
   sdkValue: SdkValue;
   clusterVersion: string;
   performerImageName?: string;
+  outputPath?: string;
   format?: DefinitionFormat;
   pushGistVisibility?: GistVisibility;
 }
 
 export async function generatePreset(args: GeneratePresetArgs): Promise<void> {
-  const { type, sdkValue, clusterVersion, performerImageName, format, pushGistVisibility } = args;
+  const { type, sdkValue, clusterVersion, performerImageName, outputPath, format, pushGistVisibility } = args;
   const sdk = sdkByValue(sdkValue);
   if (!sdk) {
     throw new Error(`Unknown SDK: ${sdkValue}`);
@@ -90,8 +92,15 @@ export async function generatePreset(args: GeneratePresetArgs): Promise<void> {
   const template = loadPresetTemplate(type);
   const definition = applyPresetParams(template, sdkValue, clusterVersion, performerImageName);
   const outputFormat = format ?? resolveOutputFormat();
-  const result = writeFitDefinition(definition, undefined, outputFormat);
   const formatted = formatFitDefinition(definition, outputFormat);
+  const result = outputPath
+    ? (() => {
+        const path = resolve(outputPath);
+        mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+        writeFileSync(path, formatted);
+        return { path };
+      })()
+    : writeFitDefinition(definition, undefined, outputFormat);
 
   console.log(`\nWriting ${result.path}:\n`);
   printWithoutTimestamps(formatted);
@@ -106,12 +115,34 @@ export async function generatePreset(args: GeneratePresetArgs): Promise<void> {
   printDefinitionRunGuidance(result.path);
 }
 
+function deriveSdkAndTagFromPerformerImageName(
+  performerImageName?: string,
+): { sdkValue?: SdkValue; performerImageName?: string } {
+  const trimmed = performerImageName?.trim();
+  if (!trimmed) {
+    return {};
+  }
+
+  const match = SDK_IMAGE_NAME_PATTERN.exec(trimmed);
+  if (!match?.groups) {
+    return { performerImageName: trimmed };
+  }
+
+  const sdkValue = match.groups.sdk;
+  const tag = match.groups.tag;
+  if (!sdkByValue(sdkValue)) {
+    return { performerImageName: trimmed };
+  }
+
+  return { sdkValue: sdkValue as SdkValue, performerImageName: tag };
+}
+
 /** Parse `generate-preset` flags out of a positional-free argv slice. */
 export function parseGeneratePresetArgs(argv: string[]): GeneratePresetArgs {
   let type: string | undefined;
-  let sdkValue: string | undefined;
   let clusterVersion: string | undefined;
   let performerImageName: string | undefined;
+  let outputPath: string | undefined;
   let pushGistVisibility: GistVisibility | undefined;
 
   for (let i = 0; i < argv.length; i++) {
@@ -120,10 +151,6 @@ export function parseGeneratePresetArgs(argv: string[]): GeneratePresetArgs {
       type = argv[++i];
     } else if (arg.startsWith("--type=")) {
       type = arg.slice("--type=".length);
-    } else if (arg === "--sdk") {
-      sdkValue = argv[++i];
-    } else if (arg.startsWith("--sdk=")) {
-      sdkValue = arg.slice("--sdk=".length);
     } else if (arg === "--cluster-version") {
       clusterVersion = argv[++i];
     } else if (arg.startsWith("--cluster-version=")) {
@@ -132,6 +159,10 @@ export function parseGeneratePresetArgs(argv: string[]): GeneratePresetArgs {
       performerImageName = argv[++i];
     } else if (arg.startsWith("--performer-image-name=")) {
       performerImageName = arg.slice("--performer-image-name=".length);
+    } else if (arg === "--output") {
+      outputPath = argv[++i];
+    } else if (arg.startsWith("--output=")) {
+      outputPath = arg.slice("--output=".length);
     } else if (arg === "--push-gist") {
       // Optional value: --push-gist [public|private]; default public.
       const next = argv[i + 1];
@@ -152,15 +183,18 @@ export function parseGeneratePresetArgs(argv: string[]): GeneratePresetArgs {
     }
   }
 
+  const derived = deriveSdkAndTagFromPerformerImageName(performerImageName);
+  performerImageName = derived.performerImageName;
+  const sdkValue = derived.sdkValue;
+
   if (!type) throw new Error(`--type is required.\nAvailable presets: ${PRESET_TYPES.join(", ")}`);
   if (!isPresetType(type)) {
     throw new Error(`Unknown preset type: ${type}\nKnown types: ${PRESET_TYPES.join(", ")}`);
   }
-  if (!sdkValue) throw new Error("--sdk is required");
-  if (!sdkByValue(sdkValue)) {
-    throw new Error(`Unknown SDK: ${sdkValue}\nKnown SDKs: java, kotlin, scala, cpp, dotnet, go, node, python, ruby, rust`);
+  if (!sdkValue) {
+    throw new Error("--performer-image-name is required and must include an SDK-specific image like java-fit-performer:<tag>");
   }
   if (!clusterVersion) throw new Error("--cluster-version is required");
 
-  return { type, sdkValue: sdkValue as SdkValue, clusterVersion, performerImageName, pushGistVisibility };
+  return { type, sdkValue, clusterVersion, performerImageName, outputPath, pushGistVisibility };
 }
