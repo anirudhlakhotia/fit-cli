@@ -1,0 +1,22 @@
+name: Test Step Summary
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-step-summary:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Append to step summary repeatedly
+        run: |
+          for i in $(seq 1 10); do
+            {
+              echo "## Update $i"
+              echo ""
+              echo "Wrote this update at $(date -u +"%Y-%m-%dT%H:%M:%SZ")."
+              echo ""
+            } >> "$GITHUB_STEP_SUMMARY"
+
+            echo "Appended update $i to \$GITHUB_STEP_SUMMARY"
+            sleep 10
+          done
