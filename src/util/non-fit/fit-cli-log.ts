@@ -253,3 +253,12 @@ export function isFitBinary(): boolean {
 export function definitionExecutePrefix(): string {
   return isFitBinary() ? "fit" : "bun run definition -- execute";
 }
+
+/**
+ * Return the invocation prefix for a `fit run <script>` sub-command, adjusted
+ * for whether the user is running as the compiled `fit` binary or via bun.
+ *   fit run config edit   ≡   bun run config -- edit
+ */
+export function runScriptPrefix(script: string): string {
+  return isFitBinary() ? `fit run ${script}` : `bun run ${script} --`;
+}

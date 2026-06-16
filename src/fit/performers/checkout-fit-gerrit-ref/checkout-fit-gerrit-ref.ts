@@ -6,7 +6,7 @@
  */
 import { spawnSync } from "node:child_process";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
-import { fitCliError } from "../../../util/non-fit/fit-cli-log.js";
+import { fitCliError, runScriptPrefix } from "../../../util/non-fit/fit-cli-log.js";
 import { posixQuote } from "../../../util/non-fit/remote-target.js";
 import { resolveGerritUser } from "../../util/config.js";
 import { rootDirFromArgv } from "../../util/root.js";
@@ -80,7 +80,7 @@ export function requireGerritUser(): string {
     return fromGhCli;
   }
   throw new Error(
-    "Cannot determine Gerrit username. Set gerrit.user in ~/.fit-cli/config.json5 (bun run config -- edit), or set FIT_GERRIT_USER / GERRIT_USER.",
+    `Cannot determine Gerrit username. Set gerrit.user in ~/.fit-cli/config.json5 (${runScriptPrefix("config")} edit), or set FIT_GERRIT_USER / GERRIT_USER.`,
   );
 }
 

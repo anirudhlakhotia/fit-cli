@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
-import { commandOn, formatCommandLine } from "../../../util/non-fit/fit-cli-log.js";
+import { commandOn, formatCommandLine, runScriptPrefix } from "../../../util/non-fit/fit-cli-log.js";
 import { instanceInternalRunDir } from "../../../util/non-fit/replay.js";
 import { posixQuote } from "../../../util/non-fit/remote-target.js";
 import { RemoteTarget } from "../../../util/non-fit/remote-target.js";
@@ -149,7 +149,7 @@ export async function createRemoteFitExecutionContext(
     } else {
       console.log(
         "\n⚠ No GitHub token found — the private FIT repos will fail to clone.\n" +
-          "  Add one with `bun run config -- edit`, or set GITHUB_TOKEN / GH_TOKEN, then try again.",
+          `  Add one with \`${runScriptPrefix("config")} edit\`, or set GITHUB_TOKEN / GH_TOKEN, then try again.`,
       );
     }
 

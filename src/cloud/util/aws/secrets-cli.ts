@@ -15,6 +15,7 @@
  */
 import { SecretsManagerClient, CreateSecretCommand, PutSecretValueCommand } from "@aws-sdk/client-secrets-manager";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
+import { runScriptPrefix } from "../../../util/non-fit/fit-cli-log.js";
 import { loadEnvironments } from "../../../fit/util/environments.js";
 import { getJsonSecret, AwsSecretError } from "./secrets.js";
 import { AWS_REGION } from "./aws-target.js";
@@ -94,15 +95,18 @@ async function cmdSet(idOrName: string, pairs: string[]): Promise<void> {
   }
 }
 
-const HELP = `fit-cli AWS secrets manager.
+function helpText(): string {
+  const p = runScriptPrefix("secrets");
+  return `fit-cli AWS secrets manager.
 
 Usage:
-  bun run secrets list
-  bun run secrets get <secretId|name>
-  bun run secrets set <secretId|name> key=value [key=value ...]
+  ${p} list
+  ${p} get <secretId|name>
+  ${p} set <secretId|name> key=value [key=value ...]
 
 <name> may be a registry name from environments.json5 (e.g. capella/dev, results/prod)
 or a raw Secrets Manager id/ARN. Secrets are JSON objects of fields. Region: ${AWS_REGION}.`;
+}
 
 export function runSecretsMain(): void {
   runCli(async () => {
@@ -120,7 +124,7 @@ export function runSecretsMain(): void {
         await cmdSet(rest[0], rest.slice(1));
         return;
       default:
-        console.log(HELP);
+        console.log(helpText());
         if (command !== undefined && command !== "--help" && command !== "-h") process.exit(2);
     }
   });

@@ -28,7 +28,7 @@ import { ensureSecurityGroup } from "../../../cloud/util/aws/security-group.js";
 import { instanceRunDir } from "../../../util/non-fit/replay.js";
 import { waitForSsh, type RemoteHost } from "../../../util/non-fit/ssh.js";
 import { RemoteTarget } from "../../../util/non-fit/remote-target.js";
-import { fitCliWarn } from "../../../util/non-fit/fit-cli-log.js";
+import { fitCliWarn, runScriptPrefix } from "../../../util/non-fit/fit-cli-log.js";
 import { formatBanner, formatEc2DeletionResponsibilityBanner, terminateInstanceCommand } from "./lifecycle-warning.js";
 import { warnAboutExistingInstances } from "./warn-existing-instances.js";
 
@@ -118,7 +118,7 @@ export interface ProvisionOptions {
 export async function provisionFitInstance(options: ProvisionOptions = {}): Promise<ProvisionedInstance> {
   await ensureFitCliConfigEnv({
     promptId: "fit-instance.config.create",
-    promptMessage: "No fit-cli config found. Run `bun run config -- edit` now before provisioning an EC2 instance?",
+    promptMessage: `No fit-cli config found. Run \`${runScriptPrefix("config")} edit\` now before provisioning an EC2 instance?`,
   });
   const creds = await checkCredentials();
   if (!creds.ok) {

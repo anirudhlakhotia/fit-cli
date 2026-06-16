@@ -25,15 +25,18 @@ import {
   type InstanceListContext,
 } from "../../fit/util/aws/lifecycle-warning.js";
 import { manageInstances, type InstanceQuery } from "../../cloud/util/aws/manage-instances.js";
+import { runScriptPrefix } from "../../util/non-fit/fit-cli-log.js";
 
-const HELP = `Manage fit-cli EC2 instances.
+function helpText(): string {
+  const p = runScriptPrefix("cloud-instances");
+  return `Manage fit-cli EC2 instances.
 
 Usage:
-  bun run cloud-instances -- list
-  bun run cloud-instances -- manage [--tag key=value] [--key <key-name>]
-  bun run cloud-instances -- delete <instance-id> [--force]
-  bun run cloud-instances -- remove-all [--all-users] [--older-than <duration>] [--dry-run] [--force]
-  bun run cloud-instances -- --help
+  ${p} list
+  ${p} manage [--tag key=value] [--key <key-name>]
+  ${p} delete <instance-id> [--force]
+  ${p} remove-all [--all-users] [--older-than <duration>] [--dry-run] [--force]
+  ${p} --help
 
 Subcommands:
   list        Show all fit-cli instances with their status and cost context.
@@ -49,6 +52,7 @@ remove-all options:
   --dry-run          List what would be terminated, then exit without touching it.
   --force            Skip the confirmation prompt (required for unattended runs,
                      e.g. the scheduled cleanup workflow).`;
+}
 
 async function cmdList(argv: string[]): Promise<void> {
   await prepareAwsCli();
@@ -110,7 +114,7 @@ async function cmdManage(argv: string[]): Promise<void> {
 async function cmdDelete(argv: string[]): Promise<void> {
   const instanceId = argv.find((arg) => !arg.startsWith("-"));
   if (!instanceId) {
-    throw new Error("Usage: bun run cloud-instances -- delete <instance-id> [--force]");
+    throw new Error(`Usage: ${runScriptPrefix("cloud-instances")} delete <instance-id> [--force]`);
   }
 
   const force = argv.includes("--force");
@@ -253,7 +257,7 @@ export function runCloudInstancesMain(): void {
     const [subcommand, ...rest] = process.argv.slice(2);
 
     if (!subcommand || subcommand === "--help" || subcommand === "-h") {
-      console.log(HELP);
+      console.log(helpText());
       if (!subcommand) process.exit(2);
       return;
     }
@@ -279,7 +283,7 @@ export function runCloudInstancesMain(): void {
     }
 
     console.error(`Unknown subcommand: ${subcommand}\n`);
-    console.error(HELP);
+    console.error(helpText());
     process.exit(2);
   });
 }

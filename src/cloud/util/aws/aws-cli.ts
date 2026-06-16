@@ -9,6 +9,7 @@
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { ensureFitCliConfigEnv } from "../../../fit/util/config.js";
 import { AWS_REGION } from "./aws-target.js";
+import { runScriptPrefix } from "../../../util/non-fit/fit-cli-log.js";
 
 /** Load config sources so credentials/env are in place before making SDK calls. */
 export async function prepareAwsCli(): Promise<void> {
@@ -16,7 +17,7 @@ export async function prepareAwsCli(): Promise<void> {
   const hasExplicitCredentials = Boolean(process.env.AWS_ACCESS_KEY_ID);
   await ensureFitCliConfigEnv({
     promptId: "aws.config.create",
-    promptMessage: "No fit-cli config found. Run `bun run config -- edit` now before continuing with this AWS command?",
+    promptMessage: `No fit-cli config found. Run \`${runScriptPrefix("config")} edit\` now before continuing with this AWS command?`,
     promptIfMissing: hasExplicitCredentials ? false : undefined,
   });
 }

@@ -10,7 +10,7 @@
  * bun run config -- --help
  */
 import { isMain, runCli } from "../../util/non-fit/cli.js";
-import { installFitCliConsoleFormatting } from "../../util/non-fit/fit-cli-log.js";
+import { installFitCliConsoleFormatting, runScriptPrefix } from "../../util/non-fit/fit-cli-log.js";
 import { runAutoEdit, runEditWorkflow, formatConfigForDisplay } from "./edit.js";
 import {
   CLOUD_INSTANCE_PURPOSES,
@@ -19,12 +19,14 @@ import {
   type FitCliInstanceTypes,
 } from "../util/config.js";
 
-const HELP = `Manage fit-cli configuration.
+function helpText(): string {
+  const p = runScriptPrefix("config");
+  return `Manage fit-cli configuration.
 
 Usage:
-  bun run config -- edit [options]
-  bun run config -- show [--config-path <path>]
-  bun run config -- --help
+  ${p} edit [options]
+  ${p} show [--config-path <path>]
+  ${p} --help
 
 Subcommands:
   edit   Create or update the fit-cli config file (interactive by default).
@@ -58,6 +60,7 @@ Edit options:
                           they come from environments.json5 + AWS Secrets Manager, keyed by the
                           environment selected in the definition file.)
   -h, --help             Show this help.`;
+}
 
 export interface AutoInitCliArgs {
   auto: boolean;
@@ -174,7 +177,7 @@ export function runConfigMain(): void {
   } else {
     runCli(async () => {
       if (!subcommand || subcommand === "--help" || subcommand === "-h") {
-        console.log(HELP);
+        console.log(helpText());
         if (!subcommand) process.exit(2);
         return;
       }
@@ -192,13 +195,13 @@ export function runConfigMain(): void {
 
       if (subcommand !== "edit") {
         console.error(`Unknown subcommand: ${subcommand}\n`);
-        console.error(HELP);
+        console.error(helpText());
         process.exit(2);
       }
 
       // edit subcommand
       if (rest.includes("--help") || rest.includes("-h")) {
-        console.log(HELP);
+        console.log(helpText());
         return;
       }
 

@@ -4,6 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import JSON5 from "json5";
 import YAML from "yaml";
 import { confirm } from "../../util/non-fit/prompts.js";
+import { runScriptPrefix } from "../../util/non-fit/fit-cli-log.js";
 import { loadEnvironments, type EnvironmentsFile } from "./environments.js";
 import { getJsonSecret } from "../../cloud/util/aws/secrets.js";
 
@@ -231,7 +232,7 @@ export function validateFitCliConfig(raw: unknown): FitCliConfig {
       );
     }
     throw new UnsupportedFitCliConfigVersionError(
-      `Config file version ${version} is no longer supported. Recreate ${FIT_CLI_CONFIG_BASENAME} with \`bun run config -- edit\`.`,
+      `Config file version ${version} is no longer supported. Recreate ${FIT_CLI_CONFIG_BASENAME} with \`${runScriptPrefix("config")} edit\`.`,
     );
   }
 
@@ -426,7 +427,7 @@ export function resolveGithubCredentials(
   const token = config?.github?.token;
   if (!user || !token) {
     const missing = [!user && "github.user", !token && "github.token"].filter(Boolean).join(" and ");
-    return `${missing} must be set in ~/.fit-cli/config.json5 — run \`bun run config -- edit\` to configure it.`;
+    return `${missing} must be set in ~/.fit-cli/config.json5 — run \`${runScriptPrefix("config")} edit\` to configure it.`;
   }
   return { user, token };
 }
@@ -557,7 +558,7 @@ export async function resolveCapellaConfig(
     }
     console.warn(
       `⚠ No personal Capella password configured — using the shared "${block}" account password from AWS Secrets Manager.\n` +
-        `  Set CAPELLA_PASS (or run \`bun run config -- edit\`) to use your own.`,
+        `  Set CAPELLA_PASS (or run \`${runScriptPrefix("config")} edit\`) to use your own.`,
     );
     const secret = await fetchSecret(entry.secretId);
     password = secret.password?.trim();
@@ -676,7 +677,7 @@ export async function ensureFitCliConfigEnv(
         promptId: options.promptId ?? "fit-cli.config.create",
         message:
           options.promptMessage ??
-          `No fit-cli config found at ${path}. Run \`bun run config -- edit\` now?`,
+          `No fit-cli config found at ${path}. Run \`${runScriptPrefix("config")} edit\` now?`,
         default: true,
       });
   if (!create) {

@@ -5,7 +5,7 @@
  *   npx tsx src/fit/performers/check-and-pull-performer/check-and-pull-performer.ts
  */
 import { rmSync, writeFileSync } from "node:fs";
-import { fitCliError } from "../../../util/non-fit/fit-cli-log.js";
+import { fitCliError, runScriptPrefix } from "../../../util/non-fit/fit-cli-log.js";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { posixQuote } from "../../../util/non-fit/remote-target.js";
 import { createRunFilePath } from "../../../util/non-fit/replay.js";
@@ -93,7 +93,7 @@ export async function checkAndPullPerformer(
       `\nFailed to pull the ${sdk.name} performer image ${imageName}: ${(err as Error).message}` +
         (githubToken
           ? ""
-          : "\nAdd a GitHub token with read:packages scope via `bun run config -- edit`, GITHUB_TOKEN, or GH_TOKEN, then try again."),
+          : `\nAdd a GitHub token with read:packages scope via \`${runScriptPrefix("config")} edit\`, GITHUB_TOKEN, or GH_TOKEN, then try again.`),
     );
     return false;
   }
