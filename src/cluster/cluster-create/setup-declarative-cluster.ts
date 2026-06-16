@@ -37,6 +37,7 @@ import { installCbdinoclusterRemote } from "./install-cbdinocluster.js";
 import { installCaoCrdsAndAdmission } from "./install-cao-tools.js";
 import { type ClusterExistsPolicy } from "./cluster-exists-policy.js";
 import { type CbdinoclusterDef } from "./build-cluster-def.js";
+import { isAlias, resolveAlias } from "./cb-alias.js";
 import type { CbdinoclusterInitSetup } from "../../fit/shared/definition/types.js";
 
 /** The bare command name we look for on the PATH. */
@@ -456,9 +457,19 @@ async function allocate(
   cycleDir: string,
   cng: boolean,
 ): Promise<SetupDeclarativeClusterResult> {
+  const resolvedConfig = {
+    ...config,
+    nodes: await Promise.all(
+      config.nodes.map(async (node) => ({
+        ...node,
+        version: isAlias(node.version) ? await resolveAlias(node.version) : node.version,
+      })),
+    ),
+  };
+
   let allocated;
   try {
-    allocated = await allocateCluster(cbdinocluster, YAML.stringify(config), deployer, execution, cycleDir);
+    allocated = await allocateCluster(cbdinocluster, YAML.stringify(resolvedConfig), deployer, execution, cycleDir);
     console.log("\n✓ setup-cluster: cbdinocluster allocated the cluster");
   } catch (err) {
     console.error(`\n✗ setup-cluster: cbdinocluster failed to allocate the cluster: ${(err as Error).message}`);

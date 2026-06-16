@@ -11,6 +11,7 @@ import { ensureRunDir } from "../../../util/non-fit/replay.js";
 import type { PieceData } from "../../../util/non-fit/config-pieces.js";
 import type { Sdk } from "../../../util/sdk/sdks.js";
 import { buildClusterDefObject, type ClusterDef } from "../../../cluster/cluster-create/build-cluster-def.js";
+import { CB_ALIAS_RE } from "../../../cluster/cluster-create/cb-alias.js";
 import {
   defaultCbdinoclusterInitArgs,
   defaultCbdinoclusterInitConfig,
@@ -499,15 +500,29 @@ function renderCommentMarkersYaml(text: string): string {
   });
 }
 
+/**
+ * Append an inline comment on any `version:` line whose value is a CBS alias
+ * (e.g. "8.1-stable") so readers know it will be resolved at runtime and is
+ * not passed verbatim to cbdinocluster.
+ */
+function annotateAliasVersions(text: string, format: DefinitionFormat): string {
+  const comment = format === "yaml" ? "# resolved by fit-cli at runtime" : "// resolved by fit-cli at runtime";
+  return text.replace(
+    /^(\s+version:\s*['"]?(\d+\.\d+-(stable|release))['"]?,?)\s*$/gm,
+    (_, before) => `${before}  ${comment}`,
+  );
+}
+
 export function formatFitDefinition(definition: FitDefinition, format: DefinitionFormat = "json5"): string {
   const decorated = decorateWithCommentMarkers(definition);
   if (format === "yaml") {
     // lineWidth: 0 disables scalar wrapping so each comment marker stays on one line.
-    return renderCommentMarkersYaml(YAML.stringify(decorated, { lineWidth: 0 }));
+    const text = renderCommentMarkersYaml(YAML.stringify(decorated, { lineWidth: 0 }));
+    return annotateAliasVersions(text, "yaml");
   }
   let text = renderCommentMarkersJson5(JSON5.stringify(decorated, null, 2));
   if (!text.endsWith("\n")) text += "\n";
-  return text;
+  return annotateAliasVersions(text, "json5");
 }
 
 /** Situational definitions render through the same key-driven comment logic. */
