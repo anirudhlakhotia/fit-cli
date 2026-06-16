@@ -141,6 +141,14 @@ export function extractInteractiveFlag(argv: string[]): {
   return { interactive, positionals };
 }
 
+export function extractCbcollectFlag(argv: string[]): {
+  cbcollect: boolean;
+  positionals: string[];
+} {
+  const positionals = argv.filter((a) => a !== "--cbcollect");
+  return { cbcollect: positionals.length !== argv.length, positionals };
+}
+
 export function defaultsToNonInteractive(
   entrypoint: string | undefined = process.argv[1],
   env: NodeJS.ProcessEnv = process.env,

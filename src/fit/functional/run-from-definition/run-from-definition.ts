@@ -49,6 +49,7 @@ import {
   defaultsToNonInteractive,
   ensureRunDir,
   extractInteractiveFlag,
+  extractCbcollectFlag,
   clusterRunDir,
   instanceRunDir,
   type DefinitionRunPath,
@@ -844,6 +845,7 @@ interface TeardownInputs {
   performerStates: readonly ResumePerformerState[];
   /** Per-run pass/fail outcomes so far, shown as a summary before the leave-up prompt. */
   results: readonly RunResultSummary[];
+  cbcollect?: boolean;
 }
 
 /**
@@ -857,13 +859,14 @@ async function disposeCycleResources(
   teardown: ExecutionTargetTeardown,
   clusterState: ResumeClusterState | undefined,
   performers: readonly RunningPerformer[],
+  cbcollect = false,
 ): Promise<void> {
   if (execution) {
     for (const performer of performers) {
       await stopManagedPerformer(execution, performer);
     }
     if (clusterState?.allocated && clusterState.clusterId && clusterState.cbdinoclusterCommand) {
-      if (clusterState.logsDir) {
+      if (clusterState.logsDir && cbcollect) {
         await collectClusterLogs(clusterState.cbdinoclusterCommand, clusterState.clusterId, clusterState.logsDir, execution);
       }
       await removeCluster(clusterState.cbdinoclusterCommand, clusterState.clusterId, execution);
@@ -931,7 +934,7 @@ function formatRunResultsSummary(results: readonly RunResultSummary[]): string |
  * failed before it came up); only the instance is then up to leave or terminate.
  */
 async function teardownRun(inputs: TeardownInputs): Promise<{ leftUp: boolean }> {
-  const { definitionPath, runDir, executionGroupIndex, runIndex, resumePath, execution, teardown, forceLocalhost, clusterState, performers, performerStates, results } = inputs;
+  const { definitionPath, runDir, executionGroupIndex, runIndex, resumePath, execution, teardown, forceLocalhost, clusterState, performers, performerStates, results, cbcollect = false } = inputs;
 
   const nothingToLeaveUp = !teardown.terminate && !clusterState && performerStates.length === 0;
   if (nothingToLeaveUp) {
@@ -1009,7 +1012,7 @@ async function teardownRun(inputs: TeardownInputs): Promise<{ leftUp: boolean }>
       await stopManagedPerformer(execution, performer);
     }
     if (clusterState?.allocated && clusterState.clusterId && clusterState.cbdinoclusterCommand) {
-      if (clusterState.logsDir) {
+      if (clusterState.logsDir && cbcollect) {
         await collectClusterLogs(clusterState.cbdinoclusterCommand, clusterState.clusterId, clusterState.logsDir, execution);
       }
       await removeCluster(clusterState.cbdinoclusterCommand, clusterState.clusterId, execution);
@@ -1092,6 +1095,7 @@ function describeExecutionOverride(override: ExecutionOverride, declaredKind: st
 export interface RunFromDefinitionOptions {
   resumeAt?: ResumePoint;
   resumeSelector?: ResumeSelector;
+  cbcollect?: boolean;
 }
 
 /** Run FIT functional tests as described by the definition file at `definitionPath`. */
@@ -1101,7 +1105,7 @@ export async function runFromDefinition(
   options: RunFromDefinitionOptions = {},
 ): Promise<RunOutput> {
   const tracker = new RunFailureTracker();
-  const { resumeAt, resumeSelector = {} } = options;
+  const { resumeAt, resumeSelector = {}, cbcollect = false } = options;
   const phases = phasesForResumePoint(resumeAt);
   const definition = loadDefinition(definitionPath);
   const resolved = resolveDefinition(definition);
@@ -1499,7 +1503,7 @@ export async function runFromDefinition(
 
           // Continuing: this cycle owns its own instance, so clean it (and the
           // cluster/performers) up before the next cycle stands up its own.
-          await disposeCycleResources(execution, cycleTeardown, clusterState, cyclePerformers);
+          await disposeCycleResources(execution, cycleTeardown, clusterState, cyclePerformers, cbcollect);
           activeExecution = undefined;
           activeTeardown = { kind: "local" };
           activeClusterState = undefined;
@@ -1517,7 +1521,7 @@ export async function runFromDefinition(
         activePerformerStates = cyclePerformerStates;
       } else {
         // A completed, non-final cycle: clean up its own instance/cluster/performers.
-        await disposeCycleResources(execution, cycleTeardown, clusterState, cyclePerformers);
+        await disposeCycleResources(execution, cycleTeardown, clusterState, cyclePerformers, cbcollect);
         activeExecution = undefined;
         activeTeardown = { kind: "local" };
         activeClusterState = undefined;
@@ -1548,6 +1552,7 @@ export async function runFromDefinition(
       performers: activePerformers,
       performerStates: activePerformerStates,
       results: runResults,
+      cbcollect,
     });
     if (leftUp) {
       details.push(...instanceDetails);
@@ -1563,11 +1568,12 @@ if (isMain(import.meta.url)) {
   runCli(async () => {
     const { rootDir, positionals } = rootDirFromArgv(process.argv.slice(2));
     const { resumeAt, positionals: resumeRest } = extractResumeAt(positionals);
-    const { selector: resumeSelector, positionals: rest } = extractResumeSelector(resumeRest);
+    const { selector: resumeSelector, positionals: resumeRest2 } = extractResumeSelector(resumeRest);
+    const { cbcollect, positionals: rest } = extractCbcollectFlag(resumeRest2);
     const [definitionPath, ...extra] = rest;
     if (!definitionPath || extra.length > 0) {
       console.error(
-        "Primary usage: bun run definition -- execute <file.yaml> [--resume-at=<point>] [--resume-instance=<n>] [--resume-cluster=<n>] [--resume-session=<n>] [--resume-clusterless-session=<n>] [--resume-run=<n>] [--root <dir>]\n" +
+        "Primary usage: bun run definition -- execute <file.yaml> [--resume-at=<point>] [--resume-instance=<n>] [--resume-cluster=<n>] [--resume-session=<n>] [--resume-clusterless-session=<n>] [--resume-run=<n>] [--root <dir>] [--cbcollect]\n" +
           "Direct:        tsx src/workflows/fit-functional/run-from-definition/run-from-definition.ts <file.yaml> [--resume-at=<point>] [resume selectors]\n" +
           "  --resume-at: after-instance-creation | after-remote-preparation | after-cluster-creation | after-performer",
       );
@@ -1583,6 +1589,7 @@ if (isMain(import.meta.url)) {
     return runFromDefinition(definitionPath, rootDir, {
       ...(resumePoint ? { resumeAt: resumePoint } : {}),
       ...(hasResumeSelector(resumeSelector) ? { resumeSelector } : {}),
+      ...(cbcollect ? { cbcollect } : {}),
     });
   });
 }
