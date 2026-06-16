@@ -51,6 +51,17 @@ function parseJunitXmlFiles(output: string): string[] {
     .filter((line) => line.startsWith("TEST-") && line.endsWith(".xml"));
 }
 
+// It takes forever to copy these individually.
+export function remoteJunitArchiveArgs(sourceDir: string, xmlFiles: readonly string[]): string[] {
+  return [
+    "-lc",
+    'tmp=$(mktemp /tmp/fit-junit-XXXXXX.tar.gz) && src="$1" && shift && tar -C "$src" -czf "$tmp" -- "$@" && printf \'%s\\n\' "$tmp"',
+    "sh",
+    sourceDir,
+    ...xmlFiles,
+  ];
+}
+
 /**
  * Drop the surefire <properties> block (java.class.path, surefire.test.class.path
  * and friends) from a report. The values are huge and add no signal to the HTML
@@ -174,9 +185,21 @@ export async function collectJunitArtifactsFromTarget(
 
   const runDir = runRunDir(path);
   const destDir = join(runDir, "surefire-reports");
+  const localArchive = join(runDir, "surefire-reports.tar.gz");
   mkdirSync(destDir, { recursive: true, mode: 0o700 });
-  for (const file of xmlFiles) {
-    await target.getFile(join(sourceDir, file), join(destDir, file));
+  let remoteArchive = "";
+  try {
+    remoteArchive = (await target.capture("sh", remoteJunitArchiveArgs(sourceDir, xmlFiles))).trim();
+    if (remoteArchive === "") {
+      throw new Error("Remote JUnit archive path was empty.");
+    }
+    await target.getFile(remoteArchive, localArchive);
+    await run("tar", ["-xzf", localArchive, "-C", destDir]);
+  } finally {
+    rmSync(localArchive, { force: true });
+    if (remoteArchive !== "") {
+      await target.run("rm", ["-f", remoteArchive], undefined, { quiet: true });
+    }
   }
 
   const artifacts: Artifact[] = [
