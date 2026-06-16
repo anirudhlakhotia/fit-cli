@@ -181,6 +181,8 @@ export async function main(): Promise<RunOutput> {
   return runWorkflow(choice, rootDir, positionals[0], format, pushGistVisibility);
 }
 
-if (isMain(import.meta.url)) {
+// import.meta.main is true in compiled Bun binaries where isMain() can't
+// compare virtual /$bunfs/ paths against the real executable path.
+if (isMain(import.meta.url) || import.meta.main) {
   runCli(main);
 }

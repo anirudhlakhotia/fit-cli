@@ -27,7 +27,13 @@ import { emitGhaArtifactNotice } from "../../fit/util/gha.js";
 export function isMain(metaUrl: string): boolean {
   const entry = process.argv[1];
   if (!entry) return false;
-  return realpathSync(fileURLToPath(metaUrl)) === realpathSync(entry);
+  try {
+    return realpathSync(fileURLToPath(metaUrl)) === realpathSync(entry);
+  } catch {
+    // In Bun compiled binaries, import.meta.url is a virtual /$bunfs/ path
+    // that can't be resolved on disk — fall back to false.
+    return false;
+  }
 }
 
 /**
