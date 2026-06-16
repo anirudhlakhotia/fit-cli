@@ -16,36 +16,28 @@ on:
         description: A fit-cli definition file e.g. "https://gist.githubusercontent.com/programmatix/<gist-id>/raw" or "examples/fit-functional-sanity-test.json5" (local to fit-cli). Use gist.githubusercontent.com/…/raw, not gist.github.com. To generate one, clone the fit-cli project and follow the README.
         type: string
         default: examples/fit-functional-sanity-test.json5
-      definitionBase64:
-        description: Optional base64-encoded definition contents. When set, fit-cli writes this to a temp file and runs that instead of definitionFile.
-        type: string
-        default: ""
-      cbcollect:
-        description: Collect cluster diagnostics (cbcollect) on teardown. Adds ~5 minutes per cluster but includes server logs in the run artifacts.
-        type: boolean
-        default: false
       fitCliSource:
         description: '"stable" (default) or "latest" to install the binary via install.sh; "source" to clone the current branch and run via bun (for fit-cli development).'
         type: string
         default: stable
+      cbcollect:
+        description: Collect cluster diagnostics (cbcollect) on teardown. Adds ~5 minutes per cluster but includes server logs in the run artifacts.
+        type: boolean
+        default: false
   workflow_call:
     inputs:
       definitionFile:
         description: A fit-cli definition file e.g. "https://gist.githubusercontent.com/programmatix/<gist-id>/raw" or "examples/fit-functional-sanity-test.json5" (local to fit-cli). Use gist.githubusercontent.com/…/raw, not gist.github.com. To generate one, clone the fit-cli project and follow the README.
         type: string
         default: examples/fit-functional-sanity-test.json5
-      definitionBase64:
-        description: Optional base64-encoded definition contents. When set, fit-cli writes this to a temp file and runs that instead of definitionFile.
-        type: string
-        default: ""
-      cbcollect:
-        description: Collect cluster diagnostics (cbcollect) on teardown. Adds ~5 minutes per cluster but includes server logs in the run artifacts.
-        type: boolean
-        default: false
       fitCliSource:
         description: '"stable" (default) or "latest" to install the binary via install.sh; "source" to clone the current branch and run via bun (for fit-cli development).'
         type: string
         default: stable
+      cbcollect:
+        description: Collect cluster diagnostics (cbcollect) on teardown. Adds ~5 minutes per cluster but includes server logs in the run artifacts.
+        type: boolean
+        default: false
 
 permissions:
   id-token: write   # required for GitHub OIDC
@@ -84,7 +76,6 @@ jobs:
           echo "Github actor: ${{ github.actor }}"
           echo "Github run_id: ${{ github.run_id }}"
           echo "definitionFile: ${{ inputs.definitionFile }}"
-          echo "definitionBase64 provided: ${{ inputs.definitionBase64 != '' }}"
           echo "fitCliSource: ${{ inputs.fitCliSource }}"
           aws sts get-caller-identity
 
@@ -107,16 +98,6 @@ jobs:
             fit config edit --auto --suppress-artifacts
           fi
 
-      - name: Materialize inline definition
-        if: ${{ inputs.definitionBase64 != '' }}
-        run: |
-          printf '%s' '${{ inputs.definitionBase64 }}' | base64 --decode > /tmp/fit-cli-inline.yaml
-          echo "FIT_DEFINITION_FILE=/tmp/fit-cli-inline.yaml" >> "$GITHUB_ENV"
-
-      - name: Select definition path
-        if: ${{ inputs.definitionBase64 == '' }}
-        run: echo "FIT_DEFINITION_FILE=${{ inputs.definitionFile }}" >> "$GITHUB_ENV"
-
       - name: Run fit-cli
         env:
           GITHUB_TOKEN: ${{ secrets.FIT_CLI_GITHUB_PAT }}
@@ -124,9 +105,9 @@ jobs:
         run: |
           set -o pipefail
           if [[ "${{ inputs.fitCliSource }}" == "source" ]]; then
-            cd fit-cli && bun run definition execute "${FIT_DEFINITION_FILE}" ${{ inputs.cbcollect && '--cbcollect' || '' }} | tee /tmp/fit-cli-output.log
+            cd fit-cli && bun run definition execute ${{ inputs.definitionFile }} ${{ inputs.cbcollect && '--cbcollect' || '' }} | tee /tmp/fit-cli-output.log
           else
-            fit definition execute "${FIT_DEFINITION_FILE}" ${{ inputs.cbcollect && '--cbcollect' || '' }} | tee /tmp/fit-cli-output.log
+            fit definition execute ${{ inputs.definitionFile }} ${{ inputs.cbcollect && '--cbcollect' || '' }} | tee /tmp/fit-cli-output.log
           fi
         id: run-fit-cli
 
