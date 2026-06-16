@@ -76,6 +76,8 @@ test("createLocalFitExecutionContext builds local docker run args without host-g
     "--rm",
     "--publish",
     "8060:8060",
+    "--env",
+    "LOG_LEVEL=debug",
     "performer-node-main",
   ]);
 });
@@ -90,6 +92,8 @@ test("createLocalFitExecutionContext can attach the performer to a cluster Docke
     "fit-net",
     "--publish",
     "8060:8060",
+    "--env",
+    "LOG_LEVEL=debug",
     "performer-node-main",
   ]);
 });
@@ -105,6 +109,8 @@ test("remotePerformerArgs add the host-gateway alias and can join a Docker netwo
     "fit-net",
     "--publish",
     "8060:8060",
+    "--env",
+    "LOG_LEVEL=debug",
     "performer-node-main",
   ]);
 });
