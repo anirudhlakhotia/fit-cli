@@ -316,6 +316,8 @@ export function remotePerformerArgs(
     ...(dockerNetwork ? ["--network", dockerNetwork] : []),
     "--publish",
     `${hostPort}:${DEFAULT_PERFORMER_PORT}`,
+    "--env",
+    "LOG_LEVEL=debug",
     imageName,
   ];
 }
@@ -383,6 +385,8 @@ export function createLocalFitExecutionContext(rootDir: string): FitExecutionCon
       ...(dockerNetwork ? ["--network", dockerNetwork] : []),
       "--publish",
       `${hostPort}:${DEFAULT_PERFORMER_PORT}`,
+      "--env",
+      "LOG_LEVEL=debug",
       imageName,
     ],
   };
