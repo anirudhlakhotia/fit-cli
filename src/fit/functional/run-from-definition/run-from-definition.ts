@@ -43,7 +43,7 @@ import {
   type RunOutput,
 } from "../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
-import { fitCliError, fitCliWarn, printWithoutTimestamps } from "../../../util/non-fit/fit-cli-log.js";
+import { definitionExecutePrefix, fitCliError, fitCliWarn, printWithoutTimestamps } from "../../../util/non-fit/fit-cli-log.js";
 import { createLogFile } from "../../../util/non-fit/proc.js";
 import {
   defaultsToNonInteractive,
@@ -285,7 +285,7 @@ function announce(
       : "all tests";
   console.log(`\n=== Instance ${run.path.instanceIndex + 1} (${group.instance.kind}) ===`);
   if (!run.path.clusterlessSession) {
-    console.log(`=== Cluster ${((run.path.clusterIndex ?? 0) + 1)} (${run.type}) ===`);
+    console.log(`=== Cluster ${((run.path.clusterIndex ?? 0) + 1)} ===`);
   }
   console.log(`=== Session ${((run.path.sessionIndex ?? 0) + 1)} ===`);
   console.log(`=== Run ${((run.path.runIndex ?? 0) + 1)} (${run.type}) ===`);
@@ -771,7 +771,7 @@ function formatResumeCommand(point: ResumePoint, definitionPath: string, selecto
   // Always include --interactive: a resume is a hands-on debugging step, and the
   // resumed run needs to be able to prompt (e.g. teardown choices) just like the
   // original interactive run did.
-  return `bun run definition -- execute --interactive --resume-at=${point} ${resumeSelectorFlags(selector).join(" ")} ${definitionPath}`.replace(/\s+/g, " ").trim();
+  return `${definitionExecutePrefix()} --interactive --resume-at=${point} ${resumeSelectorFlags(selector).join(" ")} ${definitionPath}`.replace(/\s+/g, " ").trim();
 }
 
 function resumeSelectorMatchesPath(selector: ResumeSelector, path: DefinitionRunPath): boolean {

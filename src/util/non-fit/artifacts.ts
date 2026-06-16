@@ -143,7 +143,12 @@ export function reconcileArtifactsWithDir(artifactDir: string, explicit: readonl
     // user-facing artifact table.
     .filter((filename) => !filename.split(/[\\/]/).includes("_internal"))
     .sort()
-    .map((filename) => ({ filename, explanation: "(captured during the run)" }));
+    .map((filename) => ({
+      filename,
+      explanation: /[\\/]surefire-reports[\\/]TEST-.*\.xml$/.test(filename)
+        ? "JUnit test report file"
+        : "(captured during the run)",
+    }));
   return [...combined, ...extras];
 }
 

@@ -1,3 +1,5 @@
+import { basename } from "node:path";
+
 const isTTY = process.stderr.isTTY ?? false;
 const RESET = isTTY ? "\u001b[0m" : "";
 const RED = isTTY ? "\u001b[31m" : "";
@@ -229,4 +231,25 @@ export function installFitCliConsoleFormatting(): void {
   console.error = (...args: unknown[]) => baseConsoleError(formatFitCliError(...args));
   console.warn = (...args: unknown[]) => baseConsoleWarn(formatFitCliWarn(...args));
   consoleFormattingInstalled = true;
+}
+
+/**
+ * True when running as the compiled `fit` binary (bun build --compile).
+ * The compiled binary's argv[0] is the binary path itself (ending in "fit" or
+ * "fit-linux-x64" etc.), not the bun runtime. Use this to tailor guidance
+ * messages that tell the user how to re-run a command.
+ */
+export function isFitBinary(): boolean {
+  const bin = basename(process.argv[0] ?? "");
+  return bin === "fit" || bin.startsWith("fit-");
+}
+
+/**
+ * Return the prefix for a `definition execute` command, adjusted for whether
+ * the user is running as the compiled `fit` binary or via `bun run definition`.
+ * When using `fit`, a definition file path is passed directly to the binary:
+ *   fit [flags] <file>   ≡   bun run definition -- execute [flags] <file>
+ */
+export function definitionExecutePrefix(): string {
+  return isFitBinary() ? "fit" : "bun run definition -- execute";
 }
