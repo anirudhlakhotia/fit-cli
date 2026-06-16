@@ -50,7 +50,7 @@ jobs:
           gh release create latest \
             --prerelease \
             --title "Latest (tip of main)" \
-            --notes "Automatically updated on every push to main. Install with: CHANNEL=latest curl -fsSL https://raw.githubusercontent.com/couchbaselabs/fit-cli/main/install.sh | bash" \
+            --notes "Automatically updated on every push to main. Install with: curl -fsSL https://raw.githubusercontent.com/couchbaselabs/fit-cli/main/install.sh | CHANNEL=latest bash" \
             dist/fit-linux-x64 \
             dist/fit-linux-arm64 \
             dist/fit-darwin-x64 \
