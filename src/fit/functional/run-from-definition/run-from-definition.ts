@@ -930,12 +930,12 @@ function formatRunResultsSummary(results: readonly RunResultSummary[]): string |
  * instance fit-cli provisioned. The execution context may be absent (the run
  * failed before it came up); only the instance is then up to leave or terminate.
  */
-async function teardownRun(inputs: TeardownInputs): Promise<void> {
+async function teardownRun(inputs: TeardownInputs): Promise<{ leftUp: boolean }> {
   const { definitionPath, runDir, executionGroupIndex, runIndex, resumePath, execution, teardown, forceLocalhost, clusterState, performers, performerStates, results } = inputs;
 
   const nothingToLeaveUp = !teardown.terminate && !clusterState && performerStates.length === 0;
   if (nothingToLeaveUp) {
-    return;
+    return { leftUp: false };
   }
 
   // The run is over (this is the only teardown, run from the outer finally). Make
@@ -1000,7 +1000,7 @@ async function teardownRun(inputs: TeardownInputs): Promise<void> {
       }
       console.log(`\nTerminate it with:\n  ${terminateInstanceCommand(teardown.instanceId)}`);
     }
-    return;
+    return { leftUp: true };
   }
 
   // Performer and cluster cleanup need the context; skipped if it never came up.
@@ -1020,6 +1020,7 @@ async function teardownRun(inputs: TeardownInputs): Promise<void> {
     await teardown.terminate();
     console.log("✓ Terminated.");
   }
+  return { leftUp: false };
 }
 
 /**
@@ -1217,6 +1218,10 @@ export async function runFromDefinition(
 
   const artifacts: Artifact[] = [];
   const details: Detail[] = [];
+  // Instance-specific details (SSH command, workspace path, etc.) — only included
+  // in the final summary when the instance is left up for debugging; meaningless
+  // (and misleading) after the instance is terminated.
+  const instanceDetails: Detail[] = [];
   // Per-run pass/fail outcomes, collected as the loop runs (even for runs that
   // fail) so teardown can show a results summary before asking to leave up.
   const runResults: RunResultSummary[] = [];
@@ -1288,7 +1293,7 @@ export async function runFromDefinition(
         ? await reconnectExecutionTarget(savedState.target)
         : await resolveExecutionGroupTarget(group.instance, executionOverride, cycleIndex, group.type);
       artifacts.push(...targetOutcome.artifacts);
-      details.push(...targetOutcome.details);
+      instanceDetails.push(...targetOutcome.details);
       if (!targetOutcome.ready) {
         fitCliError({ classification: "FatalToInstance" }, `\n✗ Could not acquire an execution target for execution group ${cycleIndex + 1}; skipping it.`);
         tracker.record("FatalToInstance", `Could not acquire an execution target for execution group ${cycleIndex + 1}`, failureContextFromPath(group.path));
@@ -1307,7 +1312,7 @@ export async function runFromDefinition(
       });
       activeExecution = execution;
       artifacts.push(...execution.artifacts);
-      details.push(...execution.details);
+      instanceDetails.push(...execution.details);
       if (phases.prepareRemote && cycleTeardown.kind === "remote" && cycleTeardown.address) {
         printResumeHint("after-remote-preparation", definitionCopyPath, group.path, false);
       }
@@ -1519,9 +1524,8 @@ export async function runFromDefinition(
       }
     }
 
-    return finalizeRunFromDefinition(artifacts, details, runDir, tracker.worst, tracker.failureCount);
   } finally {
-    await teardownRun({
+    const { leftUp } = await teardownRun({
       definitionPath,
       runDir,
       executionGroupIndex: activeCycleIndex,
@@ -1535,10 +1539,14 @@ export async function runFromDefinition(
       performerStates: activePerformerStates,
       results: runResults,
     });
+    if (leftUp) {
+      details.push(...instanceDetails);
+    }
     // Best-effort: ship the run's artifacts to S3 after teardown (so anything
     // teardown writes is included). Runs only inside GitHub Actions; never throws.
     await uploadRunArtifacts(runDir);
   }
+  return finalizeRunFromDefinition(artifacts, details, runDir, tracker.worst, tracker.failureCount);
 }
 
 if (isMain(import.meta.url)) {
