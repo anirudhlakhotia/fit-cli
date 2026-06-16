@@ -110,7 +110,7 @@ async function renderJunitReport(reportsDir: string, runDir: string): Promise<Ar
     }
 
     const reportFile = join(runDir, "report.html");
-    await run("npx", ["--no-install", "xunit-viewer", "--results", renderDir, "--output", reportFile]);
+    await run("bunx", ["xunit-viewer", "--results", renderDir, "--output", reportFile]);
     writeFileSync(reportFile, collapseSuitesByDefault(readFileSync(reportFile, "utf8")), { mode: 0o600 });
     return artifactFromPath(reportFile, "HTML visualisation of the JUnit results (open in a browser)");
   } catch (err) {
