@@ -7,16 +7,68 @@ jobs:
   test-step-summary:
     runs-on: ubuntu-latest
     steps:
-      - name: Append to step summary repeatedly
+      - name: Write headline and status table
         run: |
-          for i in $(seq 1 10); do
-            {
-              echo "## Update $i"
-              echo ""
-              echo "Wrote this update at $(date -u +"%Y-%m-%dT%H:%M:%SZ")."
-              echo ""
-            } >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "# Step Summary Playground"
+            echo ""
+            echo "Generated at $(date -u +"%Y-%m-%dT%H:%M:%SZ")."
+            echo ""
+            echo "## Workflow Snapshot"
+            echo ""
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Repository | \`${GITHUB_REPOSITORY}\` |"
+            echo "| Run ID | \`${GITHUB_RUN_ID}\` |"
+            echo "| Ref | \`${GITHUB_REF}\` |"
+            echo "| SHA | \`${GITHUB_SHA}\` |"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
 
-            echo "Appended update $i to \$GITHUB_STEP_SUMMARY"
-            sleep 10
-          done
+      - name: Append markdown examples
+        run: |
+          {
+            echo "## Markdown Examples"
+            echo ""
+            echo "### Checklist"
+            echo ""
+            echo "- [x] First summary write"
+            echo "- [x] Table rendering"
+            echo "- [x] Multiple appends into \`GITHUB_STEP_SUMMARY\`"
+            echo "- [ ] Add more weird formatting later"
+            echo ""
+            echo "### Metrics"
+            echo ""
+            echo "| Item | Count | Notes |"
+            echo "| --- | ---: | --- |"
+            echo "| Jobs | 1 | Single test job |"
+            echo "| Summary writes | 3 | Separate steps |"
+            echo "| Markdown blocks | 5 | Heading, list, tables, code, details |"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Append code block and details
+        run: |
+          {
+            echo "## Debug Snippet"
+            echo ""
+            echo '```json'
+            echo "{"
+            echo "  \"repository\": \"${GITHUB_REPOSITORY}\","
+            echo "  \"run_id\": \"${GITHUB_RUN_ID}\","
+            echo "  \"attempt\": \"${GITHUB_RUN_ATTEMPT}\","
+            echo "  \"actor\": \"${GITHUB_ACTOR}\""
+            echo "}"
+            echo '```'
+            echo ""
+            echo "<details><summary>Rendered HTML details block</summary>"
+            echo ""
+            echo ""
+            echo "| Column | Example |"
+            echo "| --- | --- |"
+            echo "| Emoji | :rocket: |"
+            echo "| Bold | **works** |"
+            echo "| Inline code | \`echo hello\` |"
+            echo ""
+            echo "</details>"
+          } >> "$GITHUB_STEP_SUMMARY"
