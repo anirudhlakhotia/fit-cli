@@ -1,41 +1,32 @@
-# Test locally
-# ------------
-# (though it doesn't really work as it a) requires AWS CLI be installed and though that's fixable, then b) gh-act doesn't provide real AWS creds):
-# gh extension install nektos/gh-act
-# gh act workflow_dispatch -W .github/workflows/run-fit-cli-functional.yml --input definitionFile="examples/fit-functional-sanity-test.json5"
-#
-# Run
-# ------------
-# gh workflow run fit-cli.yaml --ref <your-branch> --field definitionFile="https://gist.githubusercontent.com/programmatix/<gist-id>/raw" --repo couchbaselabs/fit-cli
 name: Run FIT with fit-cli
 
 on:
   workflow_dispatch:
     inputs:
       definitionFile:
-        description: A fit-cli definition file e.g. "https://gist.githubusercontent.com/programmatix/<gist-id>/raw" or "examples/fit-functional-sanity-test.json5" (local to fit-cli). Use gist.githubusercontent.com/…/raw, not gist.github.com. To generate one, clone the fit-cli project and follow the README.
+        description: A fit-cli definition file e.g. "https://gist.githubusercontent.com/programmatix/<gist-id>/raw" or "examples/fit-functional-sanity-test.json5" (local to fit-cli). To generate one, clone the fit-cli project and follow the README.
         type: string
         default: examples/fit-functional-sanity-test.json5
       fitCliSource:
-        description: '"stable" (default) or "latest" to install the binary via install.sh; "source" to clone the current branch and run via bun (for fit-cli development).'
+        description: '"stable" (default) or "latest" to use a released fit-cli binary (for stable testing); "source" to clone the current branch and run via bun (for development).'
         type: string
         default: stable
       cbcollect:
-        description: Collect cluster diagnostics (cbcollect) on teardown. Adds ~5 minutes per cluster but includes server logs in the run artifacts.
+        description: Collect cluster diagnostics (cbcollect)
         type: boolean
         default: false
   workflow_call:
     inputs:
       definitionFile:
-        description: A fit-cli definition file e.g. "https://gist.githubusercontent.com/programmatix/<gist-id>/raw" or "examples/fit-functional-sanity-test.json5" (local to fit-cli). Use gist.githubusercontent.com/…/raw, not gist.github.com. To generate one, clone the fit-cli project and follow the README.
+        description: A fit-cli definition file e.g. "https://gist.githubusercontent.com/programmatix/<gist-id>/raw" or "examples/fit-functional-sanity-test.json5" (local to fit-cli). To generate one, clone the fit-cli project and follow the README.
         type: string
         default: examples/fit-functional-sanity-test.json5
       fitCliSource:
-        description: '"stable" (default) or "latest" to install the binary via install.sh; "source" to clone the current branch and run via bun (for fit-cli development).'
+        description: '"stable" (default) or "latest" to use a released fit-cli binary (for stable testing); "source" to clone the current branch and run via bun (for development).'
         type: string
         default: stable
       cbcollect:
-        description: Collect cluster diagnostics (cbcollect) on teardown. Adds ~5 minutes per cluster but includes server logs in the run artifacts.
+        description: Collect cluster diagnostics (cbcollect)
         type: boolean
         default: false
 
