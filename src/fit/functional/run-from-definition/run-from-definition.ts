@@ -1152,8 +1152,8 @@ export async function runFromDefinition(
 
   let awsCredentials: AwsCredentials | undefined;
 
-  // Check hosted results-database config and connectivity upfront — fail before
-  // provisioning an instance when the run can't reach the database.
+  // Check hosted results-database password upfront — fail before provisioning
+  // an instance when the password is missing from the fit-cli config.
   const needsHostedDatabase = executionGroups
     .slice(startCycleIndex)
     .some(
@@ -1168,17 +1168,6 @@ export async function runFromDefinition(
       tracker.record("FatalToAll", "Missing results database password in fit-cli config", preconditionCtx);
       return finalizeRunFromDefinition([], [], undefined, tracker.worst, tracker.failureCount);
     }
-    console.log(`\nChecking connectivity to results database at ${HOSTED_RESULTS_DB_HOST}...`);
-    if (!(await checkResultsDatabaseConnectivity())) {
-      fitCliError(
-        { classification: "FatalToAll" },
-        `\n✗ Cannot reach the results database at ${HOSTED_RESULTS_DB_HOST}:5432.\n` +
-          `  Make sure you are connected to the vpn-public VPN.`,
-      );
-      tracker.record("FatalToAll", `Cannot reach results database at ${HOSTED_RESULTS_DB_HOST}:5432`, preconditionCtx);
-      return finalizeRunFromDefinition([], [], undefined, tracker.worst, tracker.failureCount);
-    }
-    console.log(`  ✓ Reached ${HOSTED_RESULTS_DB_HOST}.`);
   }
 
   const artifacts: Artifact[] = [];
@@ -1199,6 +1188,22 @@ export async function runFromDefinition(
   // resume; the existing-instance override is a within-run convenience and isn't saved.
   const executionOverride = await resolveExecutionOverride(executionGroups.slice(startCycleIndex), savedState);
   const forceLocalhost = executionOverride.kind === "localhost";
+
+  // Local connectivity check — skip when running remotely, since EC2 instances are
+  // in the same VPC as faas.couchbase.com and can reach it without VPN.
+  if (needsHostedDatabase && forceLocalhost) {
+    console.log(`\nChecking connectivity to results database at ${HOSTED_RESULTS_DB_HOST}...`);
+    if (!(await checkResultsDatabaseConnectivity())) {
+      fitCliError(
+        { classification: "FatalToAll" },
+        `\n✗ Cannot reach the results database at ${HOSTED_RESULTS_DB_HOST}:5432.\n` +
+          `  Make sure you are connected to the vpn-public VPN.`,
+      );
+      tracker.record("FatalToAll", `Cannot reach results database at ${HOSTED_RESULTS_DB_HOST}:5432`, preconditionCtx);
+      return finalizeRunFromDefinition([], [], undefined, tracker.worst, tracker.failureCount);
+    }
+    console.log(`  ✓ Reached ${HOSTED_RESULTS_DB_HOST}.`);
+  }
 
   // Resolve AWS credentials for situational cycles that will run remotely — the
   // test-driver's cbdinocluster call uses the cloud (AWS) deployer and credentials
