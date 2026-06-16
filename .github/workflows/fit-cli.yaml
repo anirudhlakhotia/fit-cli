@@ -109,7 +109,9 @@ jobs:
           group_suite: true
           include_time_in_summary: true
           include_empty_in_summary: true
-          annotations_limit: 100 # More than this probably isn't useful anyway
+          # This is just bugged and limits the tests themselves to 100
+          # annotations_limit: 100 # More than this probably isn't useful anyway
+
 
       - name: Publish test results
         if: always()
