@@ -152,7 +152,7 @@ export function parseGeneratePresetArgs(argv: string[]): GeneratePresetArgs {
     }
   }
 
-  if (!type) throw new Error("--type is required");
+  if (!type) throw new Error(`--type is required.\nAvailable presets: ${PRESET_TYPES.join(", ")}`);
   if (!isPresetType(type)) {
     throw new Error(`Unknown preset type: ${type}\nKnown types: ${PRESET_TYPES.join(", ")}`);
   }

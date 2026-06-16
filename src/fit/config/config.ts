@@ -10,6 +10,7 @@
  * bun run config -- --help
  */
 import { isMain, runCli } from "../../util/non-fit/cli.js";
+import { installFitCliConsoleFormatting } from "../../util/non-fit/fit-cli-log.js";
 import { runAutoEdit, runEditWorkflow, formatConfigForDisplay } from "./edit.js";
 import {
   CLOUD_INSTANCE_PURPOSES,
@@ -32,6 +33,8 @@ Subcommands:
 Edit options:
   --auto                 Non-interactive mode. Reads from env vars and CLI args only.
   --dry-run              Show what would be written without touching the config file.
+  --suppress-artifacts   Skip creating a fit-cli artifact directory. Use this on CI config
+                         steps to avoid polluting the run's artifact directory.
   --disable-aws          Skip writing the aws section.
   --disable-github       Skip writing the github section.
   --disable-gerrit       Skip writing the gerrit section.
@@ -74,6 +77,8 @@ export interface AutoInitCliArgs {
   capellaUsername?: string;
   capellaPassword?: string;
   configPath: string;
+  /** Skip creating a fit-cli artifact directory for this run. Used for the CI config step. */
+  suppressArtifacts: boolean;
 }
 
 function consumeFlag(args: string[], flag: string): boolean {
@@ -100,6 +105,7 @@ export function parseEditArgs(argv: string[]): AutoInitCliArgs {
 
   const auto = consumeFlag(args, "--auto");
   const dryRun = consumeFlag(args, "--dry-run");
+  const suppressArtifacts = consumeFlag(args, "--suppress-artifacts");
   const disableAws = consumeFlag(args, "--disable-aws");
   const disableGithub = consumeFlag(args, "--disable-github");
   const disableGerrit = consumeFlag(args, "--disable-gerrit");
@@ -131,6 +137,7 @@ export function parseEditArgs(argv: string[]): AutoInitCliArgs {
   return {
     auto,
     dryRun,
+    suppressArtifacts,
     disableAws,
     disableGithub,
     disableGerrit,
@@ -149,45 +156,59 @@ export function parseEditArgs(argv: string[]): AutoInitCliArgs {
 }
 
 if (isMain(import.meta.url)) {
-  runCli(async () => {
-    const argv = process.argv.slice(2);
-    const [subcommand, ...rest] = argv;
+  const argv = process.argv.slice(2);
+  const [subcommand, ...rest] = argv;
 
-    if (!subcommand || subcommand === "--help" || subcommand === "-h") {
-      console.log(HELP);
-      if (!subcommand) process.exit(2);
-      return;
-    }
+  // --suppress-artifacts: run auto-edit without creating a fit-cli artifact
+  // directory, so CI config steps don't leave an extra directory in /tmp/fit-cli/
+  // that would be picked up by the upload-artifact step.
+  const suppressArtifacts = rest.includes("--suppress-artifacts");
 
-    if (subcommand === "show") {
-      const configPath = consumeValue([...rest], "--config-path") ?? defaultFitCliConfigPath();
-      const { config } = loadFitCliConfig(configPath);
-      if (!config) {
-        console.error(`No config found at ${configPath}`);
-        process.exit(1);
-      }
-      console.log(formatConfigForDisplay(config));
-      return;
-    }
-
-    if (subcommand !== "edit") {
-      console.error(`Unknown subcommand: ${subcommand}\n`);
-      console.error(HELP);
-      process.exit(2);
-    }
-
-    // edit subcommand
-    if (rest.includes("--help") || rest.includes("-h")) {
-      console.log(HELP);
-      return;
-    }
-
+  if (suppressArtifacts && subcommand === "edit" && rest.includes("--auto")) {
+    installFitCliConsoleFormatting();
     const args = parseEditArgs(rest);
+    runAutoEdit(args).catch((err) => {
+      process.stderr.write((err instanceof Error ? err.message : String(err)) + "\n");
+      process.exit(1);
+    });
+  } else {
+    runCli(async () => {
+      if (!subcommand || subcommand === "--help" || subcommand === "-h") {
+        console.log(HELP);
+        if (!subcommand) process.exit(2);
+        return;
+      }
 
-    if (args.auto) {
-      await runAutoEdit(args);
-    } else {
-      await runEditWorkflow(args.configPath);
-    }
-  });
+      if (subcommand === "show") {
+        const configPath = consumeValue([...rest], "--config-path") ?? defaultFitCliConfigPath();
+        const { config } = loadFitCliConfig(configPath);
+        if (!config) {
+          console.error(`No config found at ${configPath}`);
+          process.exit(1);
+        }
+        console.log(formatConfigForDisplay(config));
+        return;
+      }
+
+      if (subcommand !== "edit") {
+        console.error(`Unknown subcommand: ${subcommand}\n`);
+        console.error(HELP);
+        process.exit(2);
+      }
+
+      // edit subcommand
+      if (rest.includes("--help") || rest.includes("-h")) {
+        console.log(HELP);
+        return;
+      }
+
+      const args = parseEditArgs(rest);
+
+      if (args.auto) {
+        await runAutoEdit(args);
+      } else {
+        await runEditWorkflow(args.configPath);
+      }
+    });
+  }
 }

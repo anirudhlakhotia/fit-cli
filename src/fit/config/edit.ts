@@ -107,9 +107,11 @@ function compactInstanceTypes(types: AwsInstanceTypeAnswers): FitCliInstanceType
   return Object.keys(parts).length > 0 ? parts : undefined;
 }
 
-function awsAnswersToConfig(answers: AwsInitAnswers): FitCliAwsConfig | undefined {
+function awsAnswersToConfig(answers: AwsInitAnswers, existingInstanceTypes?: FitCliInstanceTypes): FitCliAwsConfig | undefined {
   const profile = trimOptional(answers.profile);
-  const instanceTypes = compactInstanceTypes(answers.instanceTypes);
+  // When instanceTypes is empty the user chose not to configure them — preserve
+  // any previously saved values rather than silently wiping them.
+  const instanceTypes = compactInstanceTypes(answers.instanceTypes) ?? existingInstanceTypes;
 
   const parts: FitCliAwsConfig = {
     ...(profile ? { profile } : {}),
@@ -141,7 +143,9 @@ export function initAnswersToConfig(answers: InitAnswers, existing?: FitCliConfi
   // Declining the AWS prompt leaves any saved cloud settings untouched rather
   // than wiping them, so re-running edit is non-destructive.
   const aws =
-    answers.configureAws && answers.aws ? awsAnswersToConfig(answers.aws) : existing?.cloud?.aws;
+    answers.configureAws && answers.aws
+      ? awsAnswersToConfig(answers.aws, existing?.cloud?.aws?.instanceTypes)
+      : existing?.cloud?.aws;
   const cloud: FitCliCloudConfig | undefined = aws ? { aws } : undefined;
   const user = trimOptional(answers.githubUser) ?? existing?.github?.user;
   const token = trimOptional(answers.githubToken);
@@ -259,16 +263,23 @@ async function promptForConfig(existing?: FitCliConfig, configPath?: string): Pr
     default: false,
   });
 
-  const aws = configureAws
-    ? {
-        profile: await input({
-          promptId: "init.aws.profile",
-          message: "AWS profile (optional):",
-          default: defaults.profile,
-        }),
-        instanceTypes: await promptForInstanceTypes(defaults.instanceTypes),
-      }
-    : undefined;
+  let aws: AwsInitAnswers | undefined;
+  if (configureAws) {
+    const profile = await input({
+      promptId: "init.aws.profile",
+      message: "AWS profile (optional):",
+      default: defaults.profile,
+    });
+    const configureInstanceTypes = await confirm({
+      promptId: "init.aws.configure-instance-types",
+      message: "Configure default EC2 instance types? (the defaults are fine for most uses)",
+      default: false,
+    });
+    const instanceTypes = configureInstanceTypes
+      ? await promptForInstanceTypes(defaults.instanceTypes)
+      : ({} as AwsInstanceTypeAnswers);
+    aws = { profile, instanceTypes };
+  }
 
   const { configureCapella, capella } = await promptForCapella(existing, configPath);
 

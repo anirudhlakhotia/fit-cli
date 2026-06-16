@@ -8,16 +8,17 @@
  *   npx tsx src/cloud/util/aws/upload-directory.ts ./local s3://my-bucket/prefix
  */
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
-import { run } from "../../../util/non-fit/proc.js";
+import { runHiddenUntilFailure } from "../../../util/non-fit/proc.js";
 import { prepareAwsCli } from "./aws-cli.js";
 import { AWS_REGION } from "./aws-target.js";
 
 /**
- * Recursively upload `localDir` to `s3Uri` (e.g. s3://bucket/prefix). Streams the
- * aws CLI's progress to the terminal. Rejects if the upload fails.
+ * Recursively upload `localDir` to `s3Uri` (e.g. s3://bucket/prefix). Hides the
+ * aws CLI's noisy progress output and only surfaces it on failure. Rejects if the
+ * upload fails.
  */
 export async function uploadDirectoryToS3(localDir: string, s3Uri: string): Promise<void> {
-  await run("aws", ["s3", "cp", localDir, s3Uri, "--recursive", "--region", AWS_REGION]);
+  await runHiddenUntilFailure("aws", ["s3", "cp", localDir, s3Uri, "--recursive", "--region", AWS_REGION], process.cwd(), { quiet: true });
 }
 
 if (isMain(import.meta.url)) {

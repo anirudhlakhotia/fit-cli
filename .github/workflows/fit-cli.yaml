@@ -59,6 +59,7 @@ jobs:
           echo "Key prefix: ${AWS_ACCESS_KEY_ID:0:4}"
           echo "Github actor: ${{ github.actor }}"
           echo "Github run_id: ${{ github.run_id }}"
+          echo "definitionFile: ${{ inputs.definitionFile }}"
           aws sts get-caller-identity
 
       - uses: oven-sh/setup-bun@v2
@@ -78,7 +79,7 @@ jobs:
           git clone --branch ${{ github.ref_name }} https://github.com/couchbaselabs/fit-cli.git
           cd fit-cli
           bun install --frozen-lockfile
-          bun run config edit --auto
+          bun run config edit --auto --suppress-artifacts
 
       - name: Run fit-cli
         env:
@@ -109,6 +110,12 @@ jobs:
           include_time_in_summary: true
           include_empty_in_summary: true
           annotations_limit: 100 # More than this probably isn't useful anyway
+
+      - name: Publish test results
+        if: always()
+        run: |
+          curl -s https://raw.githubusercontent.com/couchbaselabs/junit-markdown/refs/heads/main/JunitMarkdown.java --output ${{ runner.temp }}/JunitMarkdown.java
+          java ${{ runner.temp }}/JunitMarkdown.java . >> $GITHUB_STEP_SUMMARY
 
       - name: Job summary
         if: always()
