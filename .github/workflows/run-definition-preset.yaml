@@ -1,0 +1,77 @@
+name: Run FIT preset definition
+
+on:
+  workflow_dispatch:
+    inputs:
+      preset:
+        description: Preset definition template to use
+        type: choice
+        options:
+          - preset-functional-tests
+        default: preset-functional-tests
+      performerImageName:
+        description: Performer Docker image name including tag (e.g. java-fit-performer:main, ghcr.io/couchbaselabs/java-fit-performer:1.2.3)
+        type: string
+        required: true
+      clusterVersion:
+        description: Couchbase Server version (e.g. 8.0-stable, 7.6.5)
+        type: string
+        default: 8.0-stable
+      cbcollect:
+        description: Collect cluster diagnostics (cbcollect)
+        type: boolean
+        default: false
+
+permissions:
+  actions: write
+  contents: read
+  id-token: write
+  checks: write
+
+jobs:
+  generate-definition:
+    runs-on: ubuntu-latest
+    outputs:
+      definition-base64: ${{ steps.definition.outputs.definition_base64 }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install fit-cli dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Generate preset definition
+        run: >
+          bun src/fit/definition/definition.ts generate-preset
+          --type "${{ inputs.preset }}"
+          --cluster-version "${{ inputs.clusterVersion }}"
+          --performer-image-name "${{ inputs.performerImageName }}"
+          --output .github/generated/preset-definition.yaml
+
+      - name: Encode generated definition
+        id: definition
+        run: |
+          {
+            echo "definition_base64<<EOF"
+            base64 -w 0 .github/generated/preset-definition.yaml
+            echo
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Upload generated definition
+        uses: actions/upload-artifact@v4
+        with:
+          name: fit-definition-${{ github.run_id }}
+          path: .github/generated/preset-definition.yaml
+          if-no-files-found: error
+
+  run-fit:
+    needs: generate-definition
+    uses: ./.github/workflows/fit-cli.yaml
+    with:
+      definitionBase64: ${{ needs.generate-definition.outputs.definition-base64 }}
+      cbcollect: ${{ inputs.cbcollect }}
+    secrets: inherit
