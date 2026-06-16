@@ -18,6 +18,8 @@ import type { DefinitionFormat } from "../shared/definition/generate-definition.
 import { extractPushGistVisibility, type GistVisibility } from "../shared/definition/push-gist.js";
 import { definitionDispatch } from "../definition/definition.js";
 import { runConfigMain } from "../config/config.js";
+import { runEditWorkflow } from "../config/edit.js";
+import { defaultFitCliConfigPath } from "../util/config.js";
 import { runCloudInstancesMain } from "../../cloud/cloud-instances/cloud-instances.js";
 import { runSecretsMain } from "../../cloud/util/aws/secrets-cli.js";
 
@@ -26,6 +28,7 @@ const WORKFLOW_PROMPT_MESSAGE = "What would you like to do?";
 const WORKFLOW_CHOICES = [
   { name: "Build a FIT definition file", value: "create-definition" },
   { name: "Run a FIT definition file", value: "run-definition" },
+  { name: "Configure fit-cli", value: "configure" },
 ] as const;
 
 export type WorkflowChoice = (typeof WORKFLOW_CHOICES)[number]["value"];
@@ -41,9 +44,10 @@ export async function chooseWorkflow(
   selectWorkflow: (config: {
     promptId: string;
     message: string;
-    choices: typeof WORKFLOW_CHOICES;
+    choices: readonly { name: string; value: WorkflowChoice }[];
     default?: WorkflowChoice;
   }) => Promise<WorkflowChoice> = select,
+  configMissing: boolean = !existsSync(defaultFitCliConfigPath()),
 ): Promise<WorkflowChoice> {
   const storedWorkflow = promptSession.getWorkflow();
   let replayWorkflow: WorkflowChoice | undefined;
@@ -63,13 +67,21 @@ export async function chooseWorkflow(
     }
   }
 
+  const choices = configMissing
+    ? ([
+        { name: "Build a FIT definition file", value: "create-definition" },
+        { name: "Run a FIT definition file", value: "run-definition" },
+        { name: "Configure fit-cli (recommended)", value: "configure" },
+      ] as const)
+    : WORKFLOW_CHOICES;
+
   // Note - only very high-level workflows should go here. We don't want an overwhelming list of options at the top level.
   // Users can run smaller workflows and steps for debugging or development through the mini cli tools.
   const choice = await selectWorkflow({
     promptId: WORKFLOW_PROMPT_ID,
     message: WORKFLOW_PROMPT_MESSAGE,
-    choices: WORKFLOW_CHOICES,
-    default: replayWorkflow,
+    choices,
+    default: replayWorkflow ?? (configMissing ? "configure" : undefined),
   });
   promptSession.setWorkflow(choice);
   return choice;
@@ -99,6 +111,9 @@ export async function runWorkflow(choice: WorkflowChoice, rootDir: string, defin
       return createFitDefinition(rootDir, { format, pushGistVisibility });
     case "run-definition":
       return runFromDefinition(definitionPath ?? await askDefinitionPath(), rootDir);
+    case "configure":
+      await runEditWorkflow();
+      return {};
   }
 }
 
