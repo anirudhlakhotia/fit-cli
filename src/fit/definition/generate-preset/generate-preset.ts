@@ -1,9 +1,9 @@
 /**
  * `bun run definition -- generate-preset` — emit a ready-to-run definition file
- * from a named preset template, parameterised by performer image and cluster version.
+ * from a named preset template, parameterised by performer image.
  *
  * Usage:
- *   bun run definition -- generate-preset --type preset-functional-tests --cluster-version 8.0.0 --performer-image-name java-fit-performer:refs-changes-67-246067-3
+ *   bun run definition -- generate-preset --type preset-functional-tests --performer-image-name java-fit-performer:refs-changes-67-246067-3
  */
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -62,12 +62,10 @@ function loadPresetTemplate(type: PresetType): string {
 function applyPresetParams(
   template: string,
   sdkValue: SdkValue,
-  clusterVersion: string,
   performerImageName?: string,
 ): FitDefinition {
   const filled = template
-    .replace(/\{\{SDK\}\}/g, sdkValue)
-    .replace(/\{\{CLUSTER_VERSION\}\}/g, clusterVersion);
+    .replace(/\{\{SDK\}\}/g, sdkValue);
   const definition = YAML.parse(filled) as FitDefinition;
 
   if (performerImageName) {
@@ -89,7 +87,6 @@ function applyPresetParams(
 export interface GeneratePresetArgs {
   type: PresetType;
   sdkValue: SdkValue;
-  clusterVersion: string;
   performerImageName?: string;
   outputPath?: string;
   format?: DefinitionFormat;
@@ -97,14 +94,14 @@ export interface GeneratePresetArgs {
 }
 
 export async function generatePreset(args: GeneratePresetArgs): Promise<void> {
-  const { type, sdkValue, clusterVersion, performerImageName, outputPath, format, pushGistVisibility } = args;
+  const { type, sdkValue, performerImageName, outputPath, format, pushGistVisibility } = args;
   const sdk = sdkByValue(sdkValue);
   if (!sdk) {
     throw new Error(`Unknown SDK: ${sdkValue}`);
   }
 
   const template = loadPresetTemplate(type);
-  const definition = applyPresetParams(template, sdkValue, clusterVersion, performerImageName);
+  const definition = applyPresetParams(template, sdkValue, performerImageName);
   const outputFormat = resolvePresetOutputFormat(outputPath, format);
   const formatted = formatFitDefinition(definition, outputFormat);
   const result = outputPath
@@ -154,7 +151,6 @@ function deriveSdkAndTagFromPerformerImageName(
 /** Parse `generate-preset` flags out of a positional-free argv slice. */
 export function parseGeneratePresetArgs(argv: string[]): GeneratePresetArgs {
   let type: string | undefined;
-  let clusterVersion: string | undefined;
   let performerImageName: string | undefined;
   let outputPath: string | undefined;
   let pushGistVisibility: GistVisibility | undefined;
@@ -165,10 +161,6 @@ export function parseGeneratePresetArgs(argv: string[]): GeneratePresetArgs {
       type = argv[++i];
     } else if (arg.startsWith("--type=")) {
       type = arg.slice("--type=".length);
-    } else if (arg === "--cluster-version") {
-      clusterVersion = argv[++i];
-    } else if (arg.startsWith("--cluster-version=")) {
-      clusterVersion = arg.slice("--cluster-version=".length);
     } else if (arg === "--performer-image-name") {
       performerImageName = argv[++i];
     } else if (arg.startsWith("--performer-image-name=")) {
@@ -208,7 +200,6 @@ export function parseGeneratePresetArgs(argv: string[]): GeneratePresetArgs {
   if (!sdkValue) {
     throw new Error("--performer-image-name is required and must include an SDK-specific image like java-fit-performer:<tag>");
   }
-  if (!clusterVersion) throw new Error("--cluster-version is required");
 
-  return { type, sdkValue, clusterVersion, performerImageName, outputPath, pushGistVisibility };
+  return { type, sdkValue, performerImageName, outputPath, pushGistVisibility };
 }

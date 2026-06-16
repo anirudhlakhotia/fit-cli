@@ -9,8 +9,6 @@ test("parseGeneratePresetArgs derives sdk from performer image and accepts outpu
   const args = parseGeneratePresetArgs([
     "--type",
     "preset-functional-tests",
-    "--cluster-version",
-    "7.6.5",
     "--performer-image-name",
     "java-fit-performer:refs-changes-67-246067-3",
     "--output",
@@ -20,7 +18,6 @@ test("parseGeneratePresetArgs derives sdk from performer image and accepts outpu
   assert.deepEqual(args, {
     type: "preset-functional-tests",
     sdkValue: "java",
-    clusterVersion: "7.6.5",
     performerImageName: "refs-changes-67-246067-3",
     outputPath: "/tmp/generated-fit.yaml",
     pushGistVisibility: undefined,
@@ -30,14 +27,12 @@ test("parseGeneratePresetArgs derives sdk from performer image and accepts outpu
 test("parseGeneratePresetArgs accepts equals-style output flag", () => {
   const args = parseGeneratePresetArgs([
     "--type=preset-functional-tests",
-    "--cluster-version=8.0.0",
     "--performer-image-name=ghcr.io/couchbase/java-fit-performer:refs-changes-67-246067-3",
     "--output=/tmp/generated-fit.yaml",
   ]);
 
   assert.equal(args.type, "preset-functional-tests");
   assert.equal(args.sdkValue, "java");
-  assert.equal(args.clusterVersion, "8.0.0");
   assert.equal(args.performerImageName, "refs-changes-67-246067-3");
   assert.equal(args.outputPath, "/tmp/generated-fit.yaml");
 });
@@ -47,7 +42,6 @@ test("parseGeneratePresetArgs requires an sdk-specific performer image name", ()
     () =>
       parseGeneratePresetArgs([
         "--type=preset-functional-tests",
-        "--cluster-version=8.0.0",
       ]),
     /--performer-image-name is required and must include an SDK-specific image/,
   );
@@ -59,10 +53,21 @@ test("parseGeneratePresetArgs rejects the removed sdk flag", () => {
       parseGeneratePresetArgs([
         "--type=preset-functional-tests",
         "--sdk=java",
-        "--cluster-version=8.0.0",
         "--performer-image-name=java-fit-performer:refs-changes-67-246067-3",
       ]),
     /Unexpected argument: --sdk=java/,
+  );
+});
+
+test("parseGeneratePresetArgs rejects the removed cluster-version flag", () => {
+  assert.throws(
+    () =>
+      parseGeneratePresetArgs([
+        "--type=preset-functional-tests",
+        "--cluster-version=8.0-stable",
+        "--performer-image-name=java-fit-performer:refs-changes-67-246067-3",
+      ]),
+    /Unexpected argument: --cluster-version=8\.0-stable/,
   );
 });
 
@@ -73,7 +78,6 @@ test("generatePreset writes YAML when the output path ends in .yaml", async () =
   await generatePreset({
     type: "preset-functional-tests",
     sdkValue: "java",
-    clusterVersion: "7.6.5",
     performerImageName: "refs-changes-67-246067-3",
     outputPath,
   });

@@ -2,7 +2,6 @@
 #
 # Placeholders filled in by `bun run definition -- generate-preset`:
 #   {{SDK}}              — SDK value (java, kotlin, scala, cpp, dotnet, go, node, python, ruby, rust)
-#   {{CLUSTER_VERSION}}  — Couchbase Server version to allocate (e.g. 7.6.5, 8.0.0)
 #   {{PERFORMER_VERSION}} — Docker image tag for the performer (e.g. main, 4.2.0); omit the field to use the SDK default
 
 version: 1
@@ -33,7 +32,7 @@ clusterConfigs:
       config:
         nodes:
           - count: 3
-            version: '{{CLUSTER_VERSION}}'
+            version: '8.0-stable'
             services:
               - kv
               - n1ql
