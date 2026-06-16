@@ -16,12 +16,20 @@ on:
         description: A fit-cli definition file e.g. "https://gist.githubusercontent.com/programmatix/<gist-id>/raw" or "examples/fit-functional-sanity-test.json5" (local to fit-cli). Use gist.githubusercontent.com/…/raw, not gist.github.com. To generate one, clone the fit-cli project and follow the README.
         type: string
         default: examples/fit-functional-sanity-test.json5
+      definitionBase64:
+        description: Optional base64-encoded definition contents. When set, fit-cli writes this to a temp file and runs that instead of definitionFile.
+        type: string
+        default: ""
   workflow_call:
     inputs:
       definitionFile:
         description: A fit-cli definition file e.g. "https://gist.githubusercontent.com/programmatix/<gist-id>/raw" or "examples/fit-functional-sanity-test.json5" (local to fit-cli). Use gist.githubusercontent.com/…/raw, not gist.github.com. To generate one, clone the fit-cli project and follow the README.
         type: string
         default: examples/fit-functional-sanity-test.json5
+      definitionBase64:
+        description: Optional base64-encoded definition contents. When set, fit-cli writes this to a temp file and runs that instead of definitionFile.
+        type: string
+        default: ""
 
 permissions:
   id-token: write   # required for GitHub OIDC
@@ -60,6 +68,7 @@ jobs:
           echo "Github actor: ${{ github.actor }}"
           echo "Github run_id: ${{ github.run_id }}"
           echo "definitionFile: ${{ inputs.definitionFile }}"
+          echo "definitionBase64 provided: ${{ inputs.definitionBase64 != '' }}"
           aws sts get-caller-identity
 
       - uses: oven-sh/setup-bun@v2
@@ -81,6 +90,17 @@ jobs:
           bun install --frozen-lockfile
           bun run config edit --auto --suppress-artifacts
 
+      - name: Materialize inline definition
+        if: ${{ inputs.definitionBase64 != '' }}
+        run: |
+          cd fit-cli
+          printf '%s' '${{ inputs.definitionBase64 }}' | base64 --decode > .github/generated-definition.yaml
+          echo "FIT_DEFINITION_FILE=.github/generated-definition.yaml" >> "$GITHUB_ENV"
+
+      - name: Select definition path
+        if: ${{ inputs.definitionBase64 == '' }}
+        run: echo "FIT_DEFINITION_FILE=${{ inputs.definitionFile }}" >> "$GITHUB_ENV"
+
       - name: Run fit-cli
         env:
           # We have to use a PAT rather than a GitHub App token because the latter cannot be granted packages permissions, so cannot obtain e.g. GHRC server images.
@@ -89,7 +109,7 @@ jobs:
         run: |
           set -o pipefail
           cd fit-cli
-          bun run definition execute ${{ inputs.definitionFile }} | tee /tmp/fit-cli-output.log
+          bun run definition execute "${FIT_DEFINITION_FILE}" | tee /tmp/fit-cli-output.log
         id: run-fit-cli
 
       # https://github.com/marketplace/actions/junit-report-action
