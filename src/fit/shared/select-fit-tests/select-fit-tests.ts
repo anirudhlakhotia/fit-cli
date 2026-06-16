@@ -117,7 +117,7 @@ export const SITUATIONAL_TEST_DOMAIN: FitTestDomain = {
 };
 
 /** Fully-qualified class name for the Standard QE Set's rebalance test. */
-export const STANDARD_QE_REBALANCE_CLASS = "com.couchbase.situational.tests.CbDinoRebalanceTest";
+export const STANDARD_QE_REBALANCE_CLASS = "com.couchbase.situational.tests.cbdino_tests.CbDinoRebalanceTest";
 
 const TEST_LISTING_ARGS = [
   "-q",
