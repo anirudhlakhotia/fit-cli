@@ -3,8 +3,8 @@
  * Top-level dispatcher for the `definition` bun script and for the compiled
  * `fit definition [...]` subcommand.
  *
- * bun run definition -- execute <file.yaml> [--resume-at=<point>] [resume selectors] [--root <dir>]
- * bun run definition -- validate <file.yaml>
+ * bun run definition execute <file.yaml> [--resume-at=<point>] [resume selectors] [--root <dir>]
+ * bun run definition validate <file.yaml>
  */
 import { existsSync } from "node:fs";
 import { isMain, runCli } from "../../util/non-fit/cli.js";
@@ -28,11 +28,11 @@ type Subcommand = (typeof SUBCOMMANDS)[number];
 const HELP = `Manage FIT definition files.
 
 Usage:
-  bun run definition -- execute <file.json5> [--resume-at=<point>] [resume selectors] [--root <dir>]
-  bun run definition -- validate <file.json5>
-  bun run definition -- generate-desc <file.json5>
-  bun run definition -- generate-preset --type <preset> --performer-image-name <image> [--output <path>]
-  bun run definition -- --help
+  bun run definition execute <file.json5> [--resume-at=<point>] [resume selectors] [--root <dir>]
+  bun run definition validate <file.json5>
+  bun run definition generate-desc <file.json5>
+  bun run definition generate-preset --type <preset> --performer-image-name <image> [--output <path>]
+  bun run definition --help
 
 Both .json5 and .yaml definition files are accepted.
 
@@ -88,7 +88,7 @@ export async function definitionDispatch(argv: string[]): Promise<RunOutput | vo
   if (argv[0] === "generate-desc") {
     const path = argv[1];
     if (!path) {
-      process.stderr.write("Usage: bun run definition -- generate-desc <file.json5>\n");
+      process.stderr.write("Usage: bun run definition generate-desc <file.json5>\n");
       process.exit(2);
     }
     const resolvedPath = isDefinitionUrl(path) ? await cacheDefinition(path) : path;
@@ -105,7 +105,8 @@ export async function definitionDispatch(argv: string[]): Promise<RunOutput | vo
   const cleaned = extractInteractiveFlag(extractReplayFlag(argv).positionals).positionals;
   const [subcommand, ...rest] = cleaned;
 
-  if (!subcommand || subcommand === "--help" || subcommand === "-h") {
+  const HELP_FLAGS = new Set(["-h", "--help", "help"]);
+  if (!subcommand || HELP_FLAGS.has(subcommand) || rest.some(a => HELP_FLAGS.has(a))) {
     console.log(HELP);
     if (!subcommand) process.exit(2);
     return;
@@ -139,7 +140,7 @@ export async function definitionDispatch(argv: string[]): Promise<RunOutput | vo
   if (subcommand === "validate") {
     const [path] = rest;
     if (!path) {
-      console.error("Usage: bun run definition -- validate <file.json5>");
+      console.error("Usage: bun run definition validate <file.json5>");
       process.exit(2);
     }
     if (isDefinitionUrl(path)) {
@@ -163,7 +164,7 @@ export async function definitionDispatch(argv: string[]): Promise<RunOutput | vo
   const [definitionPath, ...extra] = afterSelector;
   if (!definitionPath || extra.length > 0) {
     console.error(
-      "Usage: bun run definition -- execute <file.yaml> [--resume-at=<point>] [resume selectors] [--root <dir>]\n" +
+      "Usage: bun run definition execute <file.yaml> [--resume-at=<point>] [resume selectors] [--root <dir>]\n" +
         "  --resume-at: after-instance-creation | after-remote-preparation | after-cluster-creation | after-performer\n" +
         "  resume selectors: --resume-instance=<n> --resume-cluster=<n> --resume-session=<n> --resume-clusterless-session=<n> --resume-run=<n>",
     );
@@ -194,5 +195,13 @@ export async function definitionDispatch(argv: string[]): Promise<RunOutput | vo
 }
 
 if (isMain(import.meta.url)) {
-  runCli(() => definitionDispatch(process.argv.slice(2)));
+  const argv = process.argv.slice(2);
+  // Handle help before runCli creates the artifact directory.
+  const positionals = extractInteractiveFlag(extractReplayFlag(argv).positionals).positionals;
+  const helpFlags = new Set(["-h", "--help", "help"]);
+  if (positionals.length === 0 || helpFlags.has(positionals[0]) || positionals.some(a => helpFlags.has(a))) {
+    console.log(HELP);
+    process.exit(positionals.length === 0 ? 2 : 0);
+  }
+  runCli(() => definitionDispatch(argv));
 }

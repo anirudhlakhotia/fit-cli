@@ -1,7 +1,7 @@
 import { type InstanceInfo } from "../../../cloud/util/aws/parse-instance.js";
 import { AWS_REGION } from "../../../cloud/util/aws/aws-target.js";
 
-function formatBanner(title: string, lines: string[]): string {
+export function formatBanner(title: string, lines: string[]): string {
   const content = [title, ...lines];
   const width = Math.max(...content.map((line) => line.length), 24) + 4;
   const border = "=".repeat(width);
@@ -40,6 +40,9 @@ export function formatEc2DeletionResponsibilityBanner(
     "If you keep it running, or leave before cleanup, you must delete it yourself.",
     "Terminate it with:",
     `  ${terminateInstanceCommand(instanceId)}`,
+    "",
+    "Automated cleanup: a scheduled job terminates fit-cli instances older than 24h.",
+    "  https://github.com/couchbaselabs/fit-cli/actions/workflows/cleanup-instances.yaml",
   );
   if (otherInstances && otherInstances.length > 0) {
     lines.push(

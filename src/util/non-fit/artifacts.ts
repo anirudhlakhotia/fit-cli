@@ -144,13 +144,11 @@ export function reconcileArtifactsWithDir(artifactDir: string, explicit: readonl
     // scripts, etc.) — implementation detail, not something to surface in the
     // user-facing artifact table.
     .filter((filename) => !filename.split(/[\\/]/).includes("_internal"))
+    // Individual surefire XML files are archived into surefire-reports.tar.gz;
+    // suppress them from the table so only the archive appears.
+    .filter((filename) => !/[\\/]surefire-reports[\\/]TEST-.*\.xml$/.test(filename))
     .sort()
-    .map((filename) => ({
-      filename,
-      explanation: /[\\/]surefire-reports[\\/]TEST-.*\.xml$/.test(filename)
-        ? "JUnit test report file"
-        : "(captured during the run)",
-    }));
+    .map((filename) => ({ filename, explanation: "(captured during the run)" }));
   return [...combined, ...extras];
 }
 

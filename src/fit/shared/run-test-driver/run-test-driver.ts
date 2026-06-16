@@ -50,6 +50,7 @@ export interface FitTestDriverSummary {
   failures: number;
   errors: number;
   skipped: number;
+  durationMs?: number;
 }
 
 const JUNIT_ATTRIBUTE_RE = (name: string): RegExp => new RegExp(`\\b${name}="(\\d+)"`);
@@ -123,12 +124,19 @@ export function didFitTestDriverPass(summary: FitTestDriverSummary): boolean {
   return summary.failures === 0 && summary.errors === 0;
 }
 
+export function formatDuration(ms: number): string {
+  const totalSeconds = Math.round(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+}
+
 function runDetailLabel(path: DefinitionRunPath, label: string): string {
   return `Run ${path.runIndex ?? 0} ${label}`;
 }
 
 export function fitTestDriverSummaryDetails(summary: FitTestDriverSummary, path: DefinitionRunPath): Detail[] {
-  return [
+  const details: Detail[] = [
     {
       label: runDetailLabel(path, "Result"),
       value: didFitTestDriverPass(summary) ? "PASS" : "FAIL",
@@ -150,6 +158,10 @@ export function fitTestDriverSummaryDetails(summary: FitTestDriverSummary, path:
       value: String(summary.skipped),
     },
   ];
+  if (summary.durationMs !== undefined) {
+    details.push({ label: runDetailLabel(path, "Duration"), value: formatDuration(summary.durationMs) });
+  }
+  return details;
 }
 
 /** Build the `./mvnw` args needed to run the FIT test-driver. */
@@ -215,6 +227,7 @@ export async function runTestDriver(
   // The test-driver still writes JUnit reports when tests fail, so collect them
   // on both paths — the failing run is the one most worth visualising.
   let commandOk: boolean;
+  const startMs = Date.now();
   try {
     await execution.runToFile("./mvnw", args, targetLogFile, execution.fitPerformerDir);
     console.log("\n✓ FIT test-driver finished");
@@ -223,13 +236,15 @@ export async function runTestDriver(
     console.error(`\n✗ FIT test-driver failed: ${(err as Error).message}`);
     commandOk = false;
   }
+  const durationMs = Date.now() - startMs;
 
   await execution.collectFile(targetLogFile, logFile);
   const artifacts = combineArtifacts(
     [logArtifact],
     await execution.collectJunitArtifacts(sourceSurefireDir, path),
   );
-  const summary = extractFitTestDriverSummaryFromJunitReports(join(dirname(logFile), "surefire-reports"));
+  const rawSummary = extractFitTestDriverSummaryFromJunitReports(join(dirname(logFile), "surefire-reports"));
+  const summary = rawSummary ? { ...rawSummary, durationMs } : undefined;
   const ok = commandOk && (summary ? didFitTestDriverPass(summary) : true);
   return {
     ok,

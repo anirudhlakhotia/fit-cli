@@ -29,7 +29,7 @@ import { instanceRunDir } from "../../../util/non-fit/replay.js";
 import { waitForSsh, type RemoteHost } from "../../../util/non-fit/ssh.js";
 import { RemoteTarget } from "../../../util/non-fit/remote-target.js";
 import { fitCliWarn } from "../../../util/non-fit/fit-cli-log.js";
-import { formatEc2DeletionResponsibilityBanner, terminateInstanceCommand } from "./lifecycle-warning.js";
+import { formatBanner, formatEc2DeletionResponsibilityBanner, terminateInstanceCommand } from "./lifecycle-warning.js";
 import { warnAboutExistingInstances } from "./warn-existing-instances.js";
 
 /** Security group fit-cli reuses across runs (port 22 open). */
@@ -230,10 +230,12 @@ export async function provisionFitInstance(options: ProvisionOptions = {}): Prom
 
     console.log(`\n✓ EC2 instance ${id} is ready at ${address}`);
     fitCliWarn(`\n${formatEc2DeletionResponsibilityBanner(id, address, existingInstances, { account: creds.identity.account, creator: creatorTag })}\n`);
-    console.log("Debug it directly with:");
-    console.log(`  ssh -i ${keyPath} ${FIT_INSTANCE_USER}@${address}`);
-    console.log("Or via EC2 Instance Connect (no key needed — requires ec2-instance-connect:SendSSHPublicKey IAM permission):");
-    console.log(`  ${ec2icCommand}`);
+    console.log(formatBanner("SSH ACCESS", [
+      "Direct (requires key):",
+      `  ssh -i ${keyPath} ${FIT_INSTANCE_USER}@${address}`,
+      "Via EC2 Instance Connect (no key needed — requires ec2-instance-connect:SendSSHPublicKey):",
+      `  ${ec2icCommand}`,
+    ]));
     return { instanceId: id, address, keyPath, host, target: new RemoteTarget(host), artifacts, details, terminate };
   } catch (err) {
     // Don't leave a paid box (or its key) lying around if bring-up failed. If we

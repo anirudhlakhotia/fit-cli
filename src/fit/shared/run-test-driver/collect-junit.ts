@@ -18,7 +18,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { artifactFromPath, type Artifact } from "../../../util/non-fit/artifacts.js";
 import { run } from "../../../util/non-fit/proc.js";
 import { posixQuote } from "../../../util/non-fit/remote-target.js";
@@ -122,11 +122,14 @@ async function renderJunitReport(reportsDir: string, runDir: string): Promise<Ar
 }
 
 /**
- * Copy the test-driver's JUnit XML from `sourceDir` into ARTIFACT_DIR/surefire-reports,
- * render an HTML report from it, and return artifacts for both. A run that
- * produced no JUnit reports at all is treated as FatalToRun — the test-driver
- * yielded no results, so there's nothing to trust. The HTML render is still best
- * effort (the XML artifact is returned even if the render fails).
+ * Copy the test-driver's JUnit XML from `sourceDir` into a temporary directory,
+ * create a surefire-reports.tar.gz archive, render an HTML report, and return
+ * artifacts for both. The individual XML files are not kept on disk — only the
+ * archive and the HTML report. The source directory (`destDir`) is kept only so
+ * that the caller can still run extractFitTestDriverSummaryFromJunitReports
+ * after this call; individual files will not appear in the artifact table.
+ *
+ * A run that produced no JUnit reports at all is treated as FatalToRun.
  */
 export async function collectJunitArtifacts(sourceDir: string, path: DefinitionRunPath): Promise<Artifact[]> {
   const xmlFiles = junitXmlFiles(sourceDir);
@@ -147,11 +150,15 @@ export async function collectJunitArtifacts(sourceDir: string, path: DefinitionR
     }
   }
 
-  const artifacts: Artifact[] = [
-    artifactFromPath(destDir, `JUnit XML reports from the FIT test-driver (${xmlFiles.length} file(s))`),
-  ];
+  // Archive the XML files; individual files are filtered from the artifact table
+  // by reconcileArtifactsWithDir so only the archive appears there.
+  const archivePath = join(runDir, "surefire-reports.tar.gz");
+  await run("tar", ["-czf", archivePath, "-C", runDir, basename(destDir)]);
 
   const reportArtifact = await renderJunitReport(destDir, runDir);
+  const artifacts: Artifact[] = [
+    artifactFromPath(archivePath, `JUnit XML reports from the FIT test-driver (${xmlFiles.length} file(s), archived)`),
+  ];
   if (reportArtifact) {
     artifacts.push(reportArtifact);
   }
@@ -159,9 +166,11 @@ export async function collectJunitArtifacts(sourceDir: string, path: DefinitionR
 }
 
 /**
- * Copy JUnit XML off an execution target into ARTIFACT_DIR/surefire-reports,
- * render an HTML report from it locally, and return artifacts for both. As with
- * {@link collectJunitArtifacts}, a run that produced no reports is FatalToRun.
+ * Copy JUnit XML off an execution target into ARTIFACT_DIR/surefire-reports.tar.gz,
+ * extract to a local directory for summary extraction and HTML rendering, and
+ * return artifacts for both. As with {@link collectJunitArtifacts}, a run that
+ * produced no reports is FatalToRun. Individual XML files are not kept on disk
+ * after this call — only the archive and the HTML report.
  */
 export async function collectJunitArtifactsFromTarget(
   target: ExecutionTarget,
@@ -185,7 +194,7 @@ export async function collectJunitArtifactsFromTarget(
 
   const runDir = runRunDir(path);
   const destDir = join(runDir, "surefire-reports");
-  const localArchive = join(runDir, "surefire-reports.tar.gz");
+  const archivePath = join(runDir, "surefire-reports.tar.gz");
   mkdirSync(destDir, { recursive: true, mode: 0o700 });
   let remoteArchive = "";
   try {
@@ -193,20 +202,20 @@ export async function collectJunitArtifactsFromTarget(
     if (remoteArchive === "") {
       throw new Error("Remote JUnit archive path was empty.");
     }
-    await target.getFile(remoteArchive, localArchive);
-    await run("tar", ["-xzf", localArchive, "-C", destDir]);
+    // Keep the archive as an artifact; extract to destDir for summary extraction
+    // and HTML rendering. Individual files are filtered from the artifact table.
+    await target.getFile(remoteArchive, archivePath);
+    await run("tar", ["-xzf", archivePath, "-C", destDir]);
   } finally {
-    rmSync(localArchive, { force: true });
     if (remoteArchive !== "") {
       await target.run("rm", ["-f", remoteArchive], undefined, { quiet: true });
     }
   }
 
-  const artifacts: Artifact[] = [
-    artifactFromPath(destDir, `JUnit XML reports from the FIT test-driver (${xmlFiles.length} file(s))`),
-  ];
-
   const reportArtifact = await renderJunitReport(destDir, runDir);
+  const artifacts: Artifact[] = [
+    artifactFromPath(archivePath, `JUnit XML reports from the FIT test-driver (${xmlFiles.length} file(s), archived)`),
+  ];
   if (reportArtifact) {
     artifacts.push(reportArtifact);
   }

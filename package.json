@@ -14,6 +14,7 @@
     "definition": "bun src/fit/definition/definition.ts",
     "cloud-instances": "bun src/cloud/cloud-instances/cloud-instances.ts",
     "secrets": "bun src/cloud/util/aws/secrets-cli.ts",
+    "junit-summary": "bun src/fit/shared/run-test-driver/junit-summary.ts",
     "dev": "bun --watch src/fit/main/main.ts",
     "build": "tsc",
     "typecheck": "tsc --noEmit",

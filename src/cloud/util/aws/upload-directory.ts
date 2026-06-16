@@ -7,7 +7,7 @@
  * Run on its own:
  *   npx tsx src/cloud/util/aws/upload-directory.ts ./local s3://my-bucket/prefix
  */
-import { createReadStream, readdirSync } from "node:fs";
+import { createReadStream, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
@@ -48,6 +48,7 @@ export async function uploadDirectoryToS3(localDir: string, s3Uri: string): Prom
       Bucket: bucket,
       Key: key,
       Body: createReadStream(file),
+      ContentLength: statSync(file).size,
     }));
     console.log(`  ${relPath}`);
   }
