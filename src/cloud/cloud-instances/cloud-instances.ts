@@ -248,7 +248,7 @@ async function cmdRemoveAll(argv: string[]): Promise<void> {
   console.log(`\n✓ Terminating ${mine.length} instance(s).`);
 }
 
-if (isMain(import.meta.url)) {
+export function runCloudInstancesMain(): void {
   runCli(async () => {
     const [subcommand, ...rest] = process.argv.slice(2);
 
@@ -282,4 +282,8 @@ if (isMain(import.meta.url)) {
     console.error(HELP);
     process.exit(2);
   });
+}
+
+if (isMain(import.meta.url)) {
+  runCloudInstancesMain();
 }

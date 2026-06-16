@@ -17,6 +17,9 @@ import { runFromDefinition } from "../functional/run-from-definition/run-from-de
 import type { DefinitionFormat } from "../shared/definition/generate-definition.js";
 import { extractPushGistVisibility, type GistVisibility } from "../shared/definition/push-gist.js";
 import { definitionDispatch } from "../definition/definition.js";
+import { runConfigMain } from "../config/config.js";
+import { runCloudInstancesMain } from "../../cloud/cloud-instances/cloud-instances.js";
+import { runSecretsMain } from "../../cloud/util/aws/secrets-cli.js";
 
 const WORKFLOW_PROMPT_MESSAGE = "What would you like to do?";
 
@@ -199,8 +202,20 @@ export async function main(): Promise<RunOutput> {
   return runWorkflow(choice, rootDir, positionals[0], format, pushGistVisibility);
 }
 
+const RUN_SCRIPTS: Record<string, (() => void) | undefined> = {
+  "config": runConfigMain,
+  "cloud-instances": runCloudInstancesMain,
+  "secrets": runSecretsMain,
+};
+
 // import.meta.main is true in compiled Bun binaries where isMain() can't
 // compare virtual /$bunfs/ paths against the real executable path.
 if (isMain(import.meta.url) || import.meta.main) {
-  runCli(main);
+  const runScript = process.argv[2] === "run" ? RUN_SCRIPTS[process.argv[3]] : undefined;
+  if (runScript) {
+    process.argv.splice(2, 2);
+    runScript();
+  } else {
+    runCli(main);
+  }
 }

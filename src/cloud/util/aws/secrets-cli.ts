@@ -104,7 +104,7 @@ Usage:
 <name> may be a registry name from environments.json5 (e.g. capella/dev, results/prod)
 or a raw Secrets Manager id/ARN. Secrets are JSON objects of fields. Region: ${AWS_REGION}.`;
 
-if (isMain(import.meta.url)) {
+export function runSecretsMain(): void {
   runCli(async () => {
     const [command, ...rest] = process.argv.slice(2);
     switch (command) {
@@ -124,4 +124,8 @@ if (isMain(import.meta.url)) {
         if (command !== undefined && command !== "--help" && command !== "-h") process.exit(2);
     }
   });
+}
+
+if (isMain(import.meta.url)) {
+  runSecretsMain();
 }

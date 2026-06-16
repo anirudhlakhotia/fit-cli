@@ -155,7 +155,7 @@ export function parseEditArgs(argv: string[]): AutoInitCliArgs {
   };
 }
 
-if (isMain(import.meta.url)) {
+export function runConfigMain(): void {
   const argv = process.argv.slice(2);
   const [subcommand, ...rest] = argv;
 
@@ -211,4 +211,8 @@ if (isMain(import.meta.url)) {
       }
     });
   }
+}
+
+if (isMain(import.meta.url)) {
+  runConfigMain();
 }
