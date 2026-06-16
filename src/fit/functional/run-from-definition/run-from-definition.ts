@@ -1174,8 +1174,8 @@ export async function runFromDefinition(
 
   let awsCredentials: AwsCredentials | undefined;
 
-  // Check hosted results-database config and connectivity upfront — fail before
-  // provisioning an instance when the run can't reach the database.
+  // Check hosted results-database credentials upfront — fail before provisioning
+  // an instance when credentials can't be resolved from AWS Secrets Manager.
   const needsHostedDatabase = executionGroups
     .slice(startCycleIndex)
     .some(
@@ -1183,9 +1183,11 @@ export async function runFromDefinition(
         group.type === "situational" &&
         group.runs.some((run) => run.databaseMode === "hosted"),
     );
+  // block -> host, populated during credential resolution; used later for connectivity checks.
+  const resultsEnvHosts = new Map<string, string>();
   if (needsHostedDatabase) {
     // Each hosted situational run names a results environment; validate every distinct
-    // one upfront (credentials resolvable from AWS + the DB reachable) before provisioning.
+    // one upfront (credentials resolvable from AWS) before provisioning.
     const resultsEnvs = new Set<string>();
     for (const group of executionGroups.slice(startCycleIndex)) {
       if (group.type !== "situational") continue;
@@ -1202,17 +1204,7 @@ export async function runFromDefinition(
         tracker.record("FatalToAll", `Cannot resolve results database credentials for "${block}"`, preconditionCtx);
         return finalizeRunFromDefinition([], [], undefined, tracker.worst, tracker.failureCount);
       }
-      console.log(`\nChecking connectivity to the "${block}" results database at ${host}...`);
-      if (!(await checkResultsDatabaseConnectivity(undefined, host))) {
-        fitCliError(
-          { classification: "FatalToAll" },
-          `\n✗ Cannot reach the results database at ${host}:5432.\n` +
-            `  Make sure you are connected to the vpn-public VPN.`,
-        );
-        tracker.record("FatalToAll", `Cannot reach results database at ${host}:5432`, preconditionCtx);
-        return finalizeRunFromDefinition([], [], undefined, tracker.worst, tracker.failureCount);
-      }
-      console.log(`  ✓ Reached ${host}.`);
+      resultsEnvHosts.set(block, host);
     }
   }
 
@@ -1238,6 +1230,24 @@ export async function runFromDefinition(
   // resume; the existing-instance override is a within-run convenience and isn't saved.
   const executionOverride = await resolveExecutionOverride(executionGroups.slice(startCycleIndex), savedState);
   const forceLocalhost = executionOverride.kind === "localhost";
+
+  // Local connectivity check — skip when running remotely, since EC2 instances are
+  // in the same VPC as faas.couchbase.com and can reach it without VPN.
+  if (needsHostedDatabase && forceLocalhost) {
+    for (const [block, host] of resultsEnvHosts) {
+      console.log(`\nChecking connectivity to the "${block}" results database at ${host}...`);
+      if (!(await checkResultsDatabaseConnectivity(undefined, host))) {
+        fitCliError(
+          { classification: "FatalToAll" },
+          `\n✗ Cannot reach the results database at ${host}:5432.\n` +
+            `  Make sure you are connected to the vpn-public VPN.`,
+        );
+        tracker.record("FatalToAll", `Cannot reach results database at ${host}:5432`, preconditionCtx);
+        return finalizeRunFromDefinition([], [], undefined, tracker.worst, tracker.failureCount);
+      }
+      console.log(`  ✓ Reached ${host}.`);
+    }
+  }
 
   // Resolve AWS credentials for situational cycles that will run remotely — the
   // test-driver's cbdinocluster call uses the cloud (AWS) deployer and credentials
