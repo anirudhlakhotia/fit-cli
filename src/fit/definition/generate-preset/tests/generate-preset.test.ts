@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseGeneratePresetArgs } from "../generate-preset.js";
+import { generatePreset, parseGeneratePresetArgs } from "../generate-preset.js";
+import { mkdtempSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 test("parseGeneratePresetArgs derives sdk from performer image and accepts output", () => {
   const args = parseGeneratePresetArgs([
@@ -61,4 +64,22 @@ test("parseGeneratePresetArgs rejects the removed sdk flag", () => {
       ]),
     /Unexpected argument: --sdk=java/,
   );
+});
+
+test("generatePreset writes YAML when the output path ends in .yaml", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "fit-generate-preset-"));
+  const outputPath = join(dir, "generated.yaml");
+
+  await generatePreset({
+    type: "preset-functional-tests",
+    sdkValue: "java",
+    clusterVersion: "7.6.5",
+    performerImageName: "refs-changes-67-246067-3",
+    outputPath,
+  });
+
+  const written = readFileSync(outputPath, "utf8");
+  assert.match(written, /^version: 1$/m);
+  assert.match(written, /^type: fit$/m);
+  assert.doesNotMatch(written, /^\{$/m);
 });

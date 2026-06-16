@@ -24,10 +24,6 @@ Install the stable version of the [`fit` binary](https://github.com/couchbaselab
 curl -fsSL https://raw.githubusercontent.com/couchbaselabs/fit-cli/main/install.sh | bash
 ```
 
-This downloads the right binary for your OS and puts it in `/usr/local/bin/fit`. No Node, nvm, or npm needed.
-
-Optional: if you want to run on clean AWS EC2 environments, install the AWS CLI (https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) and configure it.
-
 Then:
 
 ```sh
@@ -42,6 +38,14 @@ fit help
 ```
 The interactive wizard will guide you through the available options in a (crosses fingers) self-documenting way.
 
+If you hit any problems, either ask on #the-fit-stop or consider just giving it to an LLM with something like:
+
+```
+Please read /tmp/fit-cli/<folder name>/AGENTS.md and investigate the failure.
+```
+
+LLMs can also be used to investigate GitHub Action runs - just point them at the URL.
+
 ### Contributing / running from source
 
 If you're working on fit-cli itself, install Bun with `curl -fsSL https://bun.sh/install | bash` and then:
@@ -55,14 +59,6 @@ bun run config edit
 # Start the interactive wizard
 bun run start
 ```
-
-If you hit any problems, either ask on #the-fit-stop or consider just giving it to an LLM with something like:
-
-```
-Please read /tmp/fit-cli/<folder name>/AGENTS.md and investigate the failure.
-```
-
-LLMs can also be used to investigate GitHub Action runs - just point them at the URL.
 
 ## Running on a cloud instance (AWS EC2)
 

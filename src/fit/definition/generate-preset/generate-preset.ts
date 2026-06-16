@@ -7,7 +7,7 @@
  */
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { join, dirname, resolve } from "node:path";
+import { join, dirname, extname, resolve } from "node:path";
 import YAML from "yaml";
 import { printWithoutTimestamps } from "../../../util/non-fit/fit-cli-log.js";
 import { resolveOutputFormat } from "../../util/config.js";
@@ -34,6 +34,20 @@ const PRESET_TEMPLATE_FILES: Record<PresetType, string> = {
 
 const SDK_IMAGE_NAME_PATTERN =
   /^(?:ghcr\.io\/[^/]+\/)?(?<sdk>[a-z0-9]+)-fit-performer:(?<tag>[A-Za-z0-9_][A-Za-z0-9._-]{0,127})$/;
+
+function resolvePresetOutputFormat(outputPath: string | undefined, format: DefinitionFormat | undefined): DefinitionFormat {
+  if (format) {
+    return format;
+  }
+  const extension = outputPath ? extname(outputPath).toLowerCase() : "";
+  if (extension === ".yaml" || extension === ".yml") {
+    return "yaml";
+  }
+  if (extension === ".json5") {
+    return "json5";
+  }
+  return resolveOutputFormat();
+}
 
 function loadPresetTemplate(type: PresetType): string {
   const presetsDir = join(dirname(fileURLToPath(import.meta.url)), "../presets");
@@ -91,7 +105,7 @@ export async function generatePreset(args: GeneratePresetArgs): Promise<void> {
 
   const template = loadPresetTemplate(type);
   const definition = applyPresetParams(template, sdkValue, clusterVersion, performerImageName);
-  const outputFormat = format ?? resolveOutputFormat();
+  const outputFormat = resolvePresetOutputFormat(outputPath, format);
   const formatted = formatFitDefinition(definition, outputFormat);
   const result = outputPath
     ? (() => {
