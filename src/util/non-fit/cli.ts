@@ -82,6 +82,7 @@ export function runCli(main: () => Promise<void | Partial<RunOutput>>): void {
         }
       }
       emitGhaArtifactNotice();
+      console.log(`\nZip artifacts: zip -r ${promptSession.runDir}.zip ${promptSession.runDir}`);
       if (runOutput?.worstFailure && worstFailureShouldExitNonZero(runOutput.worstFailure)) {
         fitCliError(formatFailureSummaryLine(runOutput.worstFailure, runOutput.failureCount ?? 1));
         await Promise.all([sessionLog.flush(), debugLog.flush()]);
