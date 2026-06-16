@@ -16,6 +16,7 @@ import { rootDirFromArgv } from "../util/root.js";
 import { runFromDefinition } from "../functional/run-from-definition/run-from-definition.js";
 import type { DefinitionFormat } from "../shared/definition/generate-definition.js";
 import { extractPushGistVisibility, type GistVisibility } from "../shared/definition/push-gist.js";
+import { definitionDispatch } from "../definition/definition.js";
 
 const WORKFLOW_PROMPT_MESSAGE = "What would you like to do?";
 
@@ -143,6 +144,23 @@ function checkPlatform(): void {
 
 export async function main(): Promise<RunOutput> {
   checkPlatform();
+
+  // Route `fit definition [...]` and `fit run definition [...]` directly to the
+  // definition dispatcher, bypassing the wizard. This lets `--output <path>`
+  // (a file path, used by generate-preset) reach the right parser instead of
+  // being intercepted by the wizard's `--output yaml|json5` format flag below.
+  const rawArgs = process.argv.slice(2);
+  let definitionArgs: string[] | undefined;
+  if (rawArgs[0] === "definition") {
+    definitionArgs = rawArgs.slice(1);
+  } else if (rawArgs[0] === "run" && rawArgs[1] === "definition") {
+    definitionArgs = rawArgs.slice(2);
+  }
+  if (definitionArgs !== undefined) {
+    loadDotenv();
+    return (await definitionDispatch(definitionArgs)) ?? {};
+  }
+
   console.log("FIT CLI — making FIT easier to use, one vibe-coding session at a time.\n");
   console.log(
     "This wizard guides you through building a FIT definition file — a single, reusable\n" +
