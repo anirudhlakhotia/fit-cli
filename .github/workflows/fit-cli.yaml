@@ -24,6 +24,10 @@ on:
         description: Collect cluster diagnostics (cbcollect) on teardown. Adds ~5 minutes per cluster but includes server logs in the run artifacts.
         type: boolean
         default: false
+      fitCliSource:
+        description: '"stable" (default) or "latest" to install the binary via install.sh; "source" to clone the current branch and run via bun (for fit-cli development).'
+        type: string
+        default: stable
   workflow_call:
     inputs:
       definitionFile:
@@ -38,6 +42,10 @@ on:
         description: Collect cluster diagnostics (cbcollect) on teardown. Adds ~5 minutes per cluster but includes server logs in the run artifacts.
         type: boolean
         default: false
+      fitCliSource:
+        description: '"stable" (default) or "latest" to install the binary via install.sh; "source" to clone the current branch and run via bun (for fit-cli development).'
+        type: string
+        default: stable
 
 permissions:
   id-token: write   # required for GitHub OIDC
@@ -77,33 +85,33 @@ jobs:
           echo "Github run_id: ${{ github.run_id }}"
           echo "definitionFile: ${{ inputs.definitionFile }}"
           echo "definitionBase64 provided: ${{ inputs.definitionBase64 != '' }}"
+          echo "fitCliSource: ${{ inputs.fitCliSource }}"
           aws sts get-caller-identity
 
       - uses: oven-sh/setup-bun@v2
+        if: inputs.fitCliSource == 'source'
         with:
           bun-version: latest
 
-      - name: Clone and setup fit-cli
+      - name: Setup fit-cli
         env:
-          # Not working yet
-          #          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
-          #          GITHUB_USER: x-access-token
-          # secrets.GITHUB_TOKEN contains a short-lived token bound to this repo, so we can't use it for e.g. checking out transactions-fit-performer
-          # Instead we use a hardcoded github PAT (the author's).  Migrating to a Github App in future would be better.
+          # secrets.GITHUB_TOKEN is bound to this repo only; we use a PAT instead.
           GITHUB_TOKEN: ${{ secrets.FIT_CLI_GITHUB_PAT }}
           GITHUB_USER: ${{ secrets.FIT_CLI_GITHUB_USER }}
         run: |
-          git clone --branch ${{ github.ref_name }} https://github.com/couchbaselabs/fit-cli.git
-          cd fit-cli
-          bun install --frozen-lockfile
-          bun run config edit --auto --suppress-artifacts
+          if [[ "${{ inputs.fitCliSource }}" == "source" ]]; then
+            git clone --branch ${{ github.ref_name }} https://github.com/couchbaselabs/fit-cli.git
+            cd fit-cli && bun install --frozen-lockfile && bun run config edit --auto --suppress-artifacts
+          else
+            CHANNEL=${{ inputs.fitCliSource }} curl -fsSL https://raw.githubusercontent.com/couchbaselabs/fit-cli/main/install.sh | bash
+            fit config edit --auto --suppress-artifacts
+          fi
 
       - name: Materialize inline definition
         if: ${{ inputs.definitionBase64 != '' }}
         run: |
-          cd fit-cli
-          printf '%s' '${{ inputs.definitionBase64 }}' | base64 --decode > .github/generated-definition.yaml
-          echo "FIT_DEFINITION_FILE=.github/generated-definition.yaml" >> "$GITHUB_ENV"
+          printf '%s' '${{ inputs.definitionBase64 }}' | base64 --decode > /tmp/fit-cli-inline.yaml
+          echo "FIT_DEFINITION_FILE=/tmp/fit-cli-inline.yaml" >> "$GITHUB_ENV"
 
       - name: Select definition path
         if: ${{ inputs.definitionBase64 == '' }}
@@ -111,13 +119,15 @@ jobs:
 
       - name: Run fit-cli
         env:
-          # We have to use a PAT rather than a GitHub App token because the latter cannot be granted packages permissions, so cannot obtain e.g. GHRC server images.
           GITHUB_TOKEN: ${{ secrets.FIT_CLI_GITHUB_PAT }}
           GITHUB_USER: ${{ secrets.FIT_CLI_GITHUB_USER }}
         run: |
           set -o pipefail
-          cd fit-cli
-          bun run definition execute "${FIT_DEFINITION_FILE}" ${{ inputs.cbcollect && '--cbcollect' || '' }} | tee /tmp/fit-cli-output.log
+          if [[ "${{ inputs.fitCliSource }}" == "source" ]]; then
+            cd fit-cli && bun run definition execute "${FIT_DEFINITION_FILE}" ${{ inputs.cbcollect && '--cbcollect' || '' }} | tee /tmp/fit-cli-output.log
+          else
+            fit definition execute "${FIT_DEFINITION_FILE}" ${{ inputs.cbcollect && '--cbcollect' || '' }} | tee /tmp/fit-cli-output.log
+          fi
         id: run-fit-cli
 
       # https://github.com/marketplace/actions/junit-report-action
@@ -148,7 +158,7 @@ jobs:
           java ${{ runner.temp }}/JunitMarkdown.java . >> $GITHUB_STEP_SUMMARY
 
       - name: Job summary
-        if: always()
+        if: always() && inputs.fitCliSource == 'source'
         run: fit-cli/.github/scripts/job-summary.sh "${{ steps.run-fit-cli.outcome }}"
 
       - name: Upload run artifacts
