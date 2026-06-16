@@ -150,7 +150,7 @@ import {
   type ResumeTargetState,
   type RunState,
 } from "./resume-state.js";
-import { updateGhaRunTitle } from "../../util/gha.js";
+import { appendRunSummaryToGhaSummary, updateGhaRunTitle } from "../../util/gha.js";
 
 /** True for a functional iteration that has resolved to a concrete cluster. */
 function functionalWithCluster(
@@ -1221,7 +1221,10 @@ export async function runFromDefinition(
   // Per-run pass/fail outcomes, collected as the loop runs (even for runs that
   // fail) so teardown can show a results summary before asking to leave up.
   const runResults: RunResultSummary[] = [];
-  const recordResult: RecordRunResult = (result) => runResults.push(result);
+  const recordResult: RecordRunResult = (result) => {
+    runResults.push(result);
+    appendRunSummaryToGhaSummary(result);
+  };
 
   const runDir = ensureRunDir();
   const definitionCopyPath = join(runDir, basename(resolve(definitionPath)));

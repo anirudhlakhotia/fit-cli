@@ -1,3 +1,52 @@
+import { appendFileSync } from "node:fs";
+
+interface RunSummary {
+  path: { instanceIndex: number; clusterIndex?: number; sessionIndex?: number; runIndex?: number; clusterlessSession?: boolean };
+  sdk: string;
+  type: string;
+  ok: boolean;
+  summary?: { testsRun: number; failures: number; errors: number; skipped: number };
+}
+
+/**
+ * Append a per-run result block to $GITHUB_STEP_SUMMARY. No-ops outside GHA.
+ * The format mirrors the terminal Details table: label/value pairs rendered as
+ * a GH-flavoured markdown table so each run gets its own block in the job summary.
+ */
+export function appendRunSummaryToGhaSummary(result: RunSummary): void {
+  const summaryPath = process.env.GITHUB_STEP_SUMMARY;
+  if (!summaryPath) return;
+
+  const { path, sdk, type, ok, summary } = result;
+  const status = ok ? "✅ PASS" : "❌ FAIL";
+  const pathLabel = path.clusterlessSession
+    ? `Instance ${path.instanceIndex + 1} / Session ${(path.sessionIndex ?? 0) + 1} / Run ${(path.runIndex ?? 0) + 1}`
+    : `Instance ${path.instanceIndex + 1} / Cluster ${(path.clusterIndex ?? 0) + 1} / Session ${(path.sessionIndex ?? 0) + 1} / Run ${(path.runIndex ?? 0) + 1}`;
+
+  const rows: [string, string][] = [
+    ["Path", pathLabel],
+    ["SDK", sdk],
+    ["Type", type],
+    ...(summary
+      ? ([
+          ["Tests run", String(summary.testsRun)],
+          ["Failures", String(summary.failures)],
+          ["Errors", String(summary.errors)],
+          ["Skipped", String(summary.skipped)],
+        ] as [string, string][])
+      : []),
+    ["**Result**", `**${status}**`],
+  ];
+
+  const table = [
+    "| Detail | Value |",
+    "|--------|-------|",
+    ...rows.map(([label, value]) => `| ${label} | ${value} |`),
+  ].join("\n");
+
+  appendFileSync(summaryPath, `\n### ${pathLabel} (${sdk}) — ${status}\n\n${table}\n`);
+}
+
 /**
  * Emits a GHA notice annotation with a direct link to the artifact bundle for
  * this run. The notice surfaces in the step log as a highlighted callout, making
