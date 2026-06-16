@@ -7,6 +7,10 @@ on:
         description: A fit-cli definition file e.g. "https://gist.githubusercontent.com/programmatix/<gist-id>/raw" or "examples/fit-functional-sanity-test.json5" (local to fit-cli). To generate one, clone the fit-cli project and follow the README.
         type: string
         default: examples/fit-functional-sanity-test.json5
+      definitionBase64:
+        description: Optional base64-encoded definition contents. When set, this takes precedence over definitionFile.
+        type: string
+        default: ""
       fitCliSource:
         description: '"stable" (default) or "latest" to use a released fit-cli binary (for stable testing); "source" to clone the current branch and run via bun (for development).'
         type: string
@@ -21,6 +25,10 @@ on:
         description: A fit-cli definition file e.g. "https://gist.githubusercontent.com/programmatix/<gist-id>/raw" or "examples/fit-functional-sanity-test.json5" (local to fit-cli). To generate one, clone the fit-cli project and follow the README.
         type: string
         default: examples/fit-functional-sanity-test.json5
+      definitionBase64:
+        description: Internal workflow-call transport for an inline base64-encoded definition. When set, this takes precedence over definitionFile.
+        type: string
+        default: ""
       fitCliSource:
         description: '"stable" (default) or "latest" to use a released fit-cli binary (for stable testing); "source" to clone the current branch and run via bun (for development).'
         type: string
@@ -67,6 +75,7 @@ jobs:
           echo "Github actor: ${{ github.actor }}"
           echo "Github run_id: ${{ github.run_id }}"
           echo "definitionFile: ${{ inputs.definitionFile }}"
+          echo "definitionBase64 provided: ${{ inputs.definitionBase64 != '' }}"
           echo "fitCliSource: ${{ inputs.fitCliSource }}"
           aws sts get-caller-identity
 
@@ -89,6 +98,21 @@ jobs:
             fit config edit --auto --suppress-artifacts
           fi
 
+      - name: Materialize inline definition
+        if: ${{ inputs.definitionBase64 != '' }}
+        run: |
+          if [[ "${{ inputs.fitCliSource }}" == "source" ]]; then
+            printf '%s' '${{ inputs.definitionBase64 }}' | base64 --decode > fit-cli/.github/generated-definition.yaml
+            echo "FIT_DEFINITION_FILE=.github/generated-definition.yaml" >> "$GITHUB_ENV"
+          else
+            printf '%s' '${{ inputs.definitionBase64 }}' | base64 --decode > "${{ runner.temp }}/generated-definition.yaml"
+            echo "FIT_DEFINITION_FILE=${{ runner.temp }}/generated-definition.yaml" >> "$GITHUB_ENV"
+          fi
+
+      - name: Select definition path
+        if: ${{ inputs.definitionBase64 == '' }}
+        run: echo "FIT_DEFINITION_FILE=${{ inputs.definitionFile }}" >> "$GITHUB_ENV"
+
       - name: Run fit-cli
         env:
           GITHUB_TOKEN: ${{ secrets.FIT_CLI_GITHUB_PAT }}
@@ -98,9 +122,9 @@ jobs:
         run: |
           set -o pipefail
           if [[ "${{ inputs.fitCliSource }}" == "source" ]]; then
-            cd fit-cli && bun run definition execute "${{ inputs.definitionFile }}" ${{ inputs.cbcollect && '--cbcollect' || '' }} | tee /tmp/fit-cli-output.log
+            cd fit-cli && bun run definition execute "${FIT_DEFINITION_FILE}" ${{ inputs.cbcollect && '--cbcollect' || '' }} | tee /tmp/fit-cli-output.log
           else
-            fit definition execute "${{ inputs.definitionFile }}" ${{ inputs.cbcollect && '--cbcollect' || '' }} | tee /tmp/fit-cli-output.log
+            fit definition execute "${FIT_DEFINITION_FILE}" ${{ inputs.cbcollect && '--cbcollect' || '' }} | tee /tmp/fit-cli-output.log
           fi
         id: run-fit-cli
 
