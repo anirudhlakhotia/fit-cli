@@ -15,8 +15,10 @@ export function emitGhaArtifactNotice(): void {
 
 /** Updates the GitHub Actions workflow run display title, if running inside GHA. */
 export async function updateGhaRunTitle(title: string): Promise<void> {
-  const { GITHUB_RUN_ID, GITHUB_REPOSITORY, GITHUB_TOKEN } = process.env;
-  if (!GITHUB_RUN_ID || !GITHUB_REPOSITORY || !GITHUB_TOKEN) return;
+  const { GITHUB_RUN_ID, GITHUB_REPOSITORY } = process.env;
+  // PATCH /actions/runs/{id} requires the built-in run-scoped token, not a PAT — use GHA_RUN_TOKEN.
+  const token = process.env.GHA_RUN_TOKEN ?? process.env.GITHUB_TOKEN;
+  if (!GITHUB_RUN_ID || !GITHUB_REPOSITORY || !token) return;
 
   try {
     const resp = await fetch(
@@ -24,7 +26,7 @@ export async function updateGhaRunTitle(title: string): Promise<void> {
       {
         method: "PATCH",
         headers: {
-          Authorization: `Bearer ${GITHUB_TOKEN}`,
+          Authorization: `Bearer ${token}`,
           Accept: "application/vnd.github+json",
           "X-GitHub-Api-Version": "2022-11-28",
         },

@@ -93,6 +93,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.FIT_CLI_GITHUB_PAT }}
           GITHUB_USER: ${{ secrets.FIT_CLI_GITHUB_USER }}
+          # The PAT above can't update GHA run titles; PATCH /actions/runs/{id} only works with the built-in run-scoped token.
+          GHA_RUN_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -o pipefail
           if [[ "${{ inputs.fitCliSource }}" == "source" ]]; then
