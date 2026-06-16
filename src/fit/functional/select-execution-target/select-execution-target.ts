@@ -99,7 +99,7 @@ export async function reconnectExecutionTarget(target: ResumeTargetState): Promi
     return { ready: false, artifacts: [], details: [] };
   }
 
-  const remoteHost: RemoteHost = { host: address, user, identityFile, agentForwarding: true };
+  const remoteHost: RemoteHost = { host: address, user, identityFile, agentForwarding: false };
   process.stdout.write(`Reconnecting to ${user}@${address}...`);
   if (!(await waitForSsh(remoteHost))) {
     console.log(" unreachable");
@@ -148,7 +148,7 @@ export async function resolveExecutionGroupTarget(
   // the user picked up front. They brought it, so cleanup is a no-op.
   if (override.kind === "existing") {
     const { host, user, identityFile } = override.existing;
-    const remoteHost: RemoteHost = { host, user, identityFile, agentForwarding: true };
+    const remoteHost: RemoteHost = { host, user, identityFile, agentForwarding: false };
     return {
       ready: true,
       target: new RemoteTarget(remoteHost),
@@ -323,7 +323,7 @@ async function connectExistingInstance(attempt: number): Promise<ExecutionTarget
     validate: (value) => (value.trim().length > 0 ? true : "Enter the path to the private key."),
   }).then((value) => value.trim());
 
-  const remoteHost: RemoteHost = { host, user, identityFile, agentForwarding: true };
+  const remoteHost: RemoteHost = { host, user, identityFile, agentForwarding: false };
 
   process.stdout.write("Checking SSH...");
   if (!(await waitForSsh(remoteHost))) {

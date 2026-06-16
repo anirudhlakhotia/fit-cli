@@ -24,7 +24,7 @@ export interface RemoteHost {
   port?: number;
   /** Per-connection timeout in seconds. Defaults to 10. */
   connectTimeoutSeconds?: number;
-  /** Forward the local SSH agent to the remote host (`-A`). Needed when the remote must authenticate onwards (e.g. Gerrit). */
+  /** Forward the local SSH agent to the remote host (`-A`). */
   agentForwarding?: boolean;
 }
 

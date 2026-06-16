@@ -1,4 +1,5 @@
 import { mkdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { commandOn, formatCommandLine } from "../../../util/non-fit/fit-cli-log.js";
@@ -30,6 +31,33 @@ import {
   type FitExecutionContext,
 } from "./remote-fit-run.js";
 import { resolveGerritSshKey } from "../../util/config.js";
+import { getJsonSecret, AwsSecretError } from "../../../cloud/util/aws/secrets.js";
+
+const GERRIT_AWS_SECRET_ID = "fit-cli/gerrit/ssh-key";
+
+/**
+ * Resolve the Gerrit SSH private key path, falling back to AWS Secrets Manager
+ * (`fit-cli/gerrit/ssh-key`, field `sshPrivateKey`) if no local key is found.
+ * When the key comes from AWS it is written to a temp file and that path is returned.
+ */
+async function resolveGerritKeyWithAwsFallback(): Promise<string | undefined> {
+  const local = resolveGerritSshKey();
+  if (local) return local;
+
+  try {
+    const secret = await getJsonSecret(GERRIT_AWS_SECRET_ID);
+    const keyContent = secret.sshPrivateKey;
+    if (!keyContent) return undefined;
+    const tmpPath = join(tmpdir(), `fit-cli-gerrit-key-${process.pid}.pem`);
+    const content = keyContent.endsWith("\n") ? keyContent : keyContent + "\n";
+    writeFileSync(tmpPath, content, { mode: 0o600 });
+    console.log(`\n→ Loaded Gerrit SSH key from AWS Secrets Manager (${GERRIT_AWS_SECRET_ID})`);
+    return tmpPath;
+  } catch (err) {
+    if (err instanceof AwsSecretError) return undefined;
+    throw err;
+  }
+}
 
 const REMOTE_APT_ENV = "DEBIAN_FRONTEND=noninteractive";
 
@@ -77,6 +105,7 @@ export async function createRemoteFitExecutionContext(
 ): Promise<FitExecutionContext> {
   const rootDir = remoteFitRootDir();
   const binDir = remoteFitBinDir(rootDir);
+  const localGerritKey = await resolveGerritKeyWithAwsFallback();
 
   if (skipPreparation) {
     console.log(`\n→ resume: reusing existing remote FIT workspace on ${target.description} (skipping preparation).`);
@@ -126,14 +155,13 @@ export async function createRemoteFitExecutionContext(
 
     await ensureRemoteRepos(target, rootDir, remoteFitRepos(sdk));
 
-    const localGerritKey = resolveGerritSshKey();
     if (localGerritKey) {
       console.log(`\n→ Staging Gerrit SSH key to remote instance...`);
       await stageGerritSshKey(target, rootDir, localGerritKey);
     }
   }
 
-  const gerritSshKeyPath = resolveGerritSshKey() ? remoteGerritSshKeyPath(rootDir) : undefined;
+  const gerritSshKeyPath = localGerritKey ? remoteGerritSshKeyPath(rootDir) : undefined;
 
   return {
     kind: "remote",

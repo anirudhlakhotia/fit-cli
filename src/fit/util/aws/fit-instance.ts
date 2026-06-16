@@ -190,7 +190,7 @@ export async function provisionFitInstance(options: ProvisionOptions = {}): Prom
       throw new Error(`Instance ${instanceId} is running but has no public address.`);
     }
 
-    const host: RemoteHost = { host: address, user: FIT_INSTANCE_USER, identityFile: keyPath, agentForwarding: true };
+    const host: RemoteHost = { host: address, user: FIT_INSTANCE_USER, identityFile: keyPath, agentForwarding: false };
     process.stdout.write("  waiting for SSH...");
     if (!(await waitForSsh(host))) {
       throw new Error(`Timed out waiting for SSH on ${address}.`);
