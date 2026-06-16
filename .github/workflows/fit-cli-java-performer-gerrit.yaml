@@ -19,21 +19,9 @@ permissions:
   checks: write
 
 jobs:
-  generate-definition:
+  build-performer:
     runs-on: ubuntu-latest
-    outputs:
-      definition-base64: ${{ steps.definition.outputs.definition_base64 }}
-      performer-image-name: ${{ steps.performer.outputs.performer_image_name }}
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-
-      - name: Install fit-cli dependencies
-        run: bun install --frozen-lockfile
-
       - name: Build Java performer workflow
         env:
           GH_TOKEN: ${{ secrets.FIT_CLI_GITHUB_PAT }}
@@ -68,6 +56,20 @@ jobs:
           fi
           gh run watch "$run_id" --repo couchbase/couchbase-jvm-clients --exit-status
 
+  generate-definition:
+    runs-on: ubuntu-latest
+    outputs:
+      definition-file: ${{ steps.gist.outputs.definition_file }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install fit-cli dependencies
+        run: bun install --frozen-lockfile
+
       - name: Compute performer image name
         id: performer
         run: |
@@ -82,15 +84,13 @@ jobs:
           --performer-image-name "${{ steps.performer.outputs.performer_image_name }}"
           --output .github/generated/fit-java-performer-gerrit.yaml
 
-      - name: Encode definition for reusable workflow
-        id: definition
+      - name: Publish generated definition as gist
+        id: gist
+        env:
+          GH_TOKEN: ${{ secrets.FIT_CLI_GITHUB_PAT }}
         run: |
-          {
-            echo "definition_base64<<EOF"
-            base64 -w 0 .github/generated/fit-java-performer-gerrit.yaml
-            echo
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
+          gist_url="$(gh gist create .github/generated/fit-java-performer-gerrit.yaml --desc "fit-cli generated definition for ${{ inputs.gerritRef }}")"
+          echo "definition_file=${gist_url/gist.github.com/gist.githubusercontent.com}/raw" >> "$GITHUB_OUTPUT"
 
       - name: Upload generated definition
         uses: actions/upload-artifact@v4
@@ -100,8 +100,10 @@ jobs:
           if-no-files-found: error
 
   run-fit:
-    needs: generate-definition
+    needs:
+      - build-performer
+      - generate-definition
     uses: ./.github/workflows/fit-cli.yaml
     with:
-      definitionBase64: ${{ needs.generate-definition.outputs.definition-base64 }}
+      definitionFile: ${{ needs.generate-definition.outputs.definition-file }}
     secrets: inherit
