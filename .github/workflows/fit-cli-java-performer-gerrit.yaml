@@ -19,7 +19,7 @@ permissions:
   checks: write
 
 jobs:
-  build-performer:
+  build-and-publish-performer-image:
     runs-on: ubuntu-latest
     steps:
       - name: Build Java performer workflow
@@ -78,7 +78,7 @@ jobs:
 
       - name: Generate preset definition
         run: >
-          bun run definition -- generate-preset
+          bun src/fit/definition/definition.ts generate-preset
           --type preset-functional-tests
           --cluster-version "${{ inputs.clusterVersion }}"
           --performer-image-name "${{ steps.performer.outputs.performer_image_name }}"
@@ -103,7 +103,7 @@ jobs:
 
   run-fit:
     needs:
-      - build-performer
+      - build-and-publish-performer-image
       - generate-definition
     uses: ./.github/workflows/fit-cli.yaml
     with:
