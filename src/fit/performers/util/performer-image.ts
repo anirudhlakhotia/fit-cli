@@ -5,7 +5,7 @@ export const FIT_PERFORMER_IMAGE_OWNER = "couchbase";
 export const JVM_PERFORMER_IMAGE_OWNER = "couchbase";
 export const JVM_PERFORMER_PACKAGES_REPOSITORY = "couchbase-jvm-clients";
 export const DEFAULT_PERFORMER_IMAGE_TAG = "main";
-export const JVM_DEFAULT_PERFORMER_IMAGE_TAG = "master";
+export const JVM_DEFAULT_PERFORMER_IMAGE_TAG = "main";
 
 /** The default Docker tag used for a given SDK's prebuilt GHCR image. */
 export function sdkDefaultPerformerTag(sdk: Sdk): string {
