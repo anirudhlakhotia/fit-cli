@@ -8,15 +8,15 @@
 import { type RunOutput } from "../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { printWithoutTimestamps } from "../../../util/non-fit/fit-cli-log.js";
-import { qualifyPromptId, select } from "../../../util/non-fit/prompts.js";
+import { qualifyPromptId, select, confirm, input } from "../../../util/non-fit/prompts.js";
 import { rootDirFromArgv } from "../../util/root.js";
 import { loadFitCliConfig, resolveOutputFormat } from "../../util/config.js";
 import { chooseSdk } from "../../../util/sdk/choose-sdk.js";
 import { askClusterDef } from "../../../cluster/cluster-create/ask-cluster-def.js";
 import { askClusterExistsPolicy } from "../../../cluster/cluster-create/ask-cluster-exists-policy.js";
+import { selectCluster } from "../../../cluster/cluster-select/cluster-select.js";
 import { askVersion } from "../../performers/build-performer/ask-version.js";
 import { askPortInUsePolicy } from "../../performers/util/ask-port-in-use-policy.js";
-import { askFitGerritRef, chooseDefinitionCluster } from "../../functional/create-definition/create-definition.js";
 import { printDefinitionRunGuidance } from "../definition/run-guidance.js";
 import { extractPushGistVisibility, pushGist, type GistVisibility } from "../definition/push-gist.js";
 import { chooseResultsTarget } from "../../situational/choose-results-database/choose-results-database.js";
@@ -49,6 +49,33 @@ import {
   selectFitTests,
 } from "../select-fit-tests/select-fit-tests.js";
 import { createLocalFitExecutionContext } from "../util/remote-fit-run.js";
+
+async function chooseDefinitionCluster(): Promise<DefinitionCluster> {
+  const selection = await selectCluster();
+  if (selection.mode === "existing") {
+    return { kind: "connection", cluster: selection.cluster };
+  }
+  const def = await askClusterDef();
+  return { kind: "cbdinocluster", def };
+}
+
+export async function askFitGerritRef(promptIdPrefix?: string): Promise<string | undefined> {
+  const shouldUseGerritRef = await confirm({
+    promptId: qualifyPromptId("fit.definition.performer.gerrit-ref.enabled", promptIdPrefix),
+    message: "Do you want to fetch and checkout a specific transactions-fit-performer Gerrit ref before execution?",
+    default: false,
+  });
+  if (!shouldUseGerritRef) {
+    return undefined;
+  }
+
+  const gerritRef = await input({
+    promptId: qualifyPromptId("fit.definition.performer.gerrit-ref.value", promptIdPrefix),
+    message: "Which transactions-fit-performer Gerrit ref should fit-cli fetch and checkout (e.g. refs/changes/29/246329/1)?",
+    validate: (value) => value.trim() ? true : "Enter a Gerrit ref like refs/changes/29/246329/1.",
+  });
+  return gerritRef.trim();
+}
 
 type DefinitionBuilderAction = "functional" | "situational" | "performance" | "done";
 type FunctionalConnectivity = "operational" | "cng";
