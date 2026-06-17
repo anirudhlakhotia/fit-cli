@@ -228,6 +228,11 @@ export function installFitCliConsoleFormatting(): void {
   }
   installTimestampedStreamWrite(process.stdout, baseStdoutWrite);
   installTimestampedStreamWrite(process.stderr, baseStderrWrite);
+  // Bun's console.log writes directly to fd 1, bypassing process.stdout.write and
+  // therefore bypassing the session-log monkey-patch. Replace it so log output is
+  // routed through process.stdout.write (looked up at call time, not install time,
+  // so the session log tee installed later by startSessionLog() picks it up).
+  console.log = (...args: unknown[]) => process.stdout.write(args.map(stringify).join(" ") + "\n");
   console.error = (...args: unknown[]) => baseConsoleError(formatFitCliError(...args));
   console.warn = (...args: unknown[]) => baseConsoleWarn(formatFitCliWarn(...args));
   consoleFormattingInstalled = true;
