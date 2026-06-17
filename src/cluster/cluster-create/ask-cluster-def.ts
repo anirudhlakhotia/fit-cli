@@ -15,7 +15,7 @@
  */
 import { isMain, runCli } from "../../util/non-fit/cli.js";
 import { checkbox, input, number, select } from "../../util/non-fit/prompts.js";
-import type { ClusterDef } from "./build-cluster-def.js";
+import { DEFAULT_CLUSTER_VERSION, type ClusterDef } from "./build-cluster-def.js";
 
 /** Services offered, with the FIT-typical set selected by default. */
 const SERVICES = [
@@ -65,8 +65,9 @@ export async function askClusterDef(options: AskClusterDefOptions = {}): Promise
   const version = await input({
     promptId: "cluster.create.server-version",
     message: "Which Couchbase Server version?",
-    // Temp, working around https://couchbase.slack.com/archives/C05LNBVQRE3/p1781539981409679
-    default: "8.0.2-5322",
+    // Accepts stable aliases like "8.0-stable" or a pinned build like "8.0.2-5322"
+    // (use a pinned build if the alias is temporarily broken, e.g. https://couchbase.slack.com/archives/C05LNBVQRE3/p1781539981409679)
+    default: DEFAULT_CLUSTER_VERSION,
   });
 
   const services = await checkbox<string>({

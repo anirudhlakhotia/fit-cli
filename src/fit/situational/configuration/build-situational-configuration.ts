@@ -23,10 +23,11 @@ import { mergeConfigPieces, type ConfigPiece, type PieceData } from "../../../ut
 import { DEFAULT_PERFORMER_PORT } from "../../performers/util/performer-port.js";
 import { type ResultsDatabase } from "../../shared/util/results-database.js";
 import { AUTO_GENERATED_MARKER } from "../../shared/fit-configuration/write-fit-configuration.js";
+import { DEFAULT_CLUSTER_VERSION } from "../../../cluster/cluster-create/build-cluster-def.js";
 
 /** How cbdino should build the cluster the situational tests run against. */
 export interface CbdinoSettings {
-  /** Couchbase Server version cbdino should deploy, e.g. "7.6". */
+  /** Couchbase Server version cbdino should deploy, e.g. "8.0-stable" or a pinned build like "8.0.2-5322". */
   version: string;
   /** Name (or path) of the cbdinocluster binary the driver should invoke. */
   cbDinoClusterAppPath: string;
@@ -34,7 +35,7 @@ export interface CbdinoSettings {
 }
 
 export const DEFAULT_CBDINO_SETTINGS: CbdinoSettings = {
-  version: "7.6",
+  version: DEFAULT_CLUSTER_VERSION,
   cbDinoClusterAppPath: "cbdinocluster",
   enablePrivateEndpoint: false,
 };

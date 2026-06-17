@@ -27,11 +27,19 @@ import { isMain, runCli } from "../../util/non-fit/cli.js";
 export const CAO_OPERATOR_VERSION = "2.8.0";
 export const CAO_GATEWAY_VERSION = "1.1.0-135";
 
+/**
+ * Default Couchbase Server version passed to cbdinocluster.
+ * Accepts stable-channel aliases (e.g. "8.0-stable") as well as pinned builds
+ * (e.g. "8.0.2-5322") — use a pinned build if you need a specific patch or
+ * the alias is temporarily broken.
+ */
+export const DEFAULT_CLUSTER_VERSION = "8.0-stable";
+
 /** The answers that describe the cluster to allocate. */
 export interface ClusterDef {
   /** Number of nodes in the cluster. */
   nodeCount: number;
-  /** Couchbase Server version, e.g. "8.1.0". */
+  /** Couchbase Server version, e.g. "8.0-stable" or a pinned build like "8.0.2-5322". */
   version: string;
   /** Services to run on the node(s), e.g. ["kv", "n1ql", "index", "fts"]. */
   services: string[];
@@ -134,7 +142,7 @@ if (isMain(import.meta.url)) {
     console.log(
       buildClusterDef({
         nodeCount: 1,
-        version: "8.1.0",
+        version: DEFAULT_CLUSTER_VERSION,
         services: ["kv", "n1ql", "index", "fts"],
         cng: true,
       }),
