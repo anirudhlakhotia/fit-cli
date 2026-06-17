@@ -66,7 +66,7 @@ export interface PromptLogFile {
 type PromptSessionMode = "record" | "replay" | "defaults" | "non-interactive";
 
 const RUN_ROOT_DIR = "/tmp/fit-cli";
-const RUN_FROM_DEFINITION_ENTRYPOINT = "src/workflows/fit-functional/run-from-definition/run-from-definition.ts";
+const RUN_FROM_DEFINITION_ENTRYPOINT = "src/fit/functional/run-from-definition/run-from-definition.ts";
 
 export function extractReplayFlag(
   argv: string[],
@@ -153,6 +153,10 @@ export function defaultsToNonInteractive(
   entrypoint: string | undefined = process.argv[1],
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
+  // CI environments (GitHub Actions, CircleCI, etc.) set CI=true and must never prompt.
+  if (env.CI) {
+    return true;
+  }
   if (env.npm_lifecycle_event === "definition") {
     return true;
   }

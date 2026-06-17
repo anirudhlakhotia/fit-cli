@@ -13,7 +13,7 @@ import {
 
 const DEFINITION_ENTRYPOINT = join(
   REPO_ROOT,
-  "src/workflows/fit-functional/run-from-definition/run-from-definition.ts",
+  "src/fit/functional/run-from-definition/run-from-definition.ts",
 );
 
 async function captureLogs(run: () => Promise<void>): Promise<string[]> {
@@ -95,8 +95,13 @@ test("extractInteractiveFlag removes --interactive from argv", () => {
 });
 
 test("definition runs default to non-interactive prompts", () => {
-  assert.equal(defaultsToNonInteractive(DEFINITION_ENTRYPOINT), true);
-  assert.equal(defaultsToNonInteractive(join(REPO_ROOT, "src/main.ts")), false);
+  const noEnv = {};
+  assert.equal(defaultsToNonInteractive(DEFINITION_ENTRYPOINT, noEnv), true);
+  assert.equal(defaultsToNonInteractive(join(REPO_ROOT, "src/main.ts"), noEnv), false);
+});
+
+test("CI env var defaults to non-interactive", () => {
+  assert.equal(defaultsToNonInteractive(join(REPO_ROOT, "src/main.ts"), { CI: "true" }), true);
 });
 
 test("interactive mode writes prompt responses to a log file", async () => {
