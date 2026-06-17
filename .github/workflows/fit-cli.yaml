@@ -69,6 +69,17 @@ jobs:
           retry-max-attempts: 3
           role-duration-seconds: 43200
 
+      - name: OIDC failure hints
+        if: failure()
+        run: |
+          echo "::error::AWS OIDC authentication failed. Troubleshooting steps:"
+          echo "::error::1. Check the trust policy on the fit-cli-role (arn:aws:iam::958525475024:role/fit-cli-role) in the AWS console."
+          echo "::error::   The trust policy must allow sts:AssumeRoleWithWebIdentity for this GitHub repo/org."
+          echo "::error::   Expected subject condition: token.actions.githubusercontent.com:sub matches repo:couchbaselabs/fit-cli:* (or similar)"
+          echo "::error::2. Verify the workflow has 'id-token: write' permissions (it should — check if a calling workflow overrides permissions)."
+          echo "::error::3. If this workflow is called from another repo, the OIDC subject will be that repo — its sub must also be in the trust policy."
+          echo "::error::Caller identity: repo=${{ github.repository }}, ref=${{ github.ref }}, actor=${{ github.actor }}"
+
       - name: Diagnostics
         run: |
           echo "Key prefix: ${AWS_ACCESS_KEY_ID:0:4}"
@@ -115,8 +126,9 @@ jobs:
 
       - name: Run fit-cli
         env:
-          GITHUB_TOKEN: ${{ secrets.FIT_CLI_GITHUB_PAT }}
-          GITHUB_USER: ${{ secrets.FIT_CLI_GITHUB_USER }}
+          # todo don't think we need these anymore?
+#          GITHUB_TOKEN: ${{ secrets.FIT_CLI_GITHUB_PAT }}
+#          GITHUB_USER: ${{ secrets.FIT_CLI_GITHUB_USER }}
           # The PAT above can't update GHA run titles; PATCH /actions/runs/{id} only works with the built-in run-scoped token.
           GHA_RUN_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
