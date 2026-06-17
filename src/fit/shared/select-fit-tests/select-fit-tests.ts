@@ -343,11 +343,11 @@ async function askFitTestRunMode(domain: FitTestDomain, promptIdPrefix?: string)
       ...(domain.showStandardQePreset
         ? [{ name: "Standard QE set", value: "standard-qe" as FitTestRunMode }]
         : []),
-      { name: "Run a single test", value: "single" },
       {
         name: `Run a single sanity test (${domain.sanitySelector})`,
         value: "sanity",
       },
+      { name: "Pick a single test", value: "single" },
       { name: "Pick multiple tests", value: "multiple" },
       { name: "Run tests in a package", value: "package" },
     ],

@@ -105,9 +105,9 @@ async function chooseDefinitionBuilderAction(index: number): Promise<DefinitionB
 async function chooseFunctionalConnectivity(promptIdPrefix: string): Promise<FunctionalConnectivity> {
   return select<FunctionalConnectivity>({
     promptId: qualifyPromptId("connectivity", promptIdPrefix),
-    message: "What do you want to FIT functional test against?",
+    message: "What do you want to FIT functional test against?  (Only operational supported today, CNG and Analytics to come)",
     choices: [
-      { name: "Operational, couchbase[s]://", value: "operational" },
+      { name: "Operational", value: "operational" },
       // CNG (Cloud Native Gateway, couchbase2://) is commented out for now.
       // { name: "Cloud Native Gateway, couchbase2://)", value: "cng" },
     ],

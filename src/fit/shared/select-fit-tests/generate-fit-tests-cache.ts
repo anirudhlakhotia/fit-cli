@@ -14,7 +14,7 @@ const CACHE_PATH = join(dirname(fileURLToPath(import.meta.url)), "fit-tests-cach
 
 const HEADER = `// FIT test-driver test file paths, relative to test-driver/src/test in transactions-fit-performer.
 // To regenerate:
-//   bunx tsx src/fit/shared/select-fit-tests/generate-fit-tests-cache.ts --root /path/to/transactions-fit-performer\n`;
+//   bun run generate-fit-tests-cache --root /path/to/transactions-fit-performer\n`;
 
 function discoverTestPaths(performerDir: string): string[] {
   const testRoot = join(performerDir, "test-driver", "src", "test");
