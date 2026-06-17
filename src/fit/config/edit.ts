@@ -181,11 +181,12 @@ function buildInitialDefaults(existing?: FitCliConfig): AwsInitAnswers {
 
 async function promptForGithubUser(existing?: FitCliConfig): Promise<string | undefined> {
   const existingUser = existing?.github?.user;
+  console.log("\nGitHub — used to pull Docker images from GHCR and clone private FIT repos. Set $GITHUB_USER to avoid storing here.");
   const entered = await input({
     promptId: "init.github.user",
     message: existingUser
-      ? "GitHub username for GHCR image pulls (leave blank to keep the current one):"
-      : "GitHub username for GHCR image pulls:",
+      ? "GitHub username (leave blank to keep the current one):"
+      : "GitHub username:",
     default: existingUser ?? "",
   });
   return trimOptional(entered) ?? existingUser;
@@ -193,11 +194,16 @@ async function promptForGithubUser(existing?: FitCliConfig): Promise<string | un
 
 async function promptForGithubToken(existing?: FitCliConfig): Promise<string | undefined> {
   const existingToken = existing?.github?.token ?? process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN;
+  console.log(
+    "\nA GitHub Personal Access Token (PAT) is a password substitute for API/CLI access." +
+    "\nCreate one at https://github.com/settings/tokens — needs read:packages scope (for GHCR) and repo access (for private FIT repos)." +
+    "\nSet $GITHUB_TOKEN or $GH_TOKEN to avoid storing it here.",
+  );
   const entered = await password({
     promptId: "init.github.token",
     message: existingToken
-      ? "GitHub PAT (for cloning FIT repos and pulling GHCR images — leave blank to keep the current one):"
-      : "GitHub PAT (for cloning FIT repos and pulling GHCR images — leave blank to skip):",
+      ? "GitHub PAT (leave blank to keep the current one):"
+      : "GitHub PAT (leave blank to skip):",
     mask: "*",
   });
   // A blank entry keeps whatever is already configured, so re-running edit
@@ -209,6 +215,7 @@ async function promptForGerritUser(existing?: FitCliConfig): Promise<string | un
   const existingUser = existing?.gerrit?.user;
   const githubUser = existing?.github?.user;
   const defaultUser = existingUser ?? githubUser;
+  console.log("\nGerrit — used to fetch FIT performer code from review.couchbase.org when running against a Gerrit change ref. Set $FIT_GERRIT_USER to avoid storing here.");
   const entered = await input({
     promptId: "init.gerrit.user",
     message: defaultUser
@@ -221,11 +228,12 @@ async function promptForGerritUser(existing?: FitCliConfig): Promise<string | un
 
 async function promptForGerritSshKeyPath(existing?: FitCliConfig): Promise<string | undefined> {
   const existingPath = existing?.gerrit?.sshKeyPath ?? resolveGerritSshKey({ config: existing });
+  console.log("SSH private key registered with Gerrit — required to authenticate when fetching Gerrit change refs. Set $FIT_GERRIT_KEY to avoid storing the path here.");
   const entered = await input({
     promptId: "init.gerrit.ssh-key",
     message: existingPath
       ? `Path to Gerrit SSH private key (leave blank to use "${existingPath}"):`
-      : "Path to Gerrit SSH private key (leave blank to skip — required for fetching Gerrit change refs):",
+      : "Path to Gerrit SSH private key (leave blank to skip):",
     default: existingPath ?? "",
   });
   return trimOptional(entered) ?? (existing?.gerrit?.sshKeyPath);
