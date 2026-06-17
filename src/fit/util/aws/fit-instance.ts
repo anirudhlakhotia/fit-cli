@@ -22,13 +22,13 @@ import { describeInstance } from "../../../cloud/util/aws/describe-instance.js";
 import { findInstancesByKeyName } from "../../../cloud/util/aws/list-instances.js";
 import { type InstanceInfo } from "../../../cloud/util/aws/parse-instance.js";
 import { terminateInstance } from "../../../cloud/util/aws/terminate-instance.js";
-import { ensureFitCliConfigEnv } from "../config.js";
+import { loadFitCliConfigEnv } from "../config.js";
 import { createKeyPair, deleteKeyPair } from "../../../cloud/util/aws/key-pair.js";
 import { ensureSecurityGroup } from "../../../cloud/util/aws/security-group.js";
 import { instanceRunDir } from "../../../util/non-fit/replay.js";
 import { waitForSsh, type RemoteHost } from "../../../util/non-fit/ssh.js";
 import { RemoteTarget } from "../../../util/non-fit/remote-target.js";
-import { fitCliWarn, runScriptPrefix } from "../../../util/non-fit/fit-cli-log.js";
+import { fitCliWarn } from "../../../util/non-fit/fit-cli-log.js";
 import { formatBanner, formatEc2DeletionResponsibilityBanner, terminateInstanceCommand } from "./lifecycle-warning.js";
 import { warnAboutExistingInstances } from "./warn-existing-instances.js";
 
@@ -116,10 +116,7 @@ export interface ProvisionOptions {
  * the instance launches, it's terminated so we don't leak a paid box.
  */
 export async function provisionFitInstance(options: ProvisionOptions = {}): Promise<ProvisionedInstance> {
-  await ensureFitCliConfigEnv({
-    promptId: "fit-instance.config.create",
-    promptMessage: `No fit-cli config found. Run \`${runScriptPrefix("config")} edit\` now before provisioning an EC2 instance?`,
-  });
+  loadFitCliConfigEnv();
   const creds = await checkCredentials();
   if (!creds.ok) {
     throw new Error(`AWS credentials are not usable: ${creds.message}`);

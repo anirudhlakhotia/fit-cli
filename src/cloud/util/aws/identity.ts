@@ -9,6 +9,9 @@
  *
  * Prints the caller identity, or the reason it couldn't be determined (exit 1).
  */
+import { existsSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { GetCallerIdentityCommand } from "@aws-sdk/client-sts";
 import { fromNodeProviderChain } from "@aws-sdk/credential-providers";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
@@ -49,6 +52,31 @@ export async function checkCredentials(): Promise<CredentialsCheck> {
   }
 }
 
+/**
+ * Print a ✓/✗ checklist of which AWS credential sources are present. When none
+ * are found, adds instructions for the three common fix paths.
+ */
+export function printCredentialsDiagnostic(env: NodeJS.ProcessEnv = process.env): void {
+  const hasEnvVars = Boolean(env.AWS_ACCESS_KEY_ID?.trim() && env.AWS_SECRET_ACCESS_KEY?.trim());
+  const home = env.HOME ?? homedir();
+  const hasCredentialsFile = existsSync(join(home, ".aws", "credentials"));
+  const hasConfigFile = existsSync(join(home, ".aws", "config"));
+
+  console.log("AWS credential sources:");
+  console.log(`  ${hasEnvVars ? "✓" : "✗"} AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY (env vars)`);
+  console.log(`  ${hasCredentialsFile ? "✓" : "✗"} ~/.aws/credentials`);
+  console.log(`  ${hasConfigFile ? "✓" : "✗"} ~/.aws/config`);
+
+  if (!hasEnvVars && !hasCredentialsFile && !hasConfigFile) {
+    console.log("");
+    console.log("To set up credentials, use one of:");
+    console.log("  aws sso login --profile <profile>        (SSO)");
+    console.log("  export AWS_ACCESS_KEY_ID=...             (env vars)");
+    console.log("     export AWS_SECRET_ACCESS_KEY=...");
+    console.log("  aws configure                            (static key/secret)");
+  }
+}
+
 /** Raw AWS credential values needed to forward to a remote execution target. */
 export interface AwsCredentials {
   accessKeyId: string;
@@ -70,10 +98,10 @@ export async function resolveAwsCredentials(
   // Validate first — this covers all credential sources (env, profiles, SSO, IMDS).
   const check = await checkCredentials();
   if (!check.ok) {
+    printCredentialsDiagnostic(env);
     return (
       `AWS credentials are required for situational FIT/SIT runs — the test-driver ` +
-      `allocates cloud clusters via cbdinocluster. ${check.message}. ` +
-      `Set AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY or run \`aws configure\`.`
+      `allocates cloud clusters via cbdinocluster. ${check.message}.`
     );
   }
 
