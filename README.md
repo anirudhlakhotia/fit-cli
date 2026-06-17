@@ -31,7 +31,7 @@ Then:
 fit config edit
 
 # Start the interactive wizard
-fit start
+fit wizard
 
 # Or to see all commands
 fit help
@@ -102,7 +102,7 @@ If you find any are broken due to refactorings then please ask an AI to "sweep t
 
 User-facing (using the installed binary):
 - `fit help` — show help.
-- `fit start` — run the interactive wizard.
+- `fit wizard` — run the interactive wizard.
 - `fit definition execute <file>` — run a definition file (see Resuming for the resume flags).
 - `fit cloud-instances list | manage | delete | remove-all` — manage the EC2 instances fit-cli launched.
 
@@ -139,7 +139,7 @@ Inputs and outputs from steps are ideally clear and well-defined.
 
 Each step should be runnable independently from the CLI wherever possible - see 'mini cli tools' below.  
 This is for debugging and development rather than intended for end-users. 
-End-users should be starting at `fit start`.
+End-users should be starting at `fit wizard`.
 
 ### ROOT_DIR
 - Everything file-based is relative to a ROOT_DIR (see "ROOT_DIR" below): the FIT repos live directly under it and the generated config is written under it. It defaults to the parent of the current directory and can be overridden with `--root <dir>` or the `FIT_ROOT` env var.

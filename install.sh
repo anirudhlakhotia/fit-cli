@@ -60,7 +60,7 @@ main() {
   echo ""
   echo "Next steps:"
   echo "  fit config edit   # one-off configuration (AWS, GitHub credentials)"
-  echo "  fit start         # launch the interactive wizard"
+  echo "  fit wizard        # launch the interactive wizard"
   echo "  fit help"
 }
 

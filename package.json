@@ -9,6 +9,7 @@
   "scripts": {
     "help": "bun src/fit/main/main.ts help",
     "start": "bun src/fit/main/main.ts",
+    "wizard": "bun src/fit/main/main.ts wizard",
     "config": "bun src/fit/config/config.ts",
     "replay": "bun src/util/non-fit/replay-entry.ts --replay",
     "definition": "bun src/fit/definition/definition.ts",
