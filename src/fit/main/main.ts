@@ -226,9 +226,17 @@ const RUN_SCRIPTS: Record<string, (() => void) | undefined> = {
 // import.meta.main is true in compiled Bun binaries where isMain() can't
 // compare virtual /$bunfs/ paths against the real executable path.
 if (isMain(import.meta.url) || import.meta.main) {
-  const runScript = process.argv[2] === "run" ? RUN_SCRIPTS[process.argv[3]] : undefined;
+  let runScript: (() => void) | undefined;
+  let argsToRemove = 0;
+  if (process.argv[2] === "run" && RUN_SCRIPTS[process.argv[3]]) {
+    runScript = RUN_SCRIPTS[process.argv[3]];
+    argsToRemove = 2;
+  } else if (RUN_SCRIPTS[process.argv[2]]) {
+    runScript = RUN_SCRIPTS[process.argv[2]];
+    argsToRemove = 1;
+  }
   if (runScript) {
-    process.argv.splice(2, 2);
+    process.argv.splice(2, argsToRemove);
     runScript();
   } else {
     runCli(main);
