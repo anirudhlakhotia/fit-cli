@@ -142,7 +142,7 @@ export async function provisionFitInstance(options: ProvisionOptions = {}): Prom
   }
 
   const instanceType = options.instanceType ?? defaultInstanceType();
-  console.log(`Provisioning a ${instanceType} EC2 instance in ${AWS_REGION}...`);
+  console.log(`Provisioning a ${instanceType} EC2 instance in ${AWS_REGION} (VPC: ${AWS_VPC_ID})...`);
 
   const amiId = await findUbuntuAmi();
   const securityGroupId = await ensureSecurityGroup(
