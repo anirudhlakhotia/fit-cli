@@ -8,7 +8,7 @@
  * zip:        Creates <dir>.zip next to the source directory.
  * s3-upload:  Uploads the directory to S3, either as individual files (default)
  *             or as a single zip archive (--zip). <s3-uri> defaults to
- *             s3://fit-cli/runs/<dirname>/.
+ *             s3://fit-cli/runs/.
  */
 import { createReadStream, createWriteStream, existsSync, statSync } from "node:fs";
 import { basename, resolve } from "node:path";
@@ -33,7 +33,7 @@ Subcommands:
   zip         Create <dir>.zip next to the source directory.
   s3-upload   Upload <dir> to S3. Without --zip, uploads each file individually;
               with --zip, zips first and uploads the single archive.
-              <s3-uri> defaults to s3://${ARTIFACTS_BUCKET}/${ARTIFACTS_PREFIX}/<dirname>/.`;
+              <s3-uri> defaults to s3://${ARTIFACTS_BUCKET}/${ARTIFACTS_PREFIX}/.`;
 }
 
 /** Zip the contents of sourceDir into a new file at outputPath. */
