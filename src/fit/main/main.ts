@@ -154,14 +154,7 @@ function checkPlatform(): void {
     console.error("FIT CLI does not support Windows. Please use Linux or macOS.");
     process.exit(1);
   }
-  if (platform === "darwin") {
-    console.warn(
-      "╔══════════════════════════════════════════════════════════════════╗\n" +
-      "║  WARNING: FIT CLI has not been tested on macOS.                  ║\n" +
-      "║  Things may not work as expected. Contributions are welcome!     ║\n" +
-      "╚══════════════════════════════════════════════════════════════════╝\n",
-    );
-  }
+
 }
 
 async function runWizard(): Promise<RunOutput> {
