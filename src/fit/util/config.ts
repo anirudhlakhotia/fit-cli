@@ -619,8 +619,8 @@ export async function resolveCapellaConfig(
         `Capella environment "${block}" has no secretId in environments.json5 and no personal password is configured.`,
       );
     }
-    console.warn(
-      `⚠ No personal Capella password configured — using the shared "${block}" account password from AWS Secrets Manager.\n` +
+    console.info(
+      `No personal Capella password configured — using the shared "${block}" account password from AWS Secrets Manager.\n` +
         `  Set CAPELLA_PASS (or run \`${runScriptPrefix("config")} edit\`) to use your own.`,
     );
     const secret = await fetchSecret(entry.secretId);
