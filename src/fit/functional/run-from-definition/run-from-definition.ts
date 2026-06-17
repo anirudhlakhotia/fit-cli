@@ -152,7 +152,7 @@ import {
   type ResumeTargetState,
   type RunState,
 } from "./resume-state.js";
-import { appendRunSummaryToGhaSummary, updateGhaRunTitle } from "../../util/gha.js";
+import { appendJunitStepSummary, appendRunSummaryToGhaSummary, updateGhaRunTitle } from "../../util/gha.js";
 
 /** True for a functional iteration that has resolved to a concrete cluster. */
 function functionalWithCluster(
@@ -1639,6 +1639,8 @@ export async function runFromDefinition(
     // Best-effort: ship the run's artifacts to S3 after teardown (so anything
     // teardown writes is included). Runs only inside GitHub Actions; never throws.
     await uploadRunArtifacts(runDir);
+    // Best-effort: append JUnit summary to $GITHUB_STEP_SUMMARY. Never throws.
+    await appendJunitStepSummary(runDir, definition.description);
   }
   return finalizeRunFromDefinition(artifacts, details, runDir, tracker.worst, tracker.failureCount);
 }

@@ -1,4 +1,7 @@
 import * as core from "@actions/core";
+import { spawn } from "node:child_process";
+import { appendFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
 type SummaryTableCell = { data: string; header?: boolean; colspan?: string; rowspan?: string };
 type SummaryTableRow = (SummaryTableCell | string)[];
@@ -60,6 +63,51 @@ export function emitGhaArtifactNotice(): void {
   const name = `fit-cli-run-${GITHUB_RUN_ID}`;
   // GHA workflow command: printed to stdout, parsed by the runner.
   console.log(`::notice title=Run artifacts (${name})::${url}`);
+}
+
+const JUNIT_MARKDOWN_URL =
+  "https://raw.githubusercontent.com/couchbaselabs/junit-markdown/refs/heads/main/JunitMarkdown.java";
+
+/**
+ * Append a JUnit test summary to $GITHUB_STEP_SUMMARY using JunitMarkdown.java.
+ * Uses `description` (from the definition file) as the section heading.
+ * Falls back to a plain heading-only entry if java is unavailable or the
+ * download fails. Never throws — a broken summary is a warning, not a failure.
+ */
+export async function appendJunitStepSummary(runDir: string, description?: string): Promise<void> {
+  const summaryPath = process.env.GITHUB_STEP_SUMMARY;
+  if (!summaryPath) return;
+
+  const heading = `## ${description ?? "FIT run results"}\n\n`;
+
+  try {
+    const resp = await fetch(JUNIT_MARKDOWN_URL);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const javaPath = join(runDir, "JunitMarkdown.java");
+    writeFileSync(javaPath, await resp.text());
+
+    const markdown = await new Promise<string>((resolve, reject) => {
+      const child = spawn("java", [javaPath, runDir]);
+      let stdout = "";
+      let stderr = "";
+      child.stdout?.on("data", (chunk: Buffer) => (stdout += chunk));
+      child.stderr?.on("data", (chunk: Buffer) => (stderr += chunk));
+      child.on("error", reject);
+      child.on("close", (code) => {
+        if (code === 0) resolve(stdout);
+        else reject(new Error(`JunitMarkdown.java exited ${code}: ${stderr.trim()}`));
+      });
+    });
+
+    appendFileSync(summaryPath, heading + markdown + "\n");
+  } catch (err) {
+    console.warn(`Warning: failed to generate JUnit step summary (${err}); writing plain summary`);
+    try {
+      appendFileSync(summaryPath, heading + "_JUnit summary unavailable._\n");
+    } catch {
+      // ignore — if we can't write the fallback, there's nothing more to do
+    }
+  }
 }
 
 /** Updates the GitHub Actions workflow run display title, if running inside GHA. */
