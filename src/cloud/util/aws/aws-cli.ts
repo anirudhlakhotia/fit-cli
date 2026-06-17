@@ -1,7 +1,6 @@
 /**
  * aws-cli — shared helpers for the rest of cloud/util/aws. Provides config
- * preparation (so AWS_PROFILE / credentials are in place before SDK calls) and
- * console logging conventions.
+ * preparation (credentials are in place before SDK calls) and console logging conventions.
  *
  * Run on its own (checks the AWS config is ready):
  *   npx tsx src/cloud/util/aws/aws-cli.ts
@@ -13,7 +12,6 @@ import { runScriptPrefix } from "../../../util/non-fit/fit-cli-log.js";
 
 /** Load config sources so credentials/env are in place before making SDK calls. */
 export async function prepareAwsCli(): Promise<void> {
-  // Config only contributes AWS_PROFILE; skip prompt when explicit creds are already set (e.g. GHA OIDC).
   const hasExplicitCredentials = Boolean(process.env.AWS_ACCESS_KEY_ID);
   await ensureFitCliConfigEnv({
     promptId: "aws.config.create",

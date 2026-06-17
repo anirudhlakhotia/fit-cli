@@ -39,7 +39,6 @@ function purposeEnvVar(purpose: CloudInstancePurpose): string {
 export type AwsInstanceTypeAnswers = Record<CloudInstancePurpose, string>;
 
 export interface AwsInitAnswers {
-  profile: string;
   instanceTypes: AwsInstanceTypeAnswers;
 }
 
@@ -79,10 +78,7 @@ function instanceTypeDefaults(saved?: FitCliInstanceTypes): AwsInstanceTypeAnswe
 
 export function initDefaultsFromConfig(config?: FitCliConfig): AwsInitAnswers {
   const aws = config?.cloud?.aws;
-  return {
-    profile: aws?.profile ?? "",
-    instanceTypes: instanceTypeDefaults(aws?.instanceTypes),
-  };
+  return { instanceTypes: instanceTypeDefaults(aws?.instanceTypes) };
 }
 
 export function initDefaultsFromEnv(env: NodeJS.ProcessEnv): AwsInitAnswers {
@@ -91,10 +87,7 @@ export function initDefaultsFromEnv(env: NodeJS.ProcessEnv): AwsInitAnswers {
     instanceTypes[purpose] =
       env[purposeEnvVar(purpose)] ?? env.FIT_EC2_INSTANCE_TYPE ?? DEFAULT_EC2_INSTANCE_TYPES[purpose];
   }
-  return {
-    profile: env.AWS_PROFILE ?? "",
-    instanceTypes,
-  };
+  return { instanceTypes };
 }
 
 /** Keep only the purposes with a non-empty value. */
@@ -108,16 +101,10 @@ function compactInstanceTypes(types: AwsInstanceTypeAnswers): FitCliInstanceType
 }
 
 function awsAnswersToConfig(answers: AwsInitAnswers, existingInstanceTypes?: FitCliInstanceTypes): FitCliAwsConfig | undefined {
-  const profile = trimOptional(answers.profile);
   // When instanceTypes is empty the user chose not to configure them — preserve
   // any previously saved values rather than silently wiping them.
   const instanceTypes = compactInstanceTypes(answers.instanceTypes) ?? existingInstanceTypes;
-
-  const parts: FitCliAwsConfig = {
-    ...(profile ? { profile } : {}),
-    ...(instanceTypes ? { instanceTypes } : {}),
-  };
-  return Object.keys(parts).length > 0 ? parts : undefined;
+  return instanceTypes ? { instanceTypes } : undefined;
 }
 
 /** Capella prompt defaults from a saved config: username from config, the rest defaulting to the hardcoded values. */
@@ -265,11 +252,6 @@ async function promptForConfig(existing?: FitCliConfig, configPath?: string): Pr
 
   let aws: AwsInitAnswers | undefined;
   if (configureAws) {
-    const profile = await input({
-      promptId: "init.aws.profile",
-      message: "AWS profile (optional):",
-      default: defaults.profile,
-    });
     const configureInstanceTypes = await confirm({
       promptId: "init.aws.configure-instance-types",
       message: "Configure default EC2 instance types? (the defaults are fine for most uses)",
@@ -278,7 +260,7 @@ async function promptForConfig(existing?: FitCliConfig, configPath?: string): Pr
     const instanceTypes = configureInstanceTypes
       ? await promptForInstanceTypes(defaults.instanceTypes)
       : ({} as AwsInstanceTypeAnswers);
-    aws = { profile, instanceTypes };
+    aws = { instanceTypes };
   }
 
   const { configureCapella, capella } = await promptForCapella(existing, configPath);
@@ -548,10 +530,6 @@ export function buildAutoConfig(
   // Cloud (AWS) section
   let cloud: FitCliCloudConfig | undefined;
   if (!args.disableAws) {
-    const profile = resolveField(log, "cloud.aws.profile", args.awsProfile, "--aws-profile", [
-      { name: "AWS_PROFILE", value: env.AWS_PROFILE },
-    ]);
-
     const instanceTypes: FitCliInstanceTypes = {};
     for (const purpose of CLOUD_INSTANCE_PURPOSES) {
       const type = resolveField(
@@ -569,7 +547,6 @@ export function buildAutoConfig(
     }
 
     const parts: FitCliAwsConfig = {
-      ...(profile ? { profile } : {}),
       ...(Object.keys(instanceTypes).length > 0 ? { instanceTypes } : {}),
     };
     if (Object.keys(parts).length > 0) cloud = { aws: parts };

@@ -3,7 +3,7 @@
  * Top-level dispatcher for the `config` bun script.
  *
  * bun run config -- edit [--auto] [--dry-run] [--disable-aws] [--disable-github]
- *                        [--aws-profile <p>] [--aws-instance-type <t>]
+ *                        [--aws-instance-type <t>]
  *                        [--github-user <u>] [--github-token <t>]
  *                        [--config-path <path>]
  * bun run config -- show [--config-path <path>]
@@ -41,7 +41,6 @@ Edit options:
   --disable-github       Skip writing the github section.
   --disable-gerrit       Skip writing the gerrit section.
   --disable-capella      Skip writing the capella section.
-  --aws-profile <p>      AWS profile (env: AWS_PROFILE).
   --aws-instance-type-functional <t>  EC2 instance type for functional tests
                          (env: FIT_EC2_INSTANCE_TYPE_FUNCTIONAL / FIT_EC2_INSTANCE_TYPE, default: c5.2xlarge).
   --aws-instance-type-situational <t> EC2 instance type for situational (SIT) tests
@@ -69,7 +68,6 @@ export interface AutoInitCliArgs {
   disableGithub: boolean;
   disableGerrit: boolean;
   disableCapella: boolean;
-  awsProfile?: string;
   /** Default EC2 instance type per testing purpose. */
   awsInstanceTypes?: FitCliInstanceTypes;
   githubUser?: string;
@@ -114,7 +112,6 @@ export function parseEditArgs(argv: string[]): AutoInitCliArgs {
   const disableGerrit = consumeFlag(args, "--disable-gerrit");
   const disableCapella = consumeFlag(args, "--disable-capella");
 
-  const awsProfile = consumeValue(args, "--aws-profile");
   const awsInstanceTypes: FitCliInstanceTypes = {};
   for (const purpose of CLOUD_INSTANCE_PURPOSES) {
     const value = consumeValue(args, `--aws-instance-type-${purpose}`);
@@ -145,7 +142,6 @@ export function parseEditArgs(argv: string[]): AutoInitCliArgs {
     disableGithub,
     disableGerrit,
     disableCapella,
-    awsProfile,
     ...(Object.keys(awsInstanceTypes).length > 0 ? { awsInstanceTypes } : {}),
     githubUser,
     githubToken,

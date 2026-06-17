@@ -19,7 +19,6 @@ function baseArgs(overrides: Partial<AutoInitCliArgs> = {}): AutoInitCliArgs {
 
 test("buildAutoConfig: all env vars set produces full config", () => {
   const env = {
-    AWS_PROFILE: "dev",
     // A single FIT_EC2_INSTANCE_TYPE seeds every purpose; a per-purpose var wins for perf.
     FIT_EC2_INSTANCE_TYPE: "m6i.large",
     FIT_EC2_INSTANCE_TYPE_PERF: "m6i.4xlarge",
@@ -33,7 +32,6 @@ test("buildAutoConfig: all env vars set produces full config", () => {
     version: FIT_CLI_CONFIG_VERSION,
     cloud: {
       aws: {
-        profile: "dev",
         instanceTypes: { functional: "m6i.large", situational: "m6i.large", perf: "m6i.4xlarge" },
       },
     },
@@ -43,7 +41,6 @@ test("buildAutoConfig: all env vars set produces full config", () => {
 
 test("buildAutoConfig: --disable-aws omits cloud section", () => {
   const env = {
-    AWS_PROFILE: "dev",
     GITHUB_USER: "octocat",
     GITHUB_TOKEN: "ghp_t",
   };
@@ -81,7 +78,6 @@ test("buildAutoConfig: missing optional fields are omitted gracefully", () => {
   // cloud.aws gets defaults for instance types, so it's present
   assert.equal(config.cloud?.aws?.instanceTypes?.functional, "c5.2xlarge");
   assert.equal(config.cloud?.aws?.instanceTypes?.perf, "c5.4xlarge");
-  assert.equal(config.cloud?.aws?.profile, undefined);
   // github has no defaults, so it's omitted
   assert.equal(config.github, undefined);
 });

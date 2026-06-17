@@ -49,7 +49,6 @@ export const DEFAULT_CLOUD_INSTANCE_TYPES: Record<CloudProvider, Record<CloudIns
 export type FitCliInstanceTypes = Partial<Record<CloudInstancePurpose, string>>;
 
 export interface FitCliAwsConfig {
-  profile?: string;
   /** Default EC2 instance type per testing purpose; missing purposes fall back to the baked default. */
   instanceTypes?: FitCliInstanceTypes;
 }
@@ -178,12 +177,8 @@ function compactRecord<T extends Record<string, string | undefined>>(record: T):
   return Object.fromEntries(Object.entries(record).filter(([, value]) => value !== undefined && value !== "")) as Partial<T>;
 }
 
-function configEnvEntries(config: FitCliConfig): Record<string, string> {
-  // Instance types are now per-purpose, so there's no single FIT_EC2_INSTANCE_TYPE
-  // to export — runs resolve the right one via resolveCloudInstanceType().
-  return compactRecord({
-    AWS_PROFILE: config.cloud?.aws?.profile,
-  });
+function configEnvEntries(_config: FitCliConfig): Record<string, string> {
+  return {};
 }
 
 /**
@@ -328,13 +323,7 @@ function validateCloudConfig(cloudValue: Record<string, unknown>): FitCliCloudCo
   let aws: FitCliAwsConfig | undefined;
   if (awsValue) {
     const instanceTypes = validateInstanceTypes(awsValue.instanceTypes, "cloud.aws.instanceTypes");
-    const parts: FitCliAwsConfig = {
-      ...compactRecord({
-        profile: readOptionalString(awsValue, "profile", "cloud.aws.profile"),
-      }),
-      ...(instanceTypes ? { instanceTypes } : {}),
-    };
-    if (Object.keys(parts).length > 0) aws = parts;
+    if (instanceTypes) aws = { instanceTypes };
   }
 
   if (!aws) return undefined;
