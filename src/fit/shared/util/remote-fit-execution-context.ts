@@ -143,7 +143,7 @@ export async function createRemoteFitExecutionContext(
     await target.putFile(localDockerWrapper, wrapperPath);
     await target.run("chmod", ["755", wrapperPath]);
 
-    const githubToken = resolveGithubToken();
+    const githubToken = await resolveGithubToken();
     if (githubToken) {
       await configureRemoteGitCredentials(target, rootDir, githubToken);
     } else {

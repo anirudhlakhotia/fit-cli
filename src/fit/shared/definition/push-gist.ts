@@ -45,7 +45,7 @@ export async function pushGist(
   content: string,
   visibility: GistVisibility = "public",
 ): Promise<PushGistResult> {
-  const token = resolveGithubToken();
+  const token = await resolveGithubToken();
   if (!token) {
     throw new Error(
       "No GitHub token found.  Set github.token in your fit-cli config, or export GITHUB_TOKEN / GH_TOKEN.",

@@ -90,24 +90,53 @@ test("parses a stored GitHub token", () => {
   });
 });
 
-test("resolveGithubToken prefers the config token over the environment", () => {
-  const token = resolveGithubToken({
+const noFetchSecret = (): Promise<Record<string, string>> => Promise.reject(new Error("should not fetch AWS secret"));
+
+test("resolveGithubToken prefers the config token over the environment", async () => {
+  const token = await resolveGithubToken({
     config: { version: FIT_CLI_CONFIG_VERSION, github: { token: "from-config" } },
     env: { GITHUB_TOKEN: "from-env" },
+    fetchSecret: noFetchSecret,
   });
   assert.equal(token, "from-config");
 });
 
-test("resolveGithubToken falls back to GITHUB_TOKEN then GH_TOKEN", () => {
+test("resolveGithubToken falls back to GITHUB_TOKEN then GH_TOKEN", async () => {
   assert.equal(
-    resolveGithubToken({ config: { version: FIT_CLI_CONFIG_VERSION }, env: { GITHUB_TOKEN: "gh-token" } }),
+    await resolveGithubToken({
+      config: { version: FIT_CLI_CONFIG_VERSION },
+      env: { GITHUB_TOKEN: "gh-token" },
+      fetchSecret: noFetchSecret,
+    }),
     "gh-token",
   );
   assert.equal(
-    resolveGithubToken({ config: { version: FIT_CLI_CONFIG_VERSION }, env: { GH_TOKEN: "fallback" } }),
+    await resolveGithubToken({
+      config: { version: FIT_CLI_CONFIG_VERSION },
+      env: { GH_TOKEN: "fallback" },
+      fetchSecret: noFetchSecret,
+    }),
     "fallback",
   );
-  assert.equal(resolveGithubToken({ config: { version: FIT_CLI_CONFIG_VERSION }, env: {} }), undefined);
+});
+
+test("resolveGithubToken falls back to AWS secret when no local config or env", async () => {
+  assert.equal(
+    await resolveGithubToken({
+      config: { version: FIT_CLI_CONFIG_VERSION },
+      env: {},
+      fetchSecret: async () => ({ token: "aws-pat", user: "aws-user" }),
+    }),
+    "aws-pat",
+  );
+  assert.equal(
+    await resolveGithubToken({
+      config: { version: FIT_CLI_CONFIG_VERSION },
+      env: {},
+      fetchSecret: noFetchSecret,
+    }),
+    undefined,
+  );
 });
 
 const TEST_ENVIRONMENTS = {

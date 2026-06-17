@@ -5,10 +5,10 @@ import {
   DEFAULT_CLOUD_INSTANCE_TYPES,
   DEFAULT_OUTPUT_FORMAT,
   FIT_CLI_CONFIG_VERSION,
+  GITHUB_AWS_SECRET_ID,
   OUTPUT_FORMATS,
   defaultFitCliConfigPath,
   loadFitCliConfig,
-  resolveGerritSshKey,
   saveFitCliConfig,
   type CloudInstancePurpose,
   type FitCliAwsConfig,
@@ -62,8 +62,6 @@ export interface InitAnswers {
   outputFormat?: OutputFormat;
   /** Gerrit username; defaults to github.user when blank. */
   gerritUser?: string;
-  /** Path to the SSH private key registered with Gerrit. */
-  gerritSshKeyPath?: string;
   configureCapella: boolean;
   capella?: CapellaInitAnswers;
   /** Absolute path to the cbdinocluster binary, for non-PATH installs. */
@@ -153,14 +151,7 @@ export function initAnswersToConfig(answers: InitAnswers, existing?: FitCliConfi
   const output: FitCliOutputConfig | undefined = outputFormat ? { format: outputFormat } : undefined;
 
   const gerritUser = trimOptional(answers.gerritUser);
-  const gerritSshKeyPath = trimOptional(answers.gerritSshKeyPath);
-  const gerrit =
-    gerritUser || gerritSshKeyPath
-      ? {
-          ...(gerritUser ? { user: gerritUser } : {}),
-          ...(gerritSshKeyPath ? { sshKeyPath: gerritSshKeyPath } : {}),
-        }
-      : existing?.gerrit;
+  const gerrit = gerritUser ? { user: gerritUser } : existing?.gerrit;
 
   // Declining the Capella prompt leaves any saved capella settings untouched.
   const capella =
@@ -185,7 +176,10 @@ function buildInitialDefaults(existing?: FitCliConfig): AwsInitAnswers {
 
 async function promptForGithubUser(existing?: FitCliConfig): Promise<string | undefined> {
   const existingUser = existing?.github?.user;
-  console.log("\nGitHub — used to pull Docker images from GHCR and clone private FIT repos. Set $GITHUB_USER to avoid storing here.");
+  console.log(
+    `\nGitHub — used to pull Docker images from GHCR and clone private FIT repos.` +
+    `\nOptional locally: on EC2 test instances the "${GITHUB_AWS_SECRET_ID}" AWS secret is used instead.`,
+  );
   const detected = existingUser ?? resolveGerritUserFromGhCli() ?? resolveGerritUserFromGitConfig();
   const entered = await input({
     promptId: "init.github.user",
@@ -204,7 +198,7 @@ async function promptForGithubToken(existing?: FitCliConfig): Promise<string | u
   console.log(
     "\nA GitHub Personal Access Token (PAT) is a password substitute for API/CLI access." +
     "\nCreate one at https://github.com/settings/tokens — needs read:packages scope (for GHCR) and repo access (for private FIT repos)." +
-    "\nSet $GITHUB_TOKEN or $GH_TOKEN to avoid storing it here.",
+    `\nOptional locally: set $GITHUB_TOKEN or $GH_TOKEN to avoid storing here, or populate the "${GITHUB_AWS_SECRET_ID}" AWS secret for EC2 use.`,
   );
   const entered = await password({
     promptId: "init.github.token",
@@ -231,19 +225,6 @@ async function promptForGerritUser(existing?: FitCliConfig): Promise<string | un
     default: existingUser ?? "",
   });
   return trimOptional(entered) ?? existingUser;
-}
-
-async function promptForGerritSshKeyPath(existing?: FitCliConfig): Promise<string | undefined> {
-  const existingPath = existing?.gerrit?.sshKeyPath ?? resolveGerritSshKey({ config: existing });
-  console.log("SSH private key registered with Gerrit — required to authenticate when fetching Gerrit change refs. Set $FIT_GERRIT_KEY to avoid storing the path here.");
-  const entered = await input({
-    promptId: "init.gerrit.ssh-key",
-    message: existingPath
-      ? `Path to Gerrit SSH private key (leave blank to use "${existingPath}"):`
-      : "Path to Gerrit SSH private key (leave blank to skip):",
-    default: existingPath ?? "",
-  });
-  return trimOptional(entered) ?? (existing?.gerrit?.sshKeyPath);
 }
 
 async function promptForOutputFormat(existing?: FitCliConfig): Promise<OutputFormat> {
@@ -284,7 +265,6 @@ async function promptForConfig(existing?: FitCliConfig, configPath?: string): Pr
   const githubToken = await promptForGithubToken(existing);
   const outputFormat = await promptForOutputFormat(existing);
   const gerritUser = await promptForGerritUser(existing);
-  const gerritSshKeyPath = await promptForGerritSshKeyPath(existing);
   const defaults = buildInitialDefaults(existing);
   const hasExistingAws = existing?.cloud?.aws !== undefined;
   const configureAws = await confirm({
@@ -317,7 +297,6 @@ async function promptForConfig(existing?: FitCliConfig, configPath?: string): Pr
     githubToken,
     outputFormat,
     gerritUser,
-    gerritSshKeyPath,
     configureCapella,
     ...(capella ? { capella } : {}),
     ...(cbdinoclusterPath ? { cbdinoclusterPath } : {}),
@@ -625,22 +604,16 @@ export function buildAutoConfig(
     log.push({ field: "github.*", source: "--disable-github", found: false });
   }
 
-  // Gerrit section
+  // Gerrit section — only the username is stored in config; the SSH key is
+  // auto-discovered from env vars or ~/.ssh/ at runtime (with an AWS Secrets
+  // Manager fallback for clean EC2 instances).
   let gerrit: FitCliConfig["gerrit"] | undefined;
   if (!args.disableGerrit) {
     const user = resolveField(log, "gerrit.user", args.gerritUser, "--gerrit-user", [
       { name: "FIT_GERRIT_USER", value: env.FIT_GERRIT_USER },
       { name: "GERRIT_USER", value: env.GERRIT_USER },
     ]);
-    const sshKeyPath = resolveField(log, "gerrit.sshKeyPath", args.gerritSshKeyPath, "--gerrit-ssh-key", [
-      { name: "FIT_GERRIT_KEY", value: env.FIT_GERRIT_KEY },
-      { name: "GERRIT_SSH_KEY", value: env.GERRIT_SSH_KEY },
-    ]);
-    const parts = {
-      ...(user ? { user } : {}),
-      ...(sshKeyPath ? { sshKeyPath } : {}),
-    };
-    if (Object.keys(parts).length > 0) gerrit = parts;
+    if (user) gerrit = { user };
   } else {
     log.push({ field: "gerrit.*", source: "--disable-gerrit", found: false });
   }

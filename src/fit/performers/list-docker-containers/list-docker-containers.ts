@@ -286,7 +286,7 @@ export async function listDockerContainers(
 /** Ask the user to choose a prebuilt performer tag, or type one manually. */
 export async function choosePerformerVersion(sdk: Sdk): Promise<string | undefined> {
   const packageUrl = performerPackageUrl(sdk);
-  const token = resolveGithubToken();
+  const token = await resolveGithubToken();
 
   const askForCustomTag = async (defaultTag: string = sdkDefaultPerformerTag(sdk)): Promise<string | undefined> =>
     normalizePerformerVersion(
@@ -420,7 +420,7 @@ function parseCliArgs(argv: string[]): ListDockerContainersCliArgs {
 }
 
 async function runListingMode(args: ListDockerContainersCliArgs): Promise<void> {
-  const token = resolveGithubToken();
+  const token = await resolveGithubToken();
   if (!token) {
     throw new Error("GITHUB_TOKEN or GH_TOKEN is required to list GHCR container metadata.");
   }

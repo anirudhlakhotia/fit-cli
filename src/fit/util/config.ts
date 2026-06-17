@@ -11,6 +11,14 @@ import { getJsonSecret } from "../../cloud/util/aws/secrets.js";
 /** Where to get cbdinocluster — shown to users when it can't be found. */
 export const CBDINOCLUSTER_URL = "https://github.com/couchbaselabs/cbdinocluster";
 
+/**
+ * AWS Secrets Manager secret that carries the shared GitHub credentials.
+ * Fields: `token` (PAT), `user` (GitHub username).
+ * Used as a fallback when no local config or env var is set — the primary use
+ * case is clean EC2 test instances that have no personal config file.
+ */
+export const GITHUB_AWS_SECRET_ID = "fit-cli/github/token";
+
 /** Default environment block names (the "dev" blocks in environments.json5). */
 export const DEFAULT_CAPELLA_ENV = "dev";
 export const DEFAULT_RESULTS_ENV = "dev";
@@ -66,9 +74,18 @@ export interface FitCliCloudConfig {
 }
 
 export interface FitCliGithubConfig {
-  /** GitHub username (needed so cbdinocluster can pull from GHCR). */
+  /**
+   * GitHub username (needed so cbdinocluster can pull from GHCR).
+   * Optional: falls back to the `user` field in the AWS secret
+   * {@link GITHUB_AWS_SECRET_ID} — useful on clean EC2 test instances.
+   */
   user?: string;
-  /** Personal access token used to clone the private FIT repos and pull GHCR images. */
+  /**
+   * Personal access token used to clone the private FIT repos and pull GHCR images.
+   * Optional: falls back to GITHUB_TOKEN / GH_TOKEN env vars, then the `token`
+   * field in the AWS secret {@link GITHUB_AWS_SECRET_ID} — useful on clean EC2
+   * test instances that have no personal config file.
+   */
   token?: string;
 }
 
@@ -94,8 +111,6 @@ export interface FitCliOutputConfig {
 export interface FitCliGerritConfig {
   /** Gerrit username. Defaults to github.user when not set. */
   user?: string;
-  /** Path to the SSH private key registered with Gerrit. */
-  sshKeyPath?: string;
 }
 
 /**
@@ -265,7 +280,6 @@ export function validateFitCliConfig(raw: unknown): FitCliConfig {
   const gerrit = gerritValue
     ? compactRecord({
         user: readOptionalString(gerritValue, "user", "gerrit.user"),
-        sshKeyPath: readOptionalString(gerritValue, "sshKeyPath", "gerrit.sshKeyPath"),
       })
     : undefined;
 
@@ -396,17 +410,34 @@ export function loadFitCliConfig(path: string = defaultFitCliConfigPath()): FitC
 }
 
 /**
- * The GitHub token used to clone the private FIT repos. We prefer the value
- * saved in the fit-cli config, then fall back to the usual environment variables,
- * so that someone who already exports GITHUB_TOKEN/GH_TOKEN doesn't have to run
- * `bun run config edit`. Loads the config itself when a parsed config isn't supplied.
+ * The GitHub token used to clone the private FIT repos. Resolution order:
+ *   1. `github.token` in the fit-cli config
+ *   2. GITHUB_TOKEN / GH_TOKEN env vars
+ *   3. `token` field in the {@link GITHUB_AWS_SECRET_ID} AWS secret
+ *
+ * The AWS fallback is the primary path on clean EC2 test instances that have no
+ * personal config file. Loads the config itself when a parsed config isn't supplied.
  */
-export function resolveGithubToken(
-  options: { config?: FitCliConfig; path?: string; env?: NodeJS.ProcessEnv } = {},
-): string | undefined {
+export async function resolveGithubToken(
+  options: {
+    config?: FitCliConfig;
+    path?: string;
+    env?: NodeJS.ProcessEnv;
+    fetchSecret?: (secretId: string) => Promise<Record<string, string>>;
+  } = {},
+): Promise<string | undefined> {
   const env = options.env ?? process.env;
   const config = options.config ?? loadFitCliConfig(options.path).config;
-  return config?.github?.token ?? env.GITHUB_TOKEN ?? env.GH_TOKEN;
+  const fromLocal = config?.github?.token ?? (env.GITHUB_TOKEN?.trim() || undefined) ?? (env.GH_TOKEN?.trim() || undefined);
+  if (fromLocal) return fromLocal;
+
+  try {
+    const fetchSecret = options.fetchSecret ?? getJsonSecret;
+    const secret = await fetchSecret(GITHUB_AWS_SECRET_ID);
+    return secret.token?.trim() || undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -424,20 +455,42 @@ export function resolveCbdinoclusterPath(
 
 /**
  * The GitHub credentials (user + token) needed for GHCR image pulls in remote
- * cbdinocluster environments. Both fields must be present in the fit-cli config —
- * environment-variable fallbacks are intentionally not supported here since GHCR
- * pulls require an explicit username. Returns the credentials on success, or an
- * error message string on failure.
+ * cbdinocluster environments. Resolution order for each field:
+ *   1. `github.user` / `github.token` in the fit-cli config
+ *   2. `user` / `token` fields in the {@link GITHUB_AWS_SECRET_ID} AWS secret
+ *
+ * The AWS fallback is the primary path on clean EC2 test instances that have no
+ * personal config file. Returns the credentials on success, or an error message
+ * string on failure.
  */
-export function resolveGithubCredentials(
-  options: { config?: FitCliConfig; path?: string } = {},
-): { user: string; token: string } | string {
+export async function resolveGithubCredentials(
+  options: {
+    config?: FitCliConfig;
+    path?: string;
+    fetchSecret?: (secretId: string) => Promise<Record<string, string>>;
+  } = {},
+): Promise<{ user: string; token: string } | string> {
   const config = options.config ?? loadFitCliConfig(options.path).config;
-  const user = config?.github?.user;
-  const token = config?.github?.token;
+  let user = config?.github?.user;
+  let token = config?.github?.token;
+
+  if (!user || !token) {
+    try {
+      const fetchSecret = options.fetchSecret ?? getJsonSecret;
+      const secret = await fetchSecret(GITHUB_AWS_SECRET_ID);
+      user = user ?? (secret.user?.trim() || undefined);
+      token = token ?? (secret.token?.trim() || undefined);
+    } catch {
+      // AWS not available — fall through to the error below.
+    }
+  }
+
   if (!user || !token) {
     const missing = [!user && "github.user", !token && "github.token"].filter(Boolean).join(" and ");
-    return `${missing} must be set in ~/.fit-cli/config.json5 — run \`${runScriptPrefix("config")} edit\` to configure it.`;
+    return (
+      `${missing} not found in ~/.fit-cli/config.json5 or in the AWS secret "${GITHUB_AWS_SECRET_ID}". ` +
+      `Run \`${runScriptPrefix("config")} edit\` to configure locally, or populate the AWS secret for EC2 use.`
+    );
   }
   return { user, token };
 }
@@ -602,17 +655,16 @@ export function resolveGerritUser(
 }
 
 /**
- * Resolve the SSH private key path for Gerrit. Priority: gerrit.sshKeyPath in
- * config → FIT_GERRIT_KEY env var → GERRIT_SSH_KEY env var → first of the
- * standard ~/.ssh key files that exists on disk.
+ * Resolve the SSH private key path for Gerrit. Priority: FIT_GERRIT_KEY env
+ * var → GERRIT_SSH_KEY env var → first of the standard ~/.ssh key files that
+ * exists on disk. For the AWS Secrets Manager fallback (when no local key is
+ * found at all) see `resolveGerritKeyWithAwsFallback` in remote-fit-execution-context.ts.
  */
 export function resolveGerritSshKey(
   options: { config?: FitCliConfig; path?: string; env?: NodeJS.ProcessEnv } = {},
 ): string | undefined {
   const env = options.env ?? process.env;
-  const config = options.config ?? loadFitCliConfig(options.path).config;
   const configured =
-    config?.gerrit?.sshKeyPath ??
     (env.FIT_GERRIT_KEY?.trim() || undefined) ??
     (env.GERRIT_SSH_KEY?.trim() || undefined);
   if (configured) return configured;

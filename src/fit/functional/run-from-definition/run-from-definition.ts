@@ -1246,7 +1246,7 @@ export async function runFromDefinition(
       .slice(startCycleIndex)
       .some((group) => group.type === "functional" && group.clusterMode === "cbdinocluster")
   ) {
-    const result = resolveGithubCredentials();
+    const result = await resolveGithubCredentials();
     if (typeof result === "string") {
       fitCliError({ classification: "FatalToAll" }, `\n✗ ${result}`);
       tracker.record("FatalToAll", result, preconditionCtx);

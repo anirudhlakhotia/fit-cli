@@ -48,10 +48,13 @@ Edit options:
   --aws-instance-type-perf <t>        EC2 instance type for performance (PERF) tests
                          (env: FIT_EC2_INSTANCE_TYPE_PERF / FIT_EC2_INSTANCE_TYPE, default: c5.4xlarge).
   --github-user <u>      GitHub username (env: GITHUB_USER).
+                         Optional: on EC2 test instances the "fit-cli/github/token" AWS secret is used instead.
   --github-token <t>     GitHub PAT (env: GITHUB_TOKEN / GH_TOKEN).
+                         Optional: falls back to the "fit-cli/github/token" AWS secret for EC2 use.
   --output-format <fmt>  Default format for generated definition files: json5 or yaml (env: FIT_OUTPUT_FORMAT; default: json5).
   --gerrit-user <u>      Gerrit username (env: FIT_GERRIT_USER / GERRIT_USER; defaults to github.user).
-  --gerrit-ssh-key <path> Path to SSH private key registered with Gerrit (env: FIT_GERRIT_KEY / GERRIT_SSH_KEY).
+                         Gerrit SSH key is auto-discovered from env vars or ~/.ssh/ at runtime
+                         (AWS secret "fit-cli/gerrit/ssh-key" used as fallback on EC2).
   --capella-username <u> Your Capella username for situational/SIT runs (env: CAPELLA_USER / CAP_USER).
   --capella-password <p> Your Capella password (env: CAPELLA_PASS / CAP_PASS).
   --cbdinocluster-path <path> Absolute path to the cbdinocluster binary, for non-PATH installs
@@ -76,7 +79,6 @@ export interface AutoInitCliArgs {
   githubToken?: string;
   outputFormat?: string;
   gerritUser?: string;
-  gerritSshKeyPath?: string;
   capellaUsername?: string;
   capellaPassword?: string;
   cbdinoclusterPath?: string;
@@ -124,7 +126,6 @@ export function parseEditArgs(argv: string[]): AutoInitCliArgs {
   const githubToken = consumeValue(args, "--github-token");
   const outputFormat = consumeValue(args, "--output-format");
   const gerritUser = consumeValue(args, "--gerrit-user");
-  const gerritSshKeyPath = consumeValue(args, "--gerrit-ssh-key");
   const capellaUsername = consumeValue(args, "--capella-username");
   const capellaPassword = consumeValue(args, "--capella-password");
   const cbdinoclusterPath = consumeValue(args, "--cbdinocluster-path");
@@ -151,7 +152,6 @@ export function parseEditArgs(argv: string[]): AutoInitCliArgs {
     githubToken,
     outputFormat,
     gerritUser,
-    gerritSshKeyPath,
     capellaUsername,
     capellaPassword,
     cbdinoclusterPath,

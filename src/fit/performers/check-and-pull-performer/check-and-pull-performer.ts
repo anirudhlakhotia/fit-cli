@@ -78,7 +78,7 @@ export async function checkAndPullPerformer(
     return true;
   }
 
-  const githubToken = resolveGithubToken();
+  const githubToken = await resolveGithubToken();
   console.log(`\nPulling performer with:\n  docker ${dockerPullArgs(imageName).join(" ")}\n`);
 
   try {
