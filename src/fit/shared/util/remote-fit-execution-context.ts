@@ -1,6 +1,8 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { createReadStream, createWriteStream, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
+import { pipeline } from "node:stream/promises";
+import { createGunzip } from "node:zlib";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { commandOn, formatCommandLine, runScriptPrefix } from "../../../util/non-fit/fit-cli-log.js";
 import { instanceInternalRunDir } from "../../../util/non-fit/replay.js";
@@ -214,9 +216,22 @@ export async function createRemoteFitExecutionContext(
       return destination;
     },
     runArtifactsDir: (path) => remoteRunArtifactsDir(rootDir, path),
-    collectFile: (targetPath, localPath) => {
+    collectFile: async (targetPath, localPath) => {
       mkdirSync(dirname(localPath), { recursive: true, mode: 0o700 });
-      return target.getFile(targetPath, localPath);
+      // Compress on the remote before downloading — log files compress 10:1+,
+      // making SCP much faster over WAN. Mirrors the JUnit collect pattern.
+      const remoteGz = (await target.capture("sh", [
+        "-lc",
+        `tmp=$(mktemp /tmp/fit-collect-XXXXXX.gz) && gzip -c ${posixQuote(targetPath)} > "$tmp" && printf '%s\\n' "$tmp"`,
+      ], undefined, { quiet: true })).trim();
+      const localGz = `${localPath}.fit-gz`;
+      try {
+        await target.getFile(remoteGz, localGz);
+        await pipeline(createReadStream(localGz), createGunzip(), createWriteStream(localPath, { mode: 0o600 }));
+      } finally {
+        await target.run("rm", ["-f", remoteGz], undefined, { quiet: true });
+        rmSync(localGz, { force: true });
+      }
     },
     removeTree: (path) => target.run("rm", ["-rf", path]),
     collectJunitArtifacts: async (sourceDir, path) =>
