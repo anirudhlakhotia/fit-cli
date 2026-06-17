@@ -2,9 +2,9 @@
 import { spawn } from "node:child_process";
 import { accessSync, constants } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { installFitCliConsoleFormatting } from "./fit-cli-log.js";
 import { readPromptLog, extractReplayFlag, REPO_ROOT } from "./replay.js";
+import { isMain } from "./cli.js";
 
 interface ReplayDispatch {
   entrypoint: string;
@@ -74,6 +74,13 @@ export function main(argv: string[] = process.argv.slice(2)): void {
   });
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+export function shouldAutoRunReplayEntry(metaUrl: string, argv1: string | undefined = process.argv[1]): boolean {
+  if (!argv1) {
+    return false;
+  }
+  return isMain(metaUrl);
+}
+
+if (shouldAutoRunReplayEntry(import.meta.url)) {
   main();
 }

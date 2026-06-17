@@ -117,7 +117,7 @@ export async function runWorkflow(choice: WorkflowChoice, rootDir: string, defin
       return runFromDefinition(definitionPath ?? await askDefinitionPath(), rootDir);
     case "configure":
       await runEditWorkflow();
-      return {};
+      return { artifacts: [], details: [] };
   }
 }
 

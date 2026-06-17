@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { buildReplayDispatch } from "../replay-entry.js";
+import { buildReplayDispatch, shouldAutoRunReplayEntry } from "../replay-entry.js";
 import { REPO_ROOT } from "../replay.js";
 
 test("buildReplayDispatch uses the recorded entrypoint and args by default", () => {
@@ -88,4 +88,8 @@ test("buildReplayDispatch forwards explicit replay args instead of recorded args
     entrypoint,
     args: ["--replay", "--defaults", logFile, "--root", "/override"],
   });
+});
+
+test("shouldAutoRunReplayEntry stays false when the module is only imported", () => {
+  assert.equal(shouldAutoRunReplayEntry(import.meta.url, "/tmp/fit"), false);
 });
