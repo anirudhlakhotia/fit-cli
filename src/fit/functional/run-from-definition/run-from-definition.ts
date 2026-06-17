@@ -81,6 +81,7 @@ import {
   stopManagedPerformer,
   type RunningPerformer,
 } from "../../performers/check-build-and-run-performer/check-build-and-run-performer.js";
+import type { PieceData } from "../../../util/non-fit/config-pieces.js";
 import { generateFitConfiguration } from "../../shared/fit-configuration/generate-fit-configuration.js";
 import { generateSituationalConfiguration } from "../../situational/configuration/generate-situational-configuration.js";
 import {
@@ -542,6 +543,43 @@ function expandSituationalPresets(selection: FitTestSelection): FitTestSelection
 }
 
 /**
+ * Resolve the cbdinocluster binary to its absolute path on the execution host
+ * via `which`, falling back to the bare name if resolution fails. Uses a login
+ * shell so PATH additions from profile scripts (e.g. ~/.profile) are honoured.
+ */
+async function resolveCbdinoclusterPathOnExecution(execution: FitExecutionContext): Promise<string> {
+  try {
+    const resolved = (
+      await execution.capture("sh", ["-lc", "which cbdinocluster"], undefined, { quiet: true })
+    ).trim();
+    if (resolved) {
+      console.log(`→ Resolved cbdinocluster on ${execution.description}: ${resolved}`);
+      return resolved;
+    }
+  } catch {
+    // `which` failed — cbdinocluster is not yet installed or not on PATH
+  }
+  return "cbdinocluster";
+}
+
+/**
+ * Return a fitConfig piece with cbDinoClusterAppPath set to `path`, overriding
+ * whatever the definition specified so the FIT test driver uses the runtime-resolved
+ * absolute path on the execution host.
+ */
+function withCbdinoclusterPath(fitConfig: PieceData | undefined, path: string): PieceData {
+  const situational = ((fitConfig?.situational ?? {}) as Record<string, unknown>);
+  const cbdino = ((situational.cbdino ?? {}) as Record<string, unknown>);
+  return {
+    ...fitConfig,
+    situational: {
+      ...situational,
+      cbdino: { ...cbdino, cbDinoClusterAppPath: path },
+    },
+  };
+}
+
+/**
  * The run step for a situational iteration. cbdino builds and manages the
  * cluster from inside the test-driver, so there's no cluster to diagnose or
  * sanity-check up front — instead we resolve the results database the file named,
@@ -576,13 +614,18 @@ export async function runSituationalTests(
   const artifacts: Artifact[] = [...database.artifacts];
   const details: Detail[] = [...database.details];
 
+  // Resolve cbdinocluster to its absolute path on the execution host so the FIT
+  // test driver can invoke it even when its environment doesn't inherit the same PATH.
+  const cbdinoclusterPath = await resolveCbdinoclusterPathOnExecution(execution);
+  const fitConfigPiece = withCbdinoclusterPath(run.fitConfig, cbdinoclusterPath);
+
   const fitConfig = generateSituationalConfigurationFn(
     database.database,
     undefined,
     execution.rootDir,
     run.path,
     run.performerPort,
-    run.fitConfig,
+    fitConfigPiece,
   );
   artifacts.push(...fitConfig.artifacts);
   details.push(...fitConfig.details);

@@ -272,7 +272,6 @@ function buildSituationalFitConfig(databaseMode: SituationalDatabaseMode): FitCo
     situational: {
       cbdino: {
         version: DEFAULT_CBDINO_SETTINGS.version,
-        cbDinoClusterAppPath: DEFAULT_CBDINO_SETTINGS.cbDinoClusterAppPath,
         enablePrivateEndpoint: DEFAULT_CBDINO_SETTINGS.enablePrivateEndpoint,
       },
       ...(databaseMode === "local"
