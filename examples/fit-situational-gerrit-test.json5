@@ -4,51 +4,78 @@
 {
   version: 1,
   type: 'fit',
+  description: '{AWS:{clusterless:[{Java@latest,situational,SanityTest}]}}',
   setup: {
     repos: {
       'transactions-fit-performer': {
-        gerritRef: 'refs/changes/30/246430/2',
+        gerritRef: 'refs/changes/30/246430/4',
       },
     },
   },
   instances: [
     {
       aws: {},
-      // FIT/SIT creates its own clusters, so none are set up here.
-      clusters: [],
       setup: {
-        // FIT/SIT creates its own clusters via cbdinocluster; this init config must be present.
         cbdinocluster: {
           init: {
-            // Passed to `cbdinocluster init` on clean environments to set up ~/.cbdinocluster.
-            // SIT leaves Capella enabled (no --disable-capella); fit-cli appends your GitHub
-            // credentials and forwards your fit-cli Capella settings at runtime.
-            args: '--auto --disable-aws --disable-azure --disable-gcp --disable-k8s --disable-dns --docker-network fit',
+            // Passed to `cbdinocluster init` on clean environments to set up ~/.cbdinocluster.  Added at runtime: GitHub creds
+            args: '--auto --aws-region us-west-2 --disable-azure --disable-gcp --disable-k8s --disable-dns --docker-network fit',
           },
         },
+        capellaEnvironment: 'dev',
       },
+      // FIT/SIT creates its own clusters, so none are set up here.
+      clusters: [],
       // Sessions not tied to any particular cluster (the name distinguishes these from sessions nested under clusters:)
       clusterlessSessions: [
         {
           performer: {
-            sdk: 'kotlin',
-            onPortInUse: 'restart',
+            sdk: 'java',
+            onPortInUse: 'reuse',
           },
           runs: [
             {
               type: 'situational',
+              fitConfig: 'fit-config-0',
+              tests: {
+                classes: [
+                  'com.couchbase.situational.tests.SanityTest',
+                ],
+              },
               situational: {
                 database: {
                   mode: 'hosted',
+                  resultsEnvironment: 'prod',
                 },
-              },
-              tests: {
-                classes: ['com.couchbase.situational.tests.SanityTest'],
               },
             },
           ],
         },
       ],
+    },
+  ],
+  // Each fitConfig is used as a base when generating FITConfiguration.json.  Anything here will be copied into the config (unless overwritten by fit-cli).
+  // fit-cli will provide some fields like ${defaultHostname} at runtime when cluster details are known.
+  fitConfigs: [
+    {
+      id: 'fit-config-0',
+      config: {
+        // Ignored for situational-only runs — cbdino creates and manages the cluster.
+        clusterAccess: {
+          defaultHostname: 'localhost',
+          username: 'Administrator',
+          password: 'password',
+        },
+        // fit-cli will inject performerPorts at runtime.
+        excludeTests: [],
+        situational: {
+          cbdino: {
+            version: '8.0-stable',  // resolved by fit-cli at runtime
+            cbDinoClusterAppPath: 'cbdinocluster',
+            enablePrivateEndpoint: false,
+          },
+        },
+      },
     },
   ],
 }

@@ -5,8 +5,8 @@
 // instances list short and lets the same definitions be reused across runs.
 //
 // Validate / run with:
-//   bun run definition -- validate examples/fit-functional-sanity-test.json5
-//   bun run definition -- execute --interactive examples/fit-functional-sanity-test.json5
+//   bun run definition validate examples/fit-functional-sanity-test.json5
+//   bun run definition execute --interactive examples/fit-functional-sanity-test.json5
 {
   version: 1,
   type: 'fit',
