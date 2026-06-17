@@ -15,7 +15,6 @@ import { CB_ALIAS_RE } from "../../../cluster/cluster-create/cb-alias.js";
 import {
   defaultCbdinoclusterInitArgs,
   defaultCbdinoclusterInitConfig,
-  situationalCbdinoclusterConfigPatch,
   situationalCbdinoclusterInitArgs,
 } from "../../../cluster/cluster-create/default-cbdinocluster-init-config.js";
 import { CNG_K3D_CONTEXT } from "../../../cluster/cluster-create/cng-kubernetes.js";
@@ -290,13 +289,14 @@ function buildSituationalInstance(inputs: SituationalDefinitionInputs): Instance
   const includeCapellaEnv = inputs.capellaEnvironment !== undefined;
   return {
     ...(inputs.instance ?? { localhost: {} }),
-    // Situational runs `cbdinocluster init` for the docker/github base (like the
-    // functional path), then merges the capella/aws blocks init can't express.
-    // It's per-instance setup, applied once on the box (see InstanceSetup). The
-    // Capella environment lives here too — one box, one ~/.cbdinocluster identity.
+    // Situational runs `cbdinocluster init` for the docker/github/aws/capella
+    // base (like the functional path). AWS credentials are uploaded before init
+    // so `--aws-region` enables the aws block directly. It's per-instance setup,
+    // applied once on the box (see InstanceSetup). The Capella environment lives
+    // here too — one box, one ~/.cbdinocluster identity.
     setup: {
       cbdinocluster: {
-        init: { args: situationalCbdinoclusterInitArgs(), configPatch: situationalCbdinoclusterConfigPatch() },
+        init: { args: situationalCbdinoclusterInitArgs() },
       },
       ...(includeCapellaEnv ? { capellaEnvironment: inputs.capellaEnvironment } : {}),
     },

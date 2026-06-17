@@ -169,7 +169,7 @@ test("formatFitSituationalDefinition comments the clusterless sessions and runti
   );
   assert.match(rendered, /\/\/ Sessions not tied to any particular cluster/);
   assert.match(rendered, /\/\/ fit-cli will inject performerPorts at runtime\./);
-  assert.match(rendered, /\/\/ Merged onto ~\/\.cbdinocluster after `cbdinocluster init` runs/);
+  assert.match(rendered, /--aws-region /);
 });
 
 test("buildFitFunctionalDefinition emits a preset placeholder when the selection has presets", () => {

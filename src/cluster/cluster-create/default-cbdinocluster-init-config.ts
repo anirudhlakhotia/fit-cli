@@ -14,10 +14,10 @@ export const DEFAULT_CBDINOCLUSTER_DOCKER_NETWORK = "fit";
  * `--github-user/--github-token` when it has credentials, or `--disable-github`
  * when it doesn't, rather than baking either choice into the definition.
  */
-function baseCbdinoclusterInitArgs(dockerNetwork: string, disableCapella: boolean): string {
+function baseCbdinoclusterInitArgs(dockerNetwork: string, disableCapella: boolean, awsRegion?: string): string {
   return [
     "--auto",
-    "--disable-aws",
+    ...(awsRegion ? [`--aws-region ${awsRegion}`] : ["--disable-aws"]),
     "--disable-azure",
     ...(disableCapella ? ["--disable-capella"] : []),
     "--disable-gcp",
@@ -46,15 +46,17 @@ export function defaultCbdinoclusterInitArgs(
  * `cbdinocluster init --auto` populates the `capella` block from the `CAPELLA_*`
  * environment variables fit-cli forwards to the box (see
  * `uploadRemoteCapellaConfig` / cbdinocluster's `cmd/init.go`, which reads
- * `CAPELLA_ENDPOINT/USER/PASS/OID`). With a
- * `CAPELLA_USER` present, `--auto` enables and fills in Capella; without one it
- * leaves Capella disabled. AWS stays disabled here — the config patch flips
- * `aws.enabled` on afterwards (the cloud deployer needs both).
+ * `CAPELLA_ENDPOINT/USER/PASS/OID`). With a `CAPELLA_USER` present, `--auto`
+ * enables and fills in Capella; without one it leaves Capella disabled.
+ *
+ * AWS credentials are uploaded before init runs (see `uploadRemoteAwsCredentials`
+ * in `run-from-definition.ts`), so `--aws-region` here lets `--auto` enable the
+ * aws block directly rather than needing a post-init config patch.
  */
 export function situationalCbdinoclusterInitArgs(
   dockerNetwork: string = DEFAULT_CBDINOCLUSTER_DOCKER_NETWORK,
 ): string {
-  return baseCbdinoclusterInitArgs(dockerNetwork, false);
+  return baseCbdinoclusterInitArgs(dockerNetwork, false, AWS_REGION);
 }
 
 /**
@@ -90,10 +92,10 @@ export function defaultCbdinoclusterInitConfig(): PieceData {
  * leaves `Deployer: cloud` with no deployer and cbdinocluster fatals with
  * "you have no deployers configured".
  *
- * The Capella block itself is laid down by `cbdinocluster init --auto` from the
- * forwarded `CAPELLA_*` env (see {@link situationalCbdinoclusterInitArgs}); this
- * only adds the `aws.enabled` bit that init can't set without AWS credentials at
- * init time.
+ * The Capella block is laid down by `cbdinocluster init --auto` from the
+ * forwarded `CAPELLA_*` env; the aws block is laid down by `--aws-region` (AWS
+ * credentials are uploaded before init runs so init can enable the aws section
+ * directly).
  */
 export function defaultSituationalCbdinoclusterInitConfig(): PieceData {
   return {
@@ -103,30 +105,6 @@ export function defaultSituationalCbdinoclusterInitConfig(): PieceData {
       network: "fit",
       host: "unix:///var/run/docker.sock",
     },
-    ...situationalCbdinoclusterConfigPatch(),
-  };
-}
-
-/**
- * The `aws` block situational (FIT/SIT) runs need but `cbdinocluster init`
- * doesn't lay down on its own: the cloud (Capella) deployer only registers when
- * *both* `capella` and `aws` are enabled, but enabling `aws` at init time would
- * make init load AWS credentials it doesn't have yet. fit-cli runs
- * `cbdinocluster init` (which enables `capella` from the forwarded `CAPELLA_*`
- * env — see {@link situationalCbdinoclusterInitArgs}) and then shallow-merges
- * this patch on top of the resulting `~/.cbdinocluster` (see
- * `mergeRemoteCbdinoclusterConfig`).
- *
- * The region must be set alongside `enabled` — without it, `cbdinocluster
- * cleanup` attempts to enumerate VPC endpoints and fails with "Missing Region"
- * even when `enablePrivateEndpoint` is false and nothing was created.
- *
- * Note: this must NOT include a `capella` block — the merge is shallow at the
- * top level, so any `capella` key here would replace the one init populated from
- * the environment.
- */
-export function situationalCbdinoclusterConfigPatch(): PieceData {
-  return {
     aws: {
       enabled: "true",
       region: AWS_REGION,

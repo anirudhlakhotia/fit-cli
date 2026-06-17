@@ -1391,10 +1391,10 @@ export async function runFromDefinition(
             if (!(await execution.commandAvailable("cbdinocluster"))) {
               await installCbdinoclusterRemote(execution);
             }
-            // Forward the Capella settings before init so `cbdinocluster init --auto`
+            // Forward Capella and AWS settings before init so `cbdinocluster init --auto`
             // (run via a login shell sourcing ~/.profile) picks them up and writes the
-            // capella block. Without a username it can't enable Capella, so fail clearly
-            // rather than letting `cbdinocluster allocate` later fail with "no deployers".
+            // capella and aws blocks. Without a username it can't enable Capella, so fail
+            // clearly rather than letting `cbdinocluster allocate` later fail with "no deployers".
             const capellaEnvironment = group.type === "situational" ? group.capellaEnvironment : DEFAULT_CAPELLA_ENV;
             let capella;
             try {
@@ -1406,6 +1406,9 @@ export async function runFromDefinition(
               );
             }
             await uploadRemoteCapellaConfig(execution.target, execution.rootDir, capella);
+            if (awsCredentials) {
+              await uploadRemoteAwsCredentials(execution.target, execution.rootDir, awsCredentials);
+            }
           }
           await prepareCbdinoclusterInit(
             execution,
@@ -1413,9 +1416,6 @@ export async function runFromDefinition(
             githubCredentials,
             instanceRunDir(group.path.instanceIndex),
           );
-          if (execution.kind === "remote" && awsCredentials) {
-            await uploadRemoteAwsCredentials(execution.target, execution.rootDir, awsCredentials);
-          }
         }
 
         for (const [cycleIterationIndex, iteration] of activeCycle.runs.entries()) {
