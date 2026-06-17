@@ -32,7 +32,7 @@ import {
   localClusterCommandExecutor,
   type ClusterCommandExecutor,
 } from "./allocate-cluster.js";
-import { CBDINOCLUSTER_URL } from "./ensure-cbdinocluster.js";
+import { CBDINOCLUSTER_URL } from "../../fit/util/config.js";
 import { installCbdinoclusterRemote } from "./install-cbdinocluster.js";
 import { installCaoCrdsAndAdmission } from "./install-cao-tools.js";
 import { type ClusterExistsPolicy } from "./cluster-exists-policy.js";
