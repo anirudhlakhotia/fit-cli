@@ -1140,8 +1140,16 @@ async function resolveExecutionOverride(
         { name: "Everything on an existing EC2 instance (good for rapid iteration)", value: "existing" },
       ],
     });
-    if (choice !== "existing") {
-      return { kind: choice };
+    if (choice === "localhost") {
+      return { kind: "localhost" };
+    }
+    if (choice === "definition") {
+      const groupSummary =
+        groups.length === 1
+          ? `${groups[0].instance.kind}`
+          : groups.map((g, i) => `group ${i + 1}: ${g.instance.kind}`).join(", ");
+      console.log(`\n→ Definition says: ${groupSummary}`);
+      return { kind: "definition" };
     }
     const existing = await selectExistingInstanceForOverride(attempt);
     if (existing !== "back") {
