@@ -1,11 +1,15 @@
-const LOGO_LINES = [
-  "███████╗  ██╗  ████████╗",
-  "██╔════╝  ██║  ╚══██╔══╝",
-  "█████╗    ██║     ██║   ",
-  "██╔══╝    ██║     ██║   ",
-  "██║       ██║     ██║   ",
-  "╚═╝       ╚═╝     ╚═╝   ",
-];
+// Each letter as a fixed-width 6-row block (display columns, not bytes).
+// join("  ") between blocks gives 2-col gaps; all blocks padded to their own width.
+const F    = ["███████╗", "██╔════╝", "█████╗  ", "██╔══╝  ", "██║     ", "╚═╝     "];
+const I    = ["██╗",      "██║",      "██║",      "██║",      "██║",      "╚═╝"     ];
+const T    = ["████████╗","╚══██╔══╝","   ██║   ","   ██║   ","   ██║   ","   ╚═╝   "];
+const DASH = ["     ",    "     ",    " ─── ",    " ─── ",    "     ",    "     "   ];
+const C    = [" ██████╗", "██╔════╝", "██║     ", "██║     ", "╚██████╗", " ╚═════╝"];
+const L    = ["██╗     ", "██║     ", "██║     ", "██║     ", "███████╗", "╚══════╝"];
+
+const LOGO_LINES = Array.from({ length: 6 }, (_, i) =>
+  [F, I, T, DASH, C, L, I].map((ch) => ch[i]).join("  "),
+);
 
 // Vertical gradient: bright cyan at top → vibrant magenta at bottom
 const GRADIENT: [number, number, number][] = [
