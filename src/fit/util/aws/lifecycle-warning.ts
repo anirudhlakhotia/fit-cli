@@ -1,6 +1,7 @@
 import { type InstanceInfo } from "../../../cloud/util/aws/parse-instance.js";
 import { AWS_REGION } from "../../../cloud/util/aws/aws-target.js";
 import { runScriptPrefix } from "../../../util/non-fit/fit-cli-log.js";
+import { instanceAgeMs, formatAge } from "../../../cloud/util/aws/instance-age.js";
 
 export function formatBanner(title: string, lines: string[]): string {
   const content = [title, ...lines];
@@ -11,6 +12,13 @@ export function formatBanner(title: string, lines: string[]): string {
     ...content.map((line) => `= ${line.padEnd(width - 4)} =`),
     border,
   ].join("\n");
+}
+
+function formatLaunchInfo(inst: InstanceInfo): string {
+  if (!inst.launchTime) return "";
+  const age = instanceAgeMs(inst, Date.now());
+  const ageStr = age !== undefined ? `  age: ${formatAge(age)}` : "";
+  return `  created: ${inst.launchTime}${ageStr}`;
 }
 
 export function terminateInstanceCommand(instanceId: string): string {
@@ -53,7 +61,8 @@ export function formatEc2DeletionResponsibilityBanner(
     for (const inst of otherInstances) {
       const addr = inst.publicDns || inst.publicIp || "";
       const creator = inst.creator ? `  created-by: ${inst.creator}` : "";
-      lines.push(`  ${inst.instanceId}${addr ? ` (${addr})` : ""}${creator}`);
+      const launch = formatLaunchInfo(inst);
+      lines.push(`  ${inst.instanceId}${addr ? ` (${addr})` : ""}${creator}${launch}`);
       lines.push(`    terminate: ${terminateInstanceCommand(inst.instanceId)}`);
     }
     const allIds = [instanceId, ...otherInstances.map((i) => i.instanceId)];
@@ -101,7 +110,8 @@ export function formatExistingInstancesBanner(
   for (const inst of instances) {
     const addr = inst.publicDns || inst.publicIp;
     const creator = inst.creator ? `  created-by: ${inst.creator}` : "";
-    lines.push(`  ${inst.instanceId}${addr ? ` (${addr})` : ""}${creator}`);
+    const launch = formatLaunchInfo(inst);
+    lines.push(`  ${inst.instanceId}${addr ? ` (${addr})` : ""}${creator}${launch}`);
     lines.push(`    terminate: ${terminateInstanceCommand(inst.instanceId)}`);
   }
   lines.push(
