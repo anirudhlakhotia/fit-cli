@@ -417,6 +417,7 @@ function commentLinesFor(key: string, value: unknown, parentKey: string | undefi
       return parentKey === "init"
         ? [
             "Passed to `cbdinocluster init` on clean environments to set up ~/.cbdinocluster.  Added at runtime: GitHub creds",
+            "On localhost, init is skipped and your existing ~/.cbdinocluster is used as-is.",
           ]
         : [];
     case "configPatch":
