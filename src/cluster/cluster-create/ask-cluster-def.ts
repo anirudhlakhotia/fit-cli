@@ -49,11 +49,11 @@ export async function askClusterDef(options: AskClusterDefOptions = {}): Promise
     (await number({ promptId: "cluster.create.node-count", message: "How many nodes?", default: 3, min: 1 })) ??
     1;
 
+  console.log("  Alias (github.com/couchbaselabs/cb-alias): e.g. 8.0-stable");
+  console.log("  Server images (github.com/orgs/cb-vanilla/packages/container/package/server): e.g. 8.0.2-5322");
   const version = await input({
     promptId: "cluster.create.server-version",
     message: "Which Couchbase Server version?",
-    // Accepts stable aliases like "8.0-stable" or a pinned build like "8.0.2-5322"
-    // (use a pinned build if the alias is temporarily broken, e.g. https://couchbase.slack.com/archives/C05LNBVQRE3/p1781539981409679)
     default: DEFAULT_CLUSTER_VERSION,
   });
 
