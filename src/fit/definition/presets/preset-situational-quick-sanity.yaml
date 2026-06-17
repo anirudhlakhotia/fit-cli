@@ -1,0 +1,50 @@
+# Preset: run a single sanity FIT/SIT test against a given SDK, in a clean environment.
+#
+# Placeholders filled in by `bun run definition generate-preset`:
+#   {{SDK}}              — SDK value (java, kotlin, scala, cpp, dotnet, go, node, python, ruby, rust)
+#   {{PERFORMER_VERSION}} — Docker image tag for the performer (e.g. main, 4.2.0); omit the field to use the SDK default
+
+version: 1
+type: fit
+instances:
+  - aws: {}
+    setup:
+      cbdinocluster:
+        init:
+          # Passed to `cbdinocluster init` on clean environments to set up ~/.cbdinocluster.
+          # On localhost, init is skipped and your existing ~/.cbdinocluster is used as-is.
+          # Edit to taste; fit-cli appends your GitHub credentials at runtime.
+          args: '--auto --aws-region us-west-2 --disable-azure --disable-gcp --disable-k8s --disable-dns --docker-network fit'
+      capellaEnvironment: dev
+    # FIT/SIT creates its own clusters, so none are set up here.
+    clusters: []
+    # Sessions not tied to any particular cluster.
+    clusterlessSessions:
+      - performer:
+          sdk: '{{SDK}}'
+          onPortInUse: reuse
+        runs:
+          - type: situational
+            fitConfig: fit-config-0
+            tests:
+              presets:
+                - standard-qe
+            situational:
+              database:
+                mode: hosted
+                resultsEnvironment: dev
+
+fitConfigs:
+  - id: fit-config-0
+    config:
+      # Ignored for situational-only runs — cbdino creates and manages the cluster.
+      clusterAccess:
+        defaultHostname: localhost
+        username: Administrator
+        password: password
+      # fit-cli will inject performerPorts at runtime.
+      excludeTests: []
+      situational:
+        cbdino:
+          version: '7.6'
+          enablePrivateEndpoint: false

@@ -8,6 +8,9 @@ on:
         type: choice
         options:
           - preset-functional-tests
+          - preset-functional-quick-sanity
+          - preset-situational-quick-sanity
+          - preset-qe-set
         default: preset-functional-tests
       performerImageName:
         description: Performer Docker image name including tag (e.g. java-fit-performer:main, ghcr.io/couchbaselabs/java-fit-performer:1.2.3)

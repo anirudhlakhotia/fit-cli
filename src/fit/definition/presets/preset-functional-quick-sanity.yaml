@@ -1,0 +1,69 @@
+# Preset: run a single SanityTest against a given SDK against a cbdinocluster cluster.
+#
+# Placeholders filled in by `bun run definition generate-preset`:
+#   {{SDK}}              — SDK value (java, kotlin, scala, cpp, dotnet, go, node, python, ruby, rust)
+#   {{PERFORMER_VERSION}} — Docker image tag for the performer (e.g. main, 4.2.0); omit the field to use the SDK default
+
+version: 1
+type: fit
+instances:
+  - aws: {}
+    setup:
+      cbdinocluster:
+        init:
+          # Passed to `cbdinocluster init` on clean environments to set up ~/.cbdinocluster.
+          # On localhost, init is skipped and your existing ~/.cbdinocluster is used as-is.
+          # Edit to taste; fit-cli appends your GitHub credentials at runtime.
+          args: '--auto --disable-aws --disable-azure --disable-capella --disable-gcp --disable-k8s --disable-dns --docker-network fit'
+    clusters:
+      - clusterConfig: cluster-0
+        sessions:
+          - performer:
+              sdk: '{{SDK}}'
+              onPortInUse: reuse
+            runs:
+              - type: functional
+                fitConfig: fit-config-0
+                tests:
+                  classes:
+                    - 'com.couchbase.client.kv.SanityTest'
+
+clusterConfigs:
+  - id: cluster-0
+    cbdinocluster:
+      config:
+        nodes:
+          - count: 3
+            version: '8.0-stable'
+            services:
+              - kv
+              - n1ql
+              - index
+              - fts
+        docker:
+          kv-memory: 4096
+          fts-memory: 4096
+      onClusterExists: useExisting
+
+fitConfigs:
+  - id: fit-config-0
+    config:
+      # fit-cli fills ${defaultHostname} (and rest.hostname) in at runtime once the cluster is up.
+      clusterAccess:
+        connectionString: 'couchbase://${defaultHostname}'
+        username: Administrator
+        password: password
+        tls: null
+        rest:
+          hostname: '${defaultHostname}'
+          resolveDnsSrv: false
+        proxy:
+          hostname: host.docker.internal
+      # numReplicas >= 1 is required for FTS tests to pass.
+      bucketConfig:
+        numReplicas: 1
+        bucketType: couchbase
+        storage: couchstore
+      # fit-cli will inject performerPorts at runtime.
+      excludeTests:
+        - situational
