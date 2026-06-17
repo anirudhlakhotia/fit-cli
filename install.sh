@@ -55,7 +55,7 @@ main() {
   fi
 
   echo "Installed: $(which fit)"
-  fit --version 2>/dev/null || true
+  fit version
 
   echo ""
   echo "Next steps:"
