@@ -200,10 +200,11 @@ export async function provisionFitInstance(options: ProvisionOptions = {}): Prom
       await deleteKeyPair(keyName).catch(() => {});
     };
 
+    const vpcId = info?.vpcId;
     const infoPath = join(instanceDir, "ec2-instance.json");
     writeFileSync(
       infoPath,
-      `${JSON.stringify({ instanceId: id, address, region: AWS_REGION, instanceType, keyPath }, null, 2)}\n`,
+      `${JSON.stringify({ instanceId: id, address, region: AWS_REGION, instanceType, keyPath, ...(vpcId ? { vpcId } : {}) }, null, 2)}\n`,
     );
     const artifacts = [
       artifactFromPath(keyPath, "SSH private key for the EC2 test instance"),
@@ -225,7 +226,7 @@ export async function provisionFitInstance(options: ProvisionOptions = {}): Prom
       },
     ];
 
-    console.log(`\n✓ EC2 instance ${id} is ready at ${address}`);
+    console.log(`\n✓ EC2 instance ${id} is ready at ${address}${vpcId ? `  (VPC: ${vpcId})` : ""}`);
     fitCliWarn(`\n${formatEc2DeletionResponsibilityBanner(id, address, existingInstances, { account: creds.identity.account, creator: creatorTag })}\n`);
     console.log(formatBanner("SSH ACCESS", [
       "Direct (requires key):",

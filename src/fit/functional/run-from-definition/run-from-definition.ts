@@ -1018,11 +1018,20 @@ async function teardownRun(inputs: TeardownInputs): Promise<{ leftUp: boolean }>
     console.log(`\nResults summary:\n${resultsSummary}`);
   }
 
-  const leaveUp = await confirm({
-    promptId: "run-from-definition.teardown.leave-up",
-    message: "Leave everything up (instance, cluster, performer) for debugging and resuming?",
-    default: false,
-  });
+  let leaveUp: boolean;
+  try {
+    leaveUp = await confirm({
+      promptId: "run-from-definition.teardown.leave-up",
+      message: "Leave everything up (instance, cluster, performer) for debugging and resuming?",
+      default: false,
+    });
+  } catch (err) {
+    if (err instanceof Error && err.name === "ExitPromptError" && teardown.terminate && teardown.instanceId) {
+      fitCliWarn(`\nInstance ${teardown.instanceId} is still running — remember to terminate it when done.`);
+      console.log(`\nTerminate it with:\n  ${terminateInstanceCommand(teardown.instanceId)}`);
+    }
+    throw err;
+  }
 
   if (leaveUp) {
     const state: RunState = {
@@ -1107,20 +1116,15 @@ function isInteractiveRun(): boolean {
 /**
  * Decide the run-wide override for where every execution group runs, ignoring each
  * group's `instance:` setting. Resuming reuses the earlier run's choice. Otherwise:
- * if no execution group wants AWS there's nothing to override; interactively we ask
- * whether to honour the file (default), force everything onto localhost, or run every
- * group on one existing EC2 instance; non-interactively we honour the definition file
- * so a CI run provisions whatever the file asks for.
+ * interactively we ask whether to honour the file (default), force everything onto
+ * localhost, or run every group on one existing EC2 instance; non-interactively we
+ * honour the definition file so a CI run provisions whatever the file asks for.
  */
 async function resolveExecutionOverride(
-  groups: readonly ResolvedExecutionGroup[],
   savedState: RunState | undefined,
 ): Promise<ExecutionOverride> {
   if (savedState) {
     return { kind: savedState.forceLocalhost ? "localhost" : "definition" };
-  }
-  if (!groups.some((group) => group.instance.kind === "aws")) {
-    return { kind: "definition" };
   }
   if (!isInteractiveRun()) {
     return { kind: "definition" };
@@ -1302,7 +1306,7 @@ export async function runFromDefinition(
   // localhost, or run all groups on one existing EC2 instance. Each group then provisions
   // (or reconnects) its own target accordingly. `forceLocalhost` is the part we persist for
   // resume; the existing-instance override is a within-run convenience and isn't saved.
-  const executionOverride = await resolveExecutionOverride(executionGroups.slice(startCycleIndex), savedState);
+  const executionOverride = await resolveExecutionOverride(savedState);
   const forceLocalhost = executionOverride.kind === "localhost";
 
   // Local connectivity check — skip when running remotely, since EC2 instances are
