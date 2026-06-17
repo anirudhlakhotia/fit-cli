@@ -19,7 +19,6 @@ test("parseGeneratePresetArgs derives sdk from performer image and accepts outpu
     type: "preset-functional-tests",
     sdkValue: "java",
     performerImageName: "refs-changes-67-246067-3",
-    clusterVersion: undefined,
     outputPath: "/tmp/generated-fit.yaml",
     pushGistVisibility: undefined,
   });
@@ -60,13 +59,16 @@ test("parseGeneratePresetArgs rejects the removed sdk flag", () => {
   );
 });
 
-test("parseGeneratePresetArgs accepts --cluster-version", () => {
-  const args = parseGeneratePresetArgs([
-    "--type=preset-functional-tests",
-    "--cluster-version=7.6.5",
-    "--performer-image-name=java-fit-performer:refs-changes-67-246067-3",
-  ]);
-  assert.equal(args.clusterVersion, "7.6.5");
+test("parseGeneratePresetArgs rejects the removed cluster-version flag", () => {
+  assert.throws(
+    () =>
+      parseGeneratePresetArgs([
+        "--type=preset-functional-tests",
+        "--cluster-version=8.0-stable",
+        "--performer-image-name=java-fit-performer:refs-changes-67-246067-3",
+      ]),
+    /Unexpected argument: --cluster-version=8\.0-stable/,
+  );
 });
 
 test("generatePreset writes YAML when the output path ends in .yaml", async () => {
@@ -84,16 +86,4 @@ test("generatePreset writes YAML when the output path ends in .yaml", async () =
   assert.match(written, /^version: 1$/m);
   assert.match(written, /^type: fit$/m);
   assert.doesNotMatch(written, /^\{$/m);
-});
-
-test("generatePreset substitutes cluster version and defaults to 8.0-stable", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "fit-generate-preset-"));
-
-  const defaultPath = join(dir, "default.yaml");
-  await generatePreset({ type: "preset-functional-tests", sdkValue: "java", outputPath: defaultPath });
-  assert.match(readFileSync(defaultPath, "utf8"), /version: 8\.0-stable/);
-
-  const customPath = join(dir, "custom.yaml");
-  await generatePreset({ type: "preset-functional-tests", sdkValue: "java", clusterVersion: "7.6.5", outputPath: customPath });
-  assert.match(readFileSync(customPath, "utf8"), /version: 7\.6\.5/);
 });

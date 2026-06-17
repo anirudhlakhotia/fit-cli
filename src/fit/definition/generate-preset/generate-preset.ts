@@ -54,8 +54,6 @@ function loadPresetTemplate(type: PresetType): string {
   return readFileSync(join(presetsDir, PRESET_TEMPLATE_FILES[type]), "utf8");
 }
 
-const DEFAULT_CLUSTER_VERSION = "8.0-stable";
-
 /**
  * Fill in the template placeholders and return a parsed FitDefinition.
  * If `performerImageName` is provided it is written into every performer's
@@ -65,11 +63,9 @@ function applyPresetParams(
   template: string,
   sdkValue: SdkValue,
   performerImageName?: string,
-  clusterVersion?: string,
 ): FitDefinition {
   const filled = template
-    .replace(/\{\{SDK\}\}/g, sdkValue)
-    .replace(/\{\{CLUSTER_VERSION\}\}/g, clusterVersion ?? DEFAULT_CLUSTER_VERSION);
+    .replace(/\{\{SDK\}\}/g, sdkValue);
   const definition = YAML.parse(filled) as FitDefinition;
 
   if (performerImageName) {
@@ -92,21 +88,20 @@ export interface GeneratePresetArgs {
   type: PresetType;
   sdkValue: SdkValue;
   performerImageName?: string;
-  clusterVersion?: string;
   outputPath?: string;
   format?: DefinitionFormat;
   pushGistVisibility?: GistVisibility;
 }
 
 export async function generatePreset(args: GeneratePresetArgs): Promise<void> {
-  const { type, sdkValue, performerImageName, clusterVersion, outputPath, format, pushGistVisibility } = args;
+  const { type, sdkValue, performerImageName, outputPath, format, pushGistVisibility } = args;
   const sdk = sdkByValue(sdkValue);
   if (!sdk) {
     throw new Error(`Unknown SDK: ${sdkValue}`);
   }
 
   const template = loadPresetTemplate(type);
-  const definition = applyPresetParams(template, sdkValue, performerImageName, clusterVersion);
+  const definition = applyPresetParams(template, sdkValue, performerImageName);
   const outputFormat = resolvePresetOutputFormat(outputPath, format);
   const formatted = formatFitDefinition(definition, outputFormat);
   const result = outputPath
@@ -157,7 +152,6 @@ function deriveSdkAndTagFromPerformerImageName(
 export function parseGeneratePresetArgs(argv: string[]): GeneratePresetArgs {
   let type: string | undefined;
   let performerImageName: string | undefined;
-  let clusterVersion: string | undefined;
   let outputPath: string | undefined;
   let pushGistVisibility: GistVisibility | undefined;
 
@@ -171,10 +165,6 @@ export function parseGeneratePresetArgs(argv: string[]): GeneratePresetArgs {
       performerImageName = argv[++i];
     } else if (arg.startsWith("--performer-image-name=")) {
       performerImageName = arg.slice("--performer-image-name=".length);
-    } else if (arg === "--cluster-version") {
-      clusterVersion = argv[++i];
-    } else if (arg.startsWith("--cluster-version=")) {
-      clusterVersion = arg.slice("--cluster-version=".length);
     } else if (arg === "--output") {
       outputPath = argv[++i];
     } else if (arg.startsWith("--output=")) {
@@ -211,5 +201,5 @@ export function parseGeneratePresetArgs(argv: string[]): GeneratePresetArgs {
     throw new Error("--performer-image-name is required and must include an SDK-specific image like java-fit-performer:<tag>");
   }
 
-  return { type, sdkValue, performerImageName, clusterVersion, outputPath, pushGistVisibility };
+  return { type, sdkValue, performerImageName, outputPath, pushGistVisibility };
 }
