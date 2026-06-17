@@ -10,10 +10,10 @@
  *             or as a single zip archive (--zip). <s3-uri> defaults to
  *             s3://fit-cli/runs/.
  */
-import { createReadStream, createWriteStream, existsSync, statSync } from "node:fs";
+import { createReadStream, createWriteStream, existsSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import { ZipArchive } from "archiver";
-import { PutObjectCommand } from "@aws-sdk/client-s3";
+import { Upload } from "@aws-sdk/lib-storage";
 import { s3Client } from "../../cloud/util/aws/aws-clients.js";
 import { uploadDirectoryToS3 } from "../../cloud/util/aws/upload-directory.js";
 import { isMain, runCli } from "../../util/non-fit/cli.js";
@@ -56,14 +56,16 @@ export async function uploadFileToS3(localPath: string, s3Uri: string): Promise<
     throw new Error(`Invalid S3 URI for a single file (must include a key): ${s3Uri}`);
   }
   const [, bucket, key] = match;
-  await s3Client.send(
-    new PutObjectCommand({
+  // Upload uses multipart under the hood for large files and retries each part,
+  // avoiding the non-retryable streaming timeout that PutObjectCommand hits.
+  await new Upload({
+    client: s3Client,
+    params: {
       Bucket: bucket,
       Key: key,
       Body: createReadStream(localPath),
-      ContentLength: statSync(localPath).size,
-    }),
-  );
+    },
+  }).done();
 }
 
 async function cmdZip(argv: string[]): Promise<void> {

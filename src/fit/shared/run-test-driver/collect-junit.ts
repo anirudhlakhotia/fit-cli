@@ -20,6 +20,7 @@ import {
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { artifactFromPath, type Artifact } from "../../../util/non-fit/artifacts.js";
+import { fitCliWarn } from "../../../util/non-fit/fit-cli-log.js";
 import { run } from "../../../util/non-fit/proc.js";
 import { posixQuote } from "../../../util/non-fit/remote-target.js";
 import { runRunDir, type DefinitionRunPath } from "../../../util/non-fit/replay.js";
@@ -87,7 +88,7 @@ export function collapseSuitesByDefault(html: string): string {
   let patched = html;
   for (const [from, to] of replacements) {
     if (!patched.includes(from)) {
-      console.warn(`\nCould not collapse JUnit suites by default: xunit-viewer token not found (${from}).`);
+      fitCliWarn(`Could not collapse JUnit suites by default: xunit-viewer token not found (${from}).`);
       continue;
     }
     patched = patched.replaceAll(from, to);
@@ -110,11 +111,11 @@ async function renderJunitReport(reportsDir: string, runDir: string): Promise<Ar
     }
 
     const reportFile = join(runDir, "report.html");
-    await run("bunx", ["xunit-viewer", "--results", renderDir, "--output", reportFile]);
+    await run("npx", ["--yes", "xunit-viewer", "--results", renderDir, "--output", reportFile]);
     writeFileSync(reportFile, collapseSuitesByDefault(readFileSync(reportFile, "utf8")), { mode: 0o600 });
     return artifactFromPath(reportFile, "HTML visualisation of the JUnit results (open in a browser)");
   } catch (err) {
-    console.warn(`\nCould not render the JUnit HTML report with xunit-viewer: ${(err as Error).message}`);
+    fitCliWarn(`Could not render the JUnit HTML report with xunit-viewer: ${(err as Error).message}`);
     return undefined;
   } finally {
     rmSync(renderDir, { recursive: true, force: true });
