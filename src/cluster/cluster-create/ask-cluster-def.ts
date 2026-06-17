@@ -14,7 +14,7 @@
  * Prints the gathered answers as JSON.
  */
 import { isMain, runCli } from "../../util/non-fit/cli.js";
-import { checkbox, input, number, select } from "../../util/non-fit/prompts.js";
+import { checkbox, input, number } from "../../util/non-fit/prompts.js";
 import { DEFAULT_CLUSTER_VERSION, type ClusterDef } from "./build-cluster-def.js";
 
 /** Services offered, with the FIT-typical set selected by default. */
@@ -44,19 +44,6 @@ export async function askClusterDef(options: AskClusterDefOptions = {}): Promise
   if (options.cng) {
     console.log("\nNote: CNG (Cloud Native Gateway) will be automatically installed as CNG testing was requested.\n");
   }
-
-  // Only one cluster type for now, but we still ask so adding more later is
-  // natural — and so the limitation is visible.
-  await select({
-    promptId: "cluster.create.type",
-    message: "What type of cluster would you like?",
-    choices: [
-      {
-        name: "Operational",
-        value: "operational",
-      },
-    ],
-  });
 
   const nodeCount =
     (await number({ promptId: "cluster.create.node-count", message: "How many nodes?", default: 3, min: 1 })) ??
