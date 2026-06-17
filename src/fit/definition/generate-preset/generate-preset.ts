@@ -49,9 +49,31 @@ function resolvePresetOutputFormat(outputPath: string | undefined, format: Defin
   return resolveOutputFormat();
 }
 
-function loadPresetTemplate(type: PresetType): string {
+function loadPresetTemplateFromDisk(type: PresetType): string {
   const presetsDir = join(dirname(fileURLToPath(import.meta.url)), "../presets");
   return readFileSync(join(presetsDir, PRESET_TEMPLATE_FILES[type]), "utf8");
+}
+
+async function loadBundledPresetTemplate(type: PresetType): Promise<string> {
+  switch (type) {
+    case "preset-functional-tests": {
+      const templateModule = await import("../presets/preset-functional-tests.yaml", {
+        with: { type: "text" },
+      }) as { default: string };
+      return templateModule.default;
+    }
+  }
+}
+
+async function loadPresetTemplate(type: PresetType): Promise<string> {
+  try {
+    return loadPresetTemplateFromDisk(type);
+  } catch (err) {
+    if (!(err instanceof Error) || !import.meta.url.includes("/$bunfs/")) {
+      throw err;
+    }
+    return loadBundledPresetTemplate(type);
+  }
 }
 
 /**
@@ -100,7 +122,7 @@ export async function generatePreset(args: GeneratePresetArgs): Promise<void> {
     throw new Error(`Unknown SDK: ${sdkValue}`);
   }
 
-  const template = loadPresetTemplate(type);
+  const template = await loadPresetTemplate(type);
   const definition = applyPresetParams(template, sdkValue, performerImageName);
   const outputFormat = resolvePresetOutputFormat(outputPath, format);
   const formatted = formatFitDefinition(definition, outputFormat);
