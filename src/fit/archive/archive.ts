@@ -50,7 +50,7 @@ export async function zipDirectory(sourceDir: string, outputPath: string): Promi
 }
 
 /** Upload a single local file to an S3 URI (s3://bucket/key). */
-async function uploadFileToS3(localPath: string, s3Uri: string): Promise<void> {
+export async function uploadFileToS3(localPath: string, s3Uri: string): Promise<void> {
   const match = s3Uri.match(/^s3:\/\/([^/]+)\/(.+)$/);
   if (!match) {
     throw new Error(`Invalid S3 URI for a single file (must include a key): ${s3Uri}`);
