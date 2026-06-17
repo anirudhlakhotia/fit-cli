@@ -28,12 +28,15 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Build binaries
+        env:
+          GIT_SHA: ${{ github.sha }}
         run: |
           mkdir -p dist
-          bun build --compile --target=bun-linux-x64   src/fit/main/main.ts --outfile dist/fit-linux-x64
-          bun build --compile --target=bun-linux-arm64  src/fit/main/main.ts --outfile dist/fit-linux-arm64
-          bun build --compile --target=bun-darwin-x64  src/fit/main/main.ts --outfile dist/fit-darwin-x64
-          bun build --compile --target=bun-darwin-arm64 src/fit/main/main.ts --outfile dist/fit-darwin-arm64
+          BUILD_TIME="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+          bun build --compile --target=bun-linux-x64   --define "__FIT_GIT_SHA=\"${GIT_SHA}\""   --define "__FIT_BUILD_TIME=\"${BUILD_TIME}\""  src/fit/main/main.ts --outfile dist/fit-linux-x64
+          bun build --compile --target=bun-linux-arm64  --define "__FIT_GIT_SHA=\"${GIT_SHA}\""   --define "__FIT_BUILD_TIME=\"${BUILD_TIME}\""  src/fit/main/main.ts --outfile dist/fit-linux-arm64
+          bun build --compile --target=bun-darwin-x64  --define "__FIT_GIT_SHA=\"${GIT_SHA}\""   --define "__FIT_BUILD_TIME=\"${BUILD_TIME}\""  src/fit/main/main.ts --outfile dist/fit-darwin-x64
+          bun build --compile --target=bun-darwin-arm64 --define "__FIT_GIT_SHA=\"${GIT_SHA}\""   --define "__FIT_BUILD_TIME=\"${BUILD_TIME}\""  src/fit/main/main.ts --outfile dist/fit-darwin-arm64
 
       - name: Upload artifact (for workflow_call consumers)
         id: upload

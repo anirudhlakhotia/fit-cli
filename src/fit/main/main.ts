@@ -22,6 +22,7 @@ import { runEditWorkflow } from "../config/edit.js";
 import { defaultFitCliConfigPath } from "../util/config.js";
 import { runCloudInstancesMain } from "../../cloud/cloud-instances/cloud-instances.js";
 import { runSecretsMain } from "../../cloud/util/aws/secrets-cli.js";
+import { printVersion } from "../version/version.js";
 
 const WORKFLOW_PROMPT_MESSAGE = "What would you like to do?";
 
@@ -226,19 +227,23 @@ const RUN_SCRIPTS: Record<string, (() => void) | undefined> = {
 // import.meta.main is true in compiled Bun binaries where isMain() can't
 // compare virtual /$bunfs/ paths against the real executable path.
 if (isMain(import.meta.url) || import.meta.main) {
-  let runScript: (() => void) | undefined;
-  let argsToRemove = 0;
-  if (process.argv[2] === "run" && RUN_SCRIPTS[process.argv[3]]) {
-    runScript = RUN_SCRIPTS[process.argv[3]];
-    argsToRemove = 2;
-  } else if (RUN_SCRIPTS[process.argv[2]]) {
-    runScript = RUN_SCRIPTS[process.argv[2]];
-    argsToRemove = 1;
-  }
-  if (runScript) {
-    process.argv.splice(2, argsToRemove);
-    runScript();
+  if (process.argv[2] === "version") {
+    printVersion();
   } else {
-    runCli(main);
+    let runScript: (() => void) | undefined;
+    let argsToRemove = 0;
+    if (process.argv[2] === "run" && RUN_SCRIPTS[process.argv[3]]) {
+      runScript = RUN_SCRIPTS[process.argv[3]];
+      argsToRemove = 2;
+    } else if (RUN_SCRIPTS[process.argv[2]]) {
+      runScript = RUN_SCRIPTS[process.argv[2]];
+      argsToRemove = 1;
+    }
+    if (runScript) {
+      process.argv.splice(2, argsToRemove);
+      runScript();
+    } else {
+      runCli(main);
+    }
   }
 }
