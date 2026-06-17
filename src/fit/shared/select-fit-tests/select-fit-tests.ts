@@ -18,6 +18,13 @@ import { rootDirFromArgv } from "../../util/root.js";
 import { createLocalFitExecutionContext, type FitExecutionContext } from "../util/remote-fit-run.js";
 
 const FIT_TESTS_CACHE_PATH = join(dirname(fileURLToPath(import.meta.url)), "fit-tests-cache.json5");
+const bundledFitTestsCachePath = import.meta.url.includes("/$bunfs/")
+  ? (
+      await import("./fit-tests-cache.json5", {
+        with: { type: "file" },
+      }) as { default: string }
+    ).default
+  : undefined;
 
 export interface FitTestCase {
   /** Basename shown in the picker, e.g. StandardTest.java. */
@@ -124,7 +131,8 @@ export const STANDARD_QE_REBALANCE_CLASS = "com.couchbase.situational.tests.cbdi
  *   bunx tsx src/fit/shared/select-fit-tests/generate-fit-tests-cache.ts --root /path/to/transactions-fit-performer
  */
 export function loadFitTestsFromCache(domain: FitTestDomain = FUNCTIONAL_TEST_DOMAIN): FitTestCase[] {
-  const paths = JSON5.parse<string[]>(readFileSync(FIT_TESTS_CACHE_PATH, "utf8"));
+  const cachePath = import.meta.url.includes("/$bunfs/") ? (bundledFitTestsCachePath ?? FIT_TESTS_CACHE_PATH) : FIT_TESTS_CACHE_PATH;
+  const paths = JSON5.parse<string[]>(readFileSync(cachePath, "utf8"));
   return parseFitTests(paths.join("\n"), domain);
 }
 

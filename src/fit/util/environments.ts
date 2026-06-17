@@ -37,11 +37,22 @@ export interface EnvironmentsFile {
 export const DEFAULT_ENVIRONMENTS_PATH = fileURLToPath(new URL("../../../environments.json5", import.meta.url));
 
 let cached: EnvironmentsFile | undefined;
+const bundledDefaultEnvironmentsPath = import.meta.url.includes("/$bunfs/")
+  ? (
+      await import("../../../environments.json5", {
+        with: { type: "file" },
+      }) as { default: string }
+    ).default
+  : undefined;
 
 /** Load and validate the environments file. Cached when reading the default path. */
 export function loadEnvironments(path: string = DEFAULT_ENVIRONMENTS_PATH): EnvironmentsFile {
   if (path === DEFAULT_ENVIRONMENTS_PATH && cached) return cached;
-  const parsed = JSON5.parse<EnvironmentsFile>(readFileSync(path, "utf8"));
+  const resolvedPath = path === DEFAULT_ENVIRONMENTS_PATH && import.meta.url.includes("/$bunfs/")
+    ? (bundledDefaultEnvironmentsPath ?? path)
+    : path;
+  const text = readFileSync(resolvedPath, "utf8");
+  const parsed = JSON5.parse<EnvironmentsFile>(text);
   if (!parsed || typeof parsed !== "object" || typeof parsed.capella !== "object" || typeof parsed.results !== "object") {
     throw new Error(`Environments file at ${path} must define "capella" and "results" sections.`);
   }
