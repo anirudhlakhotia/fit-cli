@@ -17,11 +17,11 @@
  */
 import { type RunOutput } from "../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
-import { ensureFitCliConfigEnv, resolveCloudInstanceType, type CloudInstancePurpose } from "../../util/config.js";
-import { fitCliError, fitCliWarn, runScriptPrefix } from "../../../util/non-fit/fit-cli-log.js";
+import { loadFitCliConfigEnv, resolveCloudInstanceType, type CloudInstancePurpose } from "../../util/config.js";
+import { fitCliError, fitCliWarn } from "../../../util/non-fit/fit-cli-log.js";
 import { input, select } from "../../../util/non-fit/prompts.js";
 import { LocalTarget } from "../../../util/non-fit/local-target.js";
-import { checkCredentials } from "../../../cloud/util/aws/identity.js";
+import { checkCredentials, printCredentialsDiagnostic } from "../../../cloud/util/aws/identity.js";
 import { listInstances } from "../../../cloud/util/aws/list-instances.js";
 import { terminateInstance } from "../../../cloud/util/aws/terminate-instance.js";
 import { type InstanceInfo } from "../../../cloud/util/aws/parse-instance.js";
@@ -163,16 +163,11 @@ export async function resolveExecutionGroupTarget(
   }
 
   // AWS EC2 needs credentials, from the environment or fit-cli config.
-  await ensureFitCliConfigEnv({
-    promptId: `execution-target.execution-group-${executionGroupIndex}.config.create`,
-    promptMessage: `No fit-cli config found. Run \`${runScriptPrefix("config")} edit\` now before using EC2?`,
-  });
+  loadFitCliConfigEnv();
   const creds = await checkCredentials();
   if (!creds.ok) {
+    printCredentialsDiagnostic();
     fitCliError(`\nCan't use EC2 for this execution group: ${creds.message}`);
-    console.log(
-      `Add your AWS credentials with \`${runScriptPrefix("config")} edit\`, or re-run with the localhost override to run everything locally.\n`,
-    );
     return { ready: false, artifacts: [], details: [] };
   }
   console.log(`\n✓ Using AWS account ${creds.identity.account} (${creds.identity.arn})`);
@@ -225,14 +220,11 @@ export async function selectExecutionTarget(): Promise<ExecutionTargetOutcome> {
     }
 
     // Both EC2 paths need credentials, from the environment or fit-cli config.
-    await ensureFitCliConfigEnv({
-      promptId: promptId(attempt, "config.create"),
-      promptMessage: `No fit-cli config found. Run \`${runScriptPrefix("config")} edit\` now before using EC2?`,
-    });
+    loadFitCliConfigEnv();
     const creds = await checkCredentials();
     if (!creds.ok) {
+      printCredentialsDiagnostic();
       fitCliError(`\nCan't use EC2: ${creds.message}`);
-      console.log(`Add your AWS credentials with \`${runScriptPrefix("config")} edit\`, or use your normal AWS environment/config, then choose again.\n`);
       attempt += 1;
       continue; // back to the target prompt
     }
@@ -354,14 +346,11 @@ async function connectExistingInstance(attempt: number): Promise<ExecutionTarget
 export async function selectExistingInstanceForOverride(
   attempt: number,
 ): Promise<ExistingInstanceConnection | "back"> {
-  await ensureFitCliConfigEnv({
-    promptId: promptId(attempt, "config.create"),
-    promptMessage: `No fit-cli config found. Run \`${runScriptPrefix("config")} edit\` now before using EC2?`,
-  });
+  loadFitCliConfigEnv();
   const creds = await checkCredentials();
   if (!creds.ok) {
+    printCredentialsDiagnostic();
     fitCliError(`\nCan't use an existing EC2 instance: ${creds.message}`);
-    console.log(`Add your AWS credentials with \`${runScriptPrefix("config")} edit\`, or use your normal AWS environment/config, then choose again.\n`);
     return "back";
   }
   console.log(`\n✓ Using AWS account ${creds.identity.account} (${creds.identity.arn})`);

@@ -7,19 +7,12 @@
  *   npx tsx src/cloud/util/aws/aws-cli.ts
  */
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
-import { ensureFitCliConfigEnv } from "../../../fit/util/config.js";
+import { loadFitCliConfigEnv } from "../../../fit/util/config.js";
 import { AWS_REGION } from "./aws-target.js";
-import { runScriptPrefix } from "../../../util/non-fit/fit-cli-log.js";
 
-/** Load config sources so credentials/env are in place before making SDK calls. */
+/** Apply fit-cli config to env (sets AWS_PROFILE if configured) before SDK calls. */
 export async function prepareAwsCli(): Promise<void> {
-  // Config only contributes AWS_PROFILE; skip prompt when explicit creds are already set (e.g. GHA OIDC).
-  const hasExplicitCredentials = Boolean(process.env.AWS_ACCESS_KEY_ID);
-  await ensureFitCliConfigEnv({
-    promptId: "aws.config.create",
-    promptMessage: `No fit-cli config found. Run \`${runScriptPrefix("config")} edit\` now before continuing with this AWS command?`,
-    promptIfMissing: hasExplicitCredentials ? false : undefined,
-  });
+  loadFitCliConfigEnv();
 }
 
 function formatAwsDetail(value: unknown): string {
