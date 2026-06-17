@@ -202,36 +202,27 @@ function runReplayMain(): void {
   replayMain(["--replay", ...process.argv.slice(2)]);
 }
 
-function printHelp(): void {
-  console.log(
-    "fit — FIT CLI\n\n" +
-    "Usage: fit [command] [...args]\n\n" +
-    "Commands:\n" +
-    "  wizard           Interactive walkthrough (default when no command given)\n" +
-    "  definition       Run or validate a FIT definition file\n" +
-    "  config           Manage fit-cli configuration\n" +
-    "  cloud-instances  Manage cloud (EC2) instances\n" +
-    "  secrets          Manage AWS secrets\n" +
-    "  archive          Archive run artifacts\n" +
-    "  replay           Replay a recorded session\n" +
-    "  version          Print the fit-cli version\n" +
-    "  help             Print this help message\n"
-  );
-}
-
 // Single source of truth for all top-level commands.
 // Anything listed here is available as both `fit <cmd>` and `bun run <cmd>`.
-const COMMANDS: Record<string, (() => void)> = {
-  "wizard": runWizardMain,
-  "definition": runDefinitionMain,
-  "config": runConfigMain,
-  "cloud-instances": runCloudInstancesMain,
-  "secrets": runSecretsMain,
-  "archive": runArchiveMain,
-  "replay": runReplayMain,
-  "version": printVersion,
-  "help": printHelp,
+const COMMANDS: Record<string, { fn: () => void; description: string }> = {
+  "wizard":          { fn: runWizardMain,          description: "Interactive walkthrough (default when no command given)" },
+  "definition":      { fn: runDefinitionMain,      description: "Run or validate a FIT definition file" },
+  "config":          { fn: runConfigMain,           description: "Manage fit-cli configuration" },
+  "cloud-instances": { fn: runCloudInstancesMain,  description: "Manage cloud (EC2) instances" },
+  "secrets":         { fn: runSecretsMain,          description: "Manage AWS secrets" },
+  "archive":         { fn: runArchiveMain,          description: "Archive run artifacts" },
+  "replay":          { fn: runReplayMain,           description: "Replay a recorded session" },
+  "version":         { fn: printVersion,            description: "Print the fit-cli version" },
+  "help":            { fn: printHelp,               description: "Print this help message" },
 };
+
+function printHelp(): void {
+  const maxLen = Math.max(...Object.keys(COMMANDS).map((k) => k.length));
+  const lines = Object.entries(COMMANDS)
+    .map(([name, { description }]) => `  ${name.padEnd(maxLen)}  ${description}`)
+    .join("\n");
+  console.log(`fit — FIT CLI\n\nUsage: fit [command] [...args]\n\nCommands:\n${lines}\n`);
+}
 
 // import.meta.main is true in compiled Bun binaries where isMain() can't
 // compare virtual /$bunfs/ paths against the real executable path.
@@ -242,10 +233,10 @@ if (isMain(import.meta.url) || import.meta.main) {
   let command: (() => void) | undefined;
   let argsToRemove = 0;
   if (cmd === "run" && COMMANDS[process.argv[3]]) {
-    command = COMMANDS[process.argv[3]];
+    command = COMMANDS[process.argv[3]].fn;
     argsToRemove = 2;
   } else if (cmd && COMMANDS[cmd]) {
-    command = COMMANDS[cmd];
+    command = COMMANDS[cmd].fn;
     argsToRemove = 1;
   }
 

@@ -195,7 +195,8 @@ Definition file rules while generating:
 - For anything that can work on remote instances, make sure they support the `--dir /tmp/fit-cli/20260609-162046/instances/0` syntax.
 
 ### Top-level commands
-These are ones exposed as `fit` subcommands e.g. `fit definition [execute|validate]`.
+These are ones exposed as `fit` subcommands e.g. `fit definition [execute|validate]`. `definition` is a top-level command, `execute` is a subcommand of it.
+Top-level commands should appear in both packages.json and COMMANDS in main.ts.
 Unlike Mini CLI these _are_ meant to be stable.  We should try not to break.
 All top-level commands have at least one subcommand.  This gives room to expand in future.
 If the user ran `fit` all when outputting commands they should generally show `fit X`.  If they ran with `bun` then generally `bun run X`.
