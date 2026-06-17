@@ -1223,7 +1223,7 @@ export async function runFromDefinition(
   const runResults: RunResultSummary[] = [];
   const recordResult: RecordRunResult = (result) => {
     runResults.push(result);
-    appendRunSummaryToGhaSummary(result);
+    void appendRunSummaryToGhaSummary(result);
   };
 
   const runDir = ensureRunDir();

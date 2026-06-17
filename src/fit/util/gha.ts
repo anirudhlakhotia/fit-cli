@@ -1,4 +1,7 @@
-import { appendFileSync } from "node:fs";
+import * as core from "@actions/core";
+
+type SummaryTableCell = { data: string; header?: boolean; colspan?: string; rowspan?: string };
+type SummaryTableRow = (SummaryTableCell | string)[];
 
 interface RunSummary {
   path: { instanceIndex: number; clusterIndex?: number; sessionIndex?: number; runIndex?: number; clusterlessSession?: boolean };
@@ -13,9 +16,8 @@ interface RunSummary {
  * The format mirrors the terminal Details table: label/value pairs rendered as
  * a GH-flavoured markdown table so each run gets its own block in the job summary.
  */
-export function appendRunSummaryToGhaSummary(result: RunSummary): void {
-  const summaryPath = process.env.GITHUB_STEP_SUMMARY;
-  if (!summaryPath) return;
+export async function appendRunSummaryToGhaSummary(result: RunSummary): Promise<void> {
+  if (!process.env.GITHUB_STEP_SUMMARY) return;
 
   const { path, sdk, type, ok, summary } = result;
   const status = ok ? "✅ PASS" : "❌ FAIL";
@@ -23,7 +25,8 @@ export function appendRunSummaryToGhaSummary(result: RunSummary): void {
     ? `Instance ${path.instanceIndex + 1} / Session ${(path.sessionIndex ?? 0) + 1} / Run ${(path.runIndex ?? 0) + 1}`
     : `Instance ${path.instanceIndex + 1} / Cluster ${(path.clusterIndex ?? 0) + 1} / Session ${(path.sessionIndex ?? 0) + 1} / Run ${(path.runIndex ?? 0) + 1}`;
 
-  const rows: [string, string][] = [
+  const rows: SummaryTableRow[] = [
+    [{ data: "Detail", header: true }, { data: "Value", header: true }],
     ["Path", pathLabel],
     ["SDK", sdk],
     ["Type", type],
@@ -33,18 +36,15 @@ export function appendRunSummaryToGhaSummary(result: RunSummary): void {
           ["Failures", String(summary.failures)],
           ["Errors", String(summary.errors)],
           ["Skipped", String(summary.skipped)],
-        ] as [string, string][])
+        ] as SummaryTableRow[])
       : []),
-    ["**Result**", `**${status}**`],
+    [{ data: "Result", header: true }, status],
   ];
 
-  const table = [
-    "| Detail | Value |",
-    "|--------|-------|",
-    ...rows.map(([label, value]) => `| ${label} | ${value} |`),
-  ].join("\n");
-
-  appendFileSync(summaryPath, `\n### ${pathLabel} (${sdk}) — ${status}\n\n${table}\n`);
+  await core.summary
+    .addHeading(`${pathLabel} (${sdk}) — ${status}`, 3)
+    .addTable(rows)
+    .write({ overwrite: false });
 }
 
 /**
