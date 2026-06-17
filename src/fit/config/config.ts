@@ -54,6 +54,8 @@ Edit options:
   --gerrit-ssh-key <path> Path to SSH private key registered with Gerrit (env: FIT_GERRIT_KEY / GERRIT_SSH_KEY).
   --capella-username <u> Your Capella username for situational/SIT runs (env: CAPELLA_USER / CAP_USER).
   --capella-password <p> Your Capella password (env: CAPELLA_PASS / CAP_PASS).
+  --cbdinocluster-path <path> Absolute path to the cbdinocluster binary, for non-PATH installs
+                         (env: CBDINOCLUSTER_PATH).
   --config-path <path>   Override config file path (default: ~/.fit-cli/config.json5).
                          (Capella endpoint/oid and the results-DB credentials are no longer set here —
                           they come from environments.json5 + AWS Secrets Manager, keyed by the
@@ -77,6 +79,7 @@ export interface AutoInitCliArgs {
   gerritSshKeyPath?: string;
   capellaUsername?: string;
   capellaPassword?: string;
+  cbdinoclusterPath?: string;
   configPath: string;
   /** Skip creating a fit-cli artifact directory for this run. Used for the CI config step. */
   suppressArtifacts: boolean;
@@ -124,6 +127,7 @@ export function parseEditArgs(argv: string[]): AutoInitCliArgs {
   const gerritSshKeyPath = consumeValue(args, "--gerrit-ssh-key");
   const capellaUsername = consumeValue(args, "--capella-username");
   const capellaPassword = consumeValue(args, "--capella-password");
+  const cbdinoclusterPath = consumeValue(args, "--cbdinocluster-path");
   const configPath = consumeValue(args, "--config-path") ?? defaultFitCliConfigPath();
 
   // Warn about unknown flags
@@ -150,6 +154,7 @@ export function parseEditArgs(argv: string[]): AutoInitCliArgs {
     gerritSshKeyPath,
     capellaUsername,
     capellaPassword,
+    cbdinoclusterPath,
     configPath,
   };
 }

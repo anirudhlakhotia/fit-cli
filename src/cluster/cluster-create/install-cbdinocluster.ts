@@ -29,7 +29,7 @@ import { RemoteTarget } from "../../util/non-fit/remote-target.js";
 import { waitForSsh, type RemoteHost } from "../../util/non-fit/ssh.js";
 import type { RunOptions } from "../../util/non-fit/proc.js";
 import { fitCliError } from "../../util/non-fit/fit-cli-log.js";
-import { CBDINOCLUSTER_URL } from "./ensure-cbdinocluster.js";
+import { CBDINOCLUSTER_URL } from "../../fit/util/config.js";
 
 /** Default login user for the EC2 boxes fit-cli launches (stock Ubuntu AMI). */
 const DEFAULT_INSTANCE_USER = "ubuntu";

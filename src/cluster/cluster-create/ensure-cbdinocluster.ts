@@ -1,9 +1,10 @@
 /**
  * Step: make sure the cbdinocluster binary is available and working. It's looked
- * for on the PATH first; if it isn't there the user is asked where it lives (and
- * pointed at where to get it). Either way it's sanity-checked by running
- * `cbdinocluster ps`, so we fail early with a clear message if the binary is
- * broken or misconfigured rather than later inside `allocate`.
+ * for via the fit-cli config (cbdinoclusterPath / CBDINOCLUSTER_PATH), then on
+ * the PATH; if it isn't found the user is asked where it lives (and pointed at
+ * where to get it). Either way it's sanity-checked by running `cbdinocluster ps`,
+ * so we fail early with a clear message if the binary is broken or misconfigured
+ * rather than later inside `allocate`.
  *
  * Run on its own:
  *   npx tsx src/cluster/cluster-create/ensure-cbdinocluster.ts
@@ -15,18 +16,22 @@ import { fitCliError } from "../../util/non-fit/fit-cli-log.js";
 import { input } from "../../util/non-fit/prompts.js";
 import { run } from "../../util/non-fit/proc.js";
 import { findOnPath } from "../../util/non-fit/which.js";
-
-/** Where to get cbdinocluster, shown when it can't be found on the PATH. */
-export const CBDINOCLUSTER_URL = "https://github.com/couchbaselabs/cbdinocluster";
+import { CBDINOCLUSTER_URL, resolveCbdinoclusterPath } from "../../fit/util/config.js";
 
 /** The bare command name we look for on the PATH. */
 const CBDINOCLUSTER = "cbdinocluster";
 
 /**
- * Resolve the cbdinocluster command to use: its location on the PATH if it's
- * there, otherwise ask the user for the full path to the binary.
+ * Resolve the cbdinocluster command to use. Priority: fit-cli config
+ * (cbdinoclusterPath / CBDINOCLUSTER_PATH env var) → PATH lookup → ask the user.
  */
 async function resolveCbdinocluster(): Promise<string> {
+  const configured = resolveCbdinoclusterPath();
+  if (configured) {
+    console.log(`→ Using cbdinocluster from config: ${configured}`);
+    return configured;
+  }
+
   const onPath = findOnPath(CBDINOCLUSTER);
   if (onPath) {
     console.log(`✓ Found cbdinocluster on your PATH at ${onPath}`);

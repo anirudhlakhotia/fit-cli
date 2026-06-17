@@ -1,5 +1,6 @@
 import JSON5 from "json5";
 import {
+  CBDINOCLUSTER_URL,
   CLOUD_INSTANCE_PURPOSES,
   DEFAULT_CLOUD_INSTANCE_TYPES,
   DEFAULT_OUTPUT_FORMAT,
@@ -19,6 +20,7 @@ import {
   type OutputFormat,
 } from "../util/config.js";
 import { confirm, input, password, select } from "../../util/non-fit/prompts.js";
+import { findOnPath } from "../../util/non-fit/which.js";
 import type { AutoInitCliArgs } from "./config.js";
 
 /** The AWS default instance types, keyed by testing purpose. */
@@ -60,6 +62,8 @@ export interface InitAnswers {
   gerritSshKeyPath?: string;
   configureCapella: boolean;
   capella?: CapellaInitAnswers;
+  /** Absolute path to the cbdinocluster binary, for non-PATH installs. */
+  cbdinoclusterPath?: string;
 }
 
 function trimOptional(value: string | undefined): string | undefined {
@@ -158,6 +162,8 @@ export function initAnswersToConfig(answers: InitAnswers, existing?: FitCliConfi
   const capella =
     answers.configureCapella && answers.capella ? capellaAnswersToConfig(answers.capella) : existing?.capella;
 
+  const cbdinoclusterPath = answers.cbdinoclusterPath ?? existing?.cbdinoclusterPath;
+
   return {
     version: FIT_CLI_CONFIG_VERSION,
     ...(cloud ? { cloud } : {}),
@@ -165,6 +171,7 @@ export function initAnswersToConfig(answers: InitAnswers, existing?: FitCliConfi
     ...(output ? { output } : {}),
     ...(gerrit ? { gerrit } : {}),
     ...(capella ? { capella } : {}),
+    ...(cbdinoclusterPath ? { cbdinoclusterPath } : {}),
   };
 }
 
@@ -234,7 +241,30 @@ async function promptForOutputFormat(existing?: FitCliConfig): Promise<OutputFor
   });
 }
 
+async function promptForCbdinoclusterPath(existing?: FitCliConfig): Promise<string | undefined> {
+  const existingPath = existing?.cbdinoclusterPath;
+  const onPath = findOnPath("cbdinocluster");
+
+  if (onPath) {
+    console.log(`  cbdinocluster: found on PATH at ${onPath}`);
+  } else {
+    console.log(`  cbdinocluster: not found on PATH — get it from: ${CBDINOCLUSTER_URL}`);
+  }
+
+  const entered = await input({
+    promptId: "init.cbdinocluster.path",
+    message: existingPath
+      ? `Path to cbdinocluster binary (leave blank to keep "${existingPath}"):`
+      : onPath
+        ? "cbdinocluster path override (leave blank to use the PATH one):"
+        : "Path to cbdinocluster binary (leave blank to skip — required for local cluster runs):",
+    default: existingPath ?? "",
+  });
+  return trimOptional(entered) ?? existingPath;
+}
+
 async function promptForConfig(existing?: FitCliConfig, configPath?: string): Promise<InitAnswers> {
+  const cbdinoclusterPath = await promptForCbdinoclusterPath(existing);
   const githubUser = await promptForGithubUser(existing);
   const githubToken = await promptForGithubToken(existing);
   const outputFormat = await promptForOutputFormat(existing);
@@ -275,6 +305,7 @@ async function promptForConfig(existing?: FitCliConfig, configPath?: string): Pr
     gerritSshKeyPath,
     configureCapella,
     ...(capella ? { capella } : {}),
+    ...(cbdinoclusterPath ? { cbdinoclusterPath } : {}),
   };
 }
 
@@ -636,6 +667,10 @@ export function buildAutoConfig(
     }
   }
 
+  const cbdinoclusterPath = resolveField(log, "cbdinocluster.path", args.cbdinoclusterPath, "--cbdinocluster-path", [
+    { name: "CBDINOCLUSTER_PATH", value: env.CBDINOCLUSTER_PATH },
+  ]);
+
   const config: FitCliConfig = {
     version: FIT_CLI_CONFIG_VERSION,
     ...(cloud ? { cloud } : {}),
@@ -643,6 +678,7 @@ export function buildAutoConfig(
     ...(output ? { output } : {}),
     ...(gerrit ? { gerrit } : {}),
     ...(capella ? { capella } : {}),
+    ...(cbdinoclusterPath ? { cbdinoclusterPath } : {}),
   };
 
   return { config, log };

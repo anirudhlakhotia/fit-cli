@@ -8,6 +8,9 @@ import { runScriptPrefix } from "../../util/non-fit/fit-cli-log.js";
 import { loadEnvironments, type EnvironmentsFile } from "./environments.js";
 import { getJsonSecret } from "../../cloud/util/aws/secrets.js";
 
+/** Where to get cbdinocluster — shown to users when it can't be found. */
+export const CBDINOCLUSTER_URL = "https://github.com/couchbaselabs/cbdinocluster";
+
 /** Default environment block names (the "dev" blocks in environments.json5). */
 export const DEFAULT_CAPELLA_ENV = "dev";
 export const DEFAULT_RESULTS_ENV = "dev";
@@ -118,6 +121,8 @@ export interface FitCliConfig {
   output?: FitCliOutputConfig;
   gerrit?: FitCliGerritConfig;
   capella?: FitCliCapellaConfig;
+  /** Absolute path to the cbdinocluster binary, for non-PATH installs. */
+  cbdinoclusterPath?: string;
 }
 
 export interface FitCliConfigResult {
@@ -276,6 +281,8 @@ export function validateFitCliConfig(raw: unknown): FitCliConfig {
       })
     : undefined;
 
+  const cbdinoclusterPath = readOptionalString(raw, "cbdinoclusterPath", "cbdinoclusterPath");
+
   return {
     version: FIT_CLI_CONFIG_VERSION,
     ...(cloud ? { cloud } : {}),
@@ -283,6 +290,7 @@ export function validateFitCliConfig(raw: unknown): FitCliConfig {
     ...(output ? { output } : {}),
     ...(gerrit && Object.keys(gerrit).length > 0 ? { gerrit } : {}),
     ...(capella && Object.keys(capella).length > 0 ? { capella } : {}),
+    ...(cbdinoclusterPath ? { cbdinoclusterPath } : {}),
   };
 }
 
@@ -399,6 +407,19 @@ export function resolveGithubToken(
   const env = options.env ?? process.env;
   const config = options.config ?? loadFitCliConfig(options.path).config;
   return config?.github?.token ?? env.GITHUB_TOKEN ?? env.GH_TOKEN;
+}
+
+/**
+ * Resolve the path to the cbdinocluster binary. Priority: cbdinoclusterPath in
+ * the fit-cli config → CBDINOCLUSTER_PATH env var. Returns undefined when neither
+ * is set, in which case callers fall back to PATH lookup.
+ */
+export function resolveCbdinoclusterPath(
+  options: { config?: FitCliConfig; path?: string; env?: NodeJS.ProcessEnv } = {},
+): string | undefined {
+  const env = options.env ?? process.env;
+  const config = options.config ?? loadFitCliConfig(options.path).config;
+  return config?.cbdinoclusterPath ?? (env.CBDINOCLUSTER_PATH?.trim() || undefined);
 }
 
 /**
