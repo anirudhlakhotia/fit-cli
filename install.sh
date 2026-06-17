@@ -44,7 +44,7 @@ main() {
   local tmp
   tmp="$(mktemp)"
 
-  curl -fsSL "$url" -o "$tmp"
+  curl -fL --progress-bar "$url" -o "$tmp"
   chmod +x "$tmp"
 
   if [[ -w "$INSTALL_DIR" ]]; then
