@@ -12,6 +12,7 @@ instances:
       cbdinocluster:
         init:
           # Passed to `cbdinocluster init` on clean environments to set up ~/.cbdinocluster.
+          # On localhost, init is skipped and your existing ~/.cbdinocluster is used as-is.
           # Edit to taste; fit-cli appends your GitHub credentials at runtime.
           args: '--auto --disable-aws --disable-azure --disable-capella --disable-gcp --disable-k8s --disable-dns --docker-network fit'
     clusters:
