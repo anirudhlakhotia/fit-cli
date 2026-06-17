@@ -12,7 +12,7 @@ import {
   formatFailureSummaryLine,
   type RunOutput,
 } from "./artifacts.js";
-import { installFitCliConsoleFormatting, fitCliError } from "./fit-cli-log.js";
+import { installFitCliConsoleFormatting, fitCliError, runScriptPrefix } from "./fit-cli-log.js";
 import { startSessionLog, startDebugLog } from "./proc.js";
 import { ensurePromptSession } from "./replay.js";
 import { emitGhaArtifactNotice } from "../../fit/util/gha.js";
@@ -82,7 +82,7 @@ export function runCli(main: () => Promise<void | Partial<RunOutput>>): void {
         }
       }
       emitGhaArtifactNotice();
-      console.log(`\nZip artifacts: zip -r ${promptSession.runDir}.zip ${promptSession.runDir}`);
+      console.log(`\nZip artifacts: ${runScriptPrefix("archive")} zip ${promptSession.runDir}`);
       if (runOutput?.worstFailure && worstFailureShouldExitNonZero(runOutput.worstFailure)) {
         fitCliError(formatFailureSummaryLine(runOutput.worstFailure, runOutput.failureCount ?? 1));
         await Promise.all([sessionLog.flush(), debugLog.flush()]);

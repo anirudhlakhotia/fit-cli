@@ -17,6 +17,7 @@ import { runFromDefinition } from "../functional/run-from-definition/run-from-de
 import type { DefinitionFormat } from "../shared/definition/generate-definition.js";
 import { extractPushGistVisibility, type GistVisibility } from "../shared/definition/push-gist.js";
 import { definitionDispatch } from "../definition/definition.js";
+import { runArchiveMain } from "../archive/archive.js";
 import { runConfigMain } from "../config/config.js";
 import { runEditWorkflow } from "../config/edit.js";
 import { defaultFitCliConfigPath } from "../util/config.js";
@@ -219,6 +220,7 @@ export async function main(): Promise<RunOutput> {
 }
 
 const RUN_SCRIPTS: Record<string, (() => void) | undefined> = {
+  "archive": runArchiveMain,
   "config": runConfigMain,
   "cloud-instances": runCloudInstancesMain,
   "secrets": runSecretsMain,
