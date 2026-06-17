@@ -23,7 +23,14 @@ import { mergeConfigPieces, type ConfigPiece, type PieceData } from "../../../ut
 import { DEFAULT_PERFORMER_PORT } from "../../performers/util/performer-port.js";
 import { type ResultsDatabase } from "../../shared/util/results-database.js";
 import { AUTO_GENERATED_MARKER } from "../../shared/fit-configuration/write-fit-configuration.js";
-import { DEFAULT_CLUSTER_VERSION } from "../../../cluster/cluster-create/build-cluster-def.js";
+
+/**
+ * Default Couchbase Server version for situational runs that create Capella
+ * clusters. Capella currently supports 7.6 here; keep this separate from the
+ * self-managed cbdinocluster default so functional cluster-create changes do not
+ * silently break SIT/FIT cloud provisioning.
+ */
+export const DEFAULT_CAPELLA_CLUSTER_VERSION = "7.6";
 
 /** How cbdino should build the cluster the situational tests run against. */
 export interface CbdinoSettings {
@@ -35,7 +42,7 @@ export interface CbdinoSettings {
 }
 
 export const DEFAULT_CBDINO_SETTINGS: CbdinoSettings = {
-  version: DEFAULT_CLUSTER_VERSION,
+  version: DEFAULT_CAPELLA_CLUSTER_VERSION,
   cbDinoClusterAppPath: "cbdinocluster",
   enablePrivateEndpoint: false,
 };

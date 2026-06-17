@@ -10,21 +10,21 @@
 {
   version: 1,
   type: 'fit',
+  description: '{AWS:{cbdino(3n@8.0-stable):[{Java@latest,functional,SanityTest}]}}',
   instances: [
     {
       aws: {},
       setup: {
         cbdinocluster: {
           init: {
-            // Passed to `cbdinocluster init` on clean environments to set up ~/.cbdinocluster.
-            // Edit to taste; fit-cli appends your GitHub credentials at runtime.
+            // Passed to `cbdinocluster init` on clean environments to set up ~/.cbdinocluster.  Added at runtime: GitHub creds
             args: '--auto --disable-aws --disable-azure --disable-capella --disable-gcp --disable-k8s --disable-dns --docker-network fit',
           },
         },
       },
       clusters: [
         {
-          clusterConfig: 'cluster-clean', // resolved from clusterConfigs below
+          clusterConfig: 'cluster-0',
           sessions: [
             {
               performer: {
@@ -34,9 +34,11 @@
               runs: [
                 {
                   type: 'functional',
-                  fitConfig: 'fit-config-0', // resolved from fitConfigs below
+                  fitConfig: 'fit-config-0',
                   tests: {
-                    classes: ['com.couchbase.client.kv.SanityTest'],
+                    classes: [
+                      'com.couchbase.client.kv.SanityTest',
+                    ],
                   },
                 },
               ],
@@ -46,26 +48,23 @@
       ],
     },
   ],
-
-  // Reusable cluster definitions (referenced by id above).
   clusterConfigs: [
     {
-      id: 'cluster-clean',
+      id: 'cluster-0',
       cbdinocluster: {
         config: {
           nodes: [
             {
               count: 3,
-              version: '8.1.0-2188',
-              services: ['kv', 'n1ql', 'index', 'fts'],
+              version: '8.0-stable',  // resolved by fit-cli at runtime
+              services: [
+                'kv',
+                'n1ql',
+                'index',
+                'fts',
+              ],
             },
           ],
-          // Per-service RAM quotas (MB) for the docker deployer. On a single host the 3
-          // nodes share the instance's RAM, and cbdinocluster rejects a total quota above
-          // ~80% of the node's visible RAM. These quotas (kv + fts + index's 256 default
-          // = 8448MB) need the default functional instance (c5.2xlarge, 16 GiB) — they
-          // don't fit on an 8 GiB box. Lower them, or bump aws.instanceType, for a smaller
-          // instance.
           docker: {
             'kv-memory': 4096,
             'fts-memory': 4096,
@@ -75,15 +74,13 @@
       },
     },
   ],
-
-  // Reusable fitConfig definitions (referenced by id above).
-  // Each is used as a base when generating FITConfiguration.json. Anything here will be
-  // copied into the config (unless overwritten by fit-cli), and fit-cli fills in fields
-  // like ${defaultHostname} at runtime once cluster details are known.
+  // Each fitConfig is used as a base when generating FITConfiguration.json.  Anything here will be copied into the config (unless overwritten by fit-cli).
+  // fit-cli will provide some fields like ${defaultHostname} at runtime when cluster details are known.
   fitConfigs: [
     {
       id: 'fit-config-0',
       config: {
+        // fit-cli fills ${defaultHostname} (and rest.hostname) in at runtime once the cluster is up.
         clusterAccess: {
           connectionString: 'couchbase://${defaultHostname}',
           username: 'Administrator',
@@ -97,7 +94,15 @@
             hostname: 'host.docker.internal',
           },
         },
-        excludeTests: ['situational'],
+        // numReplicas >= 1 is required for FTS tests to pass.
+        bucketConfig: {
+          numReplicas: 1,
+          bucketType: 'couchbase',
+          storage: 'couchstore',
+        },
+        excludeTests: [
+          'situational',
+        ],
       },
     },
   ],

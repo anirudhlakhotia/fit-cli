@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   buildSituationalConfiguration,
+  DEFAULT_CAPELLA_CLUSTER_VERSION,
   DEFAULT_CBDINO_SETTINGS,
 } from "../build-situational-configuration.js";
 
@@ -58,6 +59,7 @@ test("cbdino settings default to a 7.6 cluster on the PATH binary", () => {
     situational: { cbdino: typeof DEFAULT_CBDINO_SETTINGS };
   };
   assert.deepEqual(config.situational.cbdino, DEFAULT_CBDINO_SETTINGS);
+  assert.equal(config.situational.cbdino.version, DEFAULT_CAPELLA_CLUSTER_VERSION);
 });
 
 test("the placeholder clusterAccess is present but flagged as ignored", () => {
