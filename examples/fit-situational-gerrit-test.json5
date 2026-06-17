@@ -70,7 +70,7 @@
         excludeTests: [],
         situational: {
           cbdino: {
-            version: '8.0-stable',  // resolved by fit-cli at runtime
+            version: '7.6',
             cbDinoClusterAppPath: 'cbdinocluster',
             enablePrivateEndpoint: false,
           },

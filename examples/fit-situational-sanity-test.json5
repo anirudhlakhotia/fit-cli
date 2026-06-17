@@ -4,55 +4,70 @@
 {
   version: 1,
   type: 'fit',
+  description: '{AWS:{clusterless:[{Java@latest,situational,standard-qe}]}}',
   instances: [
     {
       aws: {},
-      // FIT/SIT creates its own clusters, so none are set up here.
-      clusters: [],
       setup: {
-        // FIT/SIT creates its own clusters via cbdinocluster; this init config must be present.
         cbdinocluster: {
           init: {
-            // Passed to `cbdinocluster init` on clean environments to set up ~/.cbdinocluster.
-            // SIT leaves Capella enabled (no --disable-capella); fit-cli appends your GitHub
-            // credentials and forwards the resolved Capella settings at runtime.
-            args: '--auto --disable-aws --disable-azure --disable-gcp --disable-k8s --disable-dns --docker-network fit',
+            // Passed to `cbdinocluster init` on clean environments to set up ~/.cbdinocluster.  Added at runtime: GitHub creds
+            args: '--auto --aws-region us-west-2 --disable-azure --disable-gcp --disable-k8s --disable-dns --docker-network fit',
           },
         },
-        // Which Capella environment this box's clusters are created in (a key under `capella`
-        // in environments.json5). One box = one ~/.cbdinocluster identity, so it lives here
-        // alongside the cbdinocluster setup. Omit for the default 'dev'. Credentials are fetched
-        // from that environment's AWS Secrets Manager secret (your personal CAPELLA_USER/PASS
-        // or `config edit` creds take precedence locally).
         capellaEnvironment: 'dev',
       },
+      // FIT/SIT creates its own clusters, so none are set up here.
+      clusters: [],
       // Sessions not tied to any particular cluster (the name distinguishes these from sessions nested under clusters:)
       clusterlessSessions: [
         {
           performer: {
-            sdk: 'kotlin',
-            onPortInUse: 'restart',
+            sdk: 'java',
+            onPortInUse: 'reuse',
           },
           runs: [
             {
               type: 'situational',
+              fitConfig: 'fit-config-0',
+              tests: {
+                presets: [
+                  'standard-qe',
+                ],
+              },
               situational: {
                 database: {
                   mode: 'hosted',
-                  // Which results environment to store/view results in (a key under `results`
-                  // in environments.json5: 'dev'=faas.couchbase.com, 'prod'=performance-sdk).
-                  // Omit for the default 'dev'. The DB password is fetched from that
-                  // environment's AWS Secrets Manager secret at run time.
-                  resultsEnvironment: 'prod',
+                  resultsEnvironment: 'dev',
                 },
-              },
-              tests: {
-                classes: ['com.couchbase.situational.tests.VolumeTest#steadyStateKvGets'],
               },
             },
           ],
         },
       ],
+    },
+  ],
+  // Each fitConfig is used as a base when generating FITConfiguration.json.  Anything here will be copied into the config (unless overwritten by fit-cli).
+  // fit-cli will provide some fields like ${defaultHostname} at runtime when cluster details are known.
+  fitConfigs: [
+    {
+      id: 'fit-config-0',
+      config: {
+        // Ignored for situational-only runs — cbdino creates and manages the cluster.
+        clusterAccess: {
+          defaultHostname: 'localhost',
+          username: 'Administrator',
+          password: 'password',
+        },
+        // fit-cli will inject performerPorts at runtime.
+        excludeTests: [],
+        situational: {
+          cbdino: {
+            version: '7.6',
+            enablePrivateEndpoint: false,
+          },
+        },
+      },
     },
   ],
 }
