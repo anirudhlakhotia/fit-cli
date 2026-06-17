@@ -5,15 +5,11 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { sdkByValue } from "../../../../util/sdk/sdks.js";
 import type { ClusterCommandExecutor } from "../../../../cluster/cluster-create/allocate-cluster.js";
-import type {
-  ResolvedFunctionalExecutionGroup,
-  ResolvedSituationalExecutionRun,
-} from "../../../shared/definition/resolve-definition.js";
+import type { ResolvedFunctionalExecutionGroup } from "../../../shared/definition/resolve-definition.js";
 import type { FitExecutionContext } from "../../../shared/util/remote-fit-run.js";
 import {
   cbdinoclusterSetupFailed,
   finalizeRunFromDefinition,
-  runSituationalTests,
   runTests,
   setupCluster,
 } from "../run-from-definition.js";
@@ -219,61 +215,6 @@ test("runTests stops before later steps when the cluster REST sanity check fails
   assert.equal(ranDriver, false);
 });
 
-function situationalIteration(): ResolvedSituationalExecutionRun {
-  const sdk = sdkByValue("java");
-  assert.ok(sdk);
-  return {
-    type: "situational",
-    path: { instanceIndex: 0, sessionIndex: 0, runIndex: 0, clusterlessSession: true },
-    sdk,
-    performerPort: 8060,
-    testSelection: { allTests: [], selectedTests: [] },
-    onPortInUse: "restart",
-    extraMavenArgs: ["-Dgroups=situational,cbDino"],
-    databaseMode: "hosted",
-    resultsEnvironment: "dev",
-  };
-}
-
-const READY_DATABASE = {
-  ready: true as const,
-  database: { jdbc: "jdbc:postgresql://db:5432/perf", username: "postgres", password: "secret" },
-  artifacts: [],
-  details: [],
-};
-
-test("runSituationalTests throws FatalToSession when the test driver reports failure", async () => {
-  await assert.rejects(
-    () =>
-      runSituationalTests(fitExecutionContext(), situationalIteration(), {
-        resolveResultsDatabaseFn: () => Promise.resolve(READY_DATABASE),
-        generateSituationalConfigurationFn: () => ({ path: "/tmp/fit.json", artifacts: [], details: [] }),
-        runTestDriverFn: () => Promise.resolve({ ok: false, logFile: "/tmp/driver.log", artifacts: [], details: [] }),
-      }),
-    { message: "FIT tests failed — check the test-driver log for details." },
-  );
-});
-
-test("runSituationalTests stops before generating a config when the database isn't ready", async () => {
-  let generatedConfig = false;
-  let ranDriver = false;
-
-  const result = await runSituationalTests(fitExecutionContext(), situationalIteration(), {
-    resolveResultsDatabaseFn: () => Promise.resolve({ ready: false, artifacts: [], details: [] }),
-    generateSituationalConfigurationFn: () => {
-      generatedConfig = true;
-      return { path: "/tmp/fit.json", artifacts: [], details: [] };
-    },
-    runTestDriverFn: () => {
-      ranDriver = true;
-      return Promise.resolve({ ok: true, logFile: "/tmp/driver.log", artifacts: [], details: [] });
-    },
-  });
-
-  assert.deepEqual(result, { artifacts: [], details: [] });
-  assert.equal(generatedConfig, false);
-  assert.equal(ranDriver, false);
-});
 
 test("runTests throws FatalToSession when the test driver reports failure", async () => {
   await assert.rejects(
@@ -301,57 +242,3 @@ test("runTests throws FatalToSession when performer sanity fails", async () => {
   );
 });
 
-test("runSituationalTests generates the situational config then runs the driver", async () => {
-  const calls: string[] = [];
-  let configPerformerPort: number | undefined;
-  let driverMavenArgs: readonly string[] | undefined;
-
-  const result = await runSituationalTests(fitExecutionContext(), situationalIteration(), {
-    resolveResultsDatabaseFn: () => {
-      calls.push("database");
-      return Promise.resolve(READY_DATABASE);
-    },
-    generateSituationalConfigurationFn: (_db, _cbdino, _rootDir, _path, performerPort) => {
-      calls.push("config");
-      configPerformerPort = performerPort;
-      return { path: "/tmp/fit.json", artifacts: [], details: [] };
-    },
-    runTestDriverFn: (_execution, _selection, _path, _fitConfigPath, extraMavenArgs) => {
-      calls.push("driver");
-      driverMavenArgs = extraMavenArgs;
-      return Promise.resolve({ ok: true, logFile: "/tmp/driver.log", artifacts: [], details: [] });
-    },
-  });
-
-  assert.deepEqual(calls, ["database", "config", "driver"]);
-  assert.equal(configPerformerPort, 8060);
-  assert.deepEqual(driverMavenArgs, ["-Dgroups=situational,cbDino"]);
-  assert.ok(result.details.some((detail) => detail.label === "Results UI"));
-});
-
-test("runSituationalTests resolves stable-version aliases before generating the situational config", async () => {
-  let cbdinoVersion: string | undefined;
-
-  const result = await runSituationalTests(fitExecutionContext(), {
-    ...situationalIteration(),
-    fitConfig: {
-      situational: {
-        cbdino: {
-          version: "8.0-stable",
-        },
-      },
-    },
-  }, {
-    resolveResultsDatabaseFn: () => Promise.resolve(READY_DATABASE),
-    resolveVersionAliasFn: (version) => Promise.resolve(version === "8.0-stable" ? "8.0.2-1234" : version),
-    generateSituationalConfigurationFn: (_db, _cbdino, _rootDir, _path, _performerPort, fitConfigPiece) => {
-      const situational = fitConfigPiece?.situational as { cbdino?: { version?: string } } | undefined;
-      cbdinoVersion = situational?.cbdino?.version;
-      return { path: "/tmp/fit.json", artifacts: [], details: [] };
-    },
-    runTestDriverFn: () => Promise.resolve({ ok: true, logFile: "/tmp/driver.log", artifacts: [], details: [] }),
-  });
-
-  assert.equal(cbdinoVersion, "8.0.2-1234");
-  assert.ok(result.details.some((detail) => detail.label === "Results UI"));
-});

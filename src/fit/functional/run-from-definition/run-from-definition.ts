@@ -583,7 +583,6 @@ function withCbdinoclusterPath(fitConfig: PieceData | undefined, path: string): 
 async function withResolvedSituationalCbdino(
   fitConfig: PieceData | undefined,
   path: string,
-  resolveVersionAliasFn: typeof resolveAlias = resolveAlias,
 ): Promise<PieceData> {
   const config = withCbdinoclusterPath(fitConfig, path);
   const situational = ((config.situational ?? {}) as Record<string, unknown>);
@@ -596,7 +595,7 @@ async function withResolvedSituationalCbdino(
     ...config,
     situational: {
       ...situational,
-      cbdino: { ...cbdino, version: await resolveVersionAliasFn(version) },
+      cbdino: { ...cbdino, version: await resolveAlias(version) },
     },
   };
 }
@@ -612,25 +611,15 @@ export async function runSituationalTests(
   execution: FitExecutionContext,
   run: ResolvedSituationalExecutionRun,
   dependencies: {
-    resolveResultsDatabaseFn?: typeof resolveResultsDatabase;
-    generateSituationalConfigurationFn?: typeof generateSituationalConfiguration;
-    runTestDriverFn?: typeof runTestDriver;
-    resolveVersionAliasFn?: typeof resolveAlias;
     recordResult?: RecordRunResult;
   } = {},
 ): Promise<RunOutput> {
-  const resolveResultsDatabaseFn = dependencies.resolveResultsDatabaseFn ?? resolveResultsDatabase;
-  const generateSituationalConfigurationFn =
-    dependencies.generateSituationalConfigurationFn ?? generateSituationalConfiguration;
-  const runTestDriverFn = dependencies.runTestDriverFn ?? runTestDriver;
-  const resolveVersionAliasFn = dependencies.resolveVersionAliasFn ?? resolveAlias;
-
   console.log(
     "\nNote: for a full cbdino run the performer must share cbdino's Docker network " +
       "(usually `dinonet`) so it can reach the cluster cbdino creates.",
   );
 
-  const database = await resolveResultsDatabaseFn(run.databaseMode, run.resultsEnvironment, execution.rootDir);
+  const database = await resolveResultsDatabase(run.databaseMode, run.resultsEnvironment, execution.rootDir);
   if (!database.ready) {
     return { artifacts: database.artifacts, details: database.details };
   }
@@ -641,9 +630,9 @@ export async function runSituationalTests(
   // Resolve cbdinocluster to its absolute path on the execution host so the FIT
   // test driver can invoke it even when its environment doesn't inherit the same PATH.
   const cbdinoclusterPath = await resolveCbdinoclusterPathOnExecution(execution);
-  const fitConfigPiece = await withResolvedSituationalCbdino(run.fitConfig, cbdinoclusterPath, resolveVersionAliasFn);
+  const fitConfigPiece = await withResolvedSituationalCbdino(run.fitConfig, cbdinoclusterPath);
 
-  const fitConfig = generateSituationalConfigurationFn(
+  const fitConfig = generateSituationalConfiguration(
     database.database,
     undefined,
     execution.rootDir,
@@ -655,7 +644,7 @@ export async function runSituationalTests(
   details.push(...fitConfig.details);
 
   const testSelection = expandSituationalPresets(run.testSelection);
-  const testRun = await runTestDriverFn(
+  const testRun = await runTestDriver(
     execution,
     testSelection,
     run.path,
@@ -907,6 +896,8 @@ interface TeardownInputs {
   teardown: ExecutionTargetTeardown;
   /** Whether the run forced every execution group onto localhost; persisted so resume matches. */
   forceLocalhost: boolean;
+  /** Whether the run forced every execution group onto a fresh EC2 instance; persisted so resume matches. */
+  forceAws: boolean;
   clusterState?: ResumeClusterState;
   performers: readonly RunningPerformer[];
   performerStates: readonly ResumePerformerState[];
@@ -1001,7 +992,7 @@ function formatRunResultsSummary(results: readonly RunResultSummary[]): string |
  * failed before it came up); only the instance is then up to leave or terminate.
  */
 async function teardownRun(inputs: TeardownInputs): Promise<{ leftUp: boolean }> {
-  const { definitionPath, runDir, executionGroupIndex, runIndex, resumePath, execution, teardown, forceLocalhost, clusterState, performers, performerStates, results, cbcollect = false } = inputs;
+  const { definitionPath, runDir, executionGroupIndex, runIndex, resumePath, execution, teardown, forceLocalhost, forceAws, clusterState, performers, performerStates, results, cbcollect = false } = inputs;
 
   const nothingToLeaveUp = !teardown.terminate && !clusterState && performerStates.length === 0;
   if (nothingToLeaveUp) {
@@ -1039,6 +1030,7 @@ async function teardownRun(inputs: TeardownInputs): Promise<{ leftUp: boolean }>
       executionGroupIndex,
       startRunIndex: runIndex,
       ...(forceLocalhost ? { forceLocalhost } : {}),
+      ...(forceAws ? { forceAws } : {}),
       target: targetStateFrom(teardown),
       ...(clusterState ? { cluster: clusterState } : {}),
       performers: [...performerStates],
@@ -1121,35 +1113,36 @@ function isInteractiveRun(): boolean {
  * honour the definition file so a CI run provisions whatever the file asks for.
  */
 async function resolveExecutionOverride(
+  groups: readonly ResolvedExecutionGroup[],
   savedState: RunState | undefined,
 ): Promise<ExecutionOverride> {
   if (savedState) {
-    return { kind: savedState.forceLocalhost ? "localhost" : "definition" };
+    if (savedState.forceLocalhost) return { kind: "localhost" };
+    if (savedState.forceAws) return { kind: "aws" };
+    return { kind: "definition" };
   }
   if (!isInteractiveRun()) {
     return { kind: "definition" };
   }
+  const definitionDestination =
+    groups.length === 1
+      ? groups[0].instance.kind
+      : groups.map((g, i) => `group ${i + 1}: ${g.instance.kind}`).join(", ");
+  const allLocalhost = groups.every((g) => g.instance.kind === "localhost");
   for (let attempt = 1; ; attempt++) {
     const choice = await select<ExecutionOverride["kind"]>({
       promptId: `run-from-definition.execution-override.attempt-${attempt}`,
       message: "Where should this run execute?",
       default: "definition",
       choices: [
-        { name: "Where the definition says (the default)", value: "definition" },
+        { name: `Where the definition says: ${definitionDestination}`, value: "definition" },
+        ...(allLocalhost ? [{ name: "On a fresh EC2 instance (provision a new one)", value: "aws" as const }] : []),
         { name: "Everything on localhost (good for testing and local development)", value: "localhost" },
         { name: "Everything on an existing EC2 instance (good for rapid iteration)", value: "existing" },
       ],
     });
-    if (choice === "localhost") {
-      return { kind: "localhost" };
-    }
-    if (choice === "definition") {
-      const groupSummary =
-        groups.length === 1
-          ? `${groups[0].instance.kind}`
-          : groups.map((g, i) => `group ${i + 1}: ${g.instance.kind}`).join(", ");
-      console.log(`\n→ Definition says: ${groupSummary}`);
-      return { kind: "definition" };
+    if (choice === "definition" || choice === "localhost" || choice === "aws") {
+      return { kind: choice };
     }
     const existing = await selectExistingInstanceForOverride(attempt);
     if (existing !== "back") {
@@ -1164,6 +1157,8 @@ function describeExecutionOverride(override: ExecutionOverride, declaredKind: st
   switch (override.kind) {
     case "localhost":
       return "localhost (forced)";
+    case "aws":
+      return "EC2 (fresh instance, forced)";
     case "existing":
       return `existing EC2 instance ${override.existing.host} (forced)`;
     default:
@@ -1312,10 +1307,11 @@ export async function runFromDefinition(
 
   // One run-wide choice over where every execution group runs: honour the file, force
   // localhost, or run all groups on one existing EC2 instance. Each group then provisions
-  // (or reconnects) its own target accordingly. `forceLocalhost` is the part we persist for
-  // resume; the existing-instance override is a within-run convenience and isn't saved.
-  const executionOverride = await resolveExecutionOverride(savedState);
+  // (or reconnects) its own target accordingly. `forceLocalhost`/`forceAws` are the parts we
+  // persist for resume; the existing-instance override is a within-run convenience and isn't saved.
+  const executionOverride = await resolveExecutionOverride(executionGroups.slice(startCycleIndex), savedState);
   const forceLocalhost = executionOverride.kind === "localhost";
+  const forceAws = executionOverride.kind === "aws";
 
   // Local connectivity check — skip when running remotely, since EC2 instances are
   // in the same VPC as faas.couchbase.com and can reach it without VPN.
@@ -1630,6 +1626,7 @@ export async function runFromDefinition(
       ...(activeExecution ? { execution: activeExecution } : {}),
       teardown: activeTeardown,
       forceLocalhost,
+      forceAws,
       ...(activeClusterState ? { clusterState: activeClusterState } : {}),
       performers: activePerformers,
       performerStates: activePerformerStates,
