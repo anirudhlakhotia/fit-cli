@@ -2,9 +2,9 @@
 /**
  * Top-level entry for managing fit-cli EC2 instances.
  *
- * bun run cloud-instances list
- * bun run cloud-instances manage [--tag key=value] [--key <key-name>]
- * bun run cloud-instances delete <instance-id> [--force]
+ * bun run cloud-instances list [--all-users]
+ * bun run cloud-instances manage [--all-users] [--tag key=value] [--key <key-name>]
+ * bun run cloud-instances remove <instance-id> [--force]
  * bun run cloud-instances remove-all [--all-users] [--older-than <duration>] [--dry-run] [--force]
  * bun run cloud-instances --help
  */
@@ -32,18 +32,22 @@ function helpText(): string {
   return `Manage fit-cli EC2 instances.
 
 Usage:
-  ${p} list
-  ${p} manage [--tag key=value] [--key <key-name>]
-  ${p} delete <instance-id> [--force]
+  ${p} list [--all-users]
+  ${p} manage [--all-users] [--tag key=value] [--key <key-name>]
+  ${p} remove <instance-id> [--force]
   ${p} remove-all [--all-users] [--older-than <duration>] [--dry-run] [--force]
   ${p} --help
 
 Subcommands:
-  list        Show all fit-cli instances with their status and cost context.
+  list        Show fit-cli instances (yours by default; --all-users for everyone's).
   manage      Interactively browse and act on instances (terminate, view details).
-  delete      Terminate an instance by id (prompts for confirmation unless --force).
+              Scoped to your instances by default; --all-users for everyone's.
+  remove      Terminate an instance by id (prompts for confirmation unless --force).
   remove-all  Terminate every fit-cli instance you created (add --all-users for
               everyone's; prompts for confirmation unless --force).
+
+list / manage options:
+  --all-users        Include instances created by everyone, not just you.
 
 remove-all options:
   --all-users        Include instances created by everyone, not just you.
@@ -55,19 +59,29 @@ remove-all options:
 }
 
 async function cmdList(argv: string[]): Promise<void> {
+  const allUsers = argv.includes("--all-users");
   await prepareAwsCli();
-
-  logAwsAction("Listing fit-cli EC2 instances", {
-    tag: `${FIT_OWNER_TAG.key}=${FIT_OWNER_TAG.value}`,
-    states: LIVE_STATES,
-  });
 
   const creds = await checkCredentials();
   const context: InstanceListContext | undefined = creds.ok
     ? { account: creds.identity.account, creator: creds.identity.arn.split("/").at(-1) ?? creds.identity.userId }
     : undefined;
 
-  const instances = await listInstances(FIT_OWNER_TAG);
+  if (!allUsers && !creds.ok) {
+    throw new Error(
+      "Can't determine who you are from AWS credentials, so can't scope listing to your own instances. " +
+        "Fix your credentials, or pass --all-users to list every fit-cli instance.",
+    );
+  }
+
+  logAwsAction("Listing fit-cli EC2 instances", {
+    tag: `${FIT_OWNER_TAG.key}=${FIT_OWNER_TAG.value}`,
+    states: LIVE_STATES,
+    scope: allUsers ? "all users" : "current user",
+  });
+
+  const all = await listInstances(FIT_OWNER_TAG);
+  const instances = allUsers ? all : all.filter((i) => i.creator === context?.creator);
 
   if (instances.length === 0) {
     console.log(`No fit-cli EC2 instances found in ${AWS_REGION}.`);
@@ -82,6 +96,7 @@ async function cmdList(argv: string[]): Promise<void> {
 }
 
 async function cmdManage(argv: string[]): Promise<void> {
+  const allUsers = argv.includes("--all-users");
   await prepareAwsCli();
 
   const flag = (name: string): string | undefined => {
@@ -101,20 +116,30 @@ async function cmdManage(argv: string[]): Promise<void> {
     };
   }
 
+  const creds = await checkCredentials();
+  const creator = creds.ok ? callerCreator(creds.identity) : undefined;
+
+  if (!allUsers && !creator) {
+    throw new Error(
+      "Can't determine who you are from AWS credentials, so can't scope manage to your own instances. " +
+        "Fix your credentials, or pass --all-users to manage every fit-cli instance.",
+    );
+  }
+
   logAwsAction(
     "Managing EC2 instances",
     query.kind === "key"
-      ? { keyName: query.keyName, states: LIVE_STATES }
-      : { tag: query.tag ? `${query.tag.key}=${query.tag.value}` : "fit-cli=owned", states: LIVE_STATES },
+      ? { keyName: query.keyName, states: LIVE_STATES, scope: allUsers ? "all users" : "current user" }
+      : { tag: query.tag ? `${query.tag.key}=${query.tag.value}` : "fit-cli=owned", states: LIVE_STATES, scope: allUsers ? "all users" : "current user" },
   );
 
-  await manageInstances(query);
+  await manageInstances(query, allUsers ? undefined : creator);
 }
 
-async function cmdDelete(argv: string[]): Promise<void> {
+async function cmdRemove(argv: string[]): Promise<void> {
   const instanceId = argv.find((arg) => !arg.startsWith("-"));
   if (!instanceId) {
-    throw new Error(`Usage: ${runScriptPrefix("cloud-instances")} delete <instance-id> [--force]`);
+    throw new Error(`Usage: ${runScriptPrefix("cloud-instances")} remove <instance-id> [--force]`);
   }
 
   const force = argv.includes("--force");
@@ -134,7 +159,7 @@ async function cmdDelete(argv: string[]): Promise<void> {
 
   if (!force) {
     const confirmed = await confirm({
-      promptId: "cloud-instances.delete.confirm",
+      promptId: "cloud-instances.remove.confirm",
       message: `Terminate ${instanceId}? This cannot be undone.`,
       default: false,
     });
@@ -272,8 +297,8 @@ export function runCloudInstancesMain(): void {
       return;
     }
 
-    if (subcommand === "delete") {
-      await cmdDelete(rest);
+    if (subcommand === "remove") {
+      await cmdRemove(rest);
       return;
     }
 

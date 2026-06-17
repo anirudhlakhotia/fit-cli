@@ -129,11 +129,12 @@ async function terminateWithConfirm(
  * until they quit. Each pass re-lists from AWS so the view stays accurate after
  * a termination.
  */
-export async function manageInstances(query: InstanceQuery): Promise<void> {
+export async function manageInstances(query: InstanceQuery, creatorFilter?: string): Promise<void> {
   // Prompt ids must be unique within a run, so each pass of the loop carries its
   // own round number to keep its prompts distinct from the previous pass's.
   for (let round = 0; ; round++) {
-    const instances = await findInstances(query);
+    const all = await findInstances(query);
+    const instances = creatorFilter ? all.filter((i) => i.creator === creatorFilter) : all;
     reportInstances(instances);
 
     const choice = await chooseInstance(instances, round);
