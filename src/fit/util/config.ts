@@ -399,7 +399,7 @@ export function loadFitCliConfig(path: string = defaultFitCliConfigPath()): FitC
  * The GitHub token used to clone the private FIT repos. We prefer the value
  * saved in the fit-cli config, then fall back to the usual environment variables,
  * so that someone who already exports GITHUB_TOKEN/GH_TOKEN doesn't have to run
- * `bun run config -- edit`. Loads the config itself when a parsed config isn't supplied.
+ * `bun run config edit`. Loads the config itself when a parsed config isn't supplied.
  */
 export function resolveGithubToken(
   options: { config?: FitCliConfig; path?: string; env?: NodeJS.ProcessEnv } = {},

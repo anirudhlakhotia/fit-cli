@@ -250,20 +250,29 @@ export function isFitBinary(): boolean {
 }
 
 /**
- * Return the prefix for a `definition execute` command, adjusted for whether
- * the user is running as the compiled `fit` binary or via `bun run definition`.
- * When using `fit`, a definition file path is passed directly to the binary:
- *   fit [flags] <file>   ≡   bun run definition -- execute [flags] <file>
+ * Return the canonical invocation for a bun script, adapting to whether the
+ * user is running as the compiled `fit` binary or via `bun run`.
+ *   scriptInvocation("config") → "fit config"  OR  "bun run config"
  */
-export function definitionExecutePrefix(): string {
-  return isFitBinary() ? "fit" : "bun run definition -- execute";
+function scriptInvocation(script: string): string {
+  return isFitBinary() ? `fit ${script}` : `bun run ${script}`;
 }
 
 /**
- * Return the invocation prefix for a `fit run <script>` sub-command, adjusted
- * for whether the user is running as the compiled `fit` binary or via bun.
- *   fit run config edit   ≡   bun run config -- edit
+ * Return the prefix for a `definition execute` command, adjusted for whether
+ * the user is running as the compiled `fit` binary or via `bun run definition`.
+ * When using `fit`, a definition file path is passed directly to the binary:
+ *   fit [flags] <file>   ≡   bun run definition execute [flags] <file>
+ */
+export function definitionExecutePrefix(): string {
+  return isFitBinary() ? "fit" : `${scriptInvocation("definition")} execute`;
+}
+
+/**
+ * Return the invocation prefix for a sub-command script, adjusted for whether
+ * the user is running as the compiled `fit` binary or via bun.
+ *   fit config edit   ≡   bun run config edit
  */
 export function runScriptPrefix(script: string): string {
-  return isFitBinary() ? `fit run ${script}` : `bun run ${script} --`;
+  return scriptInvocation(script);
 }

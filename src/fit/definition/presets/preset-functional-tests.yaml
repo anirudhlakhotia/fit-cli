@@ -1,6 +1,6 @@
 # Preset: run all FIT functional tests for a given SDK against a cbdinocluster cluster.
 #
-# Placeholders filled in by `bun run definition -- generate-preset`:
+# Placeholders filled in by `bun run definition generate-preset`:
 #   {{SDK}}              — SDK value (java, kotlin, scala, cpp, dotnet, go, node, python, ruby, rust)
 #   {{PERFORMER_VERSION}} — Docker image tag for the performer (e.g. main, 4.2.0); omit the field to use the SDK default
 

@@ -787,7 +787,7 @@ function countRuns(definition: FitDefinition): number {
 const HELP = `Validate a fit definition file and print the parsed result.
 
 Primary usage:
-  bun run definition -- validate <file.json5>
+  bun run definition validate <file.json5>
 
 Direct invocation (for debugging):
   npx tsx src/fit/shared/definition/parse-definition.ts <file.json5>

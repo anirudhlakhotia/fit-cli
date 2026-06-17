@@ -6,7 +6,7 @@
  * `--resume-at` a point and pick those up instead of redoing the work — handy
  * while developing, after a manual fix.
  *
- *   bun run definition -- --resume-at=after-cluster-creation /tmp/fit-cli/<run>/fit.yaml
+ *   bun run definition execute --resume-at=after-cluster-creation /tmp/fit-cli/<run>/fit.yaml
  *
  * Pure logic — no IO — so the parsing is easy to unit test (see tests/).
  */

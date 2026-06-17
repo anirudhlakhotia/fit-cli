@@ -16,11 +16,11 @@
  * workspace, standing up a cluster and building a performer are all slow, so a
  * run can leave them up and a later invocation can `--resume-at` a point to
  * reuse everything up to it instead of redoing the work:
- *   bun run definition -- execute <file.yaml>                                          # everything
- *   bun run definition -- execute --resume-at=after-instance-creation <file>  # reuse instance
- *   bun run definition -- execute --resume-at=after-remote-preparation <file>  # reuse prepared box
- *   bun run definition -- execute --resume-at=after-cluster-creation <file>    # reuse cluster
- *   bun run definition -- execute --resume-at=after-performer <file>           # reuse cluster + performer
+ *   bun run definition execute <file.yaml>                                          # everything
+ *   bun run definition execute --resume-at=after-instance-creation <file>  # reuse instance
+ *   bun run definition execute --resume-at=after-remote-preparation <file>  # reuse prepared box
+ *   bun run definition execute --resume-at=after-cluster-creation <file>    # reuse cluster
+ *   bun run definition execute --resume-at=after-performer <file>           # reuse cluster + performer
  *
  * Run on its own (add --root <dir> to point at another workspace):
  *   npx tsx src/fit/functional/run-from-definition/run-from-definition.ts <file.yaml>
@@ -1643,7 +1643,7 @@ if (isMain(import.meta.url)) {
     const [definitionPath, ...extra] = rest;
     if (!definitionPath || extra.length > 0) {
       console.error(
-        "Primary usage: bun run definition -- execute <file.yaml> [--resume-at=<point>] [--resume-instance=<n>] [--resume-cluster=<n>] [--resume-session=<n>] [--resume-clusterless-session=<n>] [--resume-run=<n>] [--root <dir>] [--cbcollect]\n" +
+        "Primary usage: bun run definition execute <file.yaml> [--resume-at=<point>] [--resume-instance=<n>] [--resume-cluster=<n>] [--resume-session=<n>] [--resume-clusterless-session=<n>] [--resume-run=<n>] [--root <dir>] [--cbcollect]\n" +
           "Direct:        tsx src/workflows/fit-functional/run-from-definition/run-from-definition.ts <file.yaml> [--resume-at=<point>] [resume selectors]\n" +
           "  --resume-at: after-instance-creation | after-remote-preparation | after-cluster-creation | after-performer",
       );

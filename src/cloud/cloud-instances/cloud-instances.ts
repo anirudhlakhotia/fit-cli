@@ -2,11 +2,11 @@
 /**
  * Top-level entry for managing fit-cli EC2 instances.
  *
- * bun run cloud-instances -- list
- * bun run cloud-instances -- manage [--tag key=value] [--key <key-name>]
- * bun run cloud-instances -- delete <instance-id> [--force]
- * bun run cloud-instances -- remove-all [--all-users] [--older-than <duration>] [--dry-run] [--force]
- * bun run cloud-instances -- --help
+ * bun run cloud-instances list
+ * bun run cloud-instances manage [--tag key=value] [--key <key-name>]
+ * bun run cloud-instances delete <instance-id> [--force]
+ * bun run cloud-instances remove-all [--all-users] [--older-than <duration>] [--dry-run] [--force]
+ * bun run cloud-instances --help
  */
 import { isMain, runCli } from "../../util/non-fit/cli.js";
 import { logAwsAction, prepareAwsCli } from "../../cloud/util/aws/aws-cli.js";

@@ -2,8 +2,8 @@
 /**
  * fit archive — zip a run artifact directory and/or upload it to S3.
  *
- *   fit run archive -- zip <dir>
- *   fit run archive -- s3-upload [--zip] <dir> [<s3-uri>]
+ *   fit archive zip <dir>
+ *   fit archive s3-upload [--zip] <dir> [<s3-uri>]
  *
  * zip:        Creates <dir>.zip next to the source directory.
  * s3-upload:  Uploads the directory to S3, either as individual files (default)

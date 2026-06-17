@@ -2,12 +2,12 @@
 /**
  * Top-level dispatcher for the `config` bun script.
  *
- * bun run config -- edit [--auto] [--dry-run] [--disable-aws] [--disable-github]
- *                        [--aws-instance-type <t>]
- *                        [--github-user <u>] [--github-token <t>]
- *                        [--config-path <path>]
- * bun run config -- show [--config-path <path>]
- * bun run config -- --help
+ * bun run config edit [--auto] [--dry-run] [--disable-aws] [--disable-github]
+ *                     [--aws-instance-type <t>]
+ *                     [--github-user <u>] [--github-token <t>]
+ *                     [--config-path <path>]
+ * bun run config show [--config-path <path>]
+ * bun run config --help
  */
 import { isMain, runCli } from "../../util/non-fit/cli.js";
 import { installFitCliConsoleFormatting, runScriptPrefix } from "../../util/non-fit/fit-cli-log.js";
