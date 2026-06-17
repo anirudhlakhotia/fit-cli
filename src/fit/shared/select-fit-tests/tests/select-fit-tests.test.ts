@@ -10,12 +10,13 @@ import {
   filterFitTests,
   fitTestSearchSource,
   formatFitTestSelectionOutput,
-  listFitTestsInRepo,
-  listFitTestsArgs,
+  loadFitTestsFromCache,
   parseFitTests,
   renderSelectedFitTestsAnswer,
   serializeSelectedFitTestsForReplay,
   summarizeFitTestSelection,
+  FUNCTIONAL_TEST_DOMAIN,
+  SITUATIONAL_TEST_DOMAIN,
   SITUATIONAL_TEST_PATH_PREFIX,
   type FitTestCase,
   type FitTestDomain,
@@ -34,14 +35,26 @@ const SAMPLE_TESTS: FitTestCase[] = [
   },
 ];
 
-test("listFitTestsArgs uses mvnw exec plugin to find test files", () => {
-  assert.deepEqual(listFitTestsArgs(), [
-    "-q",
-    "--non-recursive",
-    "org.codehaus.mojo:exec-maven-plugin:3.5.0:exec",
-    "-Dexec.executable=find",
-    "-Dexec.args=test-driver/src/test -type f ( -name *Test.java -o -name *Test.scala ) -printf %P\\n",
-  ]);
+test("loadFitTestsFromCache returns functional tests by default", () => {
+  const tests = loadFitTestsFromCache(FUNCTIONAL_TEST_DOMAIN);
+  assert.ok(tests.length > 0, "cache should contain tests");
+  assert.ok(
+    tests.every((t) => !t.relativePath.startsWith(SITUATIONAL_TEST_PATH_PREFIX)),
+    "functional domain should exclude situational tests",
+  );
+  assert.ok(
+    tests.every((t) => t.fileName && t.relativePath && t.className),
+    "every test should have fileName, relativePath, and className",
+  );
+});
+
+test("loadFitTestsFromCache returns only situational tests for the situational domain", () => {
+  const tests = loadFitTestsFromCache(SITUATIONAL_TEST_DOMAIN);
+  assert.ok(tests.length > 0, "cache should contain situational tests");
+  assert.ok(
+    tests.every((t) => t.relativePath.startsWith(SITUATIONAL_TEST_PATH_PREFIX)),
+    "situational domain should only include situational tests",
+  );
 });
 
 test("parseFitTests converts relative paths into display names and class names", () => {
@@ -70,28 +83,6 @@ test("parseFitTests converts relative paths into display names and class names",
       },
     ],
   );
-});
-
-test("listFitTestsInRepo uses the provided capture function and parses its output", async () => {
-  const calls: Array<{ command: string; args: string[]; cwd?: string }> = [];
-  const tests = await listFitTestsInRepo("/remote/transactions-fit-performer", (command, args, cwd) => {
-    calls.push({ command, args, cwd });
-    return Promise.resolve(
-      [
-        "java/com/couchbase/transactions/StandardTest.java",
-        "java/com/couchbase/client/analytics/DisconnectTest.java",
-      ].join("\n"),
-    );
-  });
-
-  assert.deepEqual(calls, [
-    {
-      command: "./mvnw",
-      args: listFitTestsArgs(),
-      cwd: "/remote/transactions-fit-performer",
-    },
-  ]);
-  assert.deepEqual(tests, SAMPLE_TESTS);
 });
 
 test("filterFitTests returns all tests for a blank term", () => {

@@ -8,11 +8,16 @@
  * Run on its own (add --root <dir> to point elsewhere):
  *   npx tsx src/fit/shared/select-fit-tests/select-fit-tests.ts
  */
-import { basename } from "node:path";
+import { readFileSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import JSON5 from "json5";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { checkbox, qualifyPromptId, search, select } from "../../../util/non-fit/prompts.js";
 import { rootDirFromArgv } from "../../util/root.js";
 import { createLocalFitExecutionContext, type FitExecutionContext } from "../util/remote-fit-run.js";
+
+const FIT_TESTS_CACHE_PATH = join(dirname(fileURLToPath(import.meta.url)), "fit-tests-cache.json5");
 
 export interface FitTestCase {
   /** Basename shown in the picker, e.g. StandardTest.java. */
@@ -64,12 +69,6 @@ interface PromptChoiceLike {
   short?: string;
 }
 
-export type CaptureCommand = (
-  command: string,
-  args: string[],
-  cwd?: string,
-) => Promise<string>;
-
 const ALL_FIT_TESTS_SELECTED = "All FIT tests selected";
 
 /** Relative-path prefix (under test-driver/src/test) the situational tests live at. */
@@ -119,17 +118,14 @@ export const SITUATIONAL_TEST_DOMAIN: FitTestDomain = {
 /** Fully-qualified class name for the Standard QE Set's rebalance test. */
 export const STANDARD_QE_REBALANCE_CLASS = "com.couchbase.situational.tests.cbdino_tests.CbDinoRebalanceTest";
 
-const TEST_LISTING_ARGS = [
-  "-q",
-  "--non-recursive",
-  "org.codehaus.mojo:exec-maven-plugin:3.5.0:exec",
-  "-Dexec.executable=find",
-  "-Dexec.args=test-driver/src/test -type f ( -name *Test.java -o -name *Test.scala ) -printf %P\\n",
-] as const;
-
-/** The `./mvnw ...` args used to list test-driver test files. */
-export function listFitTestsArgs(): string[] {
-  return [...TEST_LISTING_ARGS];
+/**
+ * Load all FIT test-driver test paths from the committed cache file and apply
+ * domain filtering. To regenerate the cache file, run:
+ *   bunx tsx src/fit/shared/select-fit-tests/generate-fit-tests-cache.ts --root /path/to/transactions-fit-performer
+ */
+export function loadFitTestsFromCache(domain: FitTestDomain = FUNCTIONAL_TEST_DOMAIN): FitTestCase[] {
+  const paths = JSON5.parse<string[]>(readFileSync(FIT_TESTS_CACHE_PATH, "utf8"));
+  return parseFitTests(paths.join("\n"), domain);
 }
 
 /** Keep only the test paths the domain cares about (include/exclude prefixes). */
@@ -161,30 +157,12 @@ export function parseFitTests(output: string, domain: FitTestDomain = FUNCTIONAL
     .sort((left, right) => left.relativePath.localeCompare(right.relativePath));
 }
 
-/** List test-driver tests by running `./mvnw` in transactions-fit-performer. */
+/** List test-driver tests from the committed cache (see fit-tests-cache.json5). */
 export async function listFitTests(
-  execution: FitExecutionContext,
+  _execution: FitExecutionContext,
   domain: FitTestDomain = FUNCTIONAL_TEST_DOMAIN,
 ): Promise<FitTestCase[]> {
-  return await listFitTestsInRepo(
-    execution.fitPerformerDir,
-    (command, args, cwd) => execution.capture(command, args, cwd),
-    domain,
-  );
-}
-
-/** List test-driver tests by running `./mvnw` in a specific performer repo. */
-export async function listFitTestsInRepo(
-  performerRepoDir: string,
-  captureCommand: CaptureCommand,
-  domain: FitTestDomain = FUNCTIONAL_TEST_DOMAIN,
-): Promise<FitTestCase[]> {
-  const output = await captureCommand("./mvnw", listFitTestsArgs(), performerRepoDir);
-  const tests = parseFitTests(output, domain);
-  if (tests.length === 0) {
-    throw new Error("Could not find any test-driver test files.");
-  }
-  return tests;
+  return loadFitTestsFromCache(domain);
 }
 
 /** Convert the chosen tests into the data needed by the next workflow. */
