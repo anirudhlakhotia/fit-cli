@@ -23,6 +23,7 @@ import { defaultFitCliConfigPath } from "../util/config.js";
 import { runCloudInstancesMain } from "../../cloud/cloud-instances/cloud-instances.js";
 import { runSecretsMain } from "../../cloud/util/aws/secrets-cli.js";
 import { printVersion } from "../version/version.js";
+import { printLogo } from "./logo.js";
 
 const WORKFLOW_PROMPT_MESSAGE = "What would you like to do?";
 
@@ -180,7 +181,7 @@ export async function main(): Promise<RunOutput> {
     return (await definitionDispatch(definitionArgs)) ?? {};
   }
 
-  console.log("FIT CLI — making FIT easier to use, one vibe-coding session at a time.\n");
+  printLogo("making FIT easier to use, one vibe-coding session at a time.");
   console.log(
     "This wizard guides you through building a FIT definition file — a single, reusable\n" +
       "description of the FIT tests you want to run: functional, situational, performance,\n" +
