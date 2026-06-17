@@ -72,6 +72,7 @@ export interface ExistingInstanceConnection {
 export type ExecutionOverride =
   | { kind: "definition" }
   | { kind: "localhost" }
+  | { kind: "aws" }
   | { kind: "existing"; existing: ExistingInstanceConnection };
 
 /** Sentinel value for the "type the connection details myself" choice. */
@@ -158,7 +159,7 @@ export async function resolveExecutionGroupTarget(
     };
   }
 
-  if (override.kind === "localhost" || instance.kind === "localhost") {
+  if (override.kind === "localhost" || (override.kind === "definition" && instance.kind === "localhost")) {
     return { ready: true, target: new LocalTarget(), teardown: LOCAL_TEARDOWN, artifacts: [], details: [] };
   }
 

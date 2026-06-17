@@ -64,6 +64,8 @@ export interface RunState {
   startRunIndex?: number;
   /** Whether the run forced every execution group onto localhost, ignoring instance settings. */
   forceLocalhost?: boolean;
+  /** Whether the run forced every execution group onto a fresh EC2 instance, ignoring instance settings. */
+  forceAws?: boolean;
   target: ResumeTargetState;
   cluster?: ResumeClusterState;
   performers: ResumePerformerState[];

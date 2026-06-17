@@ -157,9 +157,6 @@ export function defaultsToNonInteractive(
   if (env.CI) {
     return true;
   }
-  if (env.npm_lifecycle_event === "definition") {
-    return true;
-  }
   if (!entrypoint) {
     return false;
   }

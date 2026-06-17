@@ -11,7 +11,7 @@
  */
 import { isMain, runCli } from "../../util/non-fit/cli.js";
 import { installFitCliConsoleFormatting, runScriptPrefix } from "../../util/non-fit/fit-cli-log.js";
-import { runAutoEdit, runEditWorkflow, formatConfigForDisplay } from "./edit.js";
+import { runAutoEdit, runEditWorkflow, formatConfigForDisplay, buildAutoConfig, printResolutionLog } from "./edit.js";
 import {
   CLOUD_INSTANCE_PURPOSES,
   defaultFitCliConfigPath,
@@ -191,6 +191,15 @@ export function runConfigMain(): void {
           process.exit(1);
         }
         console.log(formatConfigForDisplay(config));
+        console.log();
+        const { log } = buildAutoConfig({
+          args: {
+            auto: false, dryRun: false, suppressArtifacts: false,
+            disableAws: false, disableGithub: false, disableGerrit: false, disableCapella: false,
+            configPath,
+          },
+        });
+        printResolutionLog(log);
         return;
       }
 
