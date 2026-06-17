@@ -44,7 +44,7 @@ export const DEFAULT_CLOUD_INSTANCE_TYPES: Record<CloudProvider, Record<CloudIns
     // driver on one box; 8 GiB (c5.xlarge) left the box thrashing/OOMing partway
     // through a full all-non-transactions run, dropping the SSH session.
     functional: "c5.2xlarge",
-    situational: "c5.xlarge",
+    situational: "c5.2xlarge",
     perf: "c5.4xlarge",
   },
 };
