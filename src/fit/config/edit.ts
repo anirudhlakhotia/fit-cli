@@ -22,6 +22,10 @@ import {
 import { confirm, input, password, select } from "../../util/non-fit/prompts.js";
 import { findOnPath } from "../../util/non-fit/which.js";
 import type { AutoInitCliArgs } from "./config.js";
+import {
+  resolveGerritUserFromGhCli,
+  resolveGerritUserFromGitConfig,
+} from "../performers/checkout-fit-gerrit-ref/checkout-fit-gerrit-ref.js";
 
 /** The AWS default instance types, keyed by testing purpose. */
 const DEFAULT_EC2_INSTANCE_TYPES = DEFAULT_CLOUD_INSTANCE_TYPES.aws;
@@ -182,12 +186,15 @@ function buildInitialDefaults(existing?: FitCliConfig): AwsInitAnswers {
 async function promptForGithubUser(existing?: FitCliConfig): Promise<string | undefined> {
   const existingUser = existing?.github?.user;
   console.log("\nGitHub — used to pull Docker images from GHCR and clone private FIT repos. Set $GITHUB_USER to avoid storing here.");
+  const detected = existingUser ?? resolveGerritUserFromGhCli() ?? resolveGerritUserFromGitConfig();
   const entered = await input({
     promptId: "init.github.user",
     message: existingUser
-      ? "GitHub username (leave blank to keep the current one):"
-      : "GitHub username:",
-    default: existingUser ?? "",
+      ? "GitHub username for GHCR image pulls (leave blank to keep the current one):"
+      : detected
+        ? `GitHub username for GHCR image pulls (detected: ${detected}):`
+        : "GitHub username for GHCR image pulls:",
+    default: detected ?? "",
   });
   return trimOptional(entered) ?? existingUser;
 }
@@ -603,7 +610,7 @@ export function buildAutoConfig(
   if (!args.disableGithub) {
     const user = resolveField(log, "github.user", args.githubUser, "--github-user", [
       { name: "GITHUB_USER", value: env.GITHUB_USER },
-    ]);
+    ], resolveGerritUserFromGhCli(env) ?? resolveGerritUserFromGitConfig(env));
     const token = resolveField(log, "github.token", args.githubToken, "--github-token", [
       { name: "GITHUB_TOKEN", value: env.GITHUB_TOKEN },
       { name: "GH_TOKEN", value: env.GH_TOKEN },
