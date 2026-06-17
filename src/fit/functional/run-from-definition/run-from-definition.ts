@@ -66,6 +66,7 @@ import {
 } from "../../../cluster/cluster-create/allocate-cluster.js";
 import { runClusterDiag } from "../../../cluster/cluster-diag/cluster-diag.js";
 import { prepareCbdinoclusterInit, removeCluster, setupDeclarativeCluster } from "../../../cluster/cluster-create/setup-declarative-cluster.js";
+import { isAlias, resolveAlias } from "../../../cluster/cluster-create/cb-alias.js";
 import { collectClusterLogs } from "../../../cluster/cluster-cbcollect/cluster-cbcollect.js";
 import { installCbdinoclusterRemote } from "../../../cluster/cluster-create/install-cbdinocluster.js";
 import { defaultCbdinoclusterInitConfig } from "../../../cluster/cluster-create/default-cbdinocluster-init-config.js";
@@ -579,6 +580,27 @@ function withCbdinoclusterPath(fitConfig: PieceData | undefined, path: string): 
   };
 }
 
+async function withResolvedSituationalCbdino(
+  fitConfig: PieceData | undefined,
+  path: string,
+  resolveVersionAliasFn: typeof resolveAlias = resolveAlias,
+): Promise<PieceData> {
+  const config = withCbdinoclusterPath(fitConfig, path);
+  const situational = ((config.situational ?? {}) as Record<string, unknown>);
+  const cbdino = ((situational.cbdino ?? {}) as Record<string, unknown>);
+  const version = cbdino.version;
+  if (typeof version !== "string" || !isAlias(version)) {
+    return config;
+  }
+  return {
+    ...config,
+    situational: {
+      ...situational,
+      cbdino: { ...cbdino, version: await resolveVersionAliasFn(version) },
+    },
+  };
+}
+
 /**
  * The run step for a situational iteration. cbdino builds and manages the
  * cluster from inside the test-driver, so there's no cluster to diagnose or
@@ -593,6 +615,7 @@ export async function runSituationalTests(
     resolveResultsDatabaseFn?: typeof resolveResultsDatabase;
     generateSituationalConfigurationFn?: typeof generateSituationalConfiguration;
     runTestDriverFn?: typeof runTestDriver;
+    resolveVersionAliasFn?: typeof resolveAlias;
     recordResult?: RecordRunResult;
   } = {},
 ): Promise<RunOutput> {
@@ -600,6 +623,7 @@ export async function runSituationalTests(
   const generateSituationalConfigurationFn =
     dependencies.generateSituationalConfigurationFn ?? generateSituationalConfiguration;
   const runTestDriverFn = dependencies.runTestDriverFn ?? runTestDriver;
+  const resolveVersionAliasFn = dependencies.resolveVersionAliasFn ?? resolveAlias;
 
   console.log(
     "\nNote: for a full cbdino run the performer must share cbdino's Docker network " +
@@ -617,7 +641,7 @@ export async function runSituationalTests(
   // Resolve cbdinocluster to its absolute path on the execution host so the FIT
   // test driver can invoke it even when its environment doesn't inherit the same PATH.
   const cbdinoclusterPath = await resolveCbdinoclusterPathOnExecution(execution);
-  const fitConfigPiece = withCbdinoclusterPath(run.fitConfig, cbdinoclusterPath);
+  const fitConfigPiece = await withResolvedSituationalCbdino(run.fitConfig, cbdinoclusterPath, resolveVersionAliasFn);
 
   const fitConfig = generateSituationalConfigurationFn(
     database.database,

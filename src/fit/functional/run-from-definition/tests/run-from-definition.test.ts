@@ -328,3 +328,30 @@ test("runSituationalTests generates the situational config then runs the driver"
   assert.deepEqual(driverMavenArgs, ["-Dgroups=situational,cbDino"]);
   assert.ok(result.details.some((detail) => detail.label === "Results UI"));
 });
+
+test("runSituationalTests resolves stable-version aliases before generating the situational config", async () => {
+  let cbdinoVersion: string | undefined;
+
+  const result = await runSituationalTests(fitExecutionContext(), {
+    ...situationalIteration(),
+    fitConfig: {
+      situational: {
+        cbdino: {
+          version: "8.0-stable",
+        },
+      },
+    },
+  }, {
+    resolveResultsDatabaseFn: () => Promise.resolve(READY_DATABASE),
+    resolveVersionAliasFn: (version) => Promise.resolve(version === "8.0-stable" ? "8.0.2-1234" : version),
+    generateSituationalConfigurationFn: (_db, _cbdino, _rootDir, _path, _performerPort, fitConfigPiece) => {
+      const situational = fitConfigPiece?.situational as { cbdino?: { version?: string } } | undefined;
+      cbdinoVersion = situational?.cbdino?.version;
+      return { path: "/tmp/fit.json", artifacts: [], details: [] };
+    },
+    runTestDriverFn: () => Promise.resolve({ ok: true, logFile: "/tmp/driver.log", artifacts: [], details: [] }),
+  });
+
+  assert.equal(cbdinoVersion, "8.0.2-1234");
+  assert.ok(result.details.some((detail) => detail.label === "Results UI"));
+});
