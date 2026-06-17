@@ -44,6 +44,14 @@ main() {
   local tmp
   tmp="$(mktemp)"
 
+  local size_bytes
+  size_bytes="$(curl -fILs "$url" | grep -i '^content-length:' | tail -1 | tr -d '\r' | awk '{print $2}')"
+  if [[ -n "$size_bytes" && "$size_bytes" -gt 0 ]]; then
+    local size_mb
+    size_mb="$(awk "BEGIN {printf \"%.0f\", $size_bytes / 1048576}")"
+    echo "Downloading ${size_mb} MB..."
+  fi
+
   curl -fL --progress-bar "$url" -o "$tmp"
   chmod +x "$tmp"
 
