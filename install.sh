@@ -56,6 +56,11 @@ main() {
 
   echo "Installed: $(which fit)"
   fit --version 2>/dev/null || true
+
+  echo ""
+  echo "Next steps:"
+  echo "  fit config edit   # one-off configuration (AWS, GitHub credentials)"
+  echo "  fit               # launch the interactive wizard"
 }
 
 main "$@"
