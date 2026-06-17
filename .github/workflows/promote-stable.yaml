@@ -29,10 +29,22 @@ jobs:
 
       - name: Update stable release
         run: |
+          cat > /tmp/release-notes.md << 'EOF'
+          ## Install
+
+          ```sh
+          curl -fsSL https://raw.githubusercontent.com/couchbaselabs/fit-cli/main/install.sh | bash
+          ```
+
+          > **After installing, run `fit config edit` to configure your credentials before first use.**
+
+          See the [README](https://github.com/couchbaselabs/fit-cli#getting-started) for full usage instructions.
+          EOF
+
           gh release delete stable --yes --cleanup-tag 2>/dev/null || true
           gh release create stable \
             --title "Stable" \
-            --notes "Stable release. Install with: curl -fsSL https://raw.githubusercontent.com/couchbaselabs/fit-cli/main/install.sh | bash" \
+            --notes-file /tmp/release-notes.md \
             dist/fit-linux-x64 \
             dist/fit-linux-arm64 \
             dist/fit-darwin-x64 \
