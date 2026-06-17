@@ -23,6 +23,8 @@ export interface CallerIdentity {
   account: string;
   arn: string;
   userId: string;
+  /** Active AWS profile, if set via AWS_PROFILE or AWS_DEFAULT_PROFILE. */
+  profile?: string;
 }
 
 /** The result of a credentials check: usable identity, or a reason it failed. */
@@ -39,12 +41,14 @@ export type CredentialsCheck =
 export async function checkCredentials(): Promise<CredentialsCheck> {
   try {
     const response = await stsClient.send(new GetCallerIdentityCommand({}));
+    const profile = process.env.AWS_PROFILE ?? process.env.AWS_DEFAULT_PROFILE;
     return {
       ok: true,
       identity: {
         account: response.Account ?? "",
         arn: response.Arn ?? "",
         userId: response.UserId ?? "",
+        ...(profile ? { profile } : {}),
       },
     };
   } catch (err) {
@@ -137,6 +141,19 @@ export async function resolveAwsCredentials(
   }
 }
 
+/**
+ * Print the account (and profile, if one is active) from a credentials check,
+ * in the same indented-detail style as logAwsAction.
+ */
+export function logAwsIdentity(creds: CredentialsCheck): void {
+  if (!creds.ok) return;
+  const { account, profile } = creds.identity;
+  console.log(`  account: ${account}`);
+  if (profile) {
+    console.log(`  profile: ${profile}`);
+  }
+}
+
 if (isMain(import.meta.url)) {
   runCli(async () => {
     await prepareAwsCli();
@@ -146,6 +163,7 @@ if (isMain(import.meta.url)) {
       console.error(`✗ ${result.message}`);
       process.exit(1);
     }
-    console.log(`✓ Authenticated as ${result.identity.arn} (account ${result.identity.account})`);
+    const profilePart = result.identity.profile ? `  profile: ${result.identity.profile}` : "";
+    console.log(`✓ Authenticated as ${result.identity.arn} (account ${result.identity.account}${profilePart})`);
   });
 }
