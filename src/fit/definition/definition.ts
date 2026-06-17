@@ -194,7 +194,7 @@ export async function definitionDispatch(argv: string[]): Promise<RunOutput | vo
   });
 }
 
-if (isMain(import.meta.url)) {
+export function runDefinitionMain(): void {
   const argv = process.argv.slice(2);
   // Handle help before runCli creates the artifact directory.
   const positionals = extractInteractiveFlag(extractReplayFlag(argv).positionals).positionals;
@@ -204,4 +204,8 @@ if (isMain(import.meta.url)) {
     process.exit(positionals.length === 0 ? 2 : 0);
   }
   runCli(() => definitionDispatch(argv));
+}
+
+if (isMain(import.meta.url)) {
+  runDefinitionMain();
 }

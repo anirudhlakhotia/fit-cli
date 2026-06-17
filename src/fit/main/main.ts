@@ -16,7 +16,7 @@ import { rootDirFromArgv } from "../util/root.js";
 import { runFromDefinition } from "../functional/run-from-definition/run-from-definition.js";
 import type { DefinitionFormat } from "../shared/definition/generate-definition.js";
 import { extractPushGistVisibility, type GistVisibility } from "../shared/definition/push-gist.js";
-import { definitionDispatch } from "../definition/definition.js";
+import { runDefinitionMain } from "../definition/definition.js";
 import { runArchiveMain } from "../archive/archive.js";
 import { runConfigMain } from "../config/config.js";
 import { runEditWorkflow } from "../config/edit.js";
@@ -24,6 +24,7 @@ import { defaultFitCliConfigPath } from "../util/config.js";
 import { runCloudInstancesMain } from "../../cloud/cloud-instances/cloud-instances.js";
 import { runSecretsMain } from "../../cloud/util/aws/secrets-cli.js";
 import { printVersion } from "../version/version.js";
+import { main as replayMain } from "../../util/non-fit/replay-entry.js";
 import { printLogo } from "./logo.js";
 
 const WORKFLOW_PROMPT_MESSAGE = "What would you like to do?";
@@ -163,24 +164,8 @@ function checkPlatform(): void {
   }
 }
 
-export async function main(): Promise<RunOutput> {
+async function runWizard(): Promise<RunOutput> {
   checkPlatform();
-
-  // Route `fit definition [...]` and `fit run definition [...]` directly to the
-  // definition dispatcher, bypassing the wizard. This lets `--output <path>`
-  // (a file path, used by generate-preset) reach the right parser instead of
-  // being intercepted by the wizard's `--output yaml|json5` format flag below.
-  const rawArgs = process.argv.slice(2);
-  let definitionArgs: string[] | undefined;
-  if (rawArgs[0] === "definition") {
-    definitionArgs = rawArgs.slice(1);
-  } else if (rawArgs[0] === "run" && rawArgs[1] === "definition") {
-    definitionArgs = rawArgs.slice(2);
-  }
-  if (definitionArgs !== undefined) {
-    loadDotenv();
-    return (await definitionDispatch(definitionArgs)) ?? {};
-  }
 
   printLogo("making FIT easier to use, one vibe-coding session at a time.");
   console.log(
@@ -200,7 +185,7 @@ export async function main(): Promise<RunOutput> {
   const { rootDir, positionals: afterRoot } = rootDirFromArgv(afterOutput);
   const pushGistVisibility = extractPushGistVisibility(afterRoot);
   // Remove --push-gist (and its optional value) from positionals so the length
-  // check and definition-path detection below work cleanly.
+  // check below works cleanly.
   const positionals = afterRoot.filter((arg, i) => {
     if (arg === "--push-gist") return false;
     if (arg === "public" || arg === "private") {
@@ -209,44 +194,76 @@ export async function main(): Promise<RunOutput> {
     if (arg.startsWith("--push-gist=")) return false;
     return true;
   });
-  if (positionals.length > 1) {
-    throw new Error("Usage: bun start [definition-file.json5] [--output yaml|json5] [--push-gist [public|private]] [--root <dir>]");
-  }
-  if (positionals[0]) {
-    ensurePromptSession().setWorkflow("run-definition");
-    return runFromDefinition(positionals[0], rootDir);
+  if (positionals.length > 0) {
+    throw new Error("Usage: fit wizard [--output yaml|json5] [--push-gist [public|private]] [--root <dir>]");
   }
   const choice = await chooseWorkflow();
-  return runWorkflow(choice, rootDir, positionals[0], format, pushGistVisibility);
+  return runWorkflow(choice, rootDir, undefined, format, pushGistVisibility);
 }
 
-const RUN_SCRIPTS: Record<string, (() => void) | undefined> = {
-  "archive": runArchiveMain,
+function runWizardMain(): void {
+  runCli(runWizard);
+}
+
+function runReplayMain(): void {
+  replayMain(["--replay", ...process.argv.slice(2)]);
+}
+
+function printHelp(): void {
+  console.log(
+    "fit — FIT CLI\n\n" +
+    "Usage: fit [command] [...args]\n\n" +
+    "Commands:\n" +
+    "  wizard           Interactive walkthrough (default when no command given)\n" +
+    "  definition       Run or validate a FIT definition file\n" +
+    "  config           Manage fit-cli configuration\n" +
+    "  cloud-instances  Manage cloud (EC2) instances\n" +
+    "  secrets          Manage AWS secrets\n" +
+    "  archive          Archive run artifacts\n" +
+    "  replay           Replay a recorded session\n" +
+    "  version          Print the fit-cli version\n" +
+    "  help             Print this help message\n"
+  );
+}
+
+// Single source of truth for all top-level commands.
+// Anything listed here is available as both `fit <cmd>` and `bun run <cmd>`.
+const COMMANDS: Record<string, (() => void)> = {
+  "wizard": runWizardMain,
+  "definition": runDefinitionMain,
   "config": runConfigMain,
   "cloud-instances": runCloudInstancesMain,
   "secrets": runSecretsMain,
+  "archive": runArchiveMain,
+  "replay": runReplayMain,
+  "version": printVersion,
+  "help": printHelp,
 };
 
 // import.meta.main is true in compiled Bun binaries where isMain() can't
 // compare virtual /$bunfs/ paths against the real executable path.
 if (isMain(import.meta.url) || import.meta.main) {
-  if (process.argv[2] === "version") {
-    printVersion();
+  const cmd = process.argv[2];
+
+  // Resolve the command, with backward-compat support for `fit run <cmd>`.
+  let command: (() => void) | undefined;
+  let argsToRemove = 0;
+  if (cmd === "run" && COMMANDS[process.argv[3]]) {
+    command = COMMANDS[process.argv[3]];
+    argsToRemove = 2;
+  } else if (cmd && COMMANDS[cmd]) {
+    command = COMMANDS[cmd];
+    argsToRemove = 1;
+  }
+
+  if (command) {
+    process.argv.splice(2, argsToRemove);
+    command();
+  } else if (!cmd || cmd.startsWith("-")) {
+    // bare `fit` or flags only → wizard
+    runCli(runWizard);
   } else {
-    let runScript: (() => void) | undefined;
-    let argsToRemove = 0;
-    if (process.argv[2] === "run" && RUN_SCRIPTS[process.argv[3]]) {
-      runScript = RUN_SCRIPTS[process.argv[3]];
-      argsToRemove = 2;
-    } else if (RUN_SCRIPTS[process.argv[2]]) {
-      runScript = RUN_SCRIPTS[process.argv[2]];
-      argsToRemove = 1;
-    }
-    if (runScript) {
-      process.argv.splice(2, argsToRemove);
-      runScript();
-    } else {
-      runCli(main);
-    }
+    console.error(`Unknown command: ${cmd}\nRun 'fit help' for usage.`);
+    process.exit(1);
   }
 }
