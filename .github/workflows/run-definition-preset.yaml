@@ -13,10 +13,6 @@ on:
         description: Performer Docker image name including tag (e.g. java-fit-performer:main, ghcr.io/couchbaselabs/java-fit-performer:1.2.3)
         type: string
         required: true
-      clusterVersion:
-        description: Couchbase Server version (e.g. 8.0-stable, 7.6.5)
-        type: string
-        default: 8.0-stable
       cbcollect:
         description: Collect cluster diagnostics (cbcollect)
         type: boolean
@@ -47,7 +43,6 @@ jobs:
         run: >
           bun src/fit/definition/definition.ts generate-preset
           --type "${{ inputs.preset }}"
-          --cluster-version "${{ inputs.clusterVersion }}"
           --performer-image-name "${{ inputs.performerImageName }}"
           --output .github/generated/preset-definition.yaml
 
