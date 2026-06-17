@@ -1,9 +1,8 @@
 /**
- * upload-run-artifacts — at the end of a run, copy the run's artifact directory
- * (/tmp/fit-cli/<run>) up to S3. This lets results outlive the local box or the
- * (ephemeral) GitHub Actions runner, and lets the GitHub job summary stay small:
- * it can link to S3 rather than inlining megabytes of JUnit output (which blows
- * the 1024k step-summary cap).
+ * upload-run-artifacts — at the end of a run, zip the run's artifact directory
+ * and upload it to S3. This lets results outlive the local box or the (ephemeral)
+ * GitHub Actions runner, and keeps the GitHub job summary small (link to S3 rather
+ * than inlining megabytes of JUnit output, which blows the 1024k step-summary cap).
  *
  * Best-effort: a skipped or failed upload never fails the run. It runs only
  * inside GitHub Actions — where the runner is ephemeral and AWS creds are present
@@ -13,12 +12,12 @@
  */
 import { existsSync } from "node:fs";
 import { basename } from "node:path";
-import { fitCliWarn } from "../../../util/non-fit/fit-cli-log.js";
-import { uploadDirectoryToS3 } from "../../../cloud/util/aws/upload-directory.js";
+import { echoCommand, fitCliWarn, runScriptPrefix } from "../../../util/non-fit/fit-cli-log.js";
+import { zipDirectory, uploadFileToS3 } from "../../archive/archive.js";
 
 /** Bucket run artifacts are uploaded to (us-west-2, see AWS_REGION). */
 export const ARTIFACTS_BUCKET = "fit-cli";
-/** Key prefix under the bucket; each run lands in `<prefix>/<runId>/`. */
+/** Key prefix under the bucket; each run lands as `<prefix>/<runId>.zip`. */
 export const ARTIFACTS_PREFIX = "runs";
 
 /** Upload runs only inside GitHub Actions, which always sets GITHUB_ACTIONS=true. */
@@ -27,11 +26,9 @@ export function artifactUploadEnabled(env: NodeJS.ProcessEnv = process.env): boo
 }
 
 /**
- * Upload `runDir` to s3://fit-cli/runs/<runId>/. The run id prefers GITHUB_RUN_ID
- * (so the S3 path lines up with the Actions run) and falls back to the run
- * directory's own name for local runs. Returns the destination URI on success,
- * or null when skipped (disabled / dir missing) or failed — it never throws, so
- * it's safe to call from a teardown/finally path.
+ * Zip `runDir` and upload it to s3://fit-cli/runs/<dirName>.zip. Returns the
+ * destination URI on success, or null when skipped (disabled / dir missing) or
+ * failed — it never throws, so it's safe to call from a teardown/finally path.
  */
 export async function uploadRunArtifacts(runDir: string, env: NodeJS.ProcessEnv = process.env): Promise<string | null> {
   if (!artifactUploadEnabled(env)) {
@@ -40,15 +37,18 @@ export async function uploadRunArtifacts(runDir: string, env: NodeJS.ProcessEnv 
   if (!existsSync(runDir)) {
     return null;
   }
-  const runId = env.GITHUB_RUN_ID ?? basename(runDir);
-  const destination = `s3://${ARTIFACTS_BUCKET}/${ARTIFACTS_PREFIX}/${runId}/`;
+  const s3Base = `s3://${ARTIFACTS_BUCKET}/${ARTIFACTS_PREFIX}/`;
+  const dirName = basename(runDir);
+  const zipPath = `${runDir}.zip`;
+  const zipKey = `${s3Base}${dirName}.zip`;
   try {
-    console.log(`\nUploading run artifacts to ${destination} ...`);
-    await uploadDirectoryToS3(runDir, destination);
-    console.log(`✓ Uploaded run artifacts to ${destination}`);
-    return destination;
+    echoCommand(`${runScriptPrefix("archive")} s3-upload --zip ${runDir} ${s3Base}`);
+    await zipDirectory(runDir, zipPath);
+    await uploadFileToS3(zipPath, zipKey);
+    console.log(`✓ Uploaded run artifacts to ${zipKey}`);
+    return zipKey;
   } catch (err) {
-    fitCliWarn(`Could not upload run artifacts to ${destination}: ${(err as Error).message}`);
+    fitCliWarn(`Could not upload run artifacts to ${s3Base}: ${(err as Error).message}`);
     return null;
   }
 }
