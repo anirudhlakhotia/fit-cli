@@ -57,7 +57,7 @@ function baseConfigPiece(performerPort: number): ConfigPiece {
     data: {
       "//": AUTO_GENERATED_MARKER,
       clusterAccess: {
-        "//": "Ignored for situational-only runs — cbdino creates and manages the cluster.",
+        "//": "Ignored for situational-only runs — cbdino creates and manages the cluster. Required anyway: FITConfigRaw.convertClusterAccess throws if absent.",
         defaultHostname: "localhost",
         username: "Administrator",
         password: "password",
