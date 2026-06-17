@@ -198,6 +198,8 @@ Definition file rules while generating:
 These are ones exposed as `fit` subcommands e.g. `fit definition [execute|validate]`.
 Unlike Mini CLI these _are_ meant to be stable.  We should try not to break.
 All top-level commands have at least one subcommand.  This gives room to expand in future.
+If the user ran `fit` all when outputting commands they should generally show `fit X`.  If they ran with `bun` then generally `bun run X`.
+Commands should never have `bun run X --` or `fit X --`, e.g. the `--` is totally superfluous now we've moved away from npm.
 
 ### Testing
 - Anytime there's easy testable business logic, e.g. it doesn't require file access or similar, add unit tests.  Put these in a tests directory off the one being tested.
