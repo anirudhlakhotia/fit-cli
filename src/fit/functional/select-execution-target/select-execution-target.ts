@@ -13,7 +13,10 @@
  * without re-running.
  *
  * Run this workflow on its own (picks a target, runs `uname -a` on it, cleans up):
- *   npx tsx src/fit/functional/select-execution-target/select-execution-target.ts
+ *   bun src/fit/functional/select-execution-target/select-execution-target.ts
+ *
+ * To preview what the credentials-missing failure output looks like:
+ *   bun src/fit/functional/select-execution-target/select-execution-target.ts --show-creds-failure
  */
 import { type RunOutput } from "../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
@@ -369,6 +372,13 @@ export async function selectExistingInstanceForOverride(
 
 if (isMain(import.meta.url)) {
   runCli(async () => {
+    if (process.argv.includes("--show-creds-failure")) {
+      console.log("(Simulating missing AWS credentials)\n");
+      printCredentialsDiagnostic({ ...process.env, AWS_ACCESS_KEY_ID: "", AWS_SECRET_ACCESS_KEY: "", HOME: "/nonexistent" });
+      fitCliError(`\nCan't use EC2 for this execution group: Could not load credentials from any providers`);
+      process.exit(1);
+    }
+
     const outcome = await selectExecutionTarget();
     if (!outcome.ready) {
       process.exit(1);

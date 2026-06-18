@@ -73,11 +73,22 @@ export function printCredentialsDiagnostic(env: NodeJS.ProcessEnv = process.env)
 
   if (!hasEnvVars && !hasCredentialsFile && !hasConfigFile) {
     console.log("");
-    console.log("To set up credentials, use one of:");
-    console.log("  aws sso login --profile <profile>        (SSO)");
-    console.log("  export AWS_ACCESS_KEY_ID=...             (env vars)");
-    console.log("     export AWS_SECRET_ACCESS_KEY=...");
-    console.log("  aws configure                            (static key/secret)");
+    console.log("No AWS credentials found.  To get set up:");
+    console.log("");
+    console.log("  1. If you don't have AWS access yet, file a Zendesk ticket requesting");
+    console.log('     access and ask to be added to the "cb-sdk" tenant.');
+    console.log("");
+    console.log("  2. Once you have access, create an access key in the AWS console");
+    console.log("     (IAM → Users → your user → Security credentials → Create access key).");
+    console.log("");
+    console.log("  3. Install the AWS CLI if you haven't already:");
+    console.log("     https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html");
+    console.log("");
+    console.log("  4. Configure your credentials with one of:");
+    console.log("     aws configure                            (static key/secret — simplest)");
+    console.log("     aws sso login --profile <profile>        (SSO)");
+    console.log("     export AWS_ACCESS_KEY_ID=...             (env vars)");
+    console.log("       export AWS_SECRET_ACCESS_KEY=...");
   }
 }
 
