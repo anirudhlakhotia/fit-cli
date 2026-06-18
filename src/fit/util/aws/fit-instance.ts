@@ -135,7 +135,7 @@ export async function provisionFitInstance(options: ProvisionOptions = {}): Prom
   try {
     existingInstances = await warnAboutExistingInstances(
       { account: creds.identity.account, creator: creatorTag },
-      { warn: false },
+      { warn: false, creator: creatorTag },
     );
   } catch (err) {
     fitCliWarn(`Warning: could not check for existing EC2 instances (insufficient permissions): ${err instanceof Error ? err.message : String(err)}`);

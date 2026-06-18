@@ -33,9 +33,10 @@ import { formatExistingInstancesBanner, type InstanceListContext } from "./lifec
  */
 export async function warnAboutExistingInstances(
   context?: InstanceListContext,
-  { warn = true }: { warn?: boolean } = {},
+  { warn = true, creator }: { warn?: boolean; creator?: string } = {},
 ): Promise<InstanceInfo[]> {
-  const existing = await listInstances(FIT_OWNER_TAG);
+  const all = await listInstances(FIT_OWNER_TAG);
+  const existing = creator ? all.filter((i) => i.creator === creator) : all;
   if (existing.length === 0 || !warn) {
     return existing;
   }
@@ -55,7 +56,8 @@ if (isMain(import.meta.url)) {
     const context: InstanceListContext | undefined = creds.ok
       ? { account: creds.identity.account, creator: creds.identity.arn.split("/").at(-1) ?? creds.identity.userId }
       : undefined;
-    const existing = await warnAboutExistingInstances(context);
+    const creator = context?.creator;
+    const existing = await warnAboutExistingInstances(context, { creator });
     if (existing.length === 0) {
       console.log("No existing fit-cli EC2 instances — clear to provision.");
     }
