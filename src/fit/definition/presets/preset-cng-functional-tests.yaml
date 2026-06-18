@@ -2,8 +2,7 @@
 # cluster on OpenShift (ROSA), via cbdinocluster's `cao` deployer.
 #
 # Placeholders filled in by `bun run definition generate-preset`:
-#   {{SDK}}              — SDK value (java, kotlin, scala, cpp, dotnet, go, node, python, ruby, rust)
-#   {{PERFORMER_VERSION}} — Docker image tag for the performer (e.g. main, 4.2.0); omit the field to use the SDK default
+#   {{PERFORMER_IMAGE}} — prebuilt performer image, <sdk>-fit-performer:<tag> (e.g. java-fit-performer:main)
 #
 # CNG only runs on a clean AWS instance: fit-cli installs `oc`, logs into the shared
 # ROSA cluster (credentials from AWS Secrets Manager — see `fit secrets`), runs the
@@ -32,7 +31,7 @@ instances:
       - clusterConfig: cluster-0
         sessions:
           - performer:
-              sdk: '{{SDK}}'
+              image: '{{PERFORMER_IMAGE}}'
             runs:
               - type: functional
                 fitConfig: fit-config-0
