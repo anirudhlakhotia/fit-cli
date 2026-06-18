@@ -13,6 +13,7 @@ import {
   CNG_K3D_CONTEXT,
   withRemoteK8sBlock,
 } from "../cng-kubernetes.js";
+import { CAO_TOOLS_VERSION } from "../install-cao-tools.js";
 
 test("cbdinoclusterHasK8sEnabled accepts the string \"true\" cbdinocluster writes", () => {
   assert.equal(cbdinoclusterHasK8sEnabled({ k8s: { enabled: "true" } }), true);
@@ -34,7 +35,7 @@ test("buildRemoteK8sBlock points cbdinocluster at the k3d cluster under the give
   assert.deepEqual(buildRemoteK8sBlock("/home/ubuntu"), {
     k8s: {
       enabled: "true",
-      "cao-tools": "/home/ubuntu/.dinotools/cao/2.8.0",
+      "cao-tools": `/home/ubuntu/.dinotools/cao/${CAO_TOOLS_VERSION}`,
       kubeconfig: "/home/ubuntu/.config/k3d/kubeconfig-fit-cli-cluster.yaml",
       context: CNG_K3D_CONTEXT,
     },

@@ -15,6 +15,7 @@ import {
   resolveOcVersion,
   withOpenShiftK8sBlock,
 } from "../cng-openshift.js";
+import { CAO_TOOLS_VERSION } from "../install-cao-tools.js";
 
 test("cngKubernetesBackend defaults to openshift and only switches to k3d on FIT_CNG_K8S=k3d", () => {
   assert.equal(cngKubernetesBackend({}), "openshift");
@@ -32,7 +33,7 @@ test("buildOpenShiftK8sBlock points cbdinocluster at the logged-in OpenShift con
   assert.deepEqual(buildOpenShiftK8sBlock("/home/ubuntu", "rosa/api-example:6443/cluster-admin"), {
     k8s: {
       enabled: "true",
-      "cao-tools": "/home/ubuntu/.dinotools/cao/2.8.0",
+      "cao-tools": `/home/ubuntu/.dinotools/cao/${CAO_TOOLS_VERSION}`,
       kubeconfig: "/home/ubuntu/.kube/config",
       context: "rosa/api-example:6443/cluster-admin",
     },

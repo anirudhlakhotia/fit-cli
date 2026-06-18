@@ -7,12 +7,12 @@
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { caoToolsInstallScript } from "../install-cao-tools.js";
+import { caoToolsInstallScript, CAO_TOOLS_VERSION } from "../install-cao-tools.js";
 
 test("caoToolsInstallScript downloads the arch-matched cao tarball for the version", () => {
   const script = caoToolsInstallScript("/home/ubuntu/.dinotools/cao/2.8.0");
   assert.match(script, /couchbase-autonomous-operator_\$ver-kubernetes-linux-\$arch\.tar\.gz/);
-  assert.match(script, /\bver=2\.8\.0\b/);
+  assert.ok(script.includes(`ver=${CAO_TOOLS_VERSION}`));
   assert.match(script, /x86_64\|amd64\) arch=amd64/);
   assert.match(script, /aarch64\|arm64\) arch=arm64/);
 });
