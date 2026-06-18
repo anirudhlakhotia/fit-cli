@@ -25,7 +25,7 @@ instances:
           tls: null
         sessions:
           - performer:
-              sdk: java
+              image: java-fit-performer:main
             runs:
               - type: functional
                 tests:
@@ -40,8 +40,18 @@ test("parses a minimal nested functional definition", () => {
   assert.equal(def.instances.length, 1);
   assert.ok(def.instances[0] && "aws" in def.instances[0]);
   assert.deepEqual(def.instances[0].aws, { instanceType: "c5.4xlarge" });
-  assert.equal(def.instances[0]?.clusters[0]?.sessions[0]?.performer.sdk, "java");
+  assert.equal(def.instances[0]?.clusters[0]?.sessions[0]?.performer.image, "java-fit-performer:main");
   assert.equal(def.instances[0]?.clusters[0]?.sessions[0]?.runs[0]?.type, "functional");
+});
+
+test("rejects a performer image for an SDK without prebuilt images", () => {
+  const def = FUNCTIONAL.replace("image: java-fit-performer:main", "image: python-fit-performer:main");
+  assert.throws(() => parseDefinition(def), /publish prebuilt performer images/);
+});
+
+test("rejects the legacy performer sdk/version fields", () => {
+  const def = FUNCTIONAL.replace("image: java-fit-performer:main", "sdk: java");
+  assert.throws(() => parseDefinition(def), /no longer takes "sdk"\/"version"/);
 });
 
 test("parses clusterless situational sessions", () => {
@@ -58,7 +68,7 @@ instances:
     clusters: []
     clusterlessSessions:
       - performer:
-          sdk: python
+          image: java-fit-performer:main
         runs:
           - type: situational
             situational:
@@ -88,7 +98,7 @@ instances:
                 services: [kv]
         sessions:
           - performer:
-              sdk: java
+              image: java-fit-performer:main
             runs:
               - type: functional
                 tests:
@@ -127,7 +137,7 @@ instances:
                 services: [kv]
         sessions:
           - performer:
-              sdk: java
+              image: java-fit-performer:main
             runs:
               - type: functional
                 tests:
@@ -157,7 +167,7 @@ instances:
                 services: [kv]
         sessions:
           - performer:
-              sdk: java
+              image: java-fit-performer:main
             runs:
               - type: functional
                 tests:
@@ -186,7 +196,7 @@ instances:
                 services: [kv]
         sessions:
           - performer:
-              sdk: java
+              image: java-fit-performer:main
             runs:
               - type: functional
                 tests:
@@ -239,7 +249,7 @@ instances:
     clusters: []
     clusterlessSessions:
       - performer:
-          sdk: java
+          image: java-fit-performer:main
         runs:
           - type: functional
             tests:
@@ -260,7 +270,7 @@ instances:
     clusters: []
     clusterlessSessions:
       - performer:
-          sdk: java
+          image: java-fit-performer:main
         runs:
           - type: situational
             situational:
@@ -290,7 +300,7 @@ instances:
       - clusterConfig: "cluster-0"
         sessions:
           - performer:
-              sdk: java
+              image: java-fit-performer:main
             runs:
               - type: functional
                 fitConfig: "fit-config-0"
@@ -337,7 +347,7 @@ instances:
               fts-memory: 4096
         sessions:
           - performer:
-              sdk: java
+              image: java-fit-performer:main
             runs:
               - type: functional
                 tests:
@@ -370,7 +380,7 @@ instances:
               nested: value
         sessions:
           - performer:
-              sdk: java
+              image: java-fit-performer:main
             runs:
               - type: functional
                 tests:
@@ -404,7 +414,7 @@ instances:
                 services: [kv]
         sessions:
           - performer:
-              sdk: java
+              image: java-fit-performer:main
             runs:
               - type: functional
                 tests:
@@ -427,7 +437,7 @@ instances:
       - clusterConfig: "cluster-0"
         sessions:
           - performer:
-              sdk: java
+              image: java-fit-performer:main
             runs:
               - type: functional
                 tests:
@@ -467,7 +477,7 @@ instances:
           password: password
         sessions:
           - performer:
-              sdk: java
+              image: java-fit-performer:main
             runs:
               - type: functional
                 tests:
@@ -497,7 +507,7 @@ instances:
           password: password
         sessions:
           - performer:
-              sdk: java
+              image: java-fit-performer:main
             runs:
               - type: functional
                 tests:

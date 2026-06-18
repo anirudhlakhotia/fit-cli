@@ -1,7 +1,6 @@
 /**
  * The shape of a `fit` YAML definition file.
  */
-import type { SdkValue } from "../../../util/sdk/sdks.js";
 import type { PortInUsePolicy } from "../../performers/util/performer-port.js";
 import type { CbdinoclusterDef } from "../../../cluster/cluster-create/build-cluster-def.js";
 import type { ClusterExistsPolicy } from "../../../cluster/cluster-create/cluster-exists-policy.js";
@@ -86,9 +85,14 @@ export interface SharedSetup {
 }
 
 export interface PerformerSetup {
-  sdk: SdkValue;
+  /**
+   * Full prebuilt performer image, `<sdk>-fit-performer:<tag>` (e.g.
+   * `java-fit-performer:main` or `java-fit-performer:refs-changes-18-195818-7`).
+   * The SDK is derived from the image prefix; only JVM and C++ SDKs publish
+   * these images. fit-cli prepends the GHCR registry/owner at run time.
+   */
+  image: string;
   port?: number;
-  version?: string;
   onPortInUse?: PortInUsePolicy;
 }
 

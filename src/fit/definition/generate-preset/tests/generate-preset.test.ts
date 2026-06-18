@@ -17,14 +17,13 @@ test("parseGeneratePresetArgs derives sdk from performer image and accepts outpu
 
   assert.deepEqual(args, {
     type: "preset-functional-tests",
-    sdkValue: "java",
-    performerImageName: "refs-changes-67-246067-3",
+    image: "java-fit-performer:refs-changes-67-246067-3",
     outputPath: "/tmp/generated-fit.yaml",
     pushGistVisibility: undefined,
   });
 });
 
-test("parseGeneratePresetArgs accepts equals-style output flag", () => {
+test("parseGeneratePresetArgs normalises a fully-qualified GHCR image to short form", () => {
   const args = parseGeneratePresetArgs([
     "--type=preset-functional-tests",
     "--performer-image-name=ghcr.io/couchbase/java-fit-performer:refs-changes-67-246067-3",
@@ -32,18 +31,28 @@ test("parseGeneratePresetArgs accepts equals-style output flag", () => {
   ]);
 
   assert.equal(args.type, "preset-functional-tests");
-  assert.equal(args.sdkValue, "java");
-  assert.equal(args.performerImageName, "refs-changes-67-246067-3");
+  assert.equal(args.image, "java-fit-performer:refs-changes-67-246067-3");
   assert.equal(args.outputPath, "/tmp/generated-fit.yaml");
 });
 
-test("parseGeneratePresetArgs requires an sdk-specific performer image name", () => {
+test("parseGeneratePresetArgs requires a performer image name", () => {
   assert.throws(
     () =>
       parseGeneratePresetArgs([
         "--type=preset-functional-tests",
       ]),
-    /--performer-image-name is required and must include an SDK-specific image/,
+    /--performer-image-name is required/,
+  );
+});
+
+test("parseGeneratePresetArgs rejects an SDK without prebuilt images", () => {
+  assert.throws(
+    () =>
+      parseGeneratePresetArgs([
+        "--type=preset-functional-tests",
+        "--performer-image-name=python-fit-performer:main",
+      ]),
+    /publish prebuilt performer images/,
   );
 });
 
@@ -77,8 +86,7 @@ test("generatePreset writes YAML when the output path ends in .yaml", async () =
 
   await generatePreset({
     type: "preset-functional-tests",
-    sdkValue: "java",
-    performerImageName: "refs-changes-67-246067-3",
+    image: "java-fit-performer:refs-changes-67-246067-3",
     outputPath,
   });
 

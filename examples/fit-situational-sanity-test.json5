@@ -4,7 +4,7 @@
 {
   version: 1,
   type: 'fit',
-  description: '{AWS:{clusterless:[{Java@latest,situational,standard-qe}]}}',
+  description: '{AWS:{clusterless:[{Java@main,situational,standard-qe}]}}',
   instances: [
     {
       aws: {},
@@ -23,7 +23,7 @@
       clusterlessSessions: [
         {
           performer: {
-            sdk: 'java',
+            image: 'java-fit-performer:main',
             onPortInUse: 'reuse',
           },
           runs: [

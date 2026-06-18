@@ -1,40 +1,26 @@
 /**
- * Step: check that an SDK's performer exists on disk and as a Docker image.
+ * Step: check whether an SDK's prebuilt performer Docker image is present locally.
  *
- * Non-JVM SDKs live in transactions-fit-performer/performers/<performer>.
- * JVM SDKs (Java, Kotlin, Scala) use prebuilt GHCR containers; there is no
- * on-disk source to check.
+ * Performers are always prebuilt GHCR images (couchbase/<sdk>-fit-performer);
+ * there is no on-disk source to check.
  *
  * Run on its own (add --root <dir> to point at another workspace):
- *   npx tsx src/fit/performers/check-performer/check-performer.ts dotnet
+ *   npx tsx src/fit/performers/check-performer/check-performer.ts java
  *
- * Exits 0 if the performer path and Docker image both exist, 1 if either does
- * not (or the SDK is unknown).
+ * Exits 0 if the Docker image exists locally, 1 if it does not (or the SDK is unknown).
  */
-import { join } from "node:path";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { fitCliError } from "../../../util/non-fit/fit-cli-log.js";
-import { FIT_PERFORMER, repoPath } from "../../util/repos.js";
 import { rootDirFromArgv } from "../../util/root.js";
-import { SDKS, sdkByValue, type Sdk } from "../../../util/sdk/sdks.js";
+import { PREBUILT_PERFORMER_SDKS, sdkByValue, type Sdk } from "../../../util/sdk/sdks.js";
 import { createLocalFitExecutionContext, type FitExecutionContext } from "../../shared/util/remote-fit-run.js";
-import { buildPerformerImageName } from "../build-performer/build-performer.js";
+import { performerImageName } from "../util/performer-image.js";
 
 export interface PerformerStatus {
-  /** Undefined for JVM SDKs, which use prebuilt GHCR containers with no on-disk source. */
-  path: string | undefined;
-  pathExists: boolean;
+  /** The fully-qualified GHCR image reference for this performer. */
   imageName: string;
   dockerAvailable: boolean;
   imageExists: boolean;
-}
-
-/** Absolute path to an SDK's performer on disk, under ROOT_DIR. Undefined for JVM SDKs. */
-export function performerPath(sdk: Sdk, rootDir: string): string | undefined {
-  if (sdk.jvm) {
-    return undefined;
-  }
-  return join(repoPath(FIT_PERFORMER, rootDir), "performers", sdk.performer);
 }
 
 /** Docker inspect args used to check whether an image exists locally. */
@@ -42,15 +28,13 @@ export function performerImageInspectArgs(imageName: string): string[] {
   return ["image", "inspect", "--format={{.Id}}", imageName];
 }
 
-/** Inspect the on-disk performer and its Docker image. */
+/** Inspect whether the prebuilt performer Docker image is present locally. */
 export async function performerStatus(
   execution: FitExecutionContext,
   sdk: Sdk,
   version?: string,
-  gerritRef?: string,
 ): Promise<PerformerStatus> {
-  const path = performerPath(sdk, execution.rootDir);
-  const imageName = buildPerformerImageName(sdk, version, gerritRef);
+  const imageName = performerImageName(sdk, version);
   const dockerAvailable = await execution.commandAvailable(execution.dockerCommand);
   let imageExists = false;
 
@@ -63,31 +47,16 @@ export async function performerStatus(
     }
   }
 
-  return {
-    path,
-    pathExists: path === undefined ? true : await execution.pathExists(path),
-    imageName,
-    dockerAvailable,
-    imageExists,
-  };
+  return { imageName, dockerAvailable, imageExists };
 }
 
-/** Report whether the SDK's performer exists on disk and as a Docker image. */
+/** Report whether the SDK's prebuilt performer Docker image exists locally. */
 export async function checkPerformer(
   execution: FitExecutionContext,
   sdk: Sdk,
   version?: string,
-  gerritRef?: string,
 ): Promise<boolean> {
-  const status = await performerStatus(execution, sdk, version, gerritRef);
-
-  if (status.path === undefined) {
-    console.log(`✓ ${sdk.name} uses a prebuilt GHCR container (no on-disk source to check)`);
-  } else if (status.pathExists) {
-    console.log(`✓ Found the ${sdk.name} performer at ${status.path}`);
-  } else {
-    fitCliError(`Could not find the ${sdk.name} performer at ${status.path}`);
-  }
+  const status = await performerStatus(execution, sdk, version);
 
   if (!status.dockerAvailable) {
     fitCliError("Could not find docker on your PATH");
@@ -100,7 +69,7 @@ export async function checkPerformer(
     fitCliError(`Could not find the ${sdk.name} performer Docker image ${status.imageName}`);
   }
 
-  return status.pathExists && status.imageExists;
+  return status.imageExists;
 }
 
 if (isMain(import.meta.url)) {
@@ -110,9 +79,9 @@ if (isMain(import.meta.url)) {
     const sdk = value ? sdkByValue(value) : undefined;
     const version = positionals[1];
     if (!sdk) {
-      const values = SDKS.map((s) => s.value).join(" | ");
+      const values = PREBUILT_PERFORMER_SDKS.map((s) => s.value).join(" | ");
       console.error(
-        `Usage: tsx src/workflows/performers/check-performer.ts <${values}> [version] [--root <dir>]`,
+        `Usage: tsx src/fit/performers/check-performer/check-performer.ts <${values}> [tag] [--root <dir>]`,
       );
       process.exit(2);
     }

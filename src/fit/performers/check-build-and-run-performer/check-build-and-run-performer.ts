@@ -1,5 +1,8 @@
 /**
- * The "Check, build, and run performer" guided flow.
+ * The "Check and run performer" guided flow.
+ *
+ * Performers are always prebuilt images pulled from GHCR; fit-cli no longer
+ * builds them from source.
  *
  * Run this flow on its own (skipping the top-level menu; add --root <dir> to
  * point at another workspace):
@@ -17,19 +20,24 @@ import {
   createLocalFitExecutionContext,
   type FitExecutionContext,
 } from "../../shared/util/remote-fit-run.js";
-import { askVersion } from "../build-performer/ask-version.js";
-import {
-  buildPerformerImageName,
-  dockerImageComponent,
-  performerBuildIdentity,
-} from "../build-performer/build-performer.js";
+import { askPerformerTag } from "../util/ask-performer-image.js";
 import { checkoutFitGerritRef } from "../checkout-fit-gerrit-ref/checkout-fit-gerrit-ref.js";
-import { checkAndBuildPerformer } from "../check-and-build-performer/check-and-build-performer.js";
 import { checkAndPullPerformer } from "../check-and-pull-performer/check-and-pull-performer.js";
 import { performerImageName } from "../util/performer-image.js";
 import { checkRunningPerformer, stopRunningPerformer } from "../check-running-performer/check-running-performer.js";
 export { DEFAULT_PERFORMER_PORT } from "../util/performer-port.js";
 import { DEFAULT_PERFORMER_PORT, type PortInUsePolicy } from "../util/performer-port.js";
+
+/** Normalize a performer tag into a filesystem-safe log-file component. */
+function tagLogComponent(version?: string): string {
+  return (
+    (version ?? "")
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9._-]+/g, "-")
+      .replace(/^[._-]+|[._-]+$/g, "") || "main"
+  );
+}
 
 export interface RunningPerformer extends RunOutput {
   // Absent when reusing a performer we didn't start (an external process on the
@@ -41,15 +49,15 @@ export interface RunningPerformer extends RunOutput {
   reused?: boolean;
 }
 
-export function performerLogStem(path: DefinitionRunPath, sdk: Sdk, version?: string, gerritRef?: string): string {
+export function performerLogStem(path: DefinitionRunPath, sdk: Sdk, version?: string): string {
   const base = path.clusterlessSession
     ? join("instances", String(path.instanceIndex), "clusterless-sessions", String(path.sessionIndex))
     : join("instances", String(path.instanceIndex), "clusters", String(path.clusterIndex), "sessions", String(path.sessionIndex));
-  return join(base, `${sdk.value}-${dockerImageComponent(performerBuildIdentity(version, gerritRef))}-performer`);
+  return join(base, `${sdk.value}-${tagLogComponent(version)}-performer`);
 }
 
-function performerLogFile(path: DefinitionRunPath, sdk: Sdk, version?: string, gerritRef?: string): string {
-  return createLogFile(performerLogStem(path, sdk, version, gerritRef));
+function performerLogFile(path: DefinitionRunPath, sdk: Sdk, version?: string): string {
+  return createLogFile(performerLogStem(path, sdk, version));
 }
 
 /** Build the docker args needed to run a performer locally for FIT. */
@@ -58,7 +66,6 @@ export function checkBuildAndRunPerformerArgs(
   version?: string,
   hostPort: number = DEFAULT_PERFORMER_PORT,
   dockerNetwork?: string,
-  gerritRef?: string,
 ): string[] {
   return [
     "run",
@@ -67,12 +74,12 @@ export function checkBuildAndRunPerformerArgs(
     ...(dockerNetwork ? ["--network", dockerNetwork] : []),
     "--publish",
     `${hostPort}:${DEFAULT_PERFORMER_PORT}`,
-    buildPerformerImageName(sdk, version, gerritRef),
+    performerImageName(sdk, version),
   ];
 }
 
 /**
- * Check/build the performer image, then start it in Docker for FIT.
+ * Pull the prebuilt performer image from GHCR, then start it in Docker for FIT.
  *
  * @param onPortInUse When set, decide non-interactively what to do if the port
  *   is already taken (the definition-driven flow passes the file's policy);
@@ -92,24 +99,22 @@ export async function checkBuildAndRunPerformer(
   hostPort: number = DEFAULT_PERFORMER_PORT,
   gerritRef?: string,
 ): Promise<RunningPerformer | undefined> {
-  // JVM SDKs (Java, Kotlin, Scala) use prebuilt GHCR images; non-JVM SDKs
-  // build from source using jenkins-sdk.
-  // When a Gerrit ref is set, the FIT performer repo must be present even for JVM SDKs so we can
-  // check it out to the requested ref.
-  if (!sdk.jvm || gerritRef) {
+  // A Gerrit ref checks out transactions-fit-performer (the FIT test driver) at a
+  // specific patchset; the performer image itself is always a prebuilt GHCR image
+  // and independent of the ref. The repo must be present before we can check it out.
+  if (gerritRef) {
     if (!(await execution.ensureWorkspace(sdk))) {
+      return undefined;
+    }
+    if (!(await checkoutFitGerritRef(execution, gerritRef))) {
       return undefined;
     }
   }
 
-  if (gerritRef && !(await checkoutFitGerritRef(execution, gerritRef))) {
-    return undefined;
-  }
-
   // Check what's already running first: if a performer is up (a recognised
   // container, or just something on the port), we can test against it and skip
-  // locating and building the image entirely.
-  const runCheck = await checkRunningPerformer(execution, sdk, version, onPortInUse, hostPort, sdk.jvm ? undefined : gerritRef);
+  // pulling the image entirely.
+  const runCheck = await checkRunningPerformer(execution, sdk, version, onPortInUse, hostPort);
   if (runCheck.action === "abort") {
     return undefined;
   }
@@ -126,7 +131,7 @@ export async function checkBuildAndRunPerformer(
     if (!containerId) {
       return undefined;
     }
-    const logFile = performerLogFile(path, sdk, version, gerritRef);
+    const logFile = performerLogFile(path, sdk, version);
     return {
       containerId,
       logFile,
@@ -136,12 +141,9 @@ export async function checkBuildAndRunPerformer(
     };
   }
 
-  // We're going to start (or restart) the performer ourselves, so the image
-  // must be located first (pulled from GHCR for JVM, built from source for others).
-  const imageReady = sdk.jvm
-    ? await checkAndPullPerformer(execution, sdk, version)
-    : await checkAndBuildPerformer(execution, sdk, path, version, gerritRef);
-  if (!imageReady) {
+  // We're going to start (or restart) the performer ourselves, so pull the
+  // prebuilt image from GHCR first.
+  if (!(await checkAndPullPerformer(execution, sdk, version))) {
     return undefined;
   }
 
@@ -149,7 +151,7 @@ export async function checkBuildAndRunPerformer(
     return undefined;
   }
 
-  const imageName = sdk.jvm ? performerImageName(sdk, version) : buildPerformerImageName(sdk, version, gerritRef);
+  const imageName = performerImageName(sdk, version);
   if (dockerNetwork) {
     console.log(`\n→ Starting the performer on Docker network ${dockerNetwork} so it can reach the cluster container.`);
   }
@@ -159,7 +161,7 @@ export async function checkBuildAndRunPerformer(
   try {
     const containerId = (await execution.capture(execution.dockerCommand, args)).trim();
     console.log(`\n✓ Started the ${sdk.name} performer in container ${containerId}`);
-    const logFile = performerLogFile(path, sdk, version, gerritRef);
+    const logFile = performerLogFile(path, sdk, version);
     return {
       containerId,
       logFile,
@@ -215,10 +217,10 @@ export async function stopManagedPerformer(
   }
 }
 
-/** Guided flow for choosing a performer, checking/building it, and running it. */
+/** Guided flow for choosing a performer, pulling it, and running it. */
 export async function runCheckBuildAndRunPerformer(rootDir: string): Promise<void> {
-  const sdk = await chooseSdk("Which SDK performer do you want to check, build, and run?");
-  const version = await askVersion();
+  const sdk = await chooseSdk("Which SDK performer do you want to check and run?");
+  const version = await askPerformerTag(sdk);
   const execution = createLocalFitExecutionContext(rootDir);
   const performer = await checkBuildAndRunPerformer(execution, sdk, { instanceIndex: 0, clusterIndex: 0, sessionIndex: 0 }, version);
   await stopManagedPerformer(execution, performer);

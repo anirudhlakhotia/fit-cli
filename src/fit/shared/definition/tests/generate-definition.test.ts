@@ -49,7 +49,7 @@ test("buildFitFunctionalDefinitionFrom records a cbdinocluster in clusterConfigs
   });
 
   assert.equal(definition.setup?.repos?.["transactions-fit-performer"]?.gerritRef, "refs/changes/29/246329/1");
-  assert.equal(definition.instances[0]?.clusters[0]?.sessions[0]?.performer.version, "1.2.3");
+  assert.equal(definition.instances[0]?.clusters[0]?.sessions[0]?.performer.image, "java-fit-performer:1.2.3");
 
   // Cluster uses a ref, not inline fields
   assert.equal(definition.instances[0]?.clusters[0]?.clusterConfig, "cluster-0");

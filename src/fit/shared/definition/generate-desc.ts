@@ -4,13 +4,9 @@
  * Output example:
  *   {AWS:{cbdino(3n@8.1.0):[{Java@latest,functional,SanityTest}]}}
  */
-import { SDKS } from "../../../util/sdk/sdks.js";
 import type { ClusterLifetime, FitDefinition, FitRun, InstanceLifetime, SessionLifetime } from "./types.js";
 import { resolveDefinitionRefs } from "./resolve-definition.js";
-
-function sdkDisplayName(value: string): string {
-  return SDKS.find((s) => s.value === value)?.name ?? value;
-}
+import { analysePerformerImage } from "../../performers/util/performer-image.js";
 
 function describeClusterSource(cluster: ClusterLifetime): string {
   if (cluster.cbdinocluster) {
@@ -42,8 +38,9 @@ function describeRunTests(run: FitRun): string {
 }
 
 function describeSession(session: SessionLifetime): string {
-  const sdk = sdkDisplayName(session.performer.sdk);
-  const version = session.performer.version ?? "latest";
+  const parsed = analysePerformerImage(session.performer.image);
+  const sdk = "error" in parsed ? session.performer.image : parsed.sdk.name;
+  const version = "error" in parsed ? "?" : parsed.tag;
   const runTypes = [...new Set(session.runs.map((r) => r.type))].join(",");
   const testSuffix = session.runs.length === 1 ? describeRunTests(session.runs[0]) : "";
   return `{${sdk}@${version},${runTypes}${testSuffix}}`;

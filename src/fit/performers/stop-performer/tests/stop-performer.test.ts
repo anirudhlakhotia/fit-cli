@@ -8,13 +8,13 @@ import {
 } from "../stop-performer.js";
 
 test("stopPerformer stops all running containers for the matching image", async () => {
-  const sdk = sdkByValue("node");
+  const sdk = sdkByValue("cpp");
   assert.ok(sdk);
 
   const stoppedIds: string[][] = [];
   const deps: StopPerformerDeps = {
     runningContainersForImage(_execution, imageName) {
-      assert.equal(imageName, "performer-node-main");
+      assert.equal(imageName, "ghcr.io/couchbase/cpp-fit-performer:main");
       return Promise.resolve([
         { id: "abc123", image: imageName, name: "fit-node-1", ports: "" },
         { id: "def456", image: imageName, name: "fit-node-2", ports: "" },
@@ -37,7 +37,7 @@ test("stopPerformer succeeds without stopping anything when no containers are ru
   let stopCalled = false;
   const deps: StopPerformerDeps = {
     runningContainersForImage(_execution, imageName) {
-      assert.equal(imageName, "performer-java-main");
+      assert.equal(imageName, "ghcr.io/couchbase/java-fit-performer:main");
       return Promise.resolve([]);
     },
     stopPerformerContainers() {

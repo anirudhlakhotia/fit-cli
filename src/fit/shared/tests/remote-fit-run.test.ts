@@ -4,7 +4,6 @@ import { sdkByValue } from "../../../util/sdk/sdks.js";
 import {
   createLocalFitExecutionContext,
   gitCredentialsLine,
-  remoteBuildWorkspaceRepos,
   pathPrefixedCommand,
   redirectShellCommand,
   redirectToFileCommand,
@@ -19,17 +18,8 @@ test("remoteFitRootDir defaults to the ubuntu home directory", () => {
   assert.equal(remoteFitRootDir(), "/home/ubuntu/fit-workspace");
 });
 
-test("remoteFitRepos includes the same repos for JVM and non-JVM SDKs", () => {
+test("remoteFitRepos clones transactions-fit-performer and jenkins-sdk (the latter for the situational perf DB)", () => {
   const sdk = sdkByValue("java");
-  assert.ok(sdk);
-  assert.deepEqual(
-    remoteFitRepos(sdk).map((repo) => repo.dir),
-    ["transactions-fit-performer", "jenkins-sdk"],
-  );
-});
-
-test("remoteFitRepos is the same for non-JVM SDKs", () => {
-  const sdk = sdkByValue("go");
   assert.ok(sdk);
   assert.deepEqual(
     remoteFitRepos(sdk).map((repo) => repo.dir),
@@ -43,15 +33,6 @@ test("remoteWorkspaceRepos only includes transactions-fit-performer", () => {
   assert.deepEqual(
     remoteWorkspaceRepos(sdk).map((repo) => repo.dir),
     ["transactions-fit-performer"],
-  );
-});
-
-test("remoteBuildWorkspaceRepos includes jenkins-sdk for performer builds", () => {
-  const sdk = sdkByValue("go");
-  assert.ok(sdk);
-  assert.deepEqual(
-    remoteBuildWorkspaceRepos(sdk).map((repo) => repo.dir),
-    ["transactions-fit-performer", "jenkins-sdk"],
   );
 });
 

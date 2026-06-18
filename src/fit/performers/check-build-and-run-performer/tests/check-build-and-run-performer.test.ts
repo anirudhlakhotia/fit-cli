@@ -7,8 +7,8 @@ import {
   performerLogStem,
 } from "../check-build-and-run-performer.js";
 
-test("checkBuildAndRunPerformerArgs runs the main image on the default FIT port", () => {
-  const sdk = sdkByValue("go");
+test("checkBuildAndRunPerformerArgs runs the prebuilt GHCR image on the default FIT port", () => {
+  const sdk = sdkByValue("java");
   assert.ok(sdk);
   assert.deepEqual(checkBuildAndRunPerformerArgs(sdk), [
     "run",
@@ -16,12 +16,12 @@ test("checkBuildAndRunPerformerArgs runs the main image on the default FIT port"
     "--rm",
     "--publish",
     `${DEFAULT_PERFORMER_PORT}:${DEFAULT_PERFORMER_PORT}`,
-    "performer-go-main",
+    "ghcr.io/couchbase/java-fit-performer:main",
   ]);
 });
 
-test("checkBuildAndRunPerformerArgs publishes a custom host port for versioned images", () => {
-  const sdk = sdkByValue("node");
+test("checkBuildAndRunPerformerArgs publishes a custom host port for tagged images", () => {
+  const sdk = sdkByValue("cpp");
   assert.ok(sdk);
   assert.deepEqual(checkBuildAndRunPerformerArgs(sdk, "4.2.0", 18060), [
     "run",
@@ -29,12 +29,12 @@ test("checkBuildAndRunPerformerArgs publishes a custom host port for versioned i
     "--rm",
     "--publish",
     "18060:8060",
-    "performer-node-4.2.0",
+    "ghcr.io/couchbase/cpp-fit-performer:4.2.0",
   ]);
 });
 
 test("checkBuildAndRunPerformerArgs can attach the performer to a Docker network", () => {
-  const sdk = sdkByValue("go");
+  const sdk = sdkByValue("cpp");
   assert.ok(sdk);
   assert.deepEqual(checkBuildAndRunPerformerArgs(sdk, undefined, DEFAULT_PERFORMER_PORT, "fit-net"), [
     "run",
@@ -44,27 +44,11 @@ test("checkBuildAndRunPerformerArgs can attach the performer to a Docker network
     "fit-net",
     "--publish",
     "8060:8060",
-    "performer-go-main",
+    "ghcr.io/couchbase/cpp-fit-performer:main",
   ]);
 });
 
-test("checkBuildAndRunPerformerArgs uses a Gerrit-specific image name when requested", () => {
-  const sdk = sdkByValue("go");
-  assert.ok(sdk);
-  assert.deepEqual(
-    checkBuildAndRunPerformerArgs(sdk, undefined, DEFAULT_PERFORMER_PORT, undefined, "refs/changes/29/246329/1"),
-    [
-      "run",
-      "--detach",
-      "--rm",
-      "--publish",
-      "8060:8060",
-      "performer-go-gerrit-refs-changes-29-246329-1",
-    ],
-  );
-});
-
-test("performerLogStem puts the normalized version under the session path", () => {
+test("performerLogStem puts the normalized tag under the session path", () => {
   const sdk = sdkByValue("java");
   assert.ok(sdk);
   assert.equal(

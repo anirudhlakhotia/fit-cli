@@ -402,7 +402,7 @@ export async function setupCluster(
   return { group, artifacts: [], details: [] };
 }
 
-/** The setup-performer step: build the performer image and start it in Docker. */
+/** The setup-performer step: pull the prebuilt performer image and start it in Docker. */
 async function setupPerformer(
   execution: FitExecutionContext,
   fitPerformerGerritRef: string | undefined,

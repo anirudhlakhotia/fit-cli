@@ -30,7 +30,6 @@ export interface FitExecutionContext {
   readonly target: ExecutionTarget;
   readonly rootDir: string;
   readonly fitPerformerDir: string;
-  readonly jenkinsDir: string;
   readonly dockerCommand: string;
   readonly artifacts: Artifact[];
   details: Detail[];
@@ -42,7 +41,6 @@ export interface FitExecutionContext {
   gerritSshKeyPath?: string;
 
   ensureWorkspace(sdk: Sdk): Promise<boolean>;
-  ensureBuildWorkspace(sdk: Sdk): Promise<boolean>;
   run(command: string, args: string[], cwd?: string, opts?: RunOptions): Promise<void>;
   capture(command: string, args: string[], cwd?: string, opts?: RunOptions): Promise<string>;
   runHiddenUntilFailure(command: string, args: string[], cwd?: string, opts?: RunOptions): Promise<void>;
@@ -103,12 +101,14 @@ export function remoteWorkspaceRepos(sdk: Sdk): Repo[] {
   return uniqueRepos([FIT_PERFORMER, ...requiredReposForSdk(sdk)]);
 }
 
-export function remoteBuildWorkspaceRepos(sdk: Sdk): Repo[] {
-  return uniqueRepos([FIT_PERFORMER, JENKINS_SDK, ...requiredReposForSdk(sdk)]);
-}
-
+/**
+ * Repos cloned onto a remote box. transactions-fit-performer holds the FIT test
+ * driver; jenkins-sdk is kept solely for situational "local" results-database
+ * setup (`./gradlew setupPerfDatabase`) — performers themselves are now always
+ * pulled as prebuilt images, never built from source.
+ */
 export function remoteFitRepos(sdk: Sdk): Repo[] {
-  return remoteBuildWorkspaceRepos(sdk);
+  return uniqueRepos([FIT_PERFORMER, JENKINS_SDK, ...requiredReposForSdk(sdk)]);
 }
 
 export function remoteDockerWrapperScript(): string {
@@ -330,7 +330,6 @@ export function createLocalFitExecutionContext(rootDir: string): FitExecutionCon
     target,
     rootDir,
     fitPerformerDir: repoPath(FIT_PERFORMER, rootDir),
-    jenkinsDir: repoPath(JENKINS_SDK, rootDir),
     dockerCommand: "docker",
     artifacts: [],
     details: [],
@@ -345,13 +344,6 @@ export function createLocalFitExecutionContext(rootDir: string): FitExecutionCon
         return false;
       }
       return true;
-    },
-    ensureBuildWorkspace: async (sdk: Sdk): Promise<boolean> => {
-      if (!(await ensureRepo(JENKINS_SDK, rootDir))) {
-        console.log("\nOnce jenkins-sdk is in place, run fit-cli again.");
-        return false;
-      }
-      return await ensureSdkWorkspace(sdk, rootDir);
     },
     run: (command, args, cwd, opts) => target.run(command, args, cwd, opts),
     capture: (command, args, cwd, opts) => target.capture(command, args, cwd, opts),

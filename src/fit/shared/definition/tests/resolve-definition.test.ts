@@ -42,7 +42,7 @@ function definition(): FitDefinition {
             },
             sessions: [
               {
-                performer: { sdk: "java" },
+                performer: { image: "java-fit-performer:main" },
                 runs: [{ type: "functional", tests: {}, fitConfig: { excludeTests: ["openshift"] } }],
               },
             ],
@@ -85,7 +85,7 @@ test("resolveDefinition preserves instance, cluster, session, and run nesting", 
 test("resolveSession applies performer defaults and strips redundant clusterAccess for connection mode", () => {
   const resolved = resolveSession(
     {
-      performer: { sdk: "java" },
+      performer: { image: "java-fit-performer:main" },
       runs: [
         {
           type: "functional",
@@ -114,7 +114,7 @@ test("resolveDefinition uses run-level fitConfig for useExisting clusters", () =
         clusters: [
           {
             useExisting: {},
-            sessions: [{ performer: { sdk: "java" }, runs: [{ type: "functional", tests: {}, fitConfig: LOCAL_FIT_CONFIG }] }],
+            sessions: [{ performer: { image: "java-fit-performer:main" }, runs: [{ type: "functional", tests: {}, fitConfig: LOCAL_FIT_CONFIG }] }],
           },
         ],
       },
@@ -141,7 +141,7 @@ test("packages are expanded to Maven wildcard selectors", () => {
             },
             sessions: [
               {
-                performer: { sdk: "java" },
+                performer: { image: "java-fit-performer:main" },
                 runs: [{ type: "functional", tests: { packages: ["com.couchbase.client.kv", "com.couchbase.transactions"] } }],
               },
             ],
@@ -171,7 +171,7 @@ test("packages combined with classes produce a unified selector", () => {
             },
             sessions: [
               {
-                performer: { sdk: "java" },
+                performer: { image: "java-fit-performer:main" },
                 runs: [{ type: "functional", tests: { packages: ["com.couchbase.client.kv"], classes: ["com.couchbase.other.ExplicitTest"] } }],
               },
             ],
@@ -212,7 +212,7 @@ test("resolveDefinitionRefs replaces clusterConfig string ref with inline fields
         clusters: [
           {
             clusterConfig: "cluster-0",
-            sessions: [{ performer: { sdk: "java" }, runs: [{ type: "functional", tests: {} }] }],
+            sessions: [{ performer: { image: "java-fit-performer:main" }, runs: [{ type: "functional", tests: {} }] }],
           },
         ],
       },
@@ -243,7 +243,7 @@ test("resolveDefinitionRefs replaces fitConfig string ref with inline config", (
         clusters: [
           {
             connection: { connectionString: "couchbase://localhost", username: "Administrator", password: "password", tls: null },
-            sessions: [{ performer: { sdk: "java" }, runs: [{ type: "functional", fitConfig: "fit-config-0", tests: {} }] }],
+            sessions: [{ performer: { image: "java-fit-performer:main" }, runs: [{ type: "functional", fitConfig: "fit-config-0", tests: {} }] }],
           },
         ],
       },
@@ -267,7 +267,7 @@ test("resolveDefinitionRefs throws on unknown clusterConfig ref", () => {
             clusters: [
               {
                 clusterConfig: "nonexistent",
-                sessions: [{ performer: { sdk: "java" }, runs: [{ type: "functional", tests: {} }] }],
+                sessions: [{ performer: { image: "java-fit-performer:main" }, runs: [{ type: "functional", tests: {} }] }],
               },
             ],
           },
@@ -289,7 +289,7 @@ test("resolveDefinitionRefs throws on unknown fitConfig ref", () => {
             clusters: [
               {
                 connection: { connectionString: "couchbase://localhost", username: "Administrator", password: "password", tls: null },
-                sessions: [{ performer: { sdk: "java" }, runs: [{ type: "functional", fitConfig: "nonexistent", tests: {} }] }],
+                sessions: [{ performer: { image: "java-fit-performer:main" }, runs: [{ type: "functional", fitConfig: "nonexistent", tests: {} }] }],
               },
             ],
           },
