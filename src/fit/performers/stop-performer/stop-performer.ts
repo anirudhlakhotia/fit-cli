@@ -9,8 +9,8 @@ import { rootDirFromArgv } from "../../util/root.js";
 import { type Sdk } from "../../../util/sdk/sdks.js";
 import { chooseSdk } from "../../../util/sdk/choose-sdk.js";
 import { createLocalFitExecutionContext, type FitExecutionContext } from "../../shared/util/remote-fit-run.js";
-import { askVersion } from "../build-performer/ask-version.js";
-import { buildPerformerImageName } from "../build-performer/build-performer.js";
+import { askPerformerTag } from "../util/ask-performer-image.js";
+import { performerImageName } from "../util/performer-image.js";
 import {
   runningContainersForImage,
   stopPerformerContainers,
@@ -34,7 +34,7 @@ export async function stopPerformer(
   version?: string,
   deps: StopPerformerDeps = DEFAULT_DEPS,
 ): Promise<boolean> {
-  const imageName = buildPerformerImageName(sdk, version);
+  const imageName = performerImageName(sdk, version);
   const runningContainers = await deps.runningContainersForImage(execution, imageName);
   if (runningContainers === null) {
     return false;
@@ -51,7 +51,7 @@ export async function stopPerformer(
 /** Guided flow for choosing and stopping a performer Docker image. */
 export async function runStopPerformerWorkflow(rootDir: string): Promise<void> {
   const sdk = await chooseSdk("Which SDK performer do you want to stop?");
-  const version = await askVersion();
+  const version = await askPerformerTag(sdk);
   await stopPerformer(createLocalFitExecutionContext(rootDir), sdk, version);
 }
 

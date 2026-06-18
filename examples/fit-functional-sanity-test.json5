@@ -10,7 +10,7 @@
 {
   version: 1,
   type: 'fit',
-  description: '{AWS:{cbdino(3n@8.0-stable):[{Java@latest,functional,SanityTest}]}}',
+  description: '{AWS:{cbdino(3n@8.0-stable):[{Java@main,functional,SanityTest}]}}',
   instances: [
     {
       aws: {},
@@ -28,7 +28,7 @@
           sessions: [
             {
               performer: {
-                sdk: 'java',
+                image: 'java-fit-performer:main',
                 onPortInUse: 'reuse',
               },
               runs: [

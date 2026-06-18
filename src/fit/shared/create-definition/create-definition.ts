@@ -15,7 +15,7 @@ import { chooseSdk } from "../../../util/sdk/choose-sdk.js";
 import { askClusterDef } from "../../../cluster/cluster-create/ask-cluster-def.js";
 import { askClusterExistsPolicy } from "../../../cluster/cluster-create/ask-cluster-exists-policy.js";
 import { selectCluster } from "../../../cluster/cluster-select/cluster-select.js";
-import { askVersion } from "../../performers/build-performer/ask-version.js";
+import { askPerformerTag } from "../../performers/util/ask-performer-image.js";
 import { askPortInUsePolicy } from "../../performers/util/ask-port-in-use-policy.js";
 import { printDefinitionRunGuidance } from "../definition/run-guidance.js";
 import { extractPushGistVisibility, pushGist, type GistVisibility } from "../definition/push-gist.js";
@@ -272,7 +272,7 @@ async function addFunctionalRun(
   const execution = createLocalFitExecutionContext(rootDir);
   const connectivity = await chooseFunctionalConnectivity(promptIdPrefix);
   const sdk = await chooseSdk("Which SDK do you want to test with FIT functional?", promptIdPrefix);
-  const version = await askVersion(promptIdPrefix);
+  const version = await askPerformerTag(sdk, promptIdPrefix);
   const onPortInUse = await askPortInUsePolicy(promptIdPrefix);
   const selection = await selectFitTests(execution, FUNCTIONAL_TEST_DOMAIN, promptIdPrefix);
 
@@ -384,7 +384,7 @@ async function addSituationalRun(
   const promptIdPrefix = `fit.definition.run.${runIndex + 1}.situational`;
   const execution = createLocalFitExecutionContext(rootDir);
   const sdk = await chooseSdk("Which SDK do you want to test with FIT situational?", promptIdPrefix);
-  const version = await askVersion(promptIdPrefix);
+  const version = await askPerformerTag(sdk, promptIdPrefix);
   const onPortInUse = await askPortInUsePolicy(promptIdPrefix);
   // One prompt for where results go (hosted env, with its host, or local); then the Capella env.
   const { mode: databaseMode, resultsEnvironment } = await chooseResultsTarget(promptIdPrefix);

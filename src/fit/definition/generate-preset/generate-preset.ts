@@ -11,13 +11,13 @@ import { join, dirname, extname, resolve } from "node:path";
 import YAML from "yaml";
 import { printWithoutTimestamps } from "../../../util/non-fit/fit-cli-log.js";
 import { resolveOutputFormat } from "../../util/config.js";
-import { sdkByValue, type SdkValue } from "../../../util/sdk/sdks.js";
+import { analysePerformerImage, performerImageShortName } from "../../performers/util/performer-image.js";
 import {
   formatFitDefinition,
   writeFitDefinition,
   type DefinitionFormat,
 } from "../../shared/definition/generate-definition.js";
-import type { FitDefinition, SessionLifetime } from "../../shared/definition/types.js";
+import type { FitDefinition } from "../../shared/definition/types.js";
 import { printDefinitionRunGuidance } from "../../shared/definition/run-guidance.js";
 import { pushGist, type GistVisibility } from "../../shared/definition/push-gist.js";
 
@@ -34,9 +34,6 @@ const PRESET_TEMPLATE_FILES: Record<PresetType, string> = {
   "preset-situational-quick-sanity": "preset-situational-quick-sanity.yaml",
   "preset-qe-set": "preset-qe-set.yaml",
 };
-
-const SDK_IMAGE_NAME_PATTERN =
-  /^(?:ghcr\.io\/[^/]+\/)?(?<sdk>[a-z0-9]+)-fit-performer:(?<tag>[A-Za-z0-9_][A-Za-z0-9._-]{0,127})$/;
 
 function resolvePresetOutputFormat(outputPath: string | undefined, format: DefinitionFormat | undefined): DefinitionFormat {
   if (format) {
@@ -98,53 +95,28 @@ async function loadPresetTemplate(type: PresetType): Promise<string> {
 }
 
 /**
- * Fill in the template placeholders and return a parsed FitDefinition.
- * If `performerImageName` is provided it is written into every performer's
- * `version` field (it is the Docker image tag for the GHCR performer image).
+ * Fill the `{{PERFORMER_IMAGE}}` placeholder with the performer image and return
+ * a parsed FitDefinition. `image` is the short-form `<sdk>-fit-performer:<tag>`.
  */
-function applyPresetParams(
-  template: string,
-  sdkValue: SdkValue,
-  performerImageName?: string,
-): FitDefinition {
-  const filled = template
-    .replace(/\{\{SDK\}\}/g, sdkValue);
-  const definition = YAML.parse(filled) as FitDefinition;
-
-  if (performerImageName) {
-    const tag = performerImageName.trim();
-    for (const instance of definition.instances) {
-      const sessions: SessionLifetime[] = [
-        ...instance.clusters.flatMap((c) => c.sessions),
-        ...(instance.clusterlessSessions ?? []),
-      ];
-      for (const session of sessions) {
-        session.performer = { ...session.performer, version: tag };
-      }
-    }
-  }
-
-  return definition;
+function applyPresetParams(template: string, image: string): FitDefinition {
+  const filled = template.replace(/\{\{PERFORMER_IMAGE\}\}/g, image);
+  return YAML.parse(filled) as FitDefinition;
 }
 
 export interface GeneratePresetArgs {
   type: PresetType;
-  sdkValue: SdkValue;
-  performerImageName?: string;
+  /** Short-form performer image written into every session, e.g. java-fit-performer:main. */
+  image: string;
   outputPath?: string;
   format?: DefinitionFormat;
   pushGistVisibility?: GistVisibility;
 }
 
 export async function generatePreset(args: GeneratePresetArgs): Promise<void> {
-  const { type, sdkValue, performerImageName, outputPath, format, pushGistVisibility } = args;
-  const sdk = sdkByValue(sdkValue);
-  if (!sdk) {
-    throw new Error(`Unknown SDK: ${sdkValue}`);
-  }
+  const { type, image, outputPath, format, pushGistVisibility } = args;
 
   const template = await loadPresetTemplate(type);
-  const definition = applyPresetParams(template, sdkValue, performerImageName);
+  const definition = applyPresetParams(template, image);
   const outputFormat = resolvePresetOutputFormat(outputPath, format);
   const formatted = formatFitDefinition(definition, outputFormat);
   const result = outputPath
@@ -167,28 +139,6 @@ export async function generatePreset(args: GeneratePresetArgs): Promise<void> {
   }
 
   printDefinitionRunGuidance(result.path);
-}
-
-function deriveSdkAndTagFromPerformerImageName(
-  performerImageName?: string,
-): { sdkValue?: SdkValue; performerImageName?: string } {
-  const trimmed = performerImageName?.trim();
-  if (!trimmed) {
-    return {};
-  }
-
-  const match = SDK_IMAGE_NAME_PATTERN.exec(trimmed);
-  if (!match?.groups) {
-    return { performerImageName: trimmed };
-  }
-
-  const sdkValue = match.groups.sdk;
-  const tag = match.groups.tag;
-  if (!sdkByValue(sdkValue)) {
-    return { performerImageName: trimmed };
-  }
-
-  return { sdkValue: sdkValue as SdkValue, performerImageName: tag };
 }
 
 /** Parse `generate-preset` flags out of a positional-free argv slice. */
@@ -232,17 +182,22 @@ export function parseGeneratePresetArgs(argv: string[]): GeneratePresetArgs {
     }
   }
 
-  const derived = deriveSdkAndTagFromPerformerImageName(performerImageName);
-  performerImageName = derived.performerImageName;
-  const sdkValue = derived.sdkValue;
-
   if (!type) throw new Error(`--type is required.\nAvailable presets: ${PRESET_TYPES.join(", ")}`);
   if (!isPresetType(type)) {
     throw new Error(`Unknown preset type: ${type}\nKnown types: ${PRESET_TYPES.join(", ")}`);
   }
-  if (!sdkValue) {
-    throw new Error("--performer-image-name is required and must include an SDK-specific image like java-fit-performer:<tag>");
+  if (!performerImageName) {
+    throw new Error("--performer-image-name is required, e.g. java-fit-performer:main");
+  }
+  const parsed = analysePerformerImage(performerImageName);
+  if ("error" in parsed) {
+    throw new Error(`--performer-image-name: ${parsed.error}`);
   }
 
-  return { type, sdkValue, performerImageName, outputPath, pushGistVisibility };
+  return {
+    type,
+    image: performerImageShortName(parsed.sdk, parsed.tag),
+    outputPath,
+    pushGistVisibility,
+  };
 }

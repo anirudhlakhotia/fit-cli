@@ -27,3 +27,16 @@ export type SdkValue = Sdk["value"];
 export function sdkByValue(value: string): Sdk | undefined {
   return SDKS.find((sdk) => sdk.value === value);
 }
+
+/**
+ * True if this SDK currently publishes a prebuilt performer Docker image to
+ * GHCR. Only the JVM SDKs (Java, Scala, Kotlin) and C++ do today, and fit-cli
+ * only runs performers from prebuilt images, so these are the only SDKs it can
+ * test.
+ */
+export function sdkPublishesPerformerImage(sdk: Sdk): boolean {
+  return sdk.jvm || sdk.value === "cpp";
+}
+
+/** The SDKs fit-cli can test — those with prebuilt performer images (JVM + C++). */
+export const PREBUILT_PERFORMER_SDKS = SDKS.filter(sdkPublishesPerformerImage);

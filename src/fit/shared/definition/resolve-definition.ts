@@ -11,7 +11,8 @@ import {
   DEFAULT_PORT_IN_USE_POLICY,
   type PortInUsePolicy,
 } from "../../performers/util/performer-port.js";
-import { SDKS, sdkByValue, type Sdk } from "../../../util/sdk/sdks.js";
+import { type Sdk } from "../../../util/sdk/sdks.js";
+import { parsePerformerImage } from "../../performers/util/performer-image.js";
 import {
   DEFAULT_MAVEN_TEST_ARGS,
   SITUATIONAL_MAVEN_GROUPS_ARG,
@@ -385,15 +386,12 @@ export function resolveSession(
   path: DefinitionRunPath,
   stripClusterAccess: boolean,
 ): ResolvedSessionPlan {
-  const sdk = sdkByValue(session.performer.sdk);
-  if (!sdk) {
-    throw new Error(`Unknown sdk "${session.performer.sdk}". Valid values: ${SDKS.map((s) => s.value).join(", ")}.`);
-  }
+  const { sdk, tag } = parsePerformerImage(session.performer.image);
   return {
     path,
     sdk,
     performerPort: session.performer.port ?? DEFAULT_PERFORMER_PORT,
-    ...(session.performer.version !== undefined ? { performerVersion: session.performer.version } : {}),
+    performerVersion: tag,
     onPortInUse: session.performer.onPortInUse ?? DEFAULT_PORT_IN_USE_POLICY,
     runs: session.runs.map((run, runIndex) =>
       resolveRunWithPath(run, { ...path, runIndex }, stripClusterAccess)),

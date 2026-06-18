@@ -10,7 +10,7 @@ import { rootDirFromArgv } from "../../util/root.js";
 import { type Sdk } from "../../../util/sdk/sdks.js";
 import { chooseSdk } from "../../../util/sdk/choose-sdk.js";
 import { createLocalFitExecutionContext } from "../../shared/util/remote-fit-run.js";
-import { askVersion } from "../build-performer/ask-version.js";
+import { askPerformerTag } from "../util/ask-performer-image.js";
 import { checkBuildAndRunPerformer } from "../check-build-and-run-performer/check-build-and-run-performer.js";
 
 /** Run a performer Docker image, building it first if needed. */
@@ -34,7 +34,7 @@ export async function runPerformer(rootDir: string, sdk: Sdk, version?: string):
 /** Guided flow for choosing and running a performer Docker image. */
 export async function runPerformerWorkflow(rootDir: string): Promise<void> {
   const sdk = await chooseSdk("Which SDK performer do you want to run?");
-  const version = await askVersion();
+  const version = await askPerformerTag(sdk);
   await runPerformer(rootDir, sdk, version);
 }
 

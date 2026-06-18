@@ -61,9 +61,12 @@
           sessions: [
             {
               performer: {
-                // Which SDK to test. One of: java, scala, kotlin, cpp, dotnet, go,
-                // node, python, ruby, rust.
-                sdk: 'java',
+                // The prebuilt performer image to run, as <sdk>-fit-performer:<tag>.
+                // The SDK is derived from the image; only JVM (java, scala, kotlin)
+                // and C++ (cpp) publish prebuilt images. The tag is any GHCR tag,
+                // e.g. main or refs-changes-18-195818-7. fit-cli prepends the GHCR
+                // registry/owner at run time.
+                image: 'java-fit-performer:main',
                 // Port the performer listens on (default 8060).
                 port: 8060,
                 // What to do if the performer port is already in use:
@@ -71,8 +74,6 @@
                 //   restart - stop what's there and bring up a fresh performer (default).
                 //   reuse   - assume a performer is already running and test against it.
                 // onPortInUse: 'restart',
-                // Optional: pin the performer image version/tag.
-                // version: '1.2.3',
               },
               runs: [
                 {
@@ -117,7 +118,7 @@
             // Could test other SDKs against the same cluster here by adding another
             // session with its own performer and runs.
             // {
-            //   performer: { sdk: 'python' },
+            //   performer: { image: 'cpp-fit-performer:main' },
             //   runs: [{ type: 'functional', tests: { presets: ['all'] } }],
             // },
           ],
@@ -145,7 +146,7 @@
       clusterlessSessions: [
         {
           performer: {
-            sdk: 'python',
+            image: 'cpp-fit-performer:main',
           },
           runs: [
             {

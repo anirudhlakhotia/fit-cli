@@ -10,7 +10,7 @@ import { posixQuote } from "../../../util/non-fit/remote-target.js";
 import { RemoteTarget } from "../../../util/non-fit/remote-target.js";
 import type { ExecutionTarget } from "../../../util/non-fit/target.js";
 import { resolveGithubToken } from "../../util/config.js";
-import { FIT_PERFORMER, JENKINS_SDK, repoPath } from "../../util/repos.js";
+import { FIT_PERFORMER, repoPath } from "../../util/repos.js";
 import { SDKS, sdkByValue, type Sdk } from "../../../util/sdk/sdks.js";
 import { DEFAULT_PERFORMER_PORT } from "../../performers/util/performer-port.js";
 import { collectJunitArtifactsFromTarget } from "../run-test-driver/collect-junit.js";
@@ -19,7 +19,6 @@ import {
   ensureRemoteRepos,
   pathPrefixedCommand,
   redirectShellCommand,
-  remoteBuildWorkspaceRepos,
   remoteDockerWrapperPath,
   remoteDockerWrapperScript,
   remoteFitBinDir,
@@ -171,17 +170,12 @@ export async function createRemoteFitExecutionContext(
     target,
     rootDir,
     fitPerformerDir: repoPath(FIT_PERFORMER, rootDir),
-    jenkinsDir: repoPath(JENKINS_SDK, rootDir),
     dockerCommand: "docker",
     artifacts: [],
     details: [{ label: "Remote workspace", value: rootDir }],
     gerritSshKeyPath,
     ensureWorkspace: async (sdk) => {
       await ensureRemoteRepos(target, rootDir, remoteWorkspaceRepos(sdk));
-      return true;
-    },
-    ensureBuildWorkspace: async (sdk) => {
-      await ensureRemoteRepos(target, rootDir, remoteBuildWorkspaceRepos(sdk));
       return true;
     },
     run: (command, args, cwd, opts) =>

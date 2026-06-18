@@ -10,8 +10,7 @@ import { rootDirFromArgv } from "../../util/root.js";
 import { type Sdk } from "../../../util/sdk/sdks.js";
 import { chooseSdk } from "../../../util/sdk/choose-sdk.js";
 import { createLocalFitExecutionContext, type FitExecutionContext } from "../../shared/util/remote-fit-run.js";
-import { askVersion } from "../build-performer/ask-version.js";
-import { buildPerformerImageName } from "../build-performer/build-performer.js";
+import { askPerformerTag } from "../util/ask-performer-image.js";
 import { performerImageName } from "../util/performer-image.js";
 import { DEFAULT_PERFORMER_PORT, type PortInUsePolicy } from "../util/performer-port.js";
 
@@ -98,9 +97,8 @@ export async function checkRunningPerformer(
   version?: string,
   policy?: PortInUsePolicy,
   hostPort: number = DEFAULT_PERFORMER_PORT,
-  gerritRef?: string,
 ): Promise<PerformerRunCheckResult> {
-  const imageName = sdk.jvm ? performerImageName(sdk, version) : buildPerformerImageName(sdk, version, gerritRef);
+  const imageName = performerImageName(sdk, version);
   const runningContainers = await runningContainersForImage(execution, imageName);
 
   if (runningContainers && runningContainers.length > 0) {
@@ -383,7 +381,7 @@ export async function stopRunningPerformer(
 
 export async function runCheckRunningPerformerWorkflow(rootDir: string): Promise<void> {
   const sdk = await chooseSdk("Which SDK performer do you want to check?");
-  const version = await askVersion();
+  const version = await askPerformerTag(sdk);
   const result = await checkRunningPerformer(createLocalFitExecutionContext(rootDir), sdk, version);
   console.log(JSON.stringify(result, null, 2));
 }

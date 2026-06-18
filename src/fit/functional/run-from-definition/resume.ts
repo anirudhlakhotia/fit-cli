@@ -20,7 +20,7 @@ import { isMain, runCli } from "../../../util/non-fit/cli.js";
  *                              workspace, set up the cluster and performer.
  *   after-remote-preparation - reuse the prepared workspace; set up the cluster
  *                              and performer.
- *   after-cluster-creation   - reuse the cluster; rebuild the performer.
+ *   after-cluster-creation   - reuse the cluster; restart the performer.
  *   after-performer          - reuse the cluster and performer; just run tests.
  */
 export const RESUME_POINTS = [

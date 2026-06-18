@@ -11,7 +11,6 @@ import { ensureRunDir } from "../../../util/non-fit/replay.js";
 import type { PieceData } from "../../../util/non-fit/config-pieces.js";
 import type { Sdk } from "../../../util/sdk/sdks.js";
 import { buildClusterDefObject, type ClusterDef } from "../../../cluster/cluster-create/build-cluster-def.js";
-import { CB_ALIAS_RE } from "../../../cluster/cluster-create/cb-alias.js";
 import {
   defaultCbdinoclusterInitArgs,
   defaultCbdinoclusterInitConfig,
@@ -24,6 +23,7 @@ import type { SelectedCluster } from "../../../cluster/cluster-select/cluster-se
 import { DEFAULT_CBDINO_SETTINGS } from "../../situational/configuration/build-situational-configuration.js";
 import { localDatabaseConnection } from "../../situational/setup-local-database/setup-local-database.js";
 import type { PortInUsePolicy } from "../../performers/util/performer-port.js";
+import { performerImageShortName, sdkDefaultPerformerTag } from "../../performers/util/performer-image.js";
 import type { FitTestSelection } from "../select-fit-tests/select-fit-tests.js";
 import {
   CURRENT_FIT_DEFINITION_VERSION,
@@ -195,8 +195,7 @@ function buildPerformerSession(
 ): Omit<SessionLifetime, "runs"> {
   return {
     performer: {
-      sdk: sdk.value,
-      ...(version ? { version } : {}),
+      image: performerImageShortName(sdk, version ?? sdkDefaultPerformerTag(sdk)),
       ...(onPortInUse ? { onPortInUse } : {}),
     },
   };
