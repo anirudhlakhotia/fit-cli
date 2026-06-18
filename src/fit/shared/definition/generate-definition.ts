@@ -16,7 +16,6 @@ import {
   defaultCbdinoclusterInitConfig,
   situationalCbdinoclusterInitArgs,
 } from "../../../cluster/cluster-create/default-cbdinocluster-init-config.js";
-import { CNG_K3D_CONTEXT } from "../../../cluster/cluster-create/cng-kubernetes.js";
 import type { ClusterExistsPolicy } from "../../../cluster/cluster-create/cluster-exists-policy.js";
 import { DEFAULT_CREDENTIALS } from "../../../cluster/cluster-select/ask-credentials.js";
 import type { SelectedCluster } from "../../../cluster/cluster-select/cluster-select.js";
@@ -153,9 +152,11 @@ function buildCbdinoclusterFitConfig(cng: boolean): FitConfigPiece {
  * The docker path carries an editable `cbdinocluster init` args string; fit-cli
  * appends the GitHub credentials at runtime, so `githubUser` isn't baked in here.
  *
- * CNG still carries a `config` object uploaded as `~/.cbdinocluster`: it includes
- * the k8s block (enabled + context — cao-tools and kubeconfig are CSP-dependent
- * and added at runtime) and optionally the github block (token added at runtime).
+ * CNG still carries a `config` object uploaded as `~/.cbdinocluster`: the docker
+ * block plus optionally the github block (token added at runtime). The `k8s` block
+ * is added entirely at runtime — fit-cli points it at the logged-in OpenShift
+ * context by default (or the local k3d cluster under `FIT_CNG_K8S=k3d`), with the
+ * CSP-dependent cao-tools/kubeconfig paths — so it stays out of the definition.
  */
 function buildCbdinoclusterInit(cng: boolean, githubUser?: string): CbdinoclusterInitSetup {
   if (!cng) {
@@ -165,8 +166,6 @@ function buildCbdinoclusterInit(cng: boolean, githubUser?: string): Cbdinocluste
   return {
     config: {
       ...base,
-      // cao-tools and kubeconfig paths are added at runtime (CSP-dependent).
-      k8s: { enabled: "true", context: CNG_K3D_CONTEXT },
       ...(githubUser ? { github: { enabled: "true", user: githubUser } } : {}),
     },
   };
