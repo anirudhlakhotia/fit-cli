@@ -340,6 +340,8 @@ export function streamToFileInBackground(
  * tools (e.g. the FIT test-driver) whose full output belongs in a log file, not
  * scrolling past in the terminal.
  */
+const HEARTBEAT_INTERVAL_SECS = 30;
+
 export function streamToFile(
   command: string,
   args: string[],
@@ -348,28 +350,51 @@ export function streamToFile(
   opts?: RunOptions,
 ): Promise<void> {
   announce(command, args, opts);
+  process.stdout.write(`This may be a long-running process. The last log line will be printed every ${HEARTBEAT_INTERVAL_SECS}s as proof-of-life.\n`);
   mkdirSync(dirname(logFile), { recursive: true, mode: 0o700 });
 
   return new Promise((resolve, reject) => {
     const log = createWriteStream(logFile, { flags: "a", mode: 0o600 });
     log.write(`# ${new Date().toISOString()} ${command} ${args.join(" ")}\n`);
 
+    let partial = '';
+    let lastLine = '';
+    const trackLine = (chunk: Buffer) => {
+      const str = partial + chunk.toString();
+      const lines = str.split('\n');
+      partial = lines.pop() ?? '';
+      const last = lines.findLast((l) => l.trim()) ?? (partial.trim() ? partial : '');
+      if (last) lastLine = last;
+    };
+
     const child = spawn(command, args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
 
-    child.stdout.on("data", (chunk: Buffer) => log.write(chunk));
-    child.stderr.on("data", (chunk: Buffer) => log.write(chunk));
+    child.stdout.on("data", (chunk: Buffer) => { log.write(chunk); trackLine(chunk); });
+    child.stderr.on("data", (chunk: Buffer) => { log.write(chunk); trackLine(chunk); });
+
+    const heartbeat = setInterval(() => {
+      const line = lastLine || partial.trim();
+      if (line) process.stdout.write(`[${new Date().toISOString()}] ${line}\n`);
+    }, HEARTBEAT_INTERVAL_SECS * 1000);
+
+    const finish = (fn: () => void) => {
+      clearInterval(heartbeat);
+      fn();
+    };
 
     child.on("error", (err) => {
-      log.end(() => reject(err));
+      log.end(() => finish(() => reject(err)));
     });
     child.on("close", (code) => {
-      log.end(() => {
-        if (code === 0) {
-          resolve();
-        } else {
-          reject(new Error(`${command} exited with code ${code}`));
-        }
-      });
+      log.end(() =>
+        finish(() => {
+          if (code === 0) {
+            resolve();
+          } else {
+            reject(new Error(`${command} exited with code ${code}`));
+          }
+        }),
+      );
     });
   });
 }
