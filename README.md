@@ -18,10 +18,13 @@ Everything else is expected to work, bugs excepted.
 
 ## Getting started
 
-Install the stable version of the [`fit` binary](https://github.com/couchbaselabs/fit-cli/releases):
+Install the [`fit` binary](https://github.com/couchbaselabs/fit-cli/releases):
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/couchbaselabs/fit-cli/main/install.sh | bash
+
+# CI scripts should use this instead to get the more stable "ci" channel:
+# curl -fsSL https://raw.githubusercontent.com/couchbaselabs/fit-cli/main/install.sh | CHANNEL=ci bash
 ```
 
 Then:
@@ -38,6 +41,7 @@ fit help
 ```
 The interactive wizard will guide you through the available options in a (crosses fingers) self-documenting way.
 
+### Issues
 If you hit any problems, either ask on #the-fit-stop or consider just giving it to an LLM with something like:
 
 ```
@@ -57,7 +61,7 @@ bun install
 bun run config edit
 
 # Start the interactive wizard
-bun run start
+bun run wizard
 ```
 
 ## Running on a cloud instance (AWS EC2)
@@ -121,12 +125,12 @@ Everyone - AI and human - please follow these as best you can.
 - Run `bun run lint` and `bun run typecheck` and `bun run test` after writing code.
 
 ### Stability
-This project aims to strike a balance between actively encouraging collaboration, and the need for a stable and reliable tool - particularly as it is used from CLI.
-There is a `stable` and a `latest` version of the tool, and their installation instructions can be found here https://github.com/couchbaselabs/fit-cli/releases.
-CI and these instructions default to `stable`.
-`latest` reflects `main` and is built on each commit.
-It is intended that the stable version is only a few days at most behind main: the aim is to catch glaring problems from new code, rather than guarantee zero regressions.
-So please feel free to run https://github.com/couchbaselabs/fit-cli/actions/workflows/promote-stable.yaml regularly - whenever you have been running the tool for a few days without issue, for instance.
+This project aims to strike a balance between actively encouraging collaboration, and the need for a stable and reliable tool - particularly as it is used from CI.
+There are three release channels, with installation instructions at https://github.com/couchbaselabs/fit-cli/releases:
+- `ci` — manually promoted, infrequently, with advance notice. **Default for most users and CI.**
+- `latest` — built on every push to main. For development and testing of fit-cli itself.
+
+To promote to `ci`, run https://github.com/couchbaselabs/fit-cli/actions/workflows/promote-ci.yaml.
 
 ### Documentation
 While this project is generally very LLM-friendly - please keep project docs such as this README human-written, clear and concise.

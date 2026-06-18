@@ -12,9 +12,9 @@ on:
         type: string
         default: ""
       fitCliSource:
-        description: '"stable" (default) or "latest" to use a released fit-cli binary (for stable testing); "source" to clone the current branch and run via bun (for development).'
+        description: '"ci" (default, manually promoted) or "latest" (every push to main) to use a released binary; "source" to clone the current branch and run via bun.'
         type: string
-        default: stable
+        default: ci
       cbcollect:
         description: Collect cluster diagnostics (cbcollect)
         type: boolean
@@ -30,9 +30,9 @@ on:
         type: string
         default: ""
       fitCliSource:
-        description: '"stable" (default) or "latest" to use a released fit-cli binary (for stable testing); "source" to clone the current branch and run via bun (for development).'
+        description: '"ci" (default, manually promoted) or "latest" (every push to main) to use a released binary; "source" to clone the current branch and run via bun.'
         type: string
-        default: stable
+        default: ci
       cbcollect:
         description: Collect cluster diagnostics (cbcollect)
         type: boolean

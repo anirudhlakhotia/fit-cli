@@ -1,22 +1,14 @@
-name: Build binaries
+name: Promote to ci
 
 on:
-  push:
-    branches: [main]
-  workflow_call:
-    outputs:
-      artifact-name:
-        description: Name of the uploaded artifact containing the linux-x64 binary
-        value: ${{ jobs.build.outputs.artifact-name }}
+  workflow_dispatch:
 
 permissions:
-  contents: write   # needed to upload release assets
+  contents: write
 
 jobs:
-  build:
+  promote:
     runs-on: ubuntu-latest
-    outputs:
-      artifact-name: ${{ steps.upload.outputs.artifact-name }}
     steps:
       - uses: actions/checkout@v4
 
@@ -38,24 +30,16 @@ jobs:
           bun build --compile --target=bun-darwin-x64  --define "__FIT_GIT_SHA=\"${GIT_SHA}\""   --define "__FIT_BUILD_TIME=\"${BUILD_TIME}\""  src/fit/main/main.ts --outfile dist/fit-darwin-x64
           bun build --compile --target=bun-darwin-arm64 --define "__FIT_GIT_SHA=\"${GIT_SHA}\""   --define "__FIT_BUILD_TIME=\"${BUILD_TIME}\""  src/fit/main/main.ts --outfile dist/fit-darwin-arm64
 
-      - name: Upload artifact (for workflow_call consumers)
-        id: upload
-        uses: actions/upload-artifact@v4
-        with:
-          name: fit-binaries-${{ github.sha }}
-          path: dist/fit-*
-          retention-days: 7
-
-      - name: Update latest pre-release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      - name: Update ci release
         run: |
           cat > /tmp/release-notes.md << 'EOF'
-          > ⚠️ **This is the tip-of-main pre-release, automatically updated on every push. For CI usage install the more stable [ci](https://github.com/couchbaselabs/fit-cli/releases/tag/ci) instead.**
+          The `ci` channel is manually promoted, infrequently — intended for GHA workflows and other automation that need a very stable binary.
+          Changes are communicated in advance.
 
           ## Install
 
           ```sh
-          curl -fsSL https://raw.githubusercontent.com/couchbaselabs/fit-cli/main/install.sh | CHANNEL=latest bash
+          curl -fsSL https://raw.githubusercontent.com/couchbaselabs/fit-cli/main/install.sh | CHANNEL=ci bash
           ```
 
           > **After installing, run `fit config edit` to configure your credentials before first use.**
@@ -63,10 +47,9 @@ jobs:
           See the [README](https://github.com/couchbaselabs/fit-cli#getting-started) for full usage instructions.
           EOF
 
-          gh release delete latest --yes --cleanup-tag 2>/dev/null || true
-          gh release create latest \
-            --prerelease \
-            --title "Latest (tip of main)" \
+          gh release delete ci --yes --cleanup-tag 2>/dev/null || true
+          gh release create ci \
+            --title "CI" \
             --notes-file /tmp/release-notes.md \
             dist/fit-linux-x64 \
             dist/fit-linux-arm64 \
