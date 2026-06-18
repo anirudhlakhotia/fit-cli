@@ -9,7 +9,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join, dirname, extname, resolve } from "node:path";
 import YAML from "yaml";
-import { printWithoutTimestamps } from "../../../util/non-fit/fit-cli-log.js";
+import { printFileContent } from "../../../util/non-fit/fit-cli-log.js";
 import { resolveOutputFormat } from "../../util/config.js";
 import { analysePerformerImage, performerImageShortName } from "../../performers/util/performer-image.js";
 import {
@@ -145,7 +145,7 @@ export async function generatePreset(args: GeneratePresetArgs): Promise<{ path: 
     : writeFitDefinition(definition, undefined, outputFormat);
 
   console.log(`\nWriting ${result.path}:\n`);
-  printWithoutTimestamps(formatted);
+  printFileContent(formatted);
   console.log(`\n✓ Wrote ${result.path}`);
 
   if (pushGistVisibility) {

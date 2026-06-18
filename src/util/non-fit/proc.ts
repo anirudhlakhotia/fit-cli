@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { closeSync, createWriteStream, mkdirSync, openSync, writeFileSync, type WriteStream } from "node:fs";
 import { dirname } from "node:path";
-import { echoCommand, formatCommandLine, formatTimestampedChunk } from "./fit-cli-log.js";
+import { echoCommand, formatCommandLine, formatTimestampedChunk, startGreyIndentedOutput, stopGreyIndentedOutput } from "./fit-cli-log.js";
 import { createRunFilePath } from "./replay.js";
 
 /**
@@ -21,6 +21,12 @@ export interface RunOptions {
   display?: string;
   /** Skip the pre-run echo entirely — for noisy probes/polls (e.g. ssh-wait, `command -v`). */
   quiet?: boolean;
+  /**
+   * Opt out of grey-indented output mode for this command's stdout/stderr. Use
+   * for proof-of-life / heartbeat output that should keep the full
+   * `[HH:MM:SS ctx]` timestamp prefix so it's clearly timestamped.
+   */
+  noGreyOutput?: boolean;
 }
 
 /**
@@ -51,12 +57,15 @@ function teeChildOutput(stream: NodeJS.ReadableStream | null, target: NodeJS.Wri
  */
 export function run(command: string, args: string[], cwd: string = process.cwd(), opts?: RunOptions): Promise<void> {
   announce(command, args, opts);
+  const grey = !opts?.noGreyOutput;
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
+    if (grey) startGreyIndentedOutput();
     teeChildOutput(child.stdout, process.stdout);
     teeChildOutput(child.stderr, process.stderr);
-    child.on("error", reject);
+    child.on("error", (err) => { if (grey) stopGreyIndentedOutput(); reject(err); });
     child.on("close", (code) => {
+      if (grey) stopGreyIndentedOutput();
       if (code === 0) {
         resolve();
       } else {
@@ -121,13 +130,16 @@ export function runAndCapture(
   opts?: RunOptions,
 ): Promise<string> {
   announce(command, args, opts);
+  const grey = !opts?.noGreyOutput;
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";
+    if (grey) startGreyIndentedOutput();
     teeChildOutput(child.stdout, process.stdout, (chunk) => (stdout += chunk.toString()));
     teeChildOutput(child.stderr, process.stderr);
-    child.on("error", reject);
+    child.on("error", (err) => { if (grey) stopGreyIndentedOutput(); reject(err); });
     child.on("close", (code) => {
+      if (grey) stopGreyIndentedOutput();
       if (code === 0) {
         resolve(stdout);
       } else {

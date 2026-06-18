@@ -7,7 +7,7 @@
  */
 import { type RunOutput } from "../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
-import { printWithoutTimestamps } from "../../../util/non-fit/fit-cli-log.js";
+import { printFileContent } from "../../../util/non-fit/fit-cli-log.js";
 import { qualifyPromptId, select, confirm, input } from "../../../util/non-fit/prompts.js";
 import { rootDirFromArgv } from "../../util/root.js";
 import { loadFitCliConfig, resolveOutputFormat } from "../../util/config.js";
@@ -475,7 +475,7 @@ export async function createFitDefinition(rootDir: string, options?: { format?: 
   const result = write(definition, undefined, outputFormat);
   const formatted = formatFn(definition, outputFormat);
   console.log(`\nWriting ${result.path}:\n`);
-  printWithoutTimestamps(formatted);
+  printFileContent(formatted);
   console.log(`\n✓ Wrote ${result.path}`);
 
   if (options?.pushGistVisibility) {
