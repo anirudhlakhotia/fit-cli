@@ -14,6 +14,7 @@
  * Prints the gathered answers as JSON.
  */
 import { isMain, runCli } from "../../util/non-fit/cli.js";
+import { printWithoutTimestamps } from "../../util/non-fit/fit-cli-log.js";
 import { checkbox, input, number } from "../../util/non-fit/prompts.js";
 import { DEFAULT_CLUSTER_VERSION, type ClusterDef } from "./build-cluster-def.js";
 
@@ -49,8 +50,8 @@ export async function askClusterDef(options: AskClusterDefOptions = {}): Promise
     (await number({ promptId: "cluster.create.node-count", message: "How many nodes?", default: 3, min: 1 })) ??
     1;
 
-  console.log("  Alias (github.com/couchbaselabs/cb-alias): e.g. 8.0-stable");
-  console.log("  Server images (github.com/orgs/cb-vanilla/packages/container/package/server): e.g. 8.0.2-5322");
+  printWithoutTimestamps("  Alias (github.com/couchbaselabs/cb-alias): e.g. 8.0-stable");
+  printWithoutTimestamps("  Server images (github.com/orgs/cb-vanilla/packages/container/package/server): e.g. 8.0.2-5322");
   const version = await input({
     promptId: "cluster.create.server-version",
     message: "Which Couchbase Server version?",
