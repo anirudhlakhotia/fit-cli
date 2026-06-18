@@ -13,6 +13,7 @@
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { type RunOutput } from "../../../util/non-fit/artifacts.js";
 import { type PieceData } from "../../../util/non-fit/config-pieces.js";
+import { printFileContent } from "../../../util/non-fit/fit-cli-log.js";
 import type { DefinitionRunPath } from "../../../util/non-fit/replay.js";
 import { DEFAULT_PERFORMER_PORT } from "../../performers/util/performer-port.js";
 import { rootDirFromArgv } from "../../util/root.js";
@@ -43,7 +44,7 @@ export function generateSituationalConfiguration(
   // it with the password masked while writing the real value to the file.
   const result = writeFitConfiguration(config, path);
   console.log(`\nWriting ${result.path}:\n`);
-  console.log(JSON.stringify(maskDatabasePassword(config), null, 2));
+  printFileContent(JSON.stringify(maskDatabasePassword(config), null, 2));
   console.log(`\n✓ Wrote ${result.path}`);
 
   return { path: result.path, artifacts: [result.artifact], details: [] };

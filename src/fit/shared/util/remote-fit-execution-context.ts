@@ -203,6 +203,7 @@ export async function createRemoteFitExecutionContext(
       );
       return target.run("bash", ["-lc", heartbeatShellCommand(pathPrefixedCommand(binDir, command, args), targetPath)], cwd, {
         display: commandOn(formatCommandLine(command, args), target.description),
+        noGreyOutput: true,
       });
     },
     targetFilePath: (localPath) => join(rootDir, basename(localPath)),

@@ -1,9 +1,11 @@
 import { basename } from "node:path";
 
 const isTTY = process.stderr.isTTY ?? false;
-const RESET = isTTY ? "\u001b[0m" : "";
-const RED = isTTY ? "\u001b[31m" : "";
-const YELLOW = isTTY ? "\u001b[33m" : "";
+const RESET = isTTY ? "[0m" : "";
+const RED = isTTY ? "[31m" : "";
+const YELLOW = isTTY ? "[33m" : "";
+/** Pastel blue for echoed commands (`$ ...`). */
+const BLUE = isTTY ? "[94m" : "";
 
 const baseConsoleError = console.error.bind(console);
 const baseConsoleWarn = console.warn.bind(console);
@@ -13,6 +15,8 @@ const baseStderrWrite = process.stderr.write.bind(process.stderr);
 let consoleFormattingInstalled = false;
 let timestampProvider = (): string => new Date().toTimeString().slice(0, 8);
 let rawTerminalWriteDepth = 0;
+/** When > 0, lines are rendered in soft grey with the prefix replaced by spaces. */
+let greyIndentDepth = 0;
 
 /** Soft grey (ANSI 90), for the unobtrusive separators in the log-line prefix. */
 const DIM = isTTY ? "[90m" : "";
@@ -163,6 +167,64 @@ export function formatTimestampedChunk(
   return { text: formatted, atLineStart: nextLineStart };
 }
 
+/**
+ * Compute how many characters wide the plain (no-ANSI) prefix would be right now,
+ * so we can indent grey-mode lines to align with normal log output.
+ */
+function currentPrefixWidth(
+  getTimestamp: () => string = () => timestampProvider(),
+  getContext: () => LogContext = () => logContext,
+): number {
+  const ts = getTimestamp();
+  const ctx = getContext();
+  const segments = [ctx.env, ctx.cluster, ctx.performer, ctx.run].filter(
+    (s): s is string => Boolean(s),
+  );
+  return `[${[ts, ...segments].join(PREFIX_SEPARATOR)}] `.length;
+}
+
+/**
+ * Format a chunk for grey-indented mode: replace the timestamp prefix with spaces
+ * of equal width and wrap each line in DIM/RESET. Used for file content echoes
+ * and LogType1 subprocess output so the content is readable and copy-pasteable
+ * without the timestamp noise, while still being spatially aligned.
+ *
+ * Only called on the terminal path — colour=false callers (log files) skip this
+ * and use the normal timestamp formatter.
+ */
+function formatGreyIndentedChunk(
+  text: string,
+  atLineStart: boolean,
+  getTimestamp: () => string = () => timestampProvider(),
+  getContext: () => LogContext = () => logContext,
+): TimestampedChunk {
+  let formatted = "";
+  let nextLineStart = atLineStart;
+  let inGreyLine = false;
+  for (const char of text) {
+    if (nextLineStart && char !== "\n") {
+      const width = currentPrefixWidth(getTimestamp, getContext);
+      formatted += " ".repeat(width) + DIM;
+      inGreyLine = true;
+      nextLineStart = false;
+    }
+    if (char === "\n") {
+      if (inGreyLine) {
+        formatted += RESET;
+        inGreyLine = false;
+      }
+      formatted += "\n";
+      nextLineStart = true;
+    } else {
+      formatted += char;
+    }
+  }
+  if (inGreyLine) {
+    formatted += RESET;
+  }
+  return { text: formatted, atLineStart: nextLineStart };
+}
+
 function installTimestampedStreamWrite(stream: NodeJS.WriteStream, original: StreamWrite): void {
   let atLineStart = true;
   stream.write = function (
@@ -173,6 +235,8 @@ function installTimestampedStreamWrite(stream: NodeJS.WriteStream, original: Str
     const text = typeof chunk === "string"
       ? chunk
       : Buffer.from(chunk).toString(typeof encoding === "string" ? encoding : undefined);
+
+    let textToEmit: string;
     if (rawTerminalWriteDepth > 0) {
       atLineStart = advanceLineStart(text, atLineStart);
       if (typeof encoding === "function") {
@@ -185,20 +249,26 @@ function installTimestampedStreamWrite(stream: NodeJS.WriteStream, original: Str
         return original(chunk, encoding);
       }
       return original(chunk);
+    } else if (greyIndentDepth > 0) {
+      const formatted = formatGreyIndentedChunk(text, atLineStart);
+      atLineStart = formatted.atLineStart;
+      textToEmit = formatted.text;
+    } else {
+      const formatted = formatTimestampedChunk(text, atLineStart, timestampProvider, () => logContext, true);
+      atLineStart = formatted.atLineStart;
+      textToEmit = formatted.text;
     }
-    const formatted = formatTimestampedChunk(text, atLineStart, timestampProvider, () => logContext, true);
-    atLineStart = formatted.atLineStart;
 
     if (typeof encoding === "function") {
-      return original(formatted.text, encoding);
+      return original(textToEmit, encoding);
     }
     if (callback) {
-      return original(formatted.text, encoding, callback);
+      return original(textToEmit, encoding, callback);
     }
     if (encoding) {
-      return original(formatted.text, encoding);
+      return original(textToEmit, encoding);
     }
-    return original(formatted.text);
+    return original(textToEmit);
   } as StreamWrite;
 }
 
@@ -223,6 +293,35 @@ export function printWithoutTimestamps(text: string): void {
   } finally {
     rawTerminalWriteDepth--;
   }
+}
+
+/**
+ * Print file content to stdout in soft grey with the timestamp prefix replaced by
+ * spaces, so the output is aligned with normal log lines and copy-pasteable
+ * without timestamp noise. On non-TTY output (log files) the session log still
+ * timestamps each line normally.
+ */
+export function printFileContent(text: string): void {
+  greyIndentDepth++;
+  try {
+    process.stdout.write(text.endsWith("\n") ? text : `${text}\n`);
+  } finally {
+    greyIndentDepth--;
+  }
+}
+
+/**
+ * Enter grey-indented output mode for LogType1 subprocess output. While active,
+ * lines written to stdout/stderr appear in soft grey with the timestamp prefix
+ * replaced by spaces. Call stopGreyIndentedOutput() when the subprocess finishes.
+ */
+export function startGreyIndentedOutput(): void {
+  greyIndentDepth++;
+}
+
+/** Leave grey-indented output mode (counterpart to startGreyIndentedOutput). */
+export function stopGreyIndentedOutput(): void {
+  greyIndentDepth = Math.max(0, greyIndentDepth - 1);
 }
 
 /**
@@ -254,7 +353,7 @@ export function commandOn(line: string, where: string): string {
  * the behaviour (and the format) lives in exactly one spot.
  */
 export function echoCommand(line: string): void {
-  console.log(`$ ${line}`);
+  console.log(`${BLUE}$ ${line}${RESET}`);
 }
 
 export function setFitCliTimestampProvider(provider: (() => string) | undefined): void {
