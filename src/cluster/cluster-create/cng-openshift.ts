@@ -101,9 +101,11 @@ export function ocInstallScript(version: string = DEFAULT_OC_VERSION): string {
     "  exit 0",
     "fi",
     "arch=$(uname -m)",
+    // Use the version-stamped tarball names — that's how the mirror's
+    // sha256sum.txt lists them, so the download and checksum lookup line up.
     'case "$arch" in',
-    "  x86_64|amd64) archdir=x86_64; tarball=openshift-client-linux.tar.gz ;;",
-    "  aarch64|arm64) archdir=arm64; tarball=openshift-client-linux-arm64.tar.gz ;;",
+    '  x86_64|amd64) archdir=x86_64; tarball="openshift-client-linux-$ver.tar.gz" ;;',
+    '  aarch64|arm64) archdir=arm64; tarball="openshift-client-linux-arm64-$ver.tar.gz" ;;',
     '  *) echo "oc: unsupported architecture $arch" >&2; exit 1 ;;',
     "esac",
     `base="${OC_MIRROR_BASE}/$archdir/clients/ocp/$ver"`,
