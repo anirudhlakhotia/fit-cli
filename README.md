@@ -260,9 +260,10 @@ Nb the need for later removal does mean it can't be stored internally purely as 
 ### Running processes
 #### Logging
 Stdout/stderr from the process can be either:
-1. Added to stdout/stderr of this process.
-2. Hidden as unimportant noise, and only shown on failure.  Also now included in a debug `session.debug.log` artifact version of the log.
-3. Sent to a separate artifact, for important but large logs.
+LogType1: Added to stdout/stderr of this process.
+LogType2: Hidden as unimportant noise, and only shown on failure.  Also now included in a debug `session.debug.log` artifact version of the log.
+LogType3: Sent to a separate artifact, for important but large logs.
+Generally we want those logtypes to behave the same on local or remote runs.  Agents, you will likely need to change both paths. 
 
 #### Failures
 Failing processes are defined as returning non-zero, and are classified as FatalToAll, FatalToInstance, FatalToCluster, FatalToSession or NonFatal.  The names mirror the definition-file hierarchy: an instance holds clusters, a cluster holds sessions.
