@@ -94,7 +94,8 @@ export async function appendJunitStepSummary(runDir: string, description?: strin
       child.stderr?.on("data", (chunk: Buffer) => (stderr += chunk));
       child.on("error", reject);
       child.on("close", (code) => {
-        if (code === 0) resolve(stdout);
+        // Exit 2 means "ran fine but found test failures" — still a valid markdown output.
+        if (code === 0 || code === 2) resolve(stdout);
         else reject(new Error(`JunitMarkdown.java exited ${code}: ${stderr.trim()}`));
       });
     });
