@@ -52,7 +52,9 @@ export function localClusterCommandExecutor(): ClusterCommandExecutor {
     capture,
     runToFile: (command, args, targetPath, cwd) => {
       mkdirSync(dirname(targetPath), { recursive: true, mode: 0o700 });
-      return run("sh", ["-lc", `${[command, ...args].map(posixQuote).join(" ")} > ${posixQuote(targetPath)} 2>&1`], cwd, {
+      // Use tee + pipefail so output streams live to the terminal (type 1) AND
+      // is saved to the file for artifact collection and cluster-id parsing.
+      return run("bash", ["-lc", `set -o pipefail; ${[command, ...args].map(posixQuote).join(" ")} 2>&1 | tee ${posixQuote(targetPath)}`], cwd, {
         display: formatCommandLine(command, args),
       });
     },
