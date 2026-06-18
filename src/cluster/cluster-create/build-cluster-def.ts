@@ -13,7 +13,7 @@
  * and, when CNG/Protostellar support is wanted, additionally:
  *
  *   cao:
- *     operator-version: "2.8.0"
+ *     operator-version: "2.9.2"
  *     gateway-version: "1.1.0-135"
  *
  * Run on its own:
@@ -23,9 +23,15 @@
  */
 import { isMain, runCli } from "../../util/non-fit/cli.js";
 
-/** The Couchbase Autonomous Operator versions used for CNG/Protostellar support. */
-export const CAO_OPERATOR_VERSION = "2.8.0";
-export const CAO_GATEWAY_VERSION = "1.1.0-135";
+/**
+ * Default Couchbase Autonomous Operator version for CNG/Protostellar support
+ * (the ROSA/cao deployer). Only a default: a definition file (or preset) can
+ * override it by setting the `cao` block's `operator-version`, which fit-cli
+ * forwards to cbdinocluster verbatim.
+ */
+export const CAO_OPERATOR_VERSION = "2.9.2";
+/** The Cloud Native Gateway (Protostellar gateway) version, the cao block's `gateway-version`. */
+export const CNG_VERSION = "1.1.0-135";
 
 /**
  * Default Couchbase Server version passed to cbdinocluster.
@@ -111,7 +117,7 @@ export function buildClusterDefObject(def: ClusterDef): CbdinoclusterDef {
   return {
     nodes: [{ count: def.nodeCount, version: def.version, services: def.services }],
     ...(def.cng
-      ? { cao: { "operator-version": CAO_OPERATOR_VERSION, "gateway-version": CAO_GATEWAY_VERSION } }
+      ? { cao: { "operator-version": CAO_OPERATOR_VERSION, "gateway-version": CNG_VERSION } }
       : {}),
     ...(docker ? { docker } : {}),
   };
@@ -130,7 +136,7 @@ export function buildClusterDef(def: ClusterDef): string {
     lines.push(
       "cao:",
       `  operator-version: "${CAO_OPERATOR_VERSION}"`,
-      `  gateway-version: "${CAO_GATEWAY_VERSION}"`,
+      `  gateway-version: "${CNG_VERSION}"`,
     );
   }
 

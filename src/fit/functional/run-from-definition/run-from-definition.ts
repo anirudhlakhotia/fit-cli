@@ -56,7 +56,7 @@ import {
 } from "../../../util/non-fit/replay.js";
 import { confirm, select } from "../../../util/non-fit/prompts.js";
 import { rootDirFromArgv } from "../../util/root.js";
-import { DEFAULT_CAPELLA_ENV, resolveCapellaConfig, resolveGithubCredentials, resolveResultsDbCredentials } from "../../util/config.js";
+import { DEFAULT_CAPELLA_ENV, resolveCapellaConfig, resolveGithubCredentials, resolveResultsDbCredentials, resolveRosaCredentials } from "../../util/config.js";
 import { terminateInstanceCommand } from "../../util/aws/lifecycle-warning.js";
 import { uploadRunArtifacts } from "../../util/aws/upload-run-artifacts.js";
 import { resolveAwsCredentials, type AwsCredentials } from "../../../cloud/util/aws/identity.js";
@@ -76,6 +76,12 @@ import {
   remoteHomeFromWorkspace,
   withRemoteK8sBlock,
 } from "../../../cluster/cluster-create/cng-kubernetes.js";
+import {
+  cngKubernetesBackend,
+  provisionRemoteOpenShift,
+  resolveOcVersion,
+  withOpenShiftK8sBlock,
+} from "../../../cluster/cluster-create/cng-openshift.js";
 import {
   checkBuildAndRunPerformer,
   performerLogStem,
@@ -313,10 +319,14 @@ function announce(
 }
 
 /**
- * Augment a CNG cycle's cbdinocluster init config with the `k8s` block pointing
- * at the k3d cluster fit-cli stood up on the remote box.
+ * Augment a CNG cycle's cbdinocluster init config with a `k8s` block. `addK8s`
+ * decides which backend it points at (the k3d cluster on the box, or the
+ * logged-in OpenShift context) — see {@link prepareFunctionalCngCycle}.
  */
-function withRemoteK8sInit(group: ResolvedFunctionalExecutionGroup, home: string): ResolvedFunctionalExecutionGroup {
+function withRemoteK8sInit(
+  group: ResolvedFunctionalExecutionGroup,
+  addK8s: (initConfig: PieceData) => PieceData,
+): ResolvedFunctionalExecutionGroup {
   if (!group.cbdinocluster) {
     return group;
   }
@@ -325,16 +335,20 @@ function withRemoteK8sInit(group: ResolvedFunctionalExecutionGroup, home: string
     ...group,
     cbdinocluster: {
       ...group.cbdinocluster,
-      init: { config: withRemoteK8sBlock(initConfig, home) },
+      init: { config: addK8s(initConfig) },
     },
   };
 }
 
 /**
  * Make a functional cycle's execution target CNG-ready. Non-CNG cycles pass
- * through untouched. For CNG: on localhost, verify ~/.cbdinocluster has
- * Kubernetes enabled (FatalToCluster with guidance if not); on a clean instance,
- * install k3d and point the uploaded cbdinocluster config at it.
+ * through untouched. For CNG on a clean instance the Kubernetes backend is chosen
+ * by {@link cngKubernetesBackend}: by default we prepare OpenShift/ROSA (the only
+ * tested CNG path — install oc, log into the shared cluster, run the pre-flight
+ * cleanup) and point the uploaded ~/.cbdinocluster at the logged-in context; with
+ * `FIT_CNG_K8S=k3d` we fall back to the legacy local k3d cluster. On localhost we
+ * only verify the operator's own ~/.cbdinocluster has Kubernetes enabled (we don't
+ * manage it).
  */
 async function prepareFunctionalCngCycle(
   group: ResolvedFunctionalExecutionGroup,
@@ -345,8 +359,16 @@ async function prepareFunctionalCngCycle(
   }
   if (execution.kind === "remote") {
     const home = remoteHomeFromWorkspace(execution.rootDir);
-    await provisionRemoteK3d(execution, home);
-    return withRemoteK8sInit(group, home);
+    if (cngKubernetesBackend() === "k3d") {
+      await provisionRemoteK3d(execution, home);
+      return withRemoteK8sInit(group, (initConfig) => withRemoteK8sBlock(initConfig, home));
+    }
+    const creds = await resolveRosaCredentials();
+    if (typeof creds === "string") {
+      throwFatalToCluster(creds);
+    }
+    const { context } = await provisionRemoteOpenShift(execution, home, creds, resolveOcVersion());
+    return withRemoteK8sInit(group, (initConfig) => withOpenShiftK8sBlock(initConfig, home, context));
   }
   const check = checkLocalhostCngKubernetes();
   if (!check.ok) {

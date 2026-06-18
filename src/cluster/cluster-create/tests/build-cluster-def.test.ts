@@ -8,7 +8,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  CAO_GATEWAY_VERSION,
+  CNG_VERSION,
   CAO_OPERATOR_VERSION,
   DOCKER_SERVICE_MEMORY_MB,
   buildClusterDef,
@@ -48,7 +48,7 @@ test("CNG support adds the cao block with the operator and gateway versions", ()
   });
   assert.match(def, /cao:/);
   assert.match(def, new RegExp(`operator-version: "${CAO_OPERATOR_VERSION}"`));
-  assert.match(def, new RegExp(`gateway-version: "${CAO_GATEWAY_VERSION}"`));
+  assert.match(def, new RegExp(`gateway-version: "${CNG_VERSION}"`));
 });
 
 test("without CNG there is no cao block", () => {
