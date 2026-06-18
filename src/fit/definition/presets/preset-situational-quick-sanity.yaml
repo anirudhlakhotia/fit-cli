@@ -5,7 +5,8 @@ type: fit
 setup:
   repos:
     'transactions-fit-performer':
-      gerritRef: 'refs/changes/02/247102/1'
+        # todo remove this later when merged
+        gerritRef: 'refs/changes/02/247102/2'
 instances:
   - aws: {}
     setup:

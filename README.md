@@ -67,10 +67,7 @@ bun run wizard
 ## Running on a cloud instance (AWS EC2)
 
 At the start of a FIT functional run you can choose to run on your own machine, or on a clean, throwaway AWS EC2 instance.
-
-To use EC2, copy `.env.example` to `.env` and fill in your AWS credentials (or just have working AWS config already — env vars or `~/.aws/credentials` are picked up automatically). If credentials are missing the tool tells you and lets you choose local instead.
-
-When you pick EC2, the tool launches a fresh Ubuntu instance, opens SSH, and tags it `fit-cli=owned`. A key is generated for you (saved into the run folder), and key-based SSH is the only login path the tool enables. At the end of the run you're asked whether to keep it (for debugging) or terminate it — the default is terminate, so you don't leave a paid instance running. The SSH command to reach the box is printed during the run.
+If you can run the `aws` command locally, then everything else should work. 
 
 The AWS region and VPC are fixed (region `us-west-2`, VPC `cbqerunners-vpc`) and are not configurable because:
 
@@ -262,7 +259,7 @@ Nb the need for later removal does mean it can't be stored internally purely as 
 Stdout/stderr from the process can be either:
 LogType1: Added to stdout/stderr of this process.
 LogType2: Hidden as unimportant noise, and only shown on failure.  Also now included in a debug `session.debug.log` artifact version of the log.
-LogType3: Sent to a separate artifact, for important but large logs.
+LogType3: Sent to a separate artifact, for important but large logs.  For proof-of-life, the last line of the log is output to stdout/stderr every N seconds.
 Generally we want those logtypes to behave the same on local or remote runs.  Agents, you will likely need to change both paths. 
 
 #### Failures

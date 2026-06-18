@@ -42,39 +42,40 @@ instances:
                 resultsEnvironment: dev
 
   # Instance 2: CNG functional SanityTest on OpenShift (ROSA)
-  - aws: {}
-    setup:
-      cbdinocluster:
-        init:
-          # CNG uploads this config verbatim as ~/.cbdinocluster. fit-cli adds the
-          # `k8s` block (pointing at the logged-in OpenShift context) and your
-          # GitHub credentials at runtime, so they stay out of this file. Unlike the
-          # docker preset there is no `--disable-k8s`: the cao deployer needs k8s.
-          config:
-            version: 6
-            docker:
-              enabled: true
-              network: fit
-              host: 'unix:///var/run/docker.sock'
-    clusters:
-      - clusterConfig: cluster-cng
-        sessions:
-          - performer:
-              image: '{{PERFORMER_IMAGE}}'
-              onPortInUse: reuse
-            runs:
-              - type: functional
-                fitConfig: fit-config-cng
-                tests:
-                  classes:
-                    - 'com.couchbase.client.kv.SanityTest'
-                  # protostellarWillWorkLater is a known-broken Maven group on CNG;
-                  # the rest mirror the default CNG exclusions.
-                  excludedGroups:
-                    - situational
-                    - openshift
-                    - syncgateway
-                    - protostellarWillWorkLater
+  # Will add back when CNG testing is stable.
+#  - aws: {}
+#    setup:
+#      cbdinocluster:
+#        init:
+#          # CNG uploads this config verbatim as ~/.cbdinocluster. fit-cli adds the
+#          # `k8s` block (pointing at the logged-in OpenShift context) and your
+#          # GitHub credentials at runtime, so they stay out of this file. Unlike the
+#          # docker preset there is no `--disable-k8s`: the cao deployer needs k8s.
+#          config:
+#            version: 6
+#            docker:
+#              enabled: true
+#              network: fit
+#              host: 'unix:///var/run/docker.sock'
+#    clusters:
+#      - clusterConfig: cluster-cng
+#        sessions:
+#          - performer:
+#              image: '{{PERFORMER_IMAGE}}'
+#              onPortInUse: reuse
+#            runs:
+#              - type: functional
+#                fitConfig: fit-config-cng
+#                tests:
+#                  classes:
+#                    - 'com.couchbase.client.kv.SanityTest'
+#                  # protostellarWillWorkLater is a known-broken Maven group on CNG;
+#                  # the rest mirror the default CNG exclusions.
+#                  excludedGroups:
+#                    - situational
+#                    - openshift
+#                    - syncgateway
+#                    - protostellarWillWorkLater
 
 clusterConfigs:
   - id: cluster-operational
