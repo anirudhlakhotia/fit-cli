@@ -19,6 +19,18 @@ export const CBDINOCLUSTER_URL = "https://github.com/couchbaselabs/cbdinocluster
  */
 export const GITHUB_AWS_SECRET_ID = "fit-cli/github/token";
 
+/**
+ * AWS Secrets Manager secret that carries the ROSA / OpenShift cluster credentials
+ * CNG functional runs log into. Fields: `url` (OpenShift API URL), `password`
+ * (cluster-admin password — the `OPENSHIFT_CLUSTER` value on CI) and an optional
+ * `username` (defaults to {@link DEFAULT_ROSA_USERNAME}). Kept out of the
+ * definition file per project convention, like {@link GITHUB_AWS_SECRET_ID}.
+ */
+export const ROSA_AWS_SECRET_ID = "fit-cli/rosa/openshift";
+
+/** Default OpenShift login user when the ROSA secret doesn't override it. */
+export const DEFAULT_ROSA_USERNAME = "cluster-admin";
+
 /** Default environment block names (the "dev" blocks in environments.json5). */
 export const DEFAULT_CAPELLA_ENV = "dev";
 export const DEFAULT_RESULTS_ENV = "dev";
@@ -493,6 +505,53 @@ export async function resolveGithubCredentials(
     );
   }
   return { user, token };
+}
+
+/** ROSA / OpenShift cluster login details for a CNG functional run. */
+export interface ResolvedRosaCredentials {
+  /** OpenShift API URL to `oc login` against. */
+  url: string;
+  /** Login user (defaults to {@link DEFAULT_ROSA_USERNAME}). */
+  username: string;
+  /** cluster-admin password. */
+  password: string;
+}
+
+/**
+ * Resolve the ROSA / OpenShift credentials a CNG functional run logs into, from
+ * the {@link ROSA_AWS_SECRET_ID} AWS secret. The shared ROSA cluster has no
+ * per-user identity, so — unlike GitHub creds — there's no local-config path:
+ * the URL and password always come from Secrets Manager. `username` defaults to
+ * {@link DEFAULT_ROSA_USERNAME} when the secret omits it. Returns the credentials
+ * on success, or an actionable error message string on failure (mirroring
+ * {@link resolveGithubCredentials}).
+ */
+export async function resolveRosaCredentials(
+  options: {
+    fetchSecret?: (secretId: string) => Promise<Record<string, string>>;
+  } = {},
+): Promise<ResolvedRosaCredentials | string> {
+  let secret: Record<string, string>;
+  try {
+    const fetchSecret = options.fetchSecret ?? getJsonSecret;
+    secret = await fetchSecret(ROSA_AWS_SECRET_ID);
+  } catch (err) {
+    return (
+      `Could not read the ROSA credentials from the AWS secret "${ROSA_AWS_SECRET_ID}": ${(err as Error).message}\n` +
+      `Populate it with \`${runScriptPrefix("secrets")} set ${ROSA_AWS_SECRET_ID} url=… password=…\` ` +
+      `and make sure your AWS credentials are active.`
+    );
+  }
+  const url = secret.url?.trim();
+  const password = secret.password?.trim();
+  if (!url || !password) {
+    const missing = [!url && "url", !password && "password"].filter(Boolean).join(" and ");
+    return (
+      `The AWS secret "${ROSA_AWS_SECRET_ID}" is missing ${missing}. ` +
+      `Set it with \`${runScriptPrefix("secrets")} set ${ROSA_AWS_SECRET_ID} url=… password=…\`.`
+    );
+  }
+  return { url, username: secret.username?.trim() || DEFAULT_ROSA_USERNAME, password };
 }
 
 /** Hosted results-database connection details for a results environment. */

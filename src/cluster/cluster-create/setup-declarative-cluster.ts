@@ -35,6 +35,7 @@ import {
 import { CBDINOCLUSTER_URL } from "../../fit/util/config.js";
 import { installCbdinoclusterRemote } from "./install-cbdinocluster.js";
 import { installCaoCrdsAndAdmission } from "./install-cao-tools.js";
+import { enableIngresses } from "./cao-ingress.js";
 import { type ClusterExistsPolicy } from "./cluster-exists-policy.js";
 import { DEFAULT_CLUSTER_VERSION, type CbdinoclusterDef } from "./build-cluster-def.js";
 import { isAlias, resolveAlias } from "./cb-alias.js";
@@ -476,7 +477,14 @@ async function allocate(
     return FAILED({ cbdinocluster });
   }
 
+  // cao (CNG) clusters need their ingresses enabled before the data/REST planes —
+  // and so the performer's couchbase2 connection string — become reachable.
+  if (cng) {
+    await enableIngresses(cbdinocluster, allocated.clusterId, execution);
+  }
+
   const cluster = await selectedClusterFor(cbdinocluster, allocated.clusterId, execution, cng);
+
   return {
     ...(cluster ? { cluster } : {}),
     allocated: true,

@@ -21,7 +21,7 @@ import type { FitDefinition, SessionLifetime } from "../../shared/definition/typ
 import { printDefinitionRunGuidance } from "../../shared/definition/run-guidance.js";
 import { pushGist, type GistVisibility } from "../../shared/definition/push-gist.js";
 
-export const PRESET_TYPES = ["preset-functional-tests", "preset-functional-quick-sanity", "preset-situational-quick-sanity", "preset-qe-set"] as const;
+export const PRESET_TYPES = ["preset-functional-tests", "preset-cng-functional-tests", "preset-functional-quick-sanity", "preset-situational-quick-sanity", "preset-qe-set"] as const;
 export type PresetType = (typeof PRESET_TYPES)[number];
 
 export function isPresetType(value: string): value is PresetType {
@@ -30,6 +30,7 @@ export function isPresetType(value: string): value is PresetType {
 
 const PRESET_TEMPLATE_FILES: Record<PresetType, string> = {
   "preset-functional-tests": "preset-functional-tests.yaml",
+  "preset-cng-functional-tests": "preset-cng-functional-tests.yaml",
   "preset-functional-quick-sanity": "preset-functional-quick-sanity.yaml",
   "preset-situational-quick-sanity": "preset-situational-quick-sanity.yaml",
   "preset-qe-set": "preset-qe-set.yaml",
@@ -61,6 +62,12 @@ async function loadBundledPresetTemplate(type: PresetType): Promise<string> {
   switch (type) {
     case "preset-functional-tests": {
       const templateModule = await import("../presets/preset-functional-tests.yaml", {
+        with: { type: "text" },
+      }) as { default: string };
+      return templateModule.default;
+    }
+    case "preset-cng-functional-tests": {
+      const templateModule = await import("../presets/preset-cng-functional-tests.yaml", {
         with: { type: "text" },
       }) as { default: string };
       return templateModule.default;

@@ -15,6 +15,7 @@ import {
   resolveCloudInstanceType,
   resolveGithubToken,
   resolveResultsDbCredentials,
+  resolveRosaCredentials,
   saveFitCliConfig,
   type FitCliConfig,
 } from "../config.js";
@@ -186,6 +187,36 @@ test("resolveResultsDbCredentials rejects an unknown results environment", async
     resolveResultsDbCredentials({ block: "nope", environments: TEST_ENVIRONMENTS, fetchSecret: noFetch }),
     /Unknown results environment "nope"/,
   );
+});
+
+test("resolveRosaCredentials reads url + password from the secret, defaulting the username", async () => {
+  const creds = await resolveRosaCredentials({
+    fetchSecret: () => Promise.resolve({ url: "https://api.rosa.example:6443", password: "pw" }),
+  });
+  assert.deepEqual(creds, { url: "https://api.rosa.example:6443", username: "cluster-admin", password: "pw" });
+});
+
+test("resolveRosaCredentials uses the secret's username when present", async () => {
+  const creds = await resolveRosaCredentials({
+    fetchSecret: () => Promise.resolve({ url: "https://api.rosa.example:6443", password: "pw", username: "kubeadmin" }),
+  });
+  assert.equal(typeof creds === "string" ? creds : creds.username, "kubeadmin");
+});
+
+test("resolveRosaCredentials returns an error string when fields are missing", async () => {
+  const result = await resolveRosaCredentials({
+    fetchSecret: () => Promise.resolve({ url: "https://api.rosa.example:6443" }),
+  });
+  assert.equal(typeof result, "string");
+  assert.match(result as string, /missing password/);
+});
+
+test("resolveRosaCredentials returns an error string when the secret can't be read", async () => {
+  const result = await resolveRosaCredentials({
+    fetchSecret: () => Promise.reject(new Error("access denied")),
+  });
+  assert.equal(typeof result, "string");
+  assert.match(result as string, /Could not read the ROSA credentials/);
 });
 
 test("parses a stored capella section (personal credentials only)", () => {
