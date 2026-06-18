@@ -240,12 +240,14 @@ export function installFitCliConsoleFormatting(): void {
 
 /**
  * True when running as the compiled `fit` binary (bun build --compile).
- * The compiled binary's argv[0] is the binary path itself (ending in "fit" or
- * "fit-linux-x64" etc.), not the bun runtime. Use this to tailor guidance
- * messages that tell the user how to re-run a command.
+ * Use process.execPath, which resolves to the actual binary path in both modes:
+ * the compiled binary (basename "fit" / "fit-linux-x64" etc.) vs the bun runtime
+ * (basename "bun") when running via `bun run`. Note process.argv[0] is NOT usable
+ * here: in a Bun standalone executable it is the literal string "bun", not the
+ * binary path. Use this to tailor guidance messages telling the user how to re-run.
  */
 export function isFitBinary(): boolean {
-  const bin = basename(process.argv[0] ?? "");
+  const bin = basename(process.execPath ?? "");
   return bin === "fit" || bin.startsWith("fit-");
 }
 
