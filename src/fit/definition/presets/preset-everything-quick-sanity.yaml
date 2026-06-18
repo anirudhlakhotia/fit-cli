@@ -1,13 +1,4 @@
-# Preset: quick sanity across all three test modes — operational functional,
-# CNG functional, and situational — using a single SDK.
-#
-# Two EC2 instances are used because CNG requires k8s enabled while the
-# operational instance disables it.
-#
-# Placeholders filled in by `bun run definition generate-preset`:
-#   {{PERFORMER_IMAGE}} — prebuilt performer image, <sdk>-fit-performer:<tag> (e.g. java-fit-performer:main
-#                         or java-fit-performer:refs-changes-18-195818-7). Only JVM (java, scala,
-#                         kotlin) and C++ (cpp) publish these images.
+# Preset: does quick sanity testing across all testing axes against a given SDK.
 
 version: 1
 type: fit

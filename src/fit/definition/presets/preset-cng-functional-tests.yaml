@@ -1,17 +1,9 @@
 # Preset: run all FIT functional tests for a given SDK against a CNG / Protostellar
-# cluster on OpenShift (ROSA), via cbdinocluster's `cao` deployer.
-#
-# Placeholders filled in by `bun run definition generate-preset`:
-#   {{PERFORMER_IMAGE}} — prebuilt performer image, <sdk>-fit-performer:<tag> (e.g. java-fit-performer:main)
-#
-# CNG only runs on a clean AWS instance: fit-cli installs `oc`, logs into the shared
-# ROSA cluster (credentials from AWS Secrets Manager — see `fit secrets`), runs the
-# pre-flight cleanup, then lets cbdinocluster allocate the cluster with the cao
-# deployer. The legacy local k3d backend is still available via FIT_CNG_K8S=k3d.
+# Currently that runs against ROSA OpenShift, but that could change in future
 
 version: 1
 type: fit
-description: CNG functional tests on OpenShift (ROSA)
+description: CNG functional tests
 instances:
   - aws: {}
     setup:

@@ -1,9 +1,4 @@
-# Preset: run a single SanityTest against a given SDK against a cbdinocluster cluster.
-#
-# Placeholders filled in by `bun run definition generate-preset`:
-#   {{PERFORMER_IMAGE}} — prebuilt performer image, <sdk>-fit-performer:<tag> (e.g. java-fit-performer:main
-#                         or java-fit-performer:refs-changes-18-195818-7). Only JVM (java, scala,
-#                         kotlin) and C++ (cpp) publish these images.
+# Preset: does quick sanity testing for functional tests against a given SDK.
 
 version: 1
 type: fit

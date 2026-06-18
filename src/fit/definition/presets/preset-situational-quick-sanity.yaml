@@ -1,12 +1,11 @@
-# Preset: run a single sanity FIT/SIT test against a given SDK, in a clean environment.
-#
-# Placeholders filled in by `bun run definition generate-preset`:
-#   {{PERFORMER_IMAGE}} — prebuilt performer image, <sdk>-fit-performer:<tag> (e.g. java-fit-performer:main
-#                         or java-fit-performer:refs-changes-18-195818-7). Only JVM (java, scala,
-#                         kotlin) and C++ (cpp) publish these images.
+# Preset: does quick sanity testing for situational tests against a given SDK.
 
 version: 1
 type: fit
+setup:
+  repos:
+    'transactions-fit-performer':
+      gerritRef: 'refs/changes/02/247102/1'
 instances:
   - aws: {}
     setup:

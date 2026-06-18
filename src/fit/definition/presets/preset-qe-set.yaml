@@ -1,12 +1,4 @@
-# Preset: run all FIT functional tests and the standard QE set (situational) for a given SDK.
-#
-# - Functional tests run against a cbdinocluster Docker cluster on the same EC2 instance.
-# - Situational (QE) tests run against a hosted Capella cluster provisioned by cbdino.
-#
-# Placeholders filled in by `bun run definition generate-preset`:
-#   {{PERFORMER_IMAGE}} — prebuilt performer image, <sdk>-fit-performer:<tag> (e.g. java-fit-performer:main
-#                         or java-fit-performer:refs-changes-18-195818-7). Only JVM (java, scala,
-#                         kotlin) and C++ (cpp) publish these images.
+# Preset: This is the set SDKQE-that-was like to run before signing off on a release.
 
 version: 1
 type: fit
