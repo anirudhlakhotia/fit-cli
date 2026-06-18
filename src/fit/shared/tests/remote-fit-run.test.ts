@@ -4,8 +4,8 @@ import { sdkByValue } from "../../../util/sdk/sdks.js";
 import {
   createLocalFitExecutionContext,
   gitCredentialsLine,
+  heartbeatShellCommand,
   pathPrefixedCommand,
-  redirectShellCommand,
   redirectToFileCommand,
   remoteDockerWrapperScript,
   remoteFitRepos,
@@ -110,9 +110,15 @@ test("redirectToFileCommand quotes shell-sensitive args and paths", () => {
   );
 });
 
-test("redirectShellCommand streams and saves output via tee with pipefail", () => {
-  assert.equal(
-    redirectShellCommand("export PATH=/tmp/bin:$PATH; ./mvnw test", "/tmp/fit logs/driver.log"),
-    "set -o pipefail; export PATH=/tmp/bin:$PATH; ./mvnw test 2>&1 | tee '/tmp/fit logs/driver.log'",
-  );
+test("heartbeatShellCommand redirects full output to file and emits a periodic last-line heartbeat", () => {
+  const script = heartbeatShellCommand("export PATH=/tmp/bin:$PATH; ./mvnw test", "/tmp/fit logs/driver.log", 30);
+  // Full output goes only to the (quoted) file via a backgrounded subshell.
+  assert.match(script, /^\( export PATH=\/tmp\/bin:\$PATH; \.\/mvnw test \) > '\/tmp\/fit logs\/driver\.log' 2>&1 &$/m);
+  // No tee: nothing streams the full output to the terminal.
+  assert.doesNotMatch(script, /tee/);
+  // Heartbeat tails the same quoted file on the configured interval.
+  assert.match(script, /tail -n 1 '\/tmp\/fit logs\/driver\.log'/);
+  assert.match(script, /-ge 30 \]/);
+  // The command's exit code is the script's, preserving failure semantics.
+  assert.match(script, /wait "\$cmd_pid"$/m);
 });

@@ -6,6 +6,7 @@ import { createGunzip } from "node:zlib";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { commandOn, formatCommandLine, runScriptPrefix } from "../../../util/non-fit/fit-cli-log.js";
 import { instanceInternalRunDir } from "../../../util/non-fit/replay.js";
+import { HEARTBEAT_INTERVAL_SECS } from "../../../util/non-fit/proc.js";
 import { posixQuote } from "../../../util/non-fit/remote-target.js";
 import { RemoteTarget } from "../../../util/non-fit/remote-target.js";
 import type { ExecutionTarget } from "../../../util/non-fit/target.js";
@@ -17,8 +18,8 @@ import { collectJunitArtifactsFromTarget } from "../run-test-driver/collect-juni
 import {
   configureRemoteGitCredentials,
   ensureRemoteRepos,
+  heartbeatShellCommand,
   pathPrefixedCommand,
-  redirectShellCommand,
   remoteDockerWrapperPath,
   remoteDockerWrapperScript,
   remoteFitBinDir,
@@ -197,7 +198,10 @@ export async function createRemoteFitExecutionContext(
       // The redirect (`> targetPath`) won't create parent dirs, and per-run
       // targets now nest under artifacts/instances/.../runs/N — so ensure the dir.
       await target.run("mkdir", ["-p", dirname(targetPath)]);
-      return target.run("bash", ["-lc", redirectShellCommand(pathPrefixedCommand(binDir, command, args), targetPath)], cwd, {
+      console.log(
+        `This may be a long-running process. The last log line will be printed every ${HEARTBEAT_INTERVAL_SECS}s as proof-of-life (full output goes to the log file).`,
+      );
+      return target.run("bash", ["-lc", heartbeatShellCommand(pathPrefixedCommand(binDir, command, args), targetPath)], cwd, {
         display: commandOn(formatCommandLine(command, args), target.description),
       });
     },

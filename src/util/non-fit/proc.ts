@@ -340,7 +340,7 @@ export function streamToFileInBackground(
  * tools (e.g. the FIT test-driver) whose full output belongs in a log file, not
  * scrolling past in the terminal.
  */
-const HEARTBEAT_INTERVAL_SECS = 30;
+export const HEARTBEAT_INTERVAL_SECS = 30;
 
 export function streamToFile(
   command: string,
