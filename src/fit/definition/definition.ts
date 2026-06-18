@@ -5,6 +5,7 @@
  *
  * bun run definition execute <file.yaml> [--resume-at=<point>] [resume selectors] [--root <dir>]
  * bun run definition validate <file.yaml>
+ * bun run definition execute-preset --type <preset> --performer-image-name <image> [resume flags] [--root <dir>]
  */
 import { existsSync } from "node:fs";
 import { isMain, runCli } from "../../util/non-fit/cli.js";
@@ -19,10 +20,10 @@ import {
   parseResumePoint,
 } from "../functional/run-from-definition/resume.js";
 import { describeDefinition } from "../shared/definition/generate-desc.js";
-import { generatePreset, parseGeneratePresetArgs, PRESET_TYPES } from "./generate-preset/generate-preset.js";
+import { generatePreset, parseGeneratePresetArgs, parseExecutePresetArgs, PRESET_TYPES } from "./generate-preset/generate-preset.js";
 import type { RunOutput } from "../../util/non-fit/artifacts.js";
 
-const SUBCOMMANDS = ["execute", "validate", "generate-desc", "generate-preset"] as const;
+const SUBCOMMANDS = ["execute", "validate", "generate-desc", "generate-preset", "execute-preset"] as const;
 type Subcommand = (typeof SUBCOMMANDS)[number];
 
 const HELP = `Manage FIT definition files.
@@ -32,6 +33,7 @@ Usage:
   bun run definition validate <file.json5>
   bun run definition generate-desc <file.json5>
   bun run definition generate-preset --type <preset> --performer-image-name <image> [--output <path>]
+  bun run definition execute-preset --type <preset> --performer-image-name <image> [resume flags] [--root <dir>]
   bun run definition --help
 
 Both .json5 and .yaml definition files are accepted.
@@ -41,20 +43,21 @@ Subcommands:
   validate        Parse and validate a definition file without running it.
   generate-desc   Print a compact description of a definition file (useful for CI labels).
   generate-preset Emit a ready-to-run definition file from a preset template.
+  execute-preset  Generate a preset definition file and immediately execute it.
 
-generate-preset options:
+generate-preset / execute-preset options:
   --type <preset>               Preset to generate. Known presets: ${PRESET_TYPES.join(", ")}
   --performer-image-name <image>  SDK-specific performer image ref (e.g. java-fit-performer:refs-changes-67-246067-3 or ghcr.io/couchbase/java-fit-performer:refs-changes-67-246067-3).
-  --output <path>               Write the generated definition to an explicit path instead of the default run dir.
-  --push-gist [public|private]  After writing the file, create a GitHub Gist (default: public). Requires a GitHub token in the fit-cli config or GITHUB_TOKEN / GH_TOKEN.
+  --output <path>               (generate-preset only) Write to an explicit path instead of the default run dir.
+  --push-gist [public|private]  (generate-preset only) Create a GitHub Gist after writing. Requires a GitHub token in the fit-cli config or GITHUB_TOKEN / GH_TOKEN.
 
-Resume points for execute:
+Resume points for execute / execute-preset:
   --resume-at=after-instance-creation   Reuse a running instance.
   --resume-at=after-remote-preparation  Reuse a prepared remote workspace.
   --resume-at=after-cluster-creation    Reuse an allocated cluster.
   --resume-at=after-performer           Reuse the cluster and a running performer.
 
-Resume selectors for execute (narrow a resume to one run; emitted by a left-up run):
+Resume selectors for execute / execute-preset (narrow a resume to one run; emitted by a left-up run):
   --resume-instance=<n>             Which instance to resume.
   --resume-cluster=<n>              Which cluster within the instance.
   --resume-session=<n>              Which session within the cluster.
@@ -135,6 +138,36 @@ export async function definitionDispatch(argv: string[]): Promise<RunOutput | vo
     }
     await generatePreset(args);
     return;
+  }
+
+  if (subcommand === "execute-preset") {
+    let presetArgs: ReturnType<typeof parseExecutePresetArgs>["presetArgs"];
+    let presetPositionals: string[];
+    try {
+      ({ presetArgs, positionals: presetPositionals } = parseExecutePresetArgs(rest));
+    } catch (err) {
+      console.error((err as Error).message);
+      process.exit(2);
+    }
+    const { rootDir, positionals: afterRoot } = rootDirFromArgv(presetPositionals);
+    const { resumeAt, positionals: afterResume } = extractResumeAt(afterRoot);
+    const { selector: resumeSelector, positionals: afterSelector } = extractResumeSelector(afterResume);
+    if (afterSelector.length > 0) {
+      console.error(`Unexpected arguments: ${afterSelector.join(" ")}`);
+      process.exit(2);
+    }
+    let resumePoint;
+    try {
+      resumePoint = parseResumePoint(resumeAt);
+    } catch (err) {
+      console.error((err as Error).message);
+      process.exit(2);
+    }
+    const { path: definitionPath } = await generatePreset({ ...presetArgs, skipGuidance: true });
+    return runFromDefinition(definitionPath, rootDir, {
+      ...(resumePoint ? { resumeAt: resumePoint } : {}),
+      resumeSelector,
+    });
   }
 
   if (subcommand === "validate") {
