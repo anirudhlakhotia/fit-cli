@@ -3,7 +3,7 @@ import { basename, dirname, join } from "node:path";
 import { type Artifact, type Detail } from "../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { LocalTarget } from "../../../util/non-fit/local-target.js";
-import { streamToFile, type RunOptions } from "../../../util/non-fit/proc.js";
+import { HEARTBEAT_INTERVAL_SECS, streamToFile, type RunOptions } from "../../../util/non-fit/proc.js";
 import { createRunFilePath, runRunDir, type DefinitionRunPath } from "../../../util/non-fit/replay.js";
 import { posixQuote } from "../../../util/non-fit/remote-target.js";
 import type { ExecutionTarget } from "../../../util/non-fit/target.js";
@@ -298,8 +298,39 @@ export function redirectToFileCommand(command: string, args: readonly string[], 
   return `${shellCommand(command, args)} > ${posixQuote(path)} 2>&1`;
 }
 
-export function redirectShellCommand(command: string, path: string): string {
-  return `set -o pipefail; ${command} 2>&1 | tee ${posixQuote(path)}`;
+/**
+ * Remote equivalent of {@link streamToFile}'s proof-of-life heartbeat. The full
+ * output of a long-running remote command (e.g. the FIT test-driver) goes only
+ * to `path`; over the SSH stdout we emit just the last log line every
+ * `intervalSecs` so the terminal isn't silent for hours yet isn't flooded.
+ *
+ * The command runs backgrounded in a subshell (so a compound `a; b` redirects
+ * as a whole) with stdout+stderr to the file; we poll for liveness and tail the
+ * file. The final `wait` is the last statement, so the script's exit code is the
+ * command's — preserving the non-zero-means-failure contract.
+ */
+export function heartbeatShellCommand(
+  command: string,
+  path: string,
+  intervalSecs: number = HEARTBEAT_INTERVAL_SECS,
+): string {
+  const quotedPath = posixQuote(path);
+  const pollSecs = Math.min(5, intervalSecs);
+  return [
+    `( ${command} ) > ${quotedPath} 2>&1 &`,
+    `cmd_pid=$!`,
+    `elapsed=0`,
+    `while kill -0 "$cmd_pid" 2>/dev/null; do`,
+    `  sleep ${pollSecs}`,
+    `  elapsed=$((elapsed+${pollSecs}))`,
+    `  if [ "$elapsed" -ge ${intervalSecs} ]; then`,
+    `    elapsed=0`,
+    `    line=$(tail -n 1 ${quotedPath} 2>/dev/null)`,
+    `    [ -n "$line" ] && printf '[%s] %s\\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$line"`,
+    `  fi`,
+    `done`,
+    `wait "$cmd_pid"`,
+  ].join("\n");
 }
 
 export function remotePerformerArgs(
