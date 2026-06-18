@@ -173,13 +173,14 @@ Definition file rules while generating:
 #### Definition file versions
 - We only have major versions.  Minor and patch are not worth the trouble here.
 - Each type of definition file has its own major version, they don't have to align.
-- Versions only change on breaking changes - moving a field around, for instance.
+- Bump the version when adding or changing any field that controls or changes behaviour — an old fit-cli would silently ignore the new field and produce wrong results.  Purely informational fields (e.g. `description`) don't need a bump.  In practice, almost every new field we add is the first kind, so "adding stuff usually bumps the version" is a reasonable rule of thumb.
 - That said: LLMs, please stop and check with the user when considering adding a major version, to confirm it's sensible.  User: don't be afraid to agree :)  Change is good.
 - LLMs, also please don't add multiple versions while iterating through a new feature.  We only need to worry about versions at the point when we're making the feature available to others.
 - Breaking changes are fine and expected.  We should be refactoring the yaml as we go to keep it clear.
 - But, wherever possible, try and automatically upgrade previous versions to new versions, major by major.  Add unit tests for this.
 - Generally do this upgrade in-memory but also provide a mini CLI tool that does an inplace upgrade of the definition file.
-- In the rare case this isn't possible - if we genuinely always need a new field - then explicitly fail fast with an unsupported version error.  Try and provide guidance on how the user can resolve. 
+- In the rare case auto-upgrade isn't possible, explicitly fail fast with an unsupported version error and provide guidance on how the user can resolve it.
+Important note: version bumps are currently suspended as we are actively developing.  Do NOT change the version.
 
 ### Mini CLI tools
 - Each step should be easily runnable independently via a mini CLI tool that can be called directly, for debugging and development iteration purposes.  
