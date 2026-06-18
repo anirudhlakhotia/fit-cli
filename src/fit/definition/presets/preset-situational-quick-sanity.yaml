@@ -28,7 +28,7 @@ instances:
           - type: situational
             fitConfig: fit-config-0
             tests:
-              classes: ['com.couchbase.situational.tests.SanityTest'],
+              classes: ['com.couchbase.situational.tests.SanityTest']
             situational:
               database:
                 mode: hosted
