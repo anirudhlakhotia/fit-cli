@@ -50,7 +50,7 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           cat > /tmp/release-notes.md << 'EOF'
-          > ⚠️ **This is the tip-of-main pre-release, automatically updated on every push. For CI usage install the more stable [ci](https://github.com/couchbaselabs/fit-cli/releases/tag/ci) instead.**
+          > ⚠️ **This is the tip-of-main pre-release, automatically updated on every push. For production/CI usage install the [ci channel](https://github.com/couchbaselabs/fit-cli/releases) instead (`CHANNEL=ci`).**
 
           ## Install
 
@@ -63,6 +63,7 @@ jobs:
           See the [README](https://github.com/couchbaselabs/fit-cli#getting-started) for full usage instructions.
           EOF
 
+          gh release delete stable --yes --cleanup-tag 2>/dev/null || true
           gh release delete latest --yes --cleanup-tag 2>/dev/null || true
           gh release create latest \
             --prerelease \
