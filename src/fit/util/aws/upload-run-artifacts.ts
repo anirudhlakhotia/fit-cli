@@ -10,7 +10,7 @@
  * config is needed to switch it on. The destination bucket and prefix are fixed,
  * mirroring the fixed AWS region — the bucket lives in us-west-2 (see AWS_REGION).
  */
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { basename } from "node:path";
 import { echoCommand, fitCliWarn, runScriptPrefix } from "../../../util/non-fit/fit-cli-log.js";
 import { zipDirectory, uploadFileToS3 } from "../../archive/archive.js";
@@ -44,6 +44,8 @@ export async function uploadRunArtifacts(runDir: string, env: NodeJS.ProcessEnv 
   try {
     echoCommand(`${runScriptPrefix("archive")} s3-upload --zip ${runDir} ${s3Base}`);
     await zipDirectory(runDir, zipPath);
+    const zipSizeMb = (statSync(zipPath).size / (1024 * 1024)).toFixed(1);
+    console.log(`Uploading run artifacts (${zipSizeMb} MB) → ${zipKey}`);
     await uploadFileToS3(zipPath, zipKey);
     console.log(`✓ Uploaded run artifacts to ${zipKey}`);
     return zipKey;

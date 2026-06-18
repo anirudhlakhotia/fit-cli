@@ -13,4 +13,5 @@ import { AWS_REGION } from "./aws-target.js";
 export const ec2Client = new EC2Client({ region: AWS_REGION });
 export const ssmClient = new SSMClient({ region: AWS_REGION });
 export const stsClient = new STSClient({ region: AWS_REGION });
-export const s3Client = new S3Client({ region: AWS_REGION });
+// 5-minute request timeout to accommodate large artifact uploads.
+export const s3Client = new S3Client({ region: AWS_REGION, requestHandler: { requestTimeout: 5 * 60 * 1000 } });
