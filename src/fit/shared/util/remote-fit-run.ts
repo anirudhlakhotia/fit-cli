@@ -299,7 +299,7 @@ export function redirectToFileCommand(command: string, args: readonly string[], 
 }
 
 export function redirectShellCommand(command: string, path: string): string {
-  return `${command} > ${posixQuote(path)} 2>&1`;
+  return `set -o pipefail; ${command} 2>&1 | tee ${posixQuote(path)}`;
 }
 
 export function remotePerformerArgs(

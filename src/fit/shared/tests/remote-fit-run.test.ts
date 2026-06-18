@@ -110,9 +110,9 @@ test("redirectToFileCommand quotes shell-sensitive args and paths", () => {
   );
 });
 
-test("redirectShellCommand appends stdout and stderr redirection to a shell command", () => {
+test("redirectShellCommand streams and saves output via tee with pipefail", () => {
   assert.equal(
     redirectShellCommand("export PATH=/tmp/bin:$PATH; ./mvnw test", "/tmp/fit logs/driver.log"),
-    "export PATH=/tmp/bin:$PATH; ./mvnw test > '/tmp/fit logs/driver.log' 2>&1",
+    "set -o pipefail; export PATH=/tmp/bin:$PATH; ./mvnw test 2>&1 | tee '/tmp/fit logs/driver.log'",
   );
 });

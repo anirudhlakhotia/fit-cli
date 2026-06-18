@@ -197,7 +197,7 @@ export async function createRemoteFitExecutionContext(
       // The redirect (`> targetPath`) won't create parent dirs, and per-run
       // targets now nest under artifacts/instances/.../runs/N — so ensure the dir.
       await target.run("mkdir", ["-p", dirname(targetPath)]);
-      return target.run("sh", ["-lc", redirectShellCommand(pathPrefixedCommand(binDir, command, args), targetPath)], cwd, {
+      return target.run("bash", ["-lc", redirectShellCommand(pathPrefixedCommand(binDir, command, args), targetPath)], cwd, {
         display: commandOn(formatCommandLine(command, args), target.description),
       });
     },
