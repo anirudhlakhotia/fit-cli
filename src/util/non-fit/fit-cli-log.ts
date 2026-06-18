@@ -14,6 +14,43 @@ let consoleFormattingInstalled = false;
 let timestampProvider = (): string => new Date().toTimeString().slice(0, 8);
 let rawTerminalWriteDepth = 0;
 
+/** Soft grey (ANSI 90), for the unobtrusive separators in the log-line prefix. */
+const DIM = isTTY ? "[90m" : "";
+/** The dot that separates the prefix's timestamp and context segments. */
+const PREFIX_SEPARATOR = "·";
+
+export interface LogContext {
+  /** Execution target label, e.g. "local" or "aws1". Set once the target is acquired. */
+  env?: string;
+  /** Cluster label, e.g. "cbdino1". Set once a cluster is allocated/resumed. */
+  cluster?: string;
+  /** Performer (session) label, e.g. "java:main". Set at the start of each iteration. */
+  performer?: string;
+  /** Run label, e.g. "func" or a preset name. Set at the start of each iteration. */
+  run?: string;
+}
+
+let logContext: LogContext = {};
+
+/** Merge new fields into the running log context (e.g. as each run phase starts). */
+export function setLogContext(partial: Partial<LogContext>): void {
+  logContext = { ...logContext, ...partial };
+}
+
+/** Remove specific fields from the log context (e.g. pop session/sdk after a performer stops). */
+export function popLogContext(...fields: (keyof LogContext)[]): void {
+  const next = { ...logContext };
+  for (const field of fields) {
+    delete next[field];
+  }
+  logContext = next;
+}
+
+/** Reset the log context entirely (e.g. between execution cycles). */
+export function clearLogContext(): void {
+  logContext = {};
+}
+
 type StreamWrite = typeof process.stdout.write;
 
 export interface TimestampedChunk {
@@ -100,12 +137,22 @@ export function formatTimestampedChunk(
   text: string,
   atLineStart: boolean = true,
   getTimestamp: () => string = timestampProvider,
+  getContext: () => LogContext = () => logContext,
+  colour: boolean = false,
 ): TimestampedChunk {
+  // Colour is gated to the terminal path so ANSI codes never leak into the log
+  // files (which call this with colour off). The dot separator itself is always
+  // applied — it's structural, not styling.
+  const separator = colour ? `${DIM}${PREFIX_SEPARATOR}${RESET}` : PREFIX_SEPARATOR;
   let formatted = "";
   let nextLineStart = atLineStart;
   for (const char of text) {
     if (nextLineStart && char !== "\n") {
-      formatted += `[${getTimestamp()}] `;
+      const ctx = getContext();
+      const segments = [ctx.env, ctx.cluster, ctx.performer, ctx.run].filter(
+        (segment): segment is string => Boolean(segment),
+      );
+      formatted += `[${[getTimestamp(), ...segments].join(separator)}] `;
       nextLineStart = false;
     }
     formatted += char;
@@ -139,7 +186,7 @@ function installTimestampedStreamWrite(stream: NodeJS.WriteStream, original: Str
       }
       return original(chunk);
     }
-    const formatted = formatTimestampedChunk(text, atLineStart);
+    const formatted = formatTimestampedChunk(text, atLineStart, timestampProvider, () => logContext, true);
     atLineStart = formatted.atLineStart;
 
     if (typeof encoding === "function") {

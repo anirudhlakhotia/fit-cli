@@ -49,6 +49,25 @@ test("formatTimestampedChunk prefixes each non-empty line", () => {
   );
 });
 
+test("formatTimestampedChunk joins context fields with a dot separator", () => {
+  const ctx = { env: "aws1", cluster: "cbdino1", performer: "java:main", run: "func" };
+  assert.deepEqual(
+    formatTimestampedChunk("hello\nworld", true, () => "12:34:56", () => ctx),
+    {
+      text: "[12:34:56·aws1·cbdino1·java:main·func] hello\n[12:34:56·aws1·cbdino1·java:main·func] world",
+      atLineStart: false,
+    },
+  );
+});
+
+test("formatTimestampedChunk omits missing context fields", () => {
+  const ctx = { env: "aws1" };
+  assert.deepEqual(
+    formatTimestampedChunk("hello", true, () => "12:34:56", () => ctx),
+    { text: "[12:34:56·aws1] hello", atLineStart: false },
+  );
+});
+
 test("installFitCliConsoleFormatting timestamps console output and direct stdout writes", async () => {
   const fitCliLogModule = new URL("../fit-cli-log.ts", import.meta.url).href;
   const driver = [

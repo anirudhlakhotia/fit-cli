@@ -43,7 +43,7 @@ import {
   type RunOutput,
 } from "../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
-import { definitionExecutePrefix, fitCliError, fitCliWarn, printWithoutTimestamps } from "../../../util/non-fit/fit-cli-log.js";
+import { clearLogContext, definitionExecutePrefix, fitCliError, fitCliWarn, popLogContext, printWithoutTimestamps, setLogContext } from "../../../util/non-fit/fit-cli-log.js";
 import { createLogFile } from "../../../util/non-fit/proc.js";
 import {
   defaultsToNonInteractive,
@@ -54,6 +54,7 @@ import {
   instanceRunDir,
   type DefinitionRunPath,
 } from "../../../util/non-fit/replay.js";
+import { clusterLabel as clusterSegmentLabel, formatRunLabel, instanceLabel, performerLabel, runLabel, type RunLabelParts } from "../../shared/util/run-labels.js";
 import { confirm, select } from "../../../util/non-fit/prompts.js";
 import { rootDirFromArgv } from "../../util/root.js";
 import { DEFAULT_CAPELLA_ENV, resolveCapellaConfig, resolveGithubCredentials, resolveResultsDbCredentials, resolveRosaCredentials } from "../../util/config.js";
@@ -283,12 +284,37 @@ async function resolveTestSelectionMode(
   return buildFitTestSelectionFromClassNames([...presetSelected, ...extras]);
 }
 
+/**
+ * Assemble the {@link RunLabelParts} for a run from the pieces known at the call
+ * site: how the box runs (`aws`/`localhost`), how the cluster was provisioned,
+ * and the run's own SDK/version/type/presets. Shared by the announce header, the
+ * per-run detail table and the recorded result so every label reads identically.
+ */
+function runLabelParts(
+  instanceKind: "aws" | "localhost",
+  clusterMode: RunLabelParts["clusterMode"],
+  run: ResolvedExecutionRun,
+): RunLabelParts {
+  return {
+    instanceKind,
+    ...(clusterMode ? { clusterMode } : {}),
+    sdkValue: run.sdk.value,
+    ...(run.performerVersion ? { performerVersion: run.performerVersion } : {}),
+    type: run.type,
+    ...(run.testSelection.presets ? { presets: run.testSelection.presets } : {}),
+  };
+}
+
 /** Print what an iteration resolved to, so a CI log shows the run's inputs. */
 function announce(
   group: ResolvedExecutionGroup,
   run: ResolvedExecutionRun,
   fitPerformerGerritRef: string | undefined,
 ): void {
+  setLogContext({
+    performer: performerLabel(run.path, run.sdk.value, run.performerVersion),
+    run: runLabel(run.path, run.type, run.testSelection.presets),
+  });
   const { testSelection } = run;
   const presetLabels = (testSelection.presets ?? []).map((p) =>
     p === "all-transactions" ? "all transactions tests" : "all non-transactions tests",
@@ -298,12 +324,8 @@ function announce(
     : testSelection.mavenTestSelector
       ? `${testSelection.selectedTests.length} test(s): ${testSelection.mavenTestSelector}`
       : "all tests";
-  console.log(`\n=== Instance ${run.path.instanceIndex + 1} (${group.instance.kind}) ===`);
-  if (!run.path.clusterlessSession) {
-    console.log(`=== Cluster ${((run.path.clusterIndex ?? 0) + 1)} ===`);
-  }
-  console.log(`=== Session ${((run.path.sessionIndex ?? 0) + 1)} ===`);
-  console.log(`=== Run ${((run.path.runIndex ?? 0) + 1)} (${run.type}) ===`);
+  const parts = runLabelParts(group.instance.kind, group.type === "functional" ? group.clusterMode : undefined, run);
+  console.log(`\n=== ${formatRunLabel(run.path, parts)} (${group.instance.kind}, ${run.type}) ===`);
   console.log(`  SDK:     ${run.sdk.name}`);
   console.log(`  Tests:   ${testsLabel}`);
   if (run.type === "situational") {
@@ -462,6 +484,8 @@ async function setupPerformer(
  */
 export interface RunResultSummary {
   path: DefinitionRunPath;
+  /** Rich path label (`aws1 / cbdino1 / java:main / func`), computed where the full run context is known. */
+  pathLabel: string;
   sdk: string;
   type: ResolvedExecutionRun["type"];
   ok: boolean;
@@ -533,15 +557,20 @@ export async function runTests(
     run.extraMavenArgs,
   );
   artifacts.push(...testRun.artifacts);
+  const pathLabel = formatRunLabel(
+    run.path,
+    runLabelParts(execution.kind === "remote" ? "aws" : "localhost", clusterMode, run),
+  );
   const iterationLabel = (label: string) => `Run ${run.path.runIndex ?? 0} ${label}`;
   details.push(
-    { label: iterationLabel("Details"), value: iterationPathSummary(run.path) },
+    { label: iterationLabel("Details"), value: pathLabel },
     { label: iterationLabel("SDK"), value: run.sdk.name },
     { label: iterationLabel("Cluster"), value: `${run.cluster.scheme}://${run.cluster.defaultHostname}` },
     ...testRun.details,
   );
   dependencies.recordResult?.({
     path: run.path,
+    pathLabel,
     sdk: run.sdk.name,
     type: run.type,
     ok: testRun.ok,
@@ -674,9 +703,13 @@ export async function runSituationalTests(
     run.extraMavenArgs,
   );
   artifacts.push(...testRun.artifacts);
+  const pathLabel = formatRunLabel(
+    run.path,
+    runLabelParts(execution.kind === "remote" ? "aws" : "localhost", undefined, run),
+  );
   const iterationLabel = (label: string) => `Run ${run.path.runIndex ?? 0} ${label}`;
   details.push(
-    { label: iterationLabel("Details"), value: iterationPathSummary(run.path) },
+    { label: iterationLabel("Details"), value: pathLabel },
     { label: iterationLabel("SDK"), value: run.sdk.name },
     ...testRun.details,
   );
@@ -688,6 +721,7 @@ export async function runSituationalTests(
   details.push({ label: "Results UI", value: resultsUrl, callToAction: true });
   dependencies.recordResult?.({
     path: run.path,
+    pathLabel,
     sdk: run.sdk.name,
     type: run.type,
     ok: testRun.ok,
@@ -870,11 +904,7 @@ function resumeSelectorMatchesPath(selector: ResumeSelector, path: DefinitionRun
   );
 }
 
-function describeRunPath(path: DefinitionRunPath): string {
-  return path.clusterlessSession
-    ? `instance ${path.instanceIndex + 1} / clusterless session ${(path.sessionIndex ?? 0) + 1} / run ${(path.runIndex ?? 0) + 1}`
-    : `instance ${path.instanceIndex + 1} / cluster ${(path.clusterIndex ?? 0) + 1} / session ${(path.sessionIndex ?? 0) + 1} / run ${(path.runIndex ?? 0) + 1}`;
-}
+
 
 /**
  * Translate a run path into a {@link FailureContext} so the end-of-run summary
@@ -898,12 +928,6 @@ function failureContextFromPath(path: DefinitionRunPath): FailureContext {
   };
 }
 
-/** One-line summary of the instance/cluster/session for the detail table. */
-function iterationPathSummary(path: DefinitionRunPath): string {
-  return path.clusterlessSession
-    ? `Instance ${path.instanceIndex + 1}, Session ${(path.sessionIndex ?? 0) + 1}`
-    : `Instance ${path.instanceIndex + 1}, Cluster ${(path.clusterIndex ?? 0) + 1}, Session ${(path.sessionIndex ?? 0) + 1}`;
-}
 
 interface TeardownInputs {
   definitionPath: string;
@@ -945,17 +969,20 @@ async function disposeCycleResources(
     for (const performer of performers) {
       await stopManagedPerformer(execution, performer);
     }
+    popLogContext("performer", "run");
     if (clusterState?.allocated && clusterState.clusterId && clusterState.cbdinoclusterCommand) {
       if (clusterState.logsDir && cbcollect) {
         await collectClusterLogs(clusterState.cbdinoclusterCommand, clusterState.clusterId, clusterState.logsDir, execution);
       }
       await removeCluster(clusterState.cbdinoclusterCommand, clusterState.clusterId, execution);
+      popLogContext("cluster");
     }
   }
   if (teardown.terminate) {
     console.log(`\nTerminating instance ${teardown.instanceId ?? ""}...`);
     await teardown.terminate();
     console.log("✓ Terminated.");
+    clearLogContext();
   }
 }
 
@@ -999,7 +1026,7 @@ function formatRunResultsSummary(results: readonly RunResultSummary[]): string |
         `${result.summary.errors} errors, ${result.summary.skipped} skipped`
       : "";
     return {
-      label: `${describeRunPath(result.path)} (${result.sdk})`,
+      label: `${result.pathLabel} (${result.sdk})`,
       value: `${result.ok ? "PASS" : "FAIL"}${counts}`,
     };
   });
@@ -1101,17 +1128,20 @@ async function teardownRun(inputs: TeardownInputs): Promise<{ leftUp: boolean }>
     for (const performer of performers) {
       await stopManagedPerformer(execution, performer);
     }
+    popLogContext("performer", "run");
     if (clusterState?.allocated && clusterState.clusterId && clusterState.cbdinoclusterCommand) {
       if (clusterState.logsDir && cbcollect) {
         await collectClusterLogs(clusterState.cbdinoclusterCommand, clusterState.clusterId, clusterState.logsDir, execution);
       }
       await removeCluster(clusterState.cbdinoclusterCommand, clusterState.clusterId, execution);
+      popLogContext("cluster");
     }
   }
   if (teardown.terminate) {
     console.log(`\nTerminating instance ${teardown.instanceId ?? ""}...`);
     await teardown.terminate();
     console.log("✓ Terminated.");
+    clearLogContext();
   }
   return { leftUp: false };
 }
@@ -1248,7 +1278,7 @@ export async function runFromDefinition(
         { classification: "FatalToAll" },
         `\nresume: the requested path does not match the saved run state.\n` +
           `  Requested: ${resumeSelectorFlags(resumeSelector).join(" ")}\n` +
-          `  Saved:     ${describeRunPath(expectedResumePath)}`,
+          `  Saved:     ${formatRunLabel(expectedResumePath)}`,
       );
       tracker.record("FatalToAll", "Requested resume path does not match saved run state", preconditionCtx);
       return finalizeRunFromDefinition([], [], undefined, tracker.worst, tracker.failureCount);
@@ -1396,6 +1426,7 @@ export async function runFromDefinition(
         break;
       }
       activeResumePath = group.path;
+      clearLogContext();
       console.log(`\nExecution group ${cycleIndex + 1}/${executionGroups.length}: ${group.type}`);
       console.log(`  Execution: ${describeExecutionOverride(executionOverride, group.instance.kind)}`);
       console.log(`  Cluster: ${clusterLabel(group)}`);
@@ -1416,6 +1447,7 @@ export async function runFromDefinition(
       }
       const cycleTeardown = targetOutcome.teardown;
       activeTeardown = cycleTeardown;
+      setLogContext({ env: instanceLabel(group.path, cycleTeardown.kind === "remote" ? "aws" : "localhost") });
       if (cycleTeardown.kind === "remote" && cycleTeardown.address) {
         printResumeHint("after-instance-creation", definitionCopyPath, group.path, false);
       }
@@ -1482,6 +1514,9 @@ export async function runFromDefinition(
             if (clusterState) {
               printResumeHint("after-cluster-creation", definitionCopyPath, activeCycle.path, false);
             }
+          }
+          if (clusterState) {
+            setLogContext({ cluster: clusterSegmentLabel(activeCycle.path, activeCycle.clusterMode) });
           }
         } else {
           if (execution.kind === "remote") {
@@ -1609,6 +1644,7 @@ export async function runFromDefinition(
           activeClusterState = undefined;
           activePerformers = [];
           activePerformerStates = [];
+          clearLogContext();
           continue;
         }
         throw err;

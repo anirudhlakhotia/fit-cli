@@ -2,12 +2,12 @@ import * as core from "@actions/core";
 import { spawn } from "node:child_process";
 import { appendFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-
 type SummaryTableCell = { data: string; header?: boolean; colspan?: string; rowspan?: string };
 type SummaryTableRow = (SummaryTableCell | string)[];
 
 interface RunSummary {
-  path: { instanceIndex: number; clusterIndex?: number; sessionIndex?: number; runIndex?: number; clusterlessSession?: boolean };
+  /** Rich path label (`aws1 / cbdino1 / java:main / func`), precomputed by the run loop. */
+  pathLabel: string;
   sdk: string;
   type: string;
   ok: boolean;
@@ -22,11 +22,8 @@ interface RunSummary {
 export async function appendRunSummaryToGhaSummary(result: RunSummary): Promise<void> {
   if (!process.env.GITHUB_STEP_SUMMARY) return;
 
-  const { path, sdk, type, ok, summary } = result;
+  const { pathLabel, sdk, type, ok, summary } = result;
   const status = ok ? "✅ PASS" : "❌ FAIL";
-  const pathLabel = path.clusterlessSession
-    ? `Instance ${path.instanceIndex + 1} / Session ${(path.sessionIndex ?? 0) + 1} / Run ${(path.runIndex ?? 0) + 1}`
-    : `Instance ${path.instanceIndex + 1} / Cluster ${(path.clusterIndex ?? 0) + 1} / Session ${(path.sessionIndex ?? 0) + 1} / Run ${(path.runIndex ?? 0) + 1}`;
 
   const rows: SummaryTableRow[] = [
     [{ data: "Detail", header: true }, { data: "Value", header: true }],
