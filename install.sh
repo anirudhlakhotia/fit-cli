@@ -4,8 +4,8 @@ set -euo pipefail
 REPO="couchbaselabs/fit-cli"
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
 BINARY_NAME="fit"
-# stable (default) = manually promoted release; latest = tip of main (pre-release)
-CHANNEL="${CHANNEL:-stable}"
+# ci = manually promoted, infrequent; latest (default) = tip of main (every push)
+CHANNEL="${CHANNEL:-latest}"
 
 detect_target() {
   local os arch
