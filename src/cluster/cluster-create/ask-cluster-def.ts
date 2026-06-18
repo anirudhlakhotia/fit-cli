@@ -16,7 +16,7 @@
 import { isMain, runCli } from "../../util/non-fit/cli.js";
 import { printWithoutTimestamps } from "../../util/non-fit/fit-cli-log.js";
 import { checkbox, input, number } from "../../util/non-fit/prompts.js";
-import { DEFAULT_CLUSTER_VERSION, type ClusterDef } from "./build-cluster-def.js";
+import { DEFAULT_CLUSTER_VERSION, DEFAULT_CNG_CLUSTER_VERSION, type ClusterDef } from "./build-cluster-def.js";
 
 /** Services offered, with the FIT-typical set selected by default. */
 const SERVICES = [
@@ -50,12 +50,18 @@ export async function askClusterDef(options: AskClusterDefOptions = {}): Promise
     (await number({ promptId: "cluster.create.node-count", message: "How many nodes?", default: 3, min: 1 })) ??
     1;
 
-  printWithoutTimestamps("  Alias (github.com/couchbaselabs/cb-alias): e.g. 8.0-stable");
-  printWithoutTimestamps("  Server images (github.com/orgs/cb-vanilla/packages/container/package/server): e.g. 8.0.2-5322");
+  if (options.cng) {
+    // CNG on OpenShift pulls the server from cb-rhcc (not cb-vanilla), which only
+    // carries specific certified builds — see DEFAULT_CNG_CLUSTER_VERSION.
+    printWithoutTimestamps("  CNG server images (github.com/orgs/cb-rhcc/packages/container/package/server): e.g. 8.1.0-2222");
+  } else {
+    printWithoutTimestamps("  Alias (github.com/couchbaselabs/cb-alias): e.g. 8.0-stable");
+    printWithoutTimestamps("  Server images (github.com/orgs/cb-vanilla/packages/container/package/server): e.g. 8.0.2-5322");
+  }
   const version = await input({
     promptId: "cluster.create.server-version",
     message: "Which Couchbase Server version?",
-    default: DEFAULT_CLUSTER_VERSION,
+    default: options.cng ? DEFAULT_CNG_CLUSTER_VERSION : DEFAULT_CLUSTER_VERSION,
   });
 
   const services = await checkbox<string>({

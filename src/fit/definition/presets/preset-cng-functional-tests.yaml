@@ -52,8 +52,11 @@ clusterConfigs:
     cbdinocluster:
       config:
         nodes:
+          # CNG on OpenShift pulls the server from cb-rhcc (not cb-vanilla), which
+          # only carries certain certified builds — a `-stable` alias resolves to a
+          # cb-vanilla build cb-rhcc lacks, so pin a build that exists there.
           - count: 3
-            version: '8.0-stable'
+            version: '8.1.0-2222'
             services:
               - kv
               - n1ql
