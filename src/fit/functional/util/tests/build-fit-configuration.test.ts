@@ -88,34 +88,32 @@ test("the tls choice is passed straight through", () => {
   assert.deepEqual(access.tls, { insecure: true });
 });
 
-test("a CNG cluster splits clusterAccess into classic driver and couchbase2 performer blocks", () => {
+test("a CNG cluster uses a flat couchbase2 connectionString (no driver/performer split)", () => {
   const config = buildFitConfiguration({
-    scheme: "couchbase",
-    defaultHostname: "172.19.0.2",
+    scheme: "couchbases",
+    defaultHostname: "ui-host:443",
     flavour: "self-managed",
     credentials,
-    tls: null,
-    cng: { performerConnectionString: "couchbase2://172.19.0.2:32700", tls: { insecure: true } },
+    tls: { insecure: true },
+    cng: { performerConnectionString: "couchbase2://cng-host", tls: { insecure: true } },
   });
 
   const access = config.clusterAccess as Record<string, unknown>;
-  assert.equal(access.defaultHostname, "172.19.0.2");
-  assert.deepEqual(access.driver, {
-    "//": "The driver connects with classic, which lets it create users, inspect cluster configs, etc.",
-    connectionString: "couchbase://${defaultHostname}",
-    tls: null,
-  });
-  assert.deepEqual(access.performer, {
-    connectionString: "couchbase2://172.19.0.2:32700",
-    tls: { insecure: true },
-  });
+  assert.equal(access.defaultHostname, "ui-host:443");
+  // Flat connectionString using the couchbase2 performer URL — no driver/performer split.
+  assert.equal(access.connectionString, "couchbase2://cng-host");
+  assert.deepEqual(access.tls, { insecure: true });
+  // No classic driver or performer blocks.
+  assert.equal(access.driver, undefined);
+  assert.equal(access.performer, undefined);
   // The FIT proxy doesn't support couchbase2 yet, and DNS SRV is off for CNG.
   assert.equal(access.proxy, null);
-  assert.deepEqual(access.rest, { hostname: "172.19.0.2", resolveDnsSrv: false });
+  // rest.hostname strips the :443 port; rest.port carries it explicitly.
+  assert.deepEqual(access.rest, { hostname: "ui-host", resolveDnsSrv: false, port: 443 });
   assert.equal(config["//"], AUTO_GENERATED_MARKER);
   assert.deepEqual(config.excludeTests, ["situational"]);
-  // A plain operational connectionString must NOT be emitted for CNG.
-  assert.equal(access.connectionString, undefined);
+  // skipBucketCreation: the test-driver must not try to create buckets over classic.
+  assert.equal(config.skipBucketCreation, true);
 });
 
 test("a definition fitConfig piece can override defaults while runtime fields still win", () => {
@@ -183,6 +181,20 @@ test("runtimeFitConfigurationPiece patches both defaultHostname and rest.hostnam
   const access = (piece.data.clusterAccess as Record<string, unknown>);
   assert.equal(access.defaultHostname, "172.18.0.2,172.18.0.4,172.18.0.3");
   assert.deepEqual(access.rest, { hostname: "172.18.0.2" });
+});
+
+test("runtimeFitConfigurationPiece splits host:port into rest.hostname and rest.port", () => {
+  const piece = runtimeFitConfigurationPiece({
+    scheme: "couchbases",
+    defaultHostname: "ui-host:443",
+    flavour: "self-managed",
+    credentials,
+    tls: { insecure: true },
+  });
+
+  const access = piece.data.clusterAccess as Record<string, unknown>;
+  assert.equal(access.defaultHostname, "ui-host:443");
+  assert.deepEqual(access.rest, { hostname: "ui-host", port: 443 });
 });
 
 test("a multi-node self-managed cluster uses only the first IP for rest.hostname", () => {

@@ -27,6 +27,13 @@ import { parseAllocatedId } from "./parse-allocated-id.js";
 export type AllocatedCluster = RunOutput & {
   /** The new cluster's UUID, as passed to `cbdinocluster connstr <id>`. */
   clusterId: string;
+  /**
+   * For CAO/CNG clusters: the management-UI hostname and CNG-gateway connection
+   * string host, fetched via `cbdinocluster mgmt <id>` and
+   * `cbdinocluster connstr --couchbase2 <id>` after allocation.
+   * Absent for non-CAO deployers.
+   */
+  caoHosts?: { uiHost: string; cngHost: string };
 };
 
 export interface WriteClusterDefResult {
@@ -161,7 +168,27 @@ export async function allocateCluster(
   if (!clusterId) {
     throw new Error("cbdinocluster allocate didn't print a cluster id");
   }
-  return { artifacts: [artifact], details: [], clusterId };
+  let caoHosts: { uiHost: string; cngHost: string } | undefined;
+  try {
+    const [couchbase2Connstr, mgmtUrl] = await Promise.all([
+      execution.capture(cbdinocluster, ["connstr", "--couchbase2", clusterId], undefined, {
+        display: "cbdinocluster connstr --couchbase2 (get CNG gateway host)",
+      }),
+      execution.capture(cbdinocluster, ["mgmt", clusterId], undefined, {
+        display: "cbdinocluster mgmt (get management UI host)",
+      }),
+    ]);
+    // "couchbase2://cng-host[:port]" → "cng-host[:port]"
+    const cngHost = couchbase2Connstr.trim().replace(/^couchbase2:\/\//, "");
+    // "https://ui-host:443" or "http://ip:port" → "ui-host" (strip scheme and port)
+    const uiHost = mgmtUrl.trim().replace(/^https?:\/\//, "").replace(/:\d+$/, "");
+    if (cngHost && uiHost) {
+      caoHosts = { uiHost, cngHost };
+    }
+  } catch {
+    // Non-CAO deployer or commands not supported — caoHosts stays undefined.
+  }
+  return { artifacts: [artifact], details: [], clusterId, ...(caoHosts ? { caoHosts } : {}) };
 }
 
 if (isMain(import.meta.url)) {
