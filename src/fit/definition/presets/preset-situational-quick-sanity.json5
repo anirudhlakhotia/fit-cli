@@ -1,19 +1,11 @@
 {
   preset: {
     order: 12,
-    description: 'does quick sanity testing for situational tests against a given SDK.',
-    expectedTime: 'TBD',
+    description: 'Quick sanity testing for situational tests against a given SDK.',
+    expectedTime: '< 10 minutes'
   },
   version: 1,
   type: 'fit',
-  setup: {
-    repos: {
-      'transactions-fit-performer': {
-        // todo remove this later when merged
-        gerritRef: 'refs/changes/02/247102/2',
-      },
-    },
-  },
   instances: [
     {
       aws: {},

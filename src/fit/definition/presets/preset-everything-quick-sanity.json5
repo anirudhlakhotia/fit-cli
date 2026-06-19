@@ -1,8 +1,8 @@
 {
   preset: {
     order: 15,
-    description: 'does quick sanity testing across all testing axes against a given SDK.',
-    expectedTime: 'TBD',
+    description: 'Quick sanity testing across all testing axes against a given SDK.',
+    expectedTime: '< 30 minutes',
   },
   version: 1,
   type: 'fit',

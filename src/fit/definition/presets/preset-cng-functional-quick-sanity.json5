@@ -2,8 +2,8 @@
 {
   preset: {
     order: 40,
-    description: 'does quick sanity testing for FIT functional for a given SDK, against CNG.',
-    expectedTime: 'TBD',
+    description: 'Quick sanity testing for FIT functional for a given SDK, against CNG.',
+    expectedTime: '< 10 minutes',
   },
   version: 1,
   type: 'fit',

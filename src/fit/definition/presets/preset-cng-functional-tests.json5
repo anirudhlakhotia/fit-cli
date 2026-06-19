@@ -2,8 +2,8 @@
 {
   preset: {
     order: 20,
-    description: 'run all FIT functional tests for a given SDK against a CNG / Protostellar',
-    expectedTime: 'TBD',
+    description: 'Run all FIT functional tests for a given SDK against a CNG / Protostellar',
+    expectedTime: '< 1 hour',
   },
   version: 1,
   type: 'fit',

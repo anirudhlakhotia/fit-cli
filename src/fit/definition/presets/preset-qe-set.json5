@@ -2,7 +2,7 @@
   preset: {
     order: 5,
     description: 'This is the set SDKQE-that-was like to run before signing off on a release.',
-    expectedTime: 'TBD',
+    expectedTime: 'Quite long',
   },
   version: 1,
   type: 'fit',

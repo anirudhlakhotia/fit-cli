@@ -1,8 +1,8 @@
 {
   preset: {
     order: 12,
-    description: 'does quick sanity testing for functional tests against a given SDK.',
-    expectedTime: 'TBD',
+    description: 'Quick sanity testing for functional tests against a given SDK.',
+    expectedTime: '< 10 minutes'
   },
   version: 1,
   type: 'fit',

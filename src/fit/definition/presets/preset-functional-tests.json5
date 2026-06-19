@@ -1,8 +1,8 @@
 {
   preset: {
     order: 10,
-    description: 'run all FIT functional tests for a given SDK.',
-    expectedTime: 'TBD',
+    description: 'Run all FIT functional tests for a given SDK.',
+    expectedTime: '< 1 hour',
   },
   version: 1,
   type: 'fit',
@@ -11,7 +11,7 @@
       aws: {},
       clusters: [
         {
-          clusterConfig: 'cluster-0',
+          clusterConfig: '8.0-stable',
           sessions: [
             {
               performer: {
@@ -28,12 +28,30 @@
             },
           ],
         },
+        {
+          clusterConfig: '7.6-stable',
+          sessions: [
+            {
+              performer: {
+                image: '{{PERFORMER_IMAGE}}',
+              },
+              runs: [
+                {
+                  type: 'functional',
+                  tests: {
+                    presets: ['all'],
+                  },
+                },
+              ],
+            },
+          ],
+        }
       ],
     },
   ],
   clusterConfigs: [
     {
-      id: 'cluster-0',
+      id: '8.0-stable',
       cbdinocluster: {
         config: {
           nodes: [
@@ -48,9 +66,27 @@
             'fts-memory': 4096,
           },
         },
-        // Reuse an existing cbdinocluster cluster if one is already running (avoids re-creating on resume).
         onClusterExists: 'useExisting',
       },
     },
+    {
+      id: '7.6-stable',
+      cbdinocluster: {
+        config: {
+          nodes: [
+            {
+              count: 3,
+              version: '7.6-stable',
+              services: ['kv', 'n1ql', 'index', 'fts'],
+            },
+          ],
+          docker: {
+            'kv-memory': 4096,
+            'fts-memory': 4096,
+          },
+        },
+        onClusterExists: 'useExisting',
+      },
+    }
   ],
 }
