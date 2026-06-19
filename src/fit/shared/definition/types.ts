@@ -151,13 +151,13 @@ export interface SituationalSection {
 
 export interface FunctionalRun {
   type: "functional";
-  fitConfig?: FitConfigPiece | string;
+  fitConfig?: ResolvedFitConfig | string;
   tests: TestsSection;
 }
 
 export interface SituationalRun {
   type: "situational";
-  fitConfig?: FitConfigPiece | string;
+  fitConfig?: ResolvedFitConfig | string;
   situational: SituationalSection;
   tests: TestsSection;
 }
@@ -184,9 +184,70 @@ export interface ClusterConfigRef {
   useExisting?: UseExistingClusterSetup;
 }
 
+/** Connection scheme for a FIT driver or performer. */
+export type ConnectionScheme = "couchbase" | "couchbases" | "couchbase2";
+
+/** Per-component (driver or performer) scheme and TLS overrides. */
+export interface SchemeAndTls {
+  /** Protocol scheme for the SDK connection string. */
+  scheme?: ConnectionScheme;
+  /**
+   * TLS config for this component.  `null` disables TLS; omit to inherit the
+   * top-level tls setting.
+   */
+  tls?: { insecure?: boolean; cert?: string } | null;
+}
+
+/**
+ * Declares the SDK connection scheme(s) fit-cli should write into
+ * `clusterAccess` in FITConfiguration.json.  When absent, fit-cli infers the
+ * scheme from the cluster type (`cao` → couchbase2, else classic).
+ *
+ * `scheme` / `tls` at the top level apply to both driver and performer unless
+ * overridden by the `driver` / `performer` sub-objects — matching the
+ * FITConfiguration `driver` / `performer` override structure described in
+ * FITConfiguration.md.
+ */
+export interface FitConnectionSpec {
+  scheme?: ConnectionScheme;
+  tls?: { insecure?: boolean; cert?: string } | null;
+  /** Override the scheme/TLS for only the test-driver side. */
+  driver?: SchemeAndTls;
+  /** Override the scheme/TLS for only the performer side. */
+  performer?: SchemeAndTls;
+}
+
 export interface FitConfigRef {
   id: string;
-  config: FitConfigPiece;
+  /** Fields merged into FITConfiguration.json and printed to the console. */
+  config?: FitConfigPiece;
+  /**
+   * Declares the connection scheme(s) fit-cli should use when generating
+   * `clusterAccess` in FITConfiguration.json.  When absent, fit-cli infers
+   * from the cluster type.
+   */
+  connection?: FitConnectionSpec;
+  /**
+   * Raw FITConfiguration.json partial merged in last (highest priority).
+   * Unlike `config`, this is NOT printed to the console — use it for values
+   * that are verbose or sensitive (certificates, tokens).
+   */
+  patch?: FitConfigPiece;
+}
+
+/**
+ * The resolved form of a fitConfig entry — carries `config`, `connection`, and
+ * `patch` together.  In a parsed `FitRun`, `fitConfig` starts as
+ * `ResolvedFitConfig | string`; `resolveDefinitionRefs` replaces the string
+ * (ref id) with the full resolved object.
+ */
+export interface ResolvedFitConfig {
+  /** Merged into FITConfiguration.json and printed to the console. */
+  config?: PieceData;
+  /** Declares the connection scheme(s); overrides fit-cli's auto-detection. */
+  connection?: FitConnectionSpec;
+  /** Merged into FITConfiguration.json last (highest priority); NOT printed to the console. */
+  patch?: PieceData;
 }
 
 export type InstanceLifetime =

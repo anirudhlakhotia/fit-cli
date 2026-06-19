@@ -28,14 +28,18 @@ import {
   type ClusterLifetime,
   type ClusterTls,
   type ConnectionClusterSetup,
+  type ConnectionScheme,
   type FitConfigPiece,
   type FitConfigRef,
+  type FitConnectionSpec,
   type FitDefinition,
   type FitRun,
   type InstanceLifetime,
   type InstanceSetup,
   type MavenOptions,
   type PerformerSetup,
+  type ResolvedFitConfig,
+  type SchemeAndTls,
   type SessionLifetime,
   type SharedSetup,
   type SituationalDatabaseMode,
@@ -427,11 +431,16 @@ function validateSituationalSection(value: unknown, path: string): SituationalSe
   return { database: validateSituationalDatabase(record.database, `${path}.database`) };
 }
 
-function validateRunFitConfig(value: unknown, path: string): FitConfigPiece | string {
+function validateRunFitConfig(value: unknown, path: string): ResolvedFitConfig | string {
   if (isString(value)) {
     return value;
   }
-  return validateFitConfig(value, path);
+  const record = requireRecord(value, path);
+  return {
+    ...(record.config !== undefined ? { config: validateFitConfig(record.config, `${path}.config`) } : {}),
+    ...(record.connection !== undefined ? { connection: validateFitConnectionSpec(record.connection, `${path}.connection`) } : {}),
+    ...(record.patch !== undefined ? { patch: validateFitConfig(record.patch, `${path}.patch`) } : {}),
+  };
 }
 
 function validateRun(value: unknown, path: string, clusterless: boolean): FitRun {
@@ -543,6 +552,33 @@ function validateClusterConfigs(value: unknown): ClusterConfigRef[] {
   });
 }
 
+const CONNECTION_SCHEMES: ConnectionScheme[] = ["couchbase", "couchbases", "couchbase2"];
+
+function validateConnectionScheme(value: unknown, path: string): ConnectionScheme {
+  if (!CONNECTION_SCHEMES.includes(value as ConnectionScheme)) {
+    throw new InvalidDefinitionError(`"${path}" must be one of ${CONNECTION_SCHEMES.join(", ")}; got ${JSON.stringify(value)}`);
+  }
+  return value as ConnectionScheme;
+}
+
+function validateSchemeAndTls(value: unknown, path: string): SchemeAndTls {
+  const record = requireRecord(value, path);
+  return {
+    ...(record.scheme !== undefined ? { scheme: validateConnectionScheme(record.scheme, `${path}.scheme`) } : {}),
+    ...(record.tls !== undefined ? { tls: record.tls as SchemeAndTls["tls"] } : {}),
+  };
+}
+
+function validateFitConnectionSpec(value: unknown, path: string): FitConnectionSpec {
+  const record = requireRecord(value, path);
+  return {
+    ...(record.scheme !== undefined ? { scheme: validateConnectionScheme(record.scheme, `${path}.scheme`) } : {}),
+    ...(record.tls !== undefined ? { tls: record.tls as FitConnectionSpec["tls"] } : {}),
+    ...(record.driver !== undefined ? { driver: validateSchemeAndTls(record.driver, `${path}.driver`) } : {}),
+    ...(record.performer !== undefined ? { performer: validateSchemeAndTls(record.performer, `${path}.performer`) } : {}),
+  };
+}
+
 function validateFitConfigs(value: unknown): FitConfigRef[] {
   if (!Array.isArray(value)) {
     throw new InvalidDefinitionError(`"fitConfigs" must be a list; got ${JSON.stringify(value)}`);
@@ -556,10 +592,12 @@ function validateFitConfigs(value: unknown): FitConfigRef[] {
       throw new InvalidDefinitionError(`Duplicate fitConfigs id: "${id}"`);
     }
     ids.add(id);
-    if (record.config === undefined) {
-      throw new InvalidDefinitionError(`Missing required field: ${path}.config`);
-    }
-    return { id, config: validateFitConfig(record.config, `${path}.config`) };
+    return {
+      id,
+      ...(record.config !== undefined ? { config: validateFitConfig(record.config, `${path}.config`) } : {}),
+      ...(record.connection !== undefined ? { connection: validateFitConnectionSpec(record.connection, `${path}.connection`) } : {}),
+      ...(record.patch !== undefined ? { patch: validateFitConfig(record.patch, `${path}.patch`) } : {}),
+    };
   });
 }
 

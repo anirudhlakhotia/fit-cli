@@ -104,6 +104,7 @@ import {
   resolveDefinition,
   type ResolvedExecutionGroup,
   type ResolvedExecutionRun,
+  type ResolvedFitConfig,
   type ResolvedFunctionalExecutionGroup,
   type ResolvedFunctionalExecutionRun,
   type ResolvedSituationalExecutionRun,
@@ -642,34 +643,42 @@ async function resolveCbdinoclusterPathOnExecution(execution: FitExecutionContex
  * whatever the definition specified so the FIT test driver uses the runtime-resolved
  * absolute path on the execution host.
  */
-function withCbdinoclusterPath(fitConfig: PieceData | undefined, path: string): PieceData {
-  const situational = ((fitConfig?.situational ?? {}) as Record<string, unknown>);
+function withCbdinoclusterPath(fitConfig: ResolvedFitConfig | undefined, cbdinoPath: string): ResolvedFitConfig {
+  const piece = fitConfig?.config ?? {};
+  const situational = ((piece.situational ?? {}) as Record<string, unknown>);
   const cbdino = ((situational.cbdino ?? {}) as Record<string, unknown>);
   return {
     ...fitConfig,
-    situational: {
-      ...situational,
-      cbdino: { ...cbdino, cbDinoClusterAppPath: path },
+    config: {
+      ...piece,
+      situational: {
+        ...situational,
+        cbdino: { ...cbdino, cbDinoClusterAppPath: cbdinoPath },
+      },
     },
   };
 }
 
 async function withResolvedSituationalCbdino(
-  fitConfig: PieceData | undefined,
-  path: string,
-): Promise<PieceData> {
-  const config = withCbdinoclusterPath(fitConfig, path);
-  const situational = ((config.situational ?? {}) as Record<string, unknown>);
+  fitConfig: ResolvedFitConfig | undefined,
+  cbdinoPath: string,
+): Promise<ResolvedFitConfig> {
+  const resolved = withCbdinoclusterPath(fitConfig, cbdinoPath);
+  const piece = resolved.config ?? {};
+  const situational = ((piece.situational ?? {}) as Record<string, unknown>);
   const cbdino = ((situational.cbdino ?? {}) as Record<string, unknown>);
   const version = cbdino.version;
   if (typeof version !== "string" || !isAlias(version)) {
-    return config;
+    return resolved;
   }
   return {
-    ...config,
-    situational: {
-      ...situational,
-      cbdino: { ...cbdino, version: await resolveAlias(version) },
+    ...resolved,
+    config: {
+      ...piece,
+      situational: {
+        ...situational,
+        cbdino: { ...cbdino, version: await resolveAlias(version) },
+      },
     },
   };
 }
@@ -712,7 +721,7 @@ export async function runSituationalTests(
     execution.rootDir,
     run.path,
     run.performerPort,
-    fitConfigPiece,
+    fitConfigPiece.config,
   );
   artifacts.push(...fitConfig.artifacts);
   details.push(...fitConfig.details);

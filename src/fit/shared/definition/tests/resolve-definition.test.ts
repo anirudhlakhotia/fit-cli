@@ -43,7 +43,7 @@ function definition(): FitDefinition {
             sessions: [
               {
                 performer: { image: "java-fit-performer:main" },
-                runs: [{ type: "functional", tests: {}, fitConfig: { excludeTests: ["openshift"] } }],
+                runs: [{ type: "functional", tests: {}, fitConfig: { config: { excludeTests: ["openshift"] } } }],
               },
             ],
           },
@@ -70,7 +70,7 @@ test("resolves a cluster.connection cluster", () => {
 });
 
 test("resolves a cluster fitConfig clusterAccess block", () => {
-  const cluster = resolveFitConfigCluster(LOCAL_FIT_CONFIG);
+  const cluster = resolveFitConfigCluster({ config: LOCAL_FIT_CONFIG });
   assert.equal(cluster?.defaultHostname, "localhost");
 });
 
@@ -90,8 +90,10 @@ test("resolveSession applies performer defaults and strips redundant clusterAcce
         {
           type: "functional",
           fitConfig: {
-            clusterAccess: LOCAL_FIT_CONFIG.clusterAccess,
-            excludeTests: ["openshift"],
+            config: {
+              clusterAccess: LOCAL_FIT_CONFIG.clusterAccess,
+              excludeTests: ["openshift"],
+            },
           },
           tests: {},
         },
@@ -101,7 +103,7 @@ test("resolveSession applies performer defaults and strips redundant clusterAcce
     true,
   );
   assert.equal(resolved.performerPort, DEFAULT_PERFORMER_PORT);
-  assert.deepEqual(resolved.runs[0]?.fitConfig, { excludeTests: ["openshift"] });
+  assert.deepEqual(resolved.runs[0]?.fitConfig, { config: { excludeTests: ["openshift"] } });
 });
 
 test("resolveDefinition uses run-level fitConfig for useExisting clusters", () => {
@@ -114,7 +116,7 @@ test("resolveDefinition uses run-level fitConfig for useExisting clusters", () =
         clusters: [
           {
             useExisting: {},
-            sessions: [{ performer: { image: "java-fit-performer:main" }, runs: [{ type: "functional", tests: {}, fitConfig: LOCAL_FIT_CONFIG }] }],
+            sessions: [{ performer: { image: "java-fit-performer:main" }, runs: [{ type: "functional", tests: {}, fitConfig: { config: LOCAL_FIT_CONFIG } }] }],
           },
         ],
       },
@@ -264,7 +266,7 @@ test("resolveDefinitionRefs replaces fitConfig string ref with inline config", (
     fitConfigs: [{ id: "fit-config-0", config: fitConfigData }],
   });
   const run = def.instances[0]?.clusters[0]?.sessions[0]?.runs[0];
-  assert.deepEqual(run?.fitConfig, fitConfigData);
+  assert.deepEqual(run?.fitConfig, { config: fitConfigData });
   assert.equal(def.fitConfigs, undefined);
 });
 
