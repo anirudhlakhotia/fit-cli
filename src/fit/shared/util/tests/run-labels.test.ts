@@ -18,6 +18,13 @@ test("clusterLabel distinguishes allocated from existing, omitting clusterless",
   assert.equal(clusterLabel({ ...path, clusterlessSession: true }), undefined);
 });
 
+test("clusterLabel prefers the cbdino cluster version when known", () => {
+  assert.equal(clusterLabel(path, "cbdinocluster", "8.1.0"), "8.1.0");
+  // A known version doesn't override the existing-cluster form (we don't claim a version for those).
+  assert.equal(clusterLabel(path, "connection", "8.1.0"), "existing1");
+  assert.equal(clusterLabel({ ...path, clusterlessSession: true }, "cbdinocluster", "8.1.0"), undefined);
+});
+
 test("performerLabel names the session by performer, falling back to sN", () => {
   assert.equal(performerLabel(path, "java", "main"), "java:main");
   assert.equal(performerLabel(path, "java"), "java");
@@ -43,6 +50,17 @@ test("formatRunLabel joins the four segments, dropping absent ones", () => {
       { instanceKind: "aws", sdkValue: "java", type: "situational" },
     ),
     "aws1 / java / sit",
+  );
+  assert.equal(
+    formatRunLabel(path, {
+      instanceKind: "aws",
+      clusterMode: "cbdinocluster",
+      clusterVersion: "8.1.0",
+      sdkValue: "java",
+      performerVersion: "main",
+      type: "functional",
+    }),
+    "aws1 / 8.1.0 / java:main / func",
   );
   assert.equal(formatRunLabel(path), "instance1 / cbdino1 / s1 / r1");
 });

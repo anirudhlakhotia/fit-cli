@@ -14,6 +14,8 @@ export interface RunLabelParts {
   instanceKind?: "aws" | "localhost";
   /** Cluster provenance — `cbdino1` (allocated) vs `existing1` (connection/useExisting). */
   clusterMode?: "connection" | "useExisting" | "cbdinocluster";
+  /** Couchbase Server version of an allocated cbdino cluster, e.g. `8.1.0`. When known, replaces the `cbdino1` index form with the version itself. */
+  clusterVersion?: string;
   /** Lowercase SDK value, e.g. `java`. */
   sdkValue?: string;
   /** Performer image version / ref, e.g. `main`. */
@@ -34,13 +36,24 @@ export function instanceLabel(path: DefinitionRunPath, kind?: RunLabelParts["ins
   return `instance${path.instanceIndex + 1}`;
 }
 
-/** `cbdino1` / `existing1`, or undefined for a clusterless (situational) session. */
-export function clusterLabel(path: DefinitionRunPath, mode?: RunLabelParts["clusterMode"]): string | undefined {
+/**
+ * `cbdino1` / `existing1`, or undefined for a clusterless (situational) session.
+ * For an allocated cbdino cluster whose version we know, prefer the more useful
+ * version itself (e.g. `8.1.0`) over the bare `cbdino1` index.
+ */
+export function clusterLabel(
+  path: DefinitionRunPath,
+  mode?: RunLabelParts["clusterMode"],
+  version?: string,
+): string | undefined {
   if (path.clusterlessSession) {
     return undefined;
   }
   const n = (path.clusterIndex ?? 0) + 1;
-  return mode === "connection" || mode === "useExisting" ? `existing${n}` : `cbdino${n}`;
+  if (mode === "connection" || mode === "useExisting") {
+    return `existing${n}`;
+  }
+  return version ? version : `cbdino${n}`;
 }
 
 /** The session, named by its performer: `java:main` (or just `java`), falling back to `s1`. */
@@ -70,7 +83,7 @@ export function runLabel(
 export function formatRunLabel(path: DefinitionRunPath, parts: RunLabelParts = {}): string {
   return [
     instanceLabel(path, parts.instanceKind),
-    clusterLabel(path, parts.clusterMode),
+    clusterLabel(path, parts.clusterMode, parts.clusterVersion),
     performerLabel(path, parts.sdkValue, parts.performerVersion),
     runLabel(path, parts.type, parts.presets),
   ]
