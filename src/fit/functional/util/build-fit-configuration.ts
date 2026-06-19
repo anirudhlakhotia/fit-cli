@@ -117,6 +117,9 @@ export function generatedFitConfigurationPiece(
 
   if (isCapella) {
     data.skipBucketCreation = true;
+  } else {
+    // numReplicas >= 1 is required for FTS tests to pass.
+    data.bucketConfig = { numReplicas: 1, bucketType: "couchbase", storage: "couchstore" };
   }
 
   return { label: "fit-cli generated defaults", data };

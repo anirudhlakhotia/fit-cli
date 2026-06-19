@@ -36,7 +36,7 @@ test("buildFitFunctionalDefinition emits one instance with one cluster, session,
   assert.equal(definition.instances[0]?.clusters[0]?.sessions[0]?.runs[0]?.type, "functional");
 });
 
-test("buildFitFunctionalDefinitionFrom records a cbdinocluster in clusterConfigs and fitConfig in fitConfigs", () => {
+test("buildFitFunctionalDefinitionFrom records a cbdinocluster in clusterConfigs (no fitConfig blob)", () => {
   const definition = buildFitFunctionalDefinitionFrom({
     cluster: {
       kind: "cbdinocluster",
@@ -64,28 +64,12 @@ test("buildFitFunctionalDefinitionFrom records a cbdinocluster in clusterConfigs
   // "RAM quota specified is too large" on large-bucket tests.
   assert.deepEqual(definition.clusterConfigs?.[0]?.cbdinocluster?.config.docker, { "kv-memory": 4096 });
 
-  // cbdinocluster init is set up once per instance, under instance.setup — not on
-  // the cluster config. The docker path carries an editable args string, not config.
-  assert.equal((definition.clusterConfigs?.[0]?.cbdinocluster as unknown as { init?: unknown } | undefined)?.init, undefined);
-  const init = definition.instances[0]?.setup?.cbdinocluster?.init;
-  assert.equal(init?.config, undefined);
-  assert.match(init?.args ?? "", /^--auto\b/);
-  assert.match(init?.args ?? "", /--docker-network fit/);
-  // Credentials are appended at runtime, never baked into the definition.
-  assert.doesNotMatch(init?.args ?? "", /--github-token/);
+  // cbdinocluster init is NOT emitted for non-CNG clusters — args are generated at runtime.
+  assert.equal(definition.instances[0]?.setup, undefined);
 
-  // Run uses a ref, not an inline fitConfig object
-  assert.equal(definition.instances[0]?.clusters[0]?.sessions[0]?.runs[0]?.fitConfig, "fit-config-0");
-
-  // fitConfig details live in fitConfigs
-  assert.equal(definition.fitConfigs?.[0]?.id, "fit-config-0");
-  const fitConfig = definition.fitConfigs?.[0]?.config as Record<string, unknown> | undefined;
-  assert.ok(fitConfig, "cbdinocluster cluster should have a fitConfig template in fitConfigs");
-  const access = fitConfig?.clusterAccess as Record<string, unknown>;
-  assert.equal(access.connectionString, "couchbase://${defaultHostname}");
-  assert.deepEqual(access.rest, { hostname: "${defaultHostname}", resolveDnsSrv: false });
-  assert.deepEqual(access.proxy, { hostname: "host.docker.internal" });
-  assert.deepEqual(fitConfig.excludeTests, ["situational"]);
+  // No fitConfig ref on the run — the FIT config is fully generated at runtime.
+  assert.equal(definition.instances[0]?.clusters[0]?.sessions[0]?.runs[0]?.fitConfig, undefined);
+  assert.equal(definition.fitConfigs, undefined);
 });
 
 test("buildFitSituationalDefinitionFrom emits clusterless sessions", () => {
@@ -121,14 +105,13 @@ test("buildFitDefinition remains round-trippable through the parser (JSON5)", ()
     gerritRef: "refs/changes/29/246329/1",
     instances: [functionalInstance, situationalInstance],
     clusterConfigs: functionalDef.clusterConfigs,
-    fitConfigs: functionalDef.fitConfigs,
   });
 
   assert.deepEqual(parseDefinition(formatFitDefinition(definition, "json5")), definition);
   assert.deepEqual(parseDefinition(formatFitDefinition(definition, "yaml"), "yaml"), definition);
 });
 
-test("formatFitDefinition includes the nested instances key and fitConfigs comment (JSON5)", () => {
+test("formatFitDefinition includes the nested instances key (JSON5)", () => {
   const rendered = formatFitDefinition(
     buildFitFunctionalDefinitionFrom({
       cluster: { kind: "connection", cluster },
@@ -138,8 +121,8 @@ test("formatFitDefinition includes the nested instances key and fitConfigs comme
     "json5",
   );
 
-  assert.match(rendered, /fitConfigs:/);
-  assert.match(rendered, /\/\/ Each fitConfig is used as a base when generating FITConfiguration\.json/);
+  assert.match(rendered, /instances:/);
+  assert.doesNotMatch(rendered, /fitConfigs:/);
 });
 
 test("formatFitDefinition never leaks comment markers into the output", () => {
@@ -162,14 +145,14 @@ test("formatFitDefinition never leaks comment markers into the output", () => {
   }
 });
 
-test("formatFitSituationalDefinition comments the clusterless sessions and runtime fields", () => {
+test("formatFitSituationalDefinition comments the clusterless sessions", () => {
   const rendered = formatFitDefinition(
     buildFitSituationalDefinitionFrom({ sdk, databaseMode: "hosted", selection: buildDefaultFitTestSelection() }),
     "json5",
   );
   assert.match(rendered, /\/\/ Sessions not tied to any particular cluster/);
-  assert.match(rendered, /\/\/ fit-cli will inject performerPorts at runtime\./);
-  assert.match(rendered, /--aws-region /);
+  // cbdinocluster init args are no longer in the definition file
+  assert.doesNotMatch(rendered, /--aws-region /);
 });
 
 test("buildFitFunctionalDefinition emits a preset placeholder when the selection has presets", () => {
@@ -198,7 +181,7 @@ test("buildFitFunctionalDefinition emits a preset placeholder when the selection
   assert.deepEqual(parseDefinition(formatFitDefinition(defTxn, "yaml"), "yaml"), defTxn);
 });
 
-test("formatFitDefinition includes the nested instances key and fitConfigs comment (YAML)", () => {
+test("formatFitDefinition includes the nested instances key (YAML)", () => {
   const rendered = formatFitDefinition(
     buildFitFunctionalDefinitionFrom({
       cluster: { kind: "connection", cluster },
@@ -209,5 +192,5 @@ test("formatFitDefinition includes the nested instances key and fitConfigs comme
   );
 
   assert.match(rendered, /instances:/);
-  assert.match(rendered, /# Each fitConfig is used as a base when generating FITConfiguration\.json/);
+  assert.doesNotMatch(rendered, /fitConfigs:/);
 });

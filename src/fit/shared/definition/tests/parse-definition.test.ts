@@ -259,10 +259,9 @@ instances:
   );
 });
 
-test("rejects clusterless sessions without cbdinocluster init", () => {
-  assert.throws(
-    () =>
-      parseDefinition(`
+test("parses clusterless sessions without explicit cbdinocluster init", () => {
+  // init args are generated at runtime; no setup block is required in the definition.
+  const def = parseDefinition(`
 version: 1
 type: fit
 instances:
@@ -278,9 +277,9 @@ instances:
                 mode: local
             tests:
               presets: [all]
-`),
-    InvalidDefinitionError,
-  );
+`);
+  assert.equal(def.instances[0]?.clusterlessSessions?.[0]?.runs[0]?.type, "situational");
+  assert.equal(def.instances[0]?.setup, undefined);
 });
 
 test("rejects unsupported future versions", () => {

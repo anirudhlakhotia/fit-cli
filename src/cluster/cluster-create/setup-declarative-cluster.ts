@@ -40,6 +40,7 @@ import { type ClusterExistsPolicy } from "./cluster-exists-policy.js";
 import { DEFAULT_CLUSTER_VERSION, type CbdinoclusterDef } from "./build-cluster-def.js";
 import { isAlias, resolveAlias } from "./cb-alias.js";
 import type { CbdinoclusterInitSetup } from "../../fit/shared/definition/types.js";
+import { defaultCbdinoclusterInitArgs, situationalCbdinoclusterInitArgs } from "./default-cbdinocluster-init-config.js";
 
 /** The bare command name we look for on the PATH. */
 const CBDINOCLUSTER = "cbdinocluster";
@@ -214,7 +215,12 @@ export async function prepareCbdinoclusterInit(
   githubCredentials?: { user: string; token: string },
   cycleDir: string = ensureRunDir(),
 ): Promise<void> {
-  if (init?.args !== undefined) {
+  if (init?.config !== undefined) {
+    await prepareCbdinoclusterConfig(execution, init.config, githubCredentials, cycleDir);
+  } else if (init !== undefined) {
+    // Situational path: run cbdinocluster init with explicit args if present, or
+    // generate the standard situational defaults.
+    const args = init.args ?? situationalCbdinoclusterInitArgs();
     const cbdinocluster = await resolveCbdinoclusterCommand(execution);
     if (!cbdinocluster) {
       console.error(
@@ -223,9 +229,7 @@ export async function prepareCbdinoclusterInit(
       );
       return;
     }
-    await runCbdinoclusterInit(execution, cbdinocluster, init.args, githubCredentials, init.configPatch, cycleDir);
-  } else {
-    await prepareCbdinoclusterConfig(execution, init?.config, githubCredentials, cycleDir);
+    await runCbdinoclusterInit(execution, cbdinocluster, args, githubCredentials, init.configPatch, cycleDir);
   }
 }
 
@@ -521,14 +525,14 @@ export async function setupDeclarativeCluster(plan: {
     return FAILED();
   }
 
-  // The docker/situational path carries an editable `cbdinocluster init` args
-  // string: run it on the box to self-install ~/.cbdinocluster, then merge any
-  // configPatch for what init can't express via flags. The CNG path still uploads
-  // a config object verbatim.
-  if (plan.init?.args !== undefined) {
-    await runCbdinoclusterInit(execution, cbdinocluster, plan.init.args, plan.githubCredentials, plan.init.configPatch, cycleDir);
-  } else {
-    await prepareCbdinoclusterConfig(execution, plan.init?.config, plan.githubCredentials, cycleDir);
+  // CNG uploads a config object verbatim. For the docker path, run cbdinocluster init
+  // with explicit args from the definition if present, or generate the standard
+  // functional defaults. An empty init block ({}) means "run default init".
+  if (plan.init?.config !== undefined) {
+    await prepareCbdinoclusterConfig(execution, plan.init.config, plan.githubCredentials, cycleDir);
+  } else if (plan.init !== undefined) {
+    const args = plan.init.args ?? defaultCbdinoclusterInitArgs();
+    await runCbdinoclusterInit(execution, cbdinocluster, args, plan.githubCredentials, plan.init.configPatch, cycleDir);
   }
 
   // CNG on a clean box: the k3d cluster is up (provisionRemoteK3d) and the config

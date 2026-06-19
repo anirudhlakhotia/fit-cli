@@ -36,9 +36,7 @@ import {
 import type {
   ClusterConfigRef,
   ClusterLifetime,
-  FitConfigRef,
   FitDefinition,
-  FitRun,
   InstanceLifetime,
   InstanceMode,
   SessionLifetime,
@@ -84,7 +82,6 @@ interface DefinitionBuilderState {
   gerritRefAsked: boolean;
   gerritRef?: string;
   instances: InstanceLifetime[];
-  fitConfigs: FitConfigRef[];
   clusterConfigs: ClusterConfigRef[];
 }
 
@@ -168,51 +165,21 @@ function runCount(state: DefinitionBuilderState): number {
   );
 }
 
-function remapRunFitConfigRef(run: FitRun, fitMap: Map<string, string>): FitRun {
-  if (typeof run.fitConfig !== "string") return run;
-  const newId = fitMap.get(run.fitConfig);
-  return newId !== undefined ? { ...run, fitConfig: newId } : run;
-}
-
-function remapSessionRefs(session: SessionLifetime, fitMap: Map<string, string>): SessionLifetime {
-  return { ...session, runs: session.runs.map((r) => remapRunFitConfigRef(r, fitMap)) };
-}
-
-function remapClusterRefs(cluster: ClusterLifetime, fitMap: Map<string, string>, clusterMap: Map<string, string>): ClusterLifetime {
-  const remapped: ClusterLifetime = {
-    ...cluster,
-    sessions: cluster.sessions.map((s) => remapSessionRefs(s, fitMap)),
-  };
-  if (typeof remapped.clusterConfig === "string") {
-    const newId = clusterMap.get(remapped.clusterConfig);
-    if (newId !== undefined) return { ...remapped, clusterConfig: newId };
+function remapClusterRefs(cluster: ClusterLifetime, clusterMap: Map<string, string>): ClusterLifetime {
+  if (typeof cluster.clusterConfig === "string") {
+    const newId = clusterMap.get(cluster.clusterConfig);
+    if (newId !== undefined) return { ...cluster, clusterConfig: newId };
   }
-  return remapped;
-}
-
-function remapInstanceRefs(instance: InstanceLifetime, fitMap: Map<string, string>, clusterMap: Map<string, string>): InstanceLifetime {
-  return {
-    ...instance,
-    clusters: instance.clusters.map((c) => remapClusterRefs(c, fitMap, clusterMap)),
-    ...(instance.clusterlessSessions !== undefined
-      ? { clusterlessSessions: instance.clusterlessSessions.map((s) => remapSessionRefs(s, fitMap)) }
-      : {}),
-  };
+  return cluster;
 }
 
 /**
- * Collect a sub-definition's configs into state with unique IDs and return the
- * remapped instance. Sub-definitions from buildFit*DefinitionFrom always use the
- * same constant IDs ("fit-config-0", "cluster-0"), so each new instance gets its
- * IDs offset by the current count in state to avoid collisions.
+ * Collect a sub-definition's cluster configs into state with unique IDs and return
+ * the remapped instance. Sub-definitions from buildFit*DefinitionFrom always use the
+ * same constant IDs ("cluster-0"), so each new instance gets its IDs offset by the
+ * current count in state to avoid collisions.
  */
 function collectSubDefInstance(state: DefinitionBuilderState, subDef: FitDefinition): InstanceLifetime {
-  const fitMap = new Map<string, string>();
-  for (const fc of subDef.fitConfigs ?? []) {
-    const newId = `fit-config-${state.fitConfigs.length}`;
-    fitMap.set(fc.id, newId);
-    state.fitConfigs.push({ ...fc, id: newId });
-  }
   const clusterMap = new Map<string, string>();
   for (const cc of subDef.clusterConfigs ?? []) {
     const newId = `cluster-${state.clusterConfigs.length}`;
@@ -223,42 +190,28 @@ function collectSubDefInstance(state: DefinitionBuilderState, subDef: FitDefinit
   if (!instance) {
     throw new Error("Expected sub-definition to contain one instance.");
   }
-  return remapInstanceRefs(instance, fitMap, clusterMap);
+  return {
+    ...instance,
+    clusters: instance.clusters.map((c) => remapClusterRefs(c, clusterMap)),
+  };
 }
 
-/**
- * Collect a session from a sub-definition, remapping its fitConfig ref to
- * `existingFitConfigId` (the ID already in state for this instance's cluster).
- * Used when adding a second SDK session to an existing cluster — the cluster and
- * fitConfig are shared; only the session (performer + tests) is new.
- */
-function collectSubDefSession(existingFitConfigId: string, subDef: FitDefinition): SessionLifetime {
-  const subFitConfigId = subDef.fitConfigs?.[0]?.id;
-  if (!subFitConfigId) {
-    throw new Error("Expected sub-definition to contain a fitConfig.");
-  }
+/** Extract the first session from a sub-definition's cluster. */
+function collectSubDefSession(subDef: FitDefinition): SessionLifetime {
   const session = subDef.instances[0]?.clusters[0]?.sessions[0];
   if (!session) {
     throw new Error("Expected sub-definition to contain one session.");
   }
-  return remapSessionRefs(session, new Map([[subFitConfigId, existingFitConfigId]]));
+  return session;
 }
 
-/**
- * Collect a clusterless session from a sub-definition, remapping its fitConfig
- * ref to `existingFitConfigId`. Used when adding a second SDK to an existing
- * situational instance.
- */
-function collectSubDefClusterlessSession(existingFitConfigId: string, subDef: FitDefinition): SessionLifetime {
-  const subFitConfigId = subDef.fitConfigs?.[0]?.id;
-  if (!subFitConfigId) {
-    throw new Error("Expected sub-definition to contain a fitConfig.");
-  }
+/** Extract the first clusterless session from a sub-definition. */
+function collectSubDefClusterlessSession(subDef: FitDefinition): SessionLifetime {
   const session = subDef.instances[0]?.clusterlessSessions?.[0];
   if (!session) {
     throw new Error("Expected sub-definition to contain one clusterless session.");
   }
-  return remapSessionRefs(session, new Map([[subFitConfigId, existingFitConfigId]]));
+  return session;
 }
 
 async function addFunctionalRun(
@@ -277,10 +230,6 @@ async function addFunctionalRun(
 
   const currentInstance = lastFunctionalInstance(state);
   if (currentInstance && functionalInstanceConnectivity(currentInstance) === connectivity) {
-    const existingFitConfigId = currentInstance.clusters[0]?.sessions[0]?.runs[0]?.fitConfig;
-    if (typeof existingFitConfigId !== "string") {
-      throw new Error("Expected existing instance's run to have a fitConfig string ref.");
-    }
     const subDef = buildFitFunctionalDefinitionFrom({
       cluster: functionalDefinitionCluster(currentInstance, state.clusterConfigs),
       sdk,
@@ -289,7 +238,7 @@ async function addFunctionalRun(
       selection,
       githubUser: loadFitCliConfig().config?.github?.user,
     });
-    currentInstance.clusters[0]?.sessions.push(collectSubDefSession(existingFitConfigId, subDef));
+    currentInstance.clusters[0]?.sessions.push(collectSubDefSession(subDef));
     return;
   }
 
@@ -392,10 +341,6 @@ async function addSituationalRun(
 
   const currentInstance = lastSituationalInstance(state);
   if (currentInstance?.clusterlessSessions) {
-    const existingFitConfigId = currentInstance.clusterlessSessions[0]?.runs[0]?.fitConfig;
-    if (typeof existingFitConfigId !== "string") {
-      throw new Error("Expected existing instance's run to have a fitConfig string ref.");
-    }
     const subDef = buildFitSituationalDefinitionFrom({
       sdk,
       ...(version ? { version } : {}),
@@ -405,7 +350,7 @@ async function addSituationalRun(
       capellaEnvironment,
       selection,
     });
-    currentInstance.clusterlessSessions.push(collectSubDefClusterlessSession(existingFitConfigId, subDef));
+    currentInstance.clusterlessSessions.push(collectSubDefClusterlessSession(subDef));
     return;
   }
 
@@ -433,7 +378,7 @@ export async function createFitDefinition(rootDir: string, options?: { format?: 
     "\nThis builds a reusable fit definition file. Nothing is set up — no cluster is allocated, no performer built, no tests run.\n",
   );
 
-  const state: DefinitionBuilderState = { gerritRefAsked: false, instances: [], fitConfigs: [], clusterConfigs: [] };
+  const state: DefinitionBuilderState = { gerritRefAsked: false, instances: [], clusterConfigs: [] };
   let actionIndex = 1;
 
   while (true) {
@@ -461,7 +406,6 @@ export async function createFitDefinition(rootDir: string, options?: { format?: 
   const definition: FitDefinition = buildFitDefinition({
     ...(state.gerritRef ? { gerritRef: state.gerritRef } : {}),
     instances: state.instances,
-    fitConfigs: state.fitConfigs,
     clusterConfigs: state.clusterConfigs,
   });
 
