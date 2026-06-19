@@ -1,7 +1,18 @@
 import * as core from "@actions/core";
-import { appendFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { capture } from "../../util/non-fit/proc.js";
+
+/** Current size of the $GITHUB_STEP_SUMMARY file in bytes, or -1 if missing/unset. */
+function summaryFileSize(): number {
+  const p = process.env.GITHUB_STEP_SUMMARY;
+  if (!p || !existsSync(p)) return -1;
+  try {
+    return statSync(p).size;
+  } catch {
+    return -1;
+  }
+}
 type SummaryTableCell = { data: string; header?: boolean; colspan?: string; rowspan?: string };
 type SummaryTableRow = (SummaryTableCell | string)[];
 
@@ -20,10 +31,14 @@ interface RunSummary {
  * a GH-flavoured markdown table so each run gets its own block in the job summary.
  */
 export async function appendRunSummaryToGhaSummary(result: RunSummary): Promise<void> {
-  if (!process.env.GITHUB_STEP_SUMMARY) return;
+  if (!process.env.GITHUB_STEP_SUMMARY) {
+    console.log(`[gha-summary] appendRunSummaryToGhaSummary: GITHUB_STEP_SUMMARY unset — skipping`);
+    return;
+  }
 
   const { pathLabel, sdk, type, ok, summary } = result;
   const status = ok ? "✅ PASS" : "❌ FAIL";
+  const sizeBefore = summaryFileSize();
 
   const rows: SummaryTableRow[] = [
     [{ data: "Detail", header: true }, { data: "Value", header: true }],
@@ -45,6 +60,11 @@ export async function appendRunSummaryToGhaSummary(result: RunSummary): Promise<
     .addHeading(`${pathLabel} (${sdk}) — ${status}`, 3)
     .addTable(rows)
     .write({ overwrite: false });
+
+  console.log(
+    `[gha-summary] wrote per-run block for "${pathLabel}" to ${process.env.GITHUB_STEP_SUMMARY} ` +
+      `(file ${sizeBefore} → ${summaryFileSize()} bytes)`,
+  );
 }
 
 /**
@@ -73,7 +93,11 @@ const JUNIT_MARKDOWN_URL =
  */
 export async function appendJunitStepSummary(runDir: string, description?: string): Promise<void> {
   const summaryPath = process.env.GITHUB_STEP_SUMMARY;
-  if (!summaryPath) return;
+  if (!summaryPath) {
+    console.log(`[gha-summary] appendJunitStepSummary: GITHUB_STEP_SUMMARY unset — skipping`);
+    return;
+  }
+  console.log(`[gha-summary] appendJunitStepSummary: target=${summaryPath} (currently ${summaryFileSize()} bytes)`);
 
   // Leading \n is load-bearing: appendRunSummaryToGhaSummary writes raw HTML
   // (<table> etc.) via @actions/core, and GFM only closes an HTML block on a
@@ -89,8 +113,17 @@ export async function appendJunitStepSummary(runDir: string, description?: strin
 
     // Exit 2 means "ran fine but found test failures" — still a valid markdown output.
     const markdown = await capture("java", [javaPath, runDir], undefined, { allowExitCodes: [0, 2] });
+    console.log(`[gha-summary] JunitMarkdown produced ${markdown.length} chars of markdown`);
 
+    const sizeBefore = summaryFileSize();
     appendFileSync(summaryPath, heading + markdown + "\n");
+    const sizeAfter = summaryFileSize();
+    console.log(
+      `[gha-summary] appended JUnit summary (${heading.length + markdown.length + 1} bytes); ` +
+        `file ${sizeBefore} → ${sizeAfter} bytes. ` +
+        // GitHub silently drops the whole step summary if the file exceeds 1 MiB.
+        (sizeAfter > 1024 * 1024 ? `⚠ OVER 1 MiB cap — GitHub will drop the step summary!` : `(under 1 MiB cap)`),
+    );
   } catch (err) {
     console.warn(`Warning: failed to generate JUnit step summary (${err}); writing plain summary`);
     try {
