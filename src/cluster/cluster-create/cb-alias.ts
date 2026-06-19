@@ -46,6 +46,6 @@ export async function resolveAlias(alias: string): Promise<string> {
     const available = Object.keys(entry).join(", ");
     throw new Error(`cb-alias: no '${qualifier}' for ${majorMinor} — available: ${available}`);
   }
-  console.log(`  → Resolved version alias ${alias} → ${resolved}`);
+  console.log(`  → Resolved version alias ${alias} → ${resolved} (via ${CB_ALIAS_URL})`);
   return resolved;
 }
