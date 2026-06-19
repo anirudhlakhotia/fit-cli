@@ -124,7 +124,10 @@ function formatFitCliMessage(
     .replace(/^(?:FitCliError|FitCliWarn)(?:\/\w+)?:\s*/, "")
     .replace(/^(?:✗|→)\s*/, "");
   const fullLabel = classification ? `${label}/${classification}` : label;
-  return `${leadingNewlines}${fullLabel}: ${color}${body}${RESET}`;
+  // For multi-line bodies (e.g. boxed banners) put the label on its own line, so
+  // the inline prefix doesn't shift only the first line right and break alignment.
+  const separator = body.includes("\n") ? "\n" : " ";
+  return `${leadingNewlines}${fullLabel}:${separator}${color}${body}${RESET}`;
 }
 
 export function formatFitCliError(...args: unknown[]): string {

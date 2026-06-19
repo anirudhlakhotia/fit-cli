@@ -21,6 +21,16 @@ test("formatFitCliWarn prefixes and colours warnings", () => {
   );
 });
 
+test("formatFitCliWarn puts the label on its own line for multi-line bodies", () => {
+  // ANSI-tolerant: colour is gated on isTTY, so strip codes before comparing.
+  const stripAnsi = (s: string) =>
+    s.replace(new RegExp(`${String.fromCharCode(27)}\\[\\d+m`, "g"), "");
+  assert.equal(
+    stripAnsi(formatFitCliWarn("====\n= hi =\n====")),
+    "FitCliWarn:\n====\n= hi =\n====",
+  );
+});
+
 test("formatFitCliError avoids duplicating an existing prefix", () => {
   assert.equal(
     formatFitCliError("FitCliError: already prefixed"),
