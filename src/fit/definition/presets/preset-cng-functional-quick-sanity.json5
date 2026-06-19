@@ -1,4 +1,4 @@
-// Preset: run all FIT functional tests for a given SDK against a CNG / Protostellar
+// Preset: Does quick sanity testing for FIT functional for a given SDK, against CNG.
 // Currently that runs against ROSA OpenShift, but that could change in future
 {
   version: 1,
@@ -20,7 +20,7 @@
                   type: 'functional',
                   fitConfig: 'fit-config-0',
                   tests: {
-                    presets: ['all'],
+                    classes: ['com.couchbase.client.kv.SanityTest'],
                     addToDefaultExcludedGroups: ['protostellarWillWorkLater'],
                   },
                 },
