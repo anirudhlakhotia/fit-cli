@@ -52,7 +52,11 @@ main() {
     echo "Downloading ${size_mb} MB..."
   fi
 
-  curl -fL --progress-bar "$url" -o "$tmp"
+  if [[ -t 1 ]]; then
+    curl -fL --progress-bar "$url" -o "$tmp"
+  else
+    curl -fsSL "$url" -o "$tmp"
+  fi
   chmod +x "$tmp"
 
   if [[ -w "$INSTALL_DIR" ]]; then
