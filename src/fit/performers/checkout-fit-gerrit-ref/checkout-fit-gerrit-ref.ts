@@ -4,7 +4,7 @@
  * Run on its own (add --root <dir> to point at another workspace):
  *   npx tsx src/fit/performers/checkout-fit-gerrit-ref/checkout-fit-gerrit-ref.ts refs/changes/29/246329/1
  */
-import { spawnSync } from "node:child_process";
+import { captureValueSync } from "../../../util/non-fit/proc.js";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { fitCliError, runScriptPrefix } from "../../../util/non-fit/fit-cli-log.js";
 import { posixQuote } from "../../../util/non-fit/remote-target.js";
@@ -29,19 +29,13 @@ export function resolveFitGerritUser(env: NodeJS.ProcessEnv = process.env): stri
 }
 
 export function resolveGerritUserFromGitConfig(env: NodeJS.ProcessEnv = process.env): string | undefined {
-  const result = spawnSync("git", ["config", "--global", "github.user"], { env, encoding: "utf8" });
-  if (result.status !== 0 || !result.stdout) {
-    return undefined;
-  }
-  return result.stdout.trim() || undefined;
+  // Quiet metadata probe: a non-zero exit just means "not configured" → undefined.
+  return captureValueSync("git", ["config", "--global", "github.user"], { quiet: true, allowFailure: true, env }).trim() || undefined;
 }
 
 export function resolveGerritUserFromGhCli(env: NodeJS.ProcessEnv = process.env): string | undefined {
-  const result = spawnSync("gh", ["config", "get", "user", "-h", "github.com"], { env, encoding: "utf8" });
-  if (result.status !== 0 || !result.stdout) {
-    return undefined;
-  }
-  return result.stdout.trim() || undefined;
+  // Quiet metadata probe: a non-zero exit just means "not configured" → undefined.
+  return captureValueSync("gh", ["config", "get", "user", "-h", "github.com"], { quiet: true, allowFailure: true, env }).trim() || undefined;
 }
 
 export function requireFitGerritUser(env: NodeJS.ProcessEnv = process.env): string {

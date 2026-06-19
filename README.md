@@ -256,8 +256,17 @@ Nb the need for later removal does mean it can't be stored internally purely as 
 - To clean up afterwards: `fit cloud-instances list` shows what's still running, and `fit cloud-instances remove-all` terminates every `fit-cli`-owned instance you created.
 
 ### Running processes
+Every subprocess goes through one of a small, named set of execution models in `src/util/non-fit/proc.ts` — there should be no raw `spawn`/`exec` anywhere else.  Each model is one function, and the `ProcessExecModel` enum documents the full set.  Three of them run a process as a logged step and so have a LogType (see below); the other three don't, because they aren't really about logging.
+
+The models:
+- `StreamToTerminal` (`run`) — LogType1.
+- `HiddenUntilFailure` (`runHiddenUntilFailure`) — LogType2.
+- `StreamToArtifact` (`streamToFile`) — LogType3.
+- `CaptureValue` (`capture`) / `CaptureValueSync` (`captureValueSync`) — run a process to get a value we parse (a SHA, a username, a file list), not to produce log noise.  No LogType.
+- `ReexecInherit` (`reexecInherit`) — hand the terminal and signals to a replacement process (the replay bootstrap).  No LogType.
+
 #### Logging
-Stdout/stderr from the process can be either:
+For the logged-step models above, stdout/stderr from the process can be either:
 LogType1: Added to stdout/stderr of this process.
 LogType2: Hidden as unimportant noise, and only shown on failure.  Also now included in a debug `session.debug.log` artifact version of the log.
 LogType3: Sent to a separate artifact, for important but large logs.  For proof-of-life, the last line of the log is output to stdout/stderr every N seconds.

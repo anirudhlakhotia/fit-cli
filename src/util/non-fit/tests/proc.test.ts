@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { capture, createLogFile, streamToFile, streamToFileInBackground } from "../proc.js";
+import { capture, captureValueSync, createLogFile, streamToFile } from "../proc.js";
 
 test("createLogFile writes under the shared fit-cli temp directory", () => {
   const path = createLogFile("performer");
@@ -20,23 +20,27 @@ test("createLogFile appends a numeric suffix when a log name is reused", () => {
   assert.notEqual(firstPath, secondPath);
 });
 
-test("streamToFileInBackground writes output as the command runs", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "fit-cli-proc-"));
-  const logFile = join(dir, "stream.log");
+test("captureValueSync returns stdout for a successful command", () => {
+  const out = captureValueSync(process.execPath, ["-e", "process.stdout.write('the-value')"]);
+  assert.equal(out, "the-value");
+});
 
-  await streamToFileInBackground(
+test("captureValueSync throws on a non-zero exit by default", () => {
+  assert.throws(() => captureValueSync(process.execPath, ["-e", "process.exit(3)"]), /exited with code 3/);
+});
+
+test("captureValueSync with allowFailure yields empty string instead of throwing", () => {
+  assert.equal(captureValueSync(process.execPath, ["-e", "process.exit(3)"], { allowFailure: true }), "");
+  assert.equal(captureValueSync("definitely-not-a-real-binary-xyz", [], { allowFailure: true }), "");
+});
+
+test("captureValueSync allowExitCodes treats a listed code as success", () => {
+  const out = captureValueSync(
     process.execPath,
-    [
-      "-e",
-      "console.log('hello from stdout'); setTimeout(() => console.error('hello from stderr'), 20); setTimeout(() => process.exit(0), 40);",
-    ],
-    logFile,
+    ["-e", "process.stdout.write('ok'); process.exit(2)"],
+    { allowExitCodes: [0, 2] },
   );
-
-  await new Promise((resolve) => setTimeout(resolve, 150));
-  const output = readFileSync(logFile, "utf8");
-  assert.match(output, /hello from stdout/);
-  assert.match(output, /hello from stderr/);
+  assert.equal(out, "ok");
 });
 
 test("streamToFile writes stdout and stderr to a log file", async () => {
@@ -94,26 +98,4 @@ test("run tees child output into the session log by default", async () => {
   assert.match(terminal, /child stdout/);
   assert.match(sessionOutput, /child stdout/);
   assert.match(sessionOutput, /child stderr/);
-});
-
-test("runAndCapture returns stdout while teeing stderr into the session log", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "fit-cli-proc-"));
-  const logFile = join(dir, "session.info.log");
-  const procModule = new URL("../proc.ts", import.meta.url).href;
-
-  const driver = [
-    `import { runAndCapture, startSessionLog } from ${JSON.stringify(procModule)};`,
-    `const sessionLog = startSessionLog(${JSON.stringify(logFile)});`,
-    `const stdout = await runAndCapture(${JSON.stringify(process.execPath)}, ["-e", "console.log('captured stdout'); console.error('captured stderr');"]);`,
-    "console.log(`result:${stdout.trim()}`);",
-    "await sessionLog.flush();",
-  ].join("\n");
-
-  const terminal = await capture(process.execPath, ["--import", "tsx", "--input-type=module", "-e", driver]);
-  const sessionOutput = readFileSync(logFile, "utf8");
-
-  assert.match(terminal, /captured stdout/);
-  assert.match(terminal, /result:captured stdout/);
-  assert.match(sessionOutput, /captured stdout/);
-  assert.match(sessionOutput, /captured stderr/);
 });

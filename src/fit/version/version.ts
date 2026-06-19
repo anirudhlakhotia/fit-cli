@@ -1,5 +1,5 @@
-import { execSync } from "node:child_process";
 import { basename } from "node:path";
+import { captureValueSync } from "../../util/non-fit/proc.js";
 import { isFitBinary } from "../../util/non-fit/fit-cli-log.js";
 
 // Injected by `bun build --define` at compile time; throws ReferenceError in dev.
@@ -10,11 +10,8 @@ function resolvedGitSha(): string {
   try {
     return __FIT_GIT_SHA;
   } catch {
-    try {
-      return execSync("git rev-parse HEAD", { encoding: "utf8" }).trim();
-    } catch {
-      return "unknown";
-    }
+    // Dev fallback (no build-time define): read HEAD; allowFailure → "" if git is absent.
+    return captureValueSync("git", ["rev-parse", "HEAD"], { quiet: true, allowFailure: true }).trim() || "unknown";
   }
 }
 

@@ -1,8 +1,53 @@
-import { spawn } from "node:child_process";
-import { closeSync, createWriteStream, mkdirSync, openSync, writeFileSync, type WriteStream } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { createWriteStream, mkdirSync, type WriteStream } from "node:fs";
 import { dirname } from "node:path";
 import { echoCommand, formatCommandLine, formatTimestampedChunk, startGreyIndentedOutput, stopGreyIndentedOutput } from "./fit-cli-log.js";
 import { createRunFilePath } from "./replay.js";
+
+/**
+ * Where a process's *log output* goes, for the models that run a subprocess as a
+ * logged step inside the session. This is the README's "Logging" section,
+ * codified — see the ProcessExecModel table below for the function that
+ * implements each one. Not every model is a logged step (CaptureValue,
+ * CaptureValueSync and ReexecInherit are not), so a model maps to at most one
+ * LogType.
+ */
+export enum LogType {
+  /** L1: streamed straight to this process's stdout/stderr (and the session log). */
+  Streamed = 1,
+  /** L2: hidden as unimportant noise; shown only on failure; mirrored to the debug log. */
+  HiddenUntilFailure = 2,
+  /** L3: sent to its own artifact file; the last line is echoed every N seconds as proof-of-life. */
+  Artifact = 3,
+}
+
+/**
+ * The codified set of ways fit-cli runs a subprocess. Every process spawn in the
+ * codebase should go through exactly one of these — there should be no raw
+ * spawn/exec/spawnSync outside this file. Each model maps 1:1 to a function here:
+ *
+ *   Model              | function              | LogType | output is…
+ *   -------------------|-----------------------|---------|------------------------------
+ *   StreamToTerminal   | run                   | L1      | logged, live on the terminal
+ *   HiddenUntilFailure | runHiddenUntilFailure | L2      | logged, hidden unless it fails
+ *   StreamToArtifact   | streamToFile          | L3      | logged, to its own artifact file
+ *   CaptureValue       | capture               | —       | a value we parse (mirrored to debug log)
+ *   CaptureValueSync   | captureValueSync      | —       | a value we parse, synchronously
+ *   ReexecInherit      | reexecInherit         | —       | the child owns the tty + signals
+ *
+ * The two CaptureValue models and ReexecInherit are deliberately *not* logged
+ * steps: the first two run a process to obtain a value (a SHA, a username, a
+ * file list) rather than to produce log noise, and ReexecInherit hands the
+ * terminal to a replacement process. That's why they carry no LogType.
+ */
+export enum ProcessExecModel {
+  StreamToTerminal = "StreamToTerminal",
+  HiddenUntilFailure = "HiddenUntilFailure",
+  StreamToArtifact = "StreamToArtifact",
+  CaptureValue = "CaptureValue",
+  CaptureValueSync = "CaptureValueSync",
+  ReexecInherit = "ReexecInherit",
+}
 
 /**
  * When set, every command's captured stdout/stderr (from `capture()`) is also
@@ -27,6 +72,16 @@ export interface RunOptions {
    * `[HH:MM:SS ctx]` timestamp prefix so it's clearly timestamped.
    */
   noGreyOutput?: boolean;
+}
+
+/** Knobs for the CaptureValue models (capture / captureValueSync). */
+export interface CaptureOptions extends RunOptions {
+  /**
+   * Exit codes to treat as success and resolve normally (default `[0]`). Use for
+   * tools whose non-zero exits are meaningful rather than failures — e.g.
+   * JunitMarkdown.java exits 2 for "ran fine but found test failures".
+   */
+  allowExitCodes?: readonly number[];
 }
 
 /**
@@ -54,6 +109,8 @@ function teeChildOutput(stream: NodeJS.ReadableStream | null, target: NodeJS.Wri
  * the user still gets live terminal feedback. `cwd` defaults to the current
  * working directory for commands that don't care where they run (e.g.
  * cbdinocluster, which takes absolute paths).
+ *
+ * @execModel ProcessExecModel.StreamToTerminal (LogType.Streamed / L1)
  */
 export function run(command: string, args: string[], cwd: string = process.cwd(), opts?: RunOptions): Promise<void> {
   announce(command, args, opts);
@@ -84,9 +141,12 @@ export function run(command: string, args: string[], cwd: string = process.cwd()
  * The captured output is invisible on the terminal but is written to the debug
  * log (if one has been started) so the full command I/O is available for
  * post-run diagnosis.
+ *
+ * @execModel ProcessExecModel.CaptureValue (no LogType — output is a parsed value)
  */
-export function capture(command: string, args: string[], cwd: string = process.cwd(), opts?: RunOptions): Promise<string> {
+export function capture(command: string, args: string[], cwd: string = process.cwd(), opts?: CaptureOptions): Promise<string> {
   announce(command, args, opts);
+  const okCodes = opts?.allowExitCodes ?? [0];
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { cwd });
     let stdout = "";
@@ -105,7 +165,7 @@ export function capture(command: string, args: string[], cwd: string = process.c
           currentDebugLog.write(formatTimestampedChunk(normalized, true).text);
         }
       }
-      if (code === 0) {
+      if (code !== null && okCodes.includes(code)) {
         resolve(stdout);
       } else {
         const detail = stderr.trim();
@@ -116,37 +176,48 @@ export function capture(command: string, args: string[], cwd: string = process.c
 }
 
 /**
- * Run a command, streaming stderr (and any progress logs) to the terminal while
- * capturing — and echoing — its stdout, then resolve with the captured stdout.
- * Rejects if the command can't start or exits non-zero. Used for long-running
- * tools whose progress we want the user to see but whose stdout result we also
- * need to parse — e.g. `cbdinocluster allocate`, which logs to stderr and prints
- * the new cluster's id on stdout.
+ * Synchronous sibling of `capture` for the handful of value-reads that must run
+ * outside the async session — e.g. `git rev-parse HEAD` while printing the
+ * version, or a quiet `git config` / `gh config` probe for a username. Returns
+ * the captured stdout.
+ *
+ * Throws on a disallowed exit code (see `allowExitCodes`) or a spawn error,
+ * unless `allowFailure` is set, in which case any failure yields `""` — handy
+ * for "give me the value, or nothing" metadata probes where a non-zero exit just
+ * means "not configured". Captured output is mirrored to the debug log if one is
+ * active.
+ *
+ * @execModel ProcessExecModel.CaptureValueSync (no LogType — output is a parsed value)
  */
-export function runAndCapture(
+export function captureValueSync(
   command: string,
   args: string[],
-  cwd: string = process.cwd(),
-  opts?: RunOptions,
-): Promise<string> {
+  opts?: CaptureOptions & { allowFailure?: boolean; env?: NodeJS.ProcessEnv },
+): string {
   announce(command, args, opts);
-  const grey = !opts?.noGreyOutput;
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
-    let stdout = "";
-    if (grey) startGreyIndentedOutput();
-    teeChildOutput(child.stdout, process.stdout, (chunk) => (stdout += chunk.toString()));
-    teeChildOutput(child.stderr, process.stderr);
-    child.on("error", (err) => { if (grey) stopGreyIndentedOutput(); reject(err); });
-    child.on("close", (code) => {
-      if (grey) stopGreyIndentedOutput();
-      if (code === 0) {
-        resolve(stdout);
-      } else {
-        reject(new Error(`${command} exited with code ${code}`));
+  const result = spawnSync(command, args, { encoding: "utf8", env: opts?.env });
+  const stdout = result.stdout ?? "";
+  const stderr = result.stderr ?? "";
+  if (currentDebugLog) {
+    for (const chunk of [stdout, stderr]) {
+      if (chunk) {
+        const normalized = chunk.endsWith("\n") ? chunk : `${chunk}\n`;
+        currentDebugLog.write(formatTimestampedChunk(normalized, true).text);
       }
-    });
-  });
+    }
+  }
+  if (opts?.allowFailure) {
+    return result.status === 0 ? stdout : "";
+  }
+  if (result.error) {
+    throw result.error;
+  }
+  const okCodes = opts?.allowExitCodes ?? [0];
+  if (result.status === null || !okCodes.includes(result.status)) {
+    const detail = stderr.trim();
+    throw new Error(`${command} exited with code ${result.status}${detail ? `: ${detail}` : ""}`);
+  }
+  return stdout;
 }
 
 /** Create a log file path under the shared fit-cli temp directory. */
@@ -263,6 +334,8 @@ export function writeToDebugLog(content: string): void {
  *
  * This is the "hidden as unimportant noise, only shown on failure" mode from the
  * README — ideal for noisy but seldom-interesting commands like docker pull.
+ *
+ * @execModel ProcessExecModel.HiddenUntilFailure (LogType.HiddenUntilFailure / L2)
  */
 export function runHiddenUntilFailure(
   command: string,
@@ -298,59 +371,13 @@ export function runHiddenUntilFailure(
 }
 
 /**
- * Start a command in the background and stream stdout/stderr directly to a log
- * file as output is produced.
- */
-export function streamToFileInBackground(
-  command: string,
-  args: string[],
-  logFile: string,
-  cwd: string = process.cwd(),
-  opts?: RunOptions,
-): Promise<void> {
-  announce(command, args, opts);
-  mkdirSync(dirname(logFile), { recursive: true, mode: 0o700 });
-
-  return new Promise((resolve, reject) => {
-    const logFd = openSync(logFile, "a", 0o600);
-    writeFileSync(logFd, `# ${new Date().toISOString()} ${command} ${args.join(" ")}\n`);
-
-    let settled = false;
-    const finish = (fn: () => void) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      closeSync(logFd);
-      fn();
-    };
-
-    try {
-      const child = spawn(command, args, {
-        cwd,
-        detached: true,
-        stdio: ["ignore", logFd, logFd],
-      });
-
-      child.once("error", (err) => finish(() => reject(err)));
-      child.once("spawn", () =>
-        finish(() => {
-          child.unref();
-          resolve();
-        }),
-      );
-    } catch (err) {
-      finish(() => reject(err instanceof Error ? err : new Error(String(err))));
-    }
-  });
-}
-
-/**
  * Run a command in the foreground, streaming stdout/stderr to a log file as
  * output is produced — without echoing it to the terminal. Resolves when the
  * command finishes; rejects if it can't start or exits non-zero. Used for noisy
  * tools (e.g. the FIT test-driver) whose full output belongs in a log file, not
  * scrolling past in the terminal.
+ *
+ * @execModel ProcessExecModel.StreamToArtifact (LogType.Artifact / L3)
  */
 export const HEARTBEAT_INTERVAL_SECS = 30;
 
@@ -408,5 +435,35 @@ export function streamToFile(
         }),
       );
     });
+  });
+}
+
+/**
+ * Re-exec into a replacement process, handing it this process's stdio directly
+ * (`stdio: "inherit"`) and mirroring its fate back: forward signals, and exit
+ * with the child's exit code. Used by the replay bootstrap, which relaunches the
+ * real entrypoint under tsx and then exists only to be that process.
+ *
+ * This is not a logged step — the child owns the terminal — so it carries no
+ * LogType, and it deliberately does not echo a command line (the child produces
+ * its own output). It does not return: the process exits via the child's
+ * exit/signal or an error.
+ *
+ * @execModel ProcessExecModel.ReexecInherit (no LogType — the child owns the tty)
+ */
+export function reexecInherit(command: string, args: string[]): void {
+  const child = spawn(command, args, { stdio: "inherit" });
+
+  child.on("exit", (code, signal) => {
+    if (signal) {
+      process.kill(process.pid, signal);
+      return;
+    }
+    process.exit(code ?? 1);
+  });
+
+  child.on("error", (err) => {
+    console.error(err instanceof Error ? err.message : err);
+    process.exit(1);
   });
 }

@@ -1,7 +1,7 @@
 import * as core from "@actions/core";
-import { spawn } from "node:child_process";
 import { appendFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { capture } from "../../util/non-fit/proc.js";
 type SummaryTableCell = { data: string; header?: boolean; colspan?: string; rowspan?: string };
 type SummaryTableRow = (SummaryTableCell | string)[];
 
@@ -83,19 +83,8 @@ export async function appendJunitStepSummary(runDir: string, description?: strin
     const javaPath = join(runDir, "JunitMarkdown.java");
     writeFileSync(javaPath, await resp.text());
 
-    const markdown = await new Promise<string>((resolve, reject) => {
-      const child = spawn("java", [javaPath, runDir]);
-      let stdout = "";
-      let stderr = "";
-      child.stdout?.on("data", (chunk: Buffer) => (stdout += chunk));
-      child.stderr?.on("data", (chunk: Buffer) => (stderr += chunk));
-      child.on("error", reject);
-      child.on("close", (code) => {
-        // Exit 2 means "ran fine but found test failures" — still a valid markdown output.
-        if (code === 0 || code === 2) resolve(stdout);
-        else reject(new Error(`JunitMarkdown.java exited ${code}: ${stderr.trim()}`));
-      });
-    });
+    // Exit 2 means "ran fine but found test failures" — still a valid markdown output.
+    const markdown = await capture("java", [javaPath, runDir], undefined, { allowExitCodes: [0, 2] });
 
     appendFileSync(summaryPath, heading + markdown + "\n");
   } catch (err) {
