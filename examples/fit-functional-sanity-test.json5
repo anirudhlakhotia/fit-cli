@@ -1,8 +1,8 @@
 // Runs a single SanityTest test file against a single SDK, in a clean environment.
 //
-// The cluster and fitConfig definitions are split out into the bottom-level
-// clusterConfigs and fitConfigs sections and referenced by id, which keeps the
-// instances list short and lets the same definitions be reused across runs.
+// The cluster definition is split out into the bottom-level clusterConfigs section
+// and referenced by id, which keeps the instances list short and lets the same
+// definition be reused across runs.
 //
 // Validate / run with:
 //   bun run definition validate examples/fit-functional-sanity-test.json5
@@ -14,14 +14,6 @@
   instances: [
     {
       aws: {},
-      setup: {
-        cbdinocluster: {
-          init: {
-            // Passed to `cbdinocluster init` on clean environments to set up ~/.cbdinocluster.  Added at runtime: GitHub creds
-            args: '--auto --disable-aws --disable-azure --disable-capella --disable-gcp --disable-k8s --disable-dns --docker-network fit',
-          },
-        },
-      },
       clusters: [
         {
           clusterConfig: 'cluster-0',
@@ -34,7 +26,6 @@
               runs: [
                 {
                   type: 'functional',
-                  fitConfig: 'fit-config-0',
                   tests: {
                     classes: [
                       'com.couchbase.client.kv.SanityTest',
@@ -71,38 +62,6 @@
           },
         },
         onClusterExists: 'useExisting',
-      },
-    },
-  ],
-  // Each fitConfig is used as a base when generating FITConfiguration.json.  Anything here will be copied into the config (unless overwritten by fit-cli).
-  // fit-cli will provide some fields like ${defaultHostname} at runtime when cluster details are known.
-  fitConfigs: [
-    {
-      id: 'fit-config-0',
-      config: {
-        // fit-cli fills ${defaultHostname} (and rest.hostname) in at runtime once the cluster is up.
-        clusterAccess: {
-          connectionString: 'couchbase://${defaultHostname}',
-          username: 'Administrator',
-          password: 'password',
-          tls: null,
-          rest: {
-            hostname: '${defaultHostname}',
-            resolveDnsSrv: false,
-          },
-          proxy: {
-            hostname: 'host.docker.internal',
-          },
-        },
-        // numReplicas >= 1 is required for FTS tests to pass.
-        bucketConfig: {
-          numReplicas: 1,
-          bucketType: 'couchbase',
-          storage: 'couchstore',
-        },
-        excludeTests: [
-          'situational',
-        ],
       },
     },
   ],

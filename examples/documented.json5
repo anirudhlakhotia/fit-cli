@@ -131,17 +131,6 @@
       localhost: {},
       // FIT/SIT creates its own clusters, so none are set up here.
       clusters: [],
-      setup: {
-        // FIT/SIT creates its own clusters via cbdinocluster; this init config must be present.
-        cbdinocluster: {
-          init: {
-            // Passed to `cbdinocluster init` on clean environments to set up ~/.cbdinocluster.
-            // SIT leaves Capella enabled (no --disable-capella); fit-cli appends your GitHub
-            // credentials and forwards your fit-cli Capella settings at runtime.
-            args: '--auto --disable-aws --disable-azure --disable-gcp --disable-k8s --disable-dns --docker-network fit',
-          },
-        },
-      },
       // Sessions not tied to any particular cluster (the name distinguishes these from sessions nested under clusters:)
       clusterlessSessions: [
         {
@@ -183,18 +172,17 @@
   //   },
   // ],
 
-  // Optional: reusable fitConfig definitions — reference them in runs[].fitConfig above.
-  // Avoids repeating the same FITConfiguration template across multiple runs.
+  // Optional: reusable fitConfig overrides — reference them in runs[].fitConfig above.
+  // fit-cli generates the full FITConfiguration at runtime; anything here is merged on top
+  // as an override. Useful for non-default settings, e.g. custom Maven args or bucket config.
   // fitConfigs: [
   //   {
   //     id: 'my-fit-config',
   //     config: {
-  //       clusterAccess: {
-  //         connectionString: 'couchbase://${defaultHostname}',
-  //         username: 'Administrator',
-  //         password: 'password',
-  //         tls: null,
-  //         excludeTests: ['situational'],
+  //       // Example: override the bucket config (fit-cli provides defaults for this).
+  //       bucketConfig: {
+  //         numReplicas: 2,
+  //         bucketType: 'ephemeral',
   //       },
   //     },
   //   },

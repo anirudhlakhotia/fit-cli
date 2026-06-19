@@ -6,14 +6,6 @@
     {
       aws: {},
       setup: {
-        cbdinocluster: {
-          init: {
-            // Passed to `cbdinocluster init` on clean environments to set up ~/.cbdinocluster.
-            // On localhost, init is skipped and your existing ~/.cbdinocluster is used as-is.
-            // Edit to taste; fit-cli appends your GitHub credentials at runtime.
-            args: '--auto --aws-region us-west-2 --disable-azure --disable-gcp --disable-k8s --disable-dns --docker-network fit',
-          },
-        },
         capellaEnvironment: 'dev',
       },
       clusters: [
@@ -27,7 +19,6 @@
               runs: [
                 {
                   type: 'functional',
-                  fitConfig: 'fit-config-functional',
                   tests: {
                     presets: ['all'],
                   },
@@ -46,7 +37,6 @@
           runs: [
             {
               type: 'situational',
-              fitConfig: 'fit-config-situational',
               tests: {
                 presets: ['standard-qe'],
               },
@@ -81,48 +71,6 @@
         },
         // Reuse an existing cbdinocluster cluster if one is already running (avoids re-creating on resume).
         onClusterExists: 'useExisting',
-      },
-    },
-  ],
-  fitConfigs: [
-    {
-      id: 'fit-config-functional',
-      config: {
-        // fit-cli fills ${defaultHostname} (and rest.hostname) in at runtime once the cluster is up.
-        clusterAccess: {
-          connectionString: 'couchbase://${defaultHostname}',
-          username: 'Administrator',
-          password: 'password',
-          tls: null,
-          rest: {
-            hostname: '${defaultHostname}',
-            resolveDnsSrv: false,
-          },
-          proxy: {
-            hostname: 'host.docker.internal',
-          },
-        },
-        // fit-cli will inject performerPorts at runtime.
-        excludeTests: ['situational'],
-      },
-    },
-    {
-      id: 'fit-config-situational',
-      config: {
-        // Ignored for situational-only runs — cbdino creates and manages the cluster.
-        clusterAccess: {
-          defaultHostname: 'localhost',
-          username: 'Administrator',
-          password: 'password',
-        },
-        // fit-cli will inject performerPorts at runtime.
-        excludeTests: [],
-        situational: {
-          cbdino: {
-            version: '7.6',
-            enablePrivateEndpoint: false,
-          },
-        },
       },
     },
   ],
