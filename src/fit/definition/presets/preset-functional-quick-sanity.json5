@@ -1,6 +1,9 @@
-// Preset: does quick sanity testing for functional tests against a given SDK.
 {
-  preset: { order: 12 },
+  preset: {
+    order: 12,
+    description: 'does quick sanity testing for functional tests against a given SDK.',
+    expectedTime: 'TBD',
+  },
   version: 1,
   type: 'fit',
   instances: [

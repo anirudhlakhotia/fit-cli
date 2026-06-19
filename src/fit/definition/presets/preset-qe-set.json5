@@ -1,6 +1,9 @@
-// Preset: This is the set SDKQE-that-was like to run before signing off on a release.
 {
-  preset: { order: 5 },
+  preset: {
+    order: 5,
+    description: 'This is the set SDKQE-that-was like to run before signing off on a release.',
+    expectedTime: 'TBD',
+  },
   version: 1,
   type: 'fit',
   instances: [

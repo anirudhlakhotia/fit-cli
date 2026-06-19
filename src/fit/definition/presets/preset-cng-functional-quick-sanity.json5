@@ -1,7 +1,10 @@
-// Preset: Does quick sanity testing for FIT functional for a given SDK, against CNG.
 // Currently that runs against ROSA OpenShift, but that could change in future
 {
-  preset: { order: 40 },
+  preset: {
+    order: 40,
+    description: 'does quick sanity testing for FIT functional for a given SDK, against CNG.',
+    expectedTime: 'TBD',
+  },
   version: 1,
   type: 'fit',
   description: 'CNG functional tests',

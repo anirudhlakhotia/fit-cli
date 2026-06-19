@@ -28,23 +28,24 @@ export function isPresetType(value: string): value is PresetType {
   return PRESET_TYPES.includes(value as PresetType);
 }
 
-/** Extract the `Preset: ...` first-line description from the raw template, accepting both `#` (YAML) and `//` (JSON5) comment styles. */
-function extractPresetDescription(raw: string): string {
-  for (const line of raw.split("\n")) {
-    const m = line.match(/^(?:#|\/\/)\s*Preset:\s*(.*)/);
-    if (m) return m[1].trim() || "(no description)";
-  }
-  return "(no description)";
+interface PresetMeta {
+  order: number;
+  description: string;
+  expectedTime?: string;
 }
 
-/** Extract the `preset.order` field from a template, defaulting to 50 if absent. */
-function extractPresetOrder(raw: string): number {
+/** Extract metadata from a preset template's `preset` block. */
+function extractPresetMeta(raw: string): PresetMeta {
   try {
     const filled = raw.replace(/\{\{PERFORMER_IMAGE\}\}/g, "placeholder");
-    const parsed = JSON5.parse(filled) as { preset?: { order?: number } };
-    return parsed.preset?.order ?? 50;
+    const parsed = JSON5.parse(filled) as { preset?: { order?: number; description?: string; expectedTime?: string } };
+    return {
+      order: parsed.preset?.order ?? 50,
+      description: parsed.preset?.description ?? "(no description)",
+      expectedTime: parsed.preset?.expectedTime,
+    };
   } catch {
-    return 50;
+    return { order: 50, description: "(no description)" };
   }
 }
 
@@ -52,30 +53,31 @@ function sortedPresetItems<T extends { order: number; type: PresetType }>(items:
   return [...items].sort((a, b) => a.order - b.order || a.type.localeCompare(b.type));
 }
 
-/** Available preset types paired with their `# Preset:` descriptions, for menus. */
-export async function presetDescriptions(): Promise<{ type: PresetType; description: string }[]> {
+/** Available preset types paired with their descriptions and expected run time, for menus. */
+export async function presetDescriptions(): Promise<{ type: PresetType; description: string; expectedTime?: string }[]> {
   const items = await Promise.all(
     PRESET_TYPES.map(async (type) => {
-      const raw = await loadPresetTemplate(type);
-      return { type, description: extractPresetDescription(raw), order: extractPresetOrder(raw) };
+      const { order, description, expectedTime } = extractPresetMeta(await loadPresetTemplate(type));
+      return { type, description, expectedTime, order };
     }),
   );
-  return sortedPresetItems(items).map(({ type, description }) => ({ type, description }));
+  return sortedPresetItems(items).map(({ type, description, expectedTime }) => ({ type, description, expectedTime }));
 }
 
 /** Print a table of available preset types and their descriptions. */
 export async function listPresets(): Promise<void> {
   const items = await Promise.all(
     PRESET_TYPES.map(async (type) => {
-      const raw = await loadPresetTemplate(type);
-      return { type, description: extractPresetDescription(raw), order: extractPresetOrder(raw) };
+      const { order, description, expectedTime } = extractPresetMeta(await loadPresetTemplate(type));
+      return { type, description, expectedTime, order };
     }),
   );
   const sorted = sortedPresetItems(items);
   const col = sorted.reduce((max, { type }) => Math.max(max, type.length), 0);
   console.log(`\nAvailable presets:\n`);
-  for (const { type, description } of sorted) {
-    console.log(`  ${type.padEnd(col)}  ${description}`);
+  for (const { type, description, expectedTime } of sorted) {
+    const time = expectedTime ? `  (${expectedTime})` : "";
+    console.log(`  ${type.padEnd(col)}  ${description}${time}`);
   }
   console.log();
 }

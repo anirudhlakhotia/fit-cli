@@ -49,7 +49,10 @@ async function choosePresetType(): Promise<PresetType> {
   return select<PresetType>({
     promptId: TYPE_PROMPT_ID,
     message: "Which preset?",
-    choices: presets.map((p) => ({ name: `${p.type.padEnd(col)}  ${p.description}`, value: p.type })),
+    choices: presets.map((p) => {
+      const time = p.expectedTime ? `  (${p.expectedTime})` : "";
+      return { name: `${p.type.padEnd(col)}  ${p.description}${time}`, value: p.type };
+    }),
   });
 }
 
