@@ -42,15 +42,11 @@ export const CNG_VERSION = "1.1.0-135";
 export const DEFAULT_CLUSTER_VERSION = "8.0-stable";
 
 /**
- * Default Couchbase Server version for CNG/Protostellar clusters. CNG runs on
- * cbdinocluster's cao deployer, which on OpenShift pulls the server from the
- * `cb-rhcc` registry (it forces `needRhcc` when the target is OpenShift) rather
- * than `cb-vanilla`. `cb-rhcc` only publishes specific certified builds, so this
- * is pinned to a build that exists there — a `-stable` alias resolves to a
- * cb-vanilla build that cb-rhcc doesn't carry, leaving the server pod in
- * ImagePullBackOff.
+ * Note that CNG generally uses OpenShift which uses server builds from cb-rhcc (rather than cb-vanilla).
+ * The same builds _should_ be available on both, but see:
+ * https://couchbase.slack.com/archives/C04DB7P157T/p1781783413258219
  */
-export const DEFAULT_CNG_CLUSTER_VERSION = "8.1.0-2222";
+export const DEFAULT_CNG_CLUSTER_VERSION = DEFAULT_CLUSTER_VERSION;
 
 /** The answers that describe the cluster to allocate. */
 export interface ClusterDef {
