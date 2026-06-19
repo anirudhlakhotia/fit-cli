@@ -20,10 +20,10 @@ import {
   parseResumePoint,
 } from "../functional/run-from-definition/resume.js";
 import { describeDefinition } from "../shared/definition/generate-desc.js";
-import { generatePreset, parseGeneratePresetArgs, parseExecutePresetArgs, PRESET_TYPES } from "./generate-preset/generate-preset.js";
+import { generatePreset, listPresets, parseGeneratePresetArgs, parseExecutePresetArgs, PRESET_TYPES } from "./generate-preset/generate-preset.js";
 import type { RunOutput } from "../../util/non-fit/artifacts.js";
 
-const SUBCOMMANDS = ["execute", "validate", "generate-desc", "generate-preset", "execute-preset"] as const;
+const SUBCOMMANDS = ["execute", "validate", "generate-desc", "generate-preset", "execute-preset", "list-presets"] as const;
 type Subcommand = (typeof SUBCOMMANDS)[number];
 
 const HELP = `Manage FIT definition files.
@@ -34,6 +34,7 @@ Usage:
   bun run definition generate-desc <file.json5>
   bun run definition generate-preset --type <preset> --performer-image-name <image> [--output <path>]
   bun run definition execute-preset --type <preset> --performer-image-name <image> [resume flags] [--root <dir>]
+  bun run definition list-presets
   bun run definition --help
 
 Both .json5 and .yaml definition files are accepted.
@@ -44,6 +45,7 @@ Subcommands:
   generate-desc   Print a compact description of a definition file (useful for CI labels).
   generate-preset Emit a ready-to-run definition file from a preset template.
   execute-preset  Generate a preset definition file and immediately execute it.
+  list-presets    List all available preset types with descriptions.
 
 generate-preset / execute-preset options:
   --type <preset>               Preset to generate. Known presets: ${PRESET_TYPES.join(", ")}
@@ -137,6 +139,11 @@ export async function definitionDispatch(argv: string[]): Promise<RunOutput | vo
       process.exit(2);
     }
     await generatePreset(args);
+    return;
+  }
+
+  if (subcommand === "list-presets") {
+    await listPresets();
     return;
   }
 
