@@ -14,7 +14,7 @@ test("stopPerformer stops all running containers for the matching image", async 
   const stoppedIds: string[][] = [];
   const deps: StopPerformerDeps = {
     runningContainersForImage(_execution, imageName) {
-      assert.equal(imageName, "ghcr.io/couchbase/cpp-fit-performer:main");
+      assert.equal(imageName, "ghcr.io/couchbase/cxx-fit-performer:main");
       return Promise.resolve([
         { id: "abc123", image: imageName, name: "fit-node-1", ports: "" },
         { id: "def456", image: imageName, name: "fit-node-2", ports: "" },

@@ -1,4 +1,9 @@
-import { sdkByValue, sdkPublishesPerformerImage, type Sdk } from "../../../util/sdk/sdks.js";
+import {
+  sdkByPerformerImageBasename,
+  sdkPerformerImageBasename,
+  sdkPublishesPerformerImage,
+  type Sdk,
+} from "../../../util/sdk/sdks.js";
 
 export const GHCR_REGISTRY = "ghcr.io";
 export const FIT_PERFORMER_IMAGE_OWNER = "couchbase";
@@ -16,7 +21,7 @@ const JVM_SDK_VALUES = new Set(["java", "kotlin", "scala"]);
 
 /** The GHCR package name that holds the prebuilt performer image for this SDK. */
 export function performerPackageName(sdk: Sdk): string {
-  return `${sdk.value}-fit-performer`;
+  return `${sdkPerformerImageBasename(sdk)}-fit-performer`;
 }
 
 /** The GitHub Packages URL for this SDK's prebuilt performer image. */
@@ -80,15 +85,15 @@ export function analysePerformerImage(image: string): ParsedPerformerImage | { e
         ` or java-fit-performer:refs-changes-18-195818-7); got ${JSON.stringify(image)}.`,
     };
   }
-  const sdk = sdkByValue(match.groups.sdk);
+  const sdk = sdkByPerformerImageBasename(match.groups.sdk);
   if (!sdk) {
     return { error: `Unknown SDK "${match.groups.sdk}" in performer image ${JSON.stringify(image)}.` };
   }
   if (!sdkPublishesPerformerImage(sdk)) {
     return {
       error:
-        `Only the JVM SDKs (java, scala, kotlin) and C++ (cpp) publish prebuilt performer images,` +
-        ` and ${sdk.name} (${sdk.value}) does not. Pick one of those SDKs.`,
+        `Only the JVM SDKs (java, scala, kotlin), C++ (cxx) and .NET (dotnet) publish prebuilt performer` +
+        ` images, and ${sdk.name} (${sdk.value}) does not. Pick one of those SDKs.`,
     };
   }
   return { sdk, tag: match.groups.tag };

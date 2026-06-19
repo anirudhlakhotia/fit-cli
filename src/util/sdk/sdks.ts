@@ -30,13 +30,30 @@ export function sdkByValue(value: string): Sdk | undefined {
 
 /**
  * True if this SDK currently publishes a prebuilt performer Docker image to
- * GHCR. Only the JVM SDKs (Java, Scala, Kotlin) and C++ do today, and fit-cli
- * only runs performers from prebuilt images, so these are the only SDKs it can
- * test.
+ * GHCR. Only the JVM SDKs (Java, Scala, Kotlin), C++ and .NET do today, and
+ * fit-cli only runs performers from prebuilt images, so these are the only SDKs
+ * it can test.
  */
 export function sdkPublishesPerformerImage(sdk: Sdk): boolean {
-  return sdk.jvm || sdk.value === "cpp";
+  return sdk.jvm || sdk.value === "cpp" || sdk.value === "dotnet";
 }
 
-/** The SDKs fit-cli can test — those with prebuilt performer images (JVM + C++). */
+/** The SDKs fit-cli can test — those with prebuilt performer images (JVM + C++ + .NET). */
 export const PREBUILT_PERFORMER_SDKS = SDKS.filter(sdkPublishesPerformerImage);
+
+/**
+ * The GHCR package basename for an SDK's performer image is usually its `value`
+ * (e.g. `java` → `java-fit-performer`), but a few differ from the SDK's value.
+ * C++ uses `value` "cpp" everywhere user-facing but publishes `cxx-fit-performer`.
+ */
+const PERFORMER_IMAGE_BASENAMES: Partial<Record<SdkValue, string>> = { cpp: "cxx" };
+
+/** The basename of this SDK's GHCR performer image (before `-fit-performer`). */
+export function sdkPerformerImageBasename(sdk: Sdk): string {
+  return PERFORMER_IMAGE_BASENAMES[sdk.value] ?? sdk.value;
+}
+
+/** Look up an SDK by its performer image basename (e.g. `cxx` → C++), or undefined. */
+export function sdkByPerformerImageBasename(basename: string): Sdk | undefined {
+  return SDKS.find((sdk) => sdkPerformerImageBasename(sdk) === basename);
+}

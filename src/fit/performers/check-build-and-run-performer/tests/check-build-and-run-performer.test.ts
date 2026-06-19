@@ -29,7 +29,7 @@ test("checkBuildAndRunPerformerArgs publishes a custom host port for tagged imag
     "--rm",
     "--publish",
     "18060:8060",
-    "ghcr.io/couchbase/cpp-fit-performer:4.2.0",
+    "ghcr.io/couchbase/cxx-fit-performer:4.2.0",
   ]);
 });
 
@@ -44,7 +44,7 @@ test("checkBuildAndRunPerformerArgs can attach the performer to a Docker network
     "fit-net",
     "--publish",
     "8060:8060",
-    "ghcr.io/couchbase/cpp-fit-performer:main",
+    "ghcr.io/couchbase/cxx-fit-performer:main",
   ]);
 });
 

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { sdkByValue } from "../../../util/sdk/sdks.js";
 import {
+  analysePerformerImage,
   normalizePerformerVersion,
   performerImageName,
   performerPackageUrl,
@@ -48,6 +49,31 @@ test("non-JVM performerImageName defaults to main tag", () => {
   const sdk = sdkByValue("node");
   assert.ok(sdk);
   assert.equal(performerImageName(sdk), "ghcr.io/couchbase/node-fit-performer:main");
+});
+
+test("C++ performerImageName uses the cxx-fit-performer GHCR package", () => {
+  const sdk = sdkByValue("cpp");
+  assert.ok(sdk);
+  assert.equal(performerImageName(sdk), "ghcr.io/couchbase/cxx-fit-performer:main");
+});
+
+test(".NET performerImageName uses the dotnet-fit-performer GHCR package", () => {
+  const sdk = sdkByValue("dotnet");
+  assert.ok(sdk);
+  assert.equal(performerImageName(sdk), "ghcr.io/couchbase/dotnet-fit-performer:main");
+});
+
+test("analysePerformerImage maps cxx-fit-performer back to the C++ SDK", () => {
+  const result = analysePerformerImage("ghcr.io/couchbase/cxx-fit-performer:main");
+  assert.ok(!("error" in result));
+  assert.equal(result.sdk.value, "cpp");
+  assert.equal(result.tag, "main");
+});
+
+test("analysePerformerImage accepts the dotnet performer image", () => {
+  const result = analysePerformerImage("dotnet-fit-performer:main");
+  assert.ok(!("error" in result));
+  assert.equal(result.sdk.value, "dotnet");
 });
 
 test("normalizePerformerVersion collapses blank and main to the default tag", () => {
