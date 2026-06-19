@@ -569,11 +569,6 @@ function validateInstanceSetup(value: unknown, path: string): InstanceSetup | un
   }
   const capellaEnvironment = optionalEnvironmentName(record, "capellaEnvironment", path);
   if (capellaEnvironment !== undefined) {
-    // It selects the Capella creds for cbdinocluster provisioning, so it's a no-op
-    // without one — fail fast rather than silently ignore it.
-    if (setup.cbdinocluster === undefined) {
-      throw new InvalidDefinitionError(`"${path}.capellaEnvironment" requires "${path}.cbdinocluster".`);
-    }
     setup.capellaEnvironment = capellaEnvironment;
   }
   return setup;
@@ -619,9 +614,6 @@ function validateInstance(value: unknown, index: number): InstanceLifetime {
   if (clusterlessSessions !== undefined) {
     if (clusterlessSessions.length === 0) {
       throw new InvalidDefinitionError(`"${path}.clusterlessSessions" must contain at least one session when present.`);
-    }
-    if (setup?.cbdinocluster?.init === undefined) {
-      throw new InvalidDefinitionError(`"${path}.setup.cbdinocluster.init" is required when using clusterlessSessions.`);
     }
     instance.clusterlessSessions = clusterlessSessions;
   }

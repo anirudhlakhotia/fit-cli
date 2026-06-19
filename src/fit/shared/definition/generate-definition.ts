@@ -12,15 +12,10 @@ import type { PieceData } from "../../../util/non-fit/config-pieces.js";
 import type { Sdk } from "../../../util/sdk/sdks.js";
 import { buildClusterDefObject, type ClusterDef } from "../../../cluster/cluster-create/build-cluster-def.js";
 import {
-  defaultCbdinoclusterInitArgs,
   defaultCbdinoclusterInitConfig,
-  situationalCbdinoclusterInitArgs,
 } from "../../../cluster/cluster-create/default-cbdinocluster-init-config.js";
 import type { ClusterExistsPolicy } from "../../../cluster/cluster-create/cluster-exists-policy.js";
-import { DEFAULT_CREDENTIALS } from "../../../cluster/cluster-select/ask-credentials.js";
 import type { SelectedCluster } from "../../../cluster/cluster-select/cluster-select.js";
-import { DEFAULT_CBDINO_SETTINGS } from "../../situational/configuration/build-situational-configuration.js";
-import { localDatabaseConnection } from "../../situational/setup-local-database/setup-local-database.js";
 import type { PortInUsePolicy } from "../../performers/util/performer-port.js";
 import { performerImageShortName, sdkDefaultPerformerTag } from "../../performers/util/performer-image.js";
 import type { FitTestSelection } from "../select-fit-tests/select-fit-tests.js";
@@ -29,7 +24,6 @@ import {
   FIT_DEFINITION_TYPE,
   type CbdinoclusterInitSetup,
   type ClusterConfigRef,
-  type FitConfigPiece,
   type FitConfigRef,
   type FitDefinition,
   type InstanceLifetime,
@@ -41,7 +35,6 @@ import {
 import { describeDefinition } from "./generate-desc.js";
 
 const CLUSTER_CONFIG_ID = "cluster-0";
-const FIT_CONFIG_ID = "fit-config-0";
 
 export type DefinitionFormat = "json5" | "yaml";
 
@@ -82,75 +75,12 @@ export interface SituationalDefinitionInputs {
   instance?: InstanceMode;
 }
 
-function buildClusterAccessFitConfig(cluster: SelectedCluster): FitConfigPiece {
-  const fitConfig: PieceData = {
-    clusterAccess: {
-      connectionString: `${cluster.scheme}://${cluster.defaultHostname}`,
-      username: cluster.credentials.username,
-      password: cluster.credentials.password,
-      tls: cluster.tls,
-    },
-  };
-  return fitConfig;
-}
-
-/**
- * Build a fitConfig template for a cbdinocluster-based cluster.  The cluster
- * IPs are not known at definition time, so ${defaultHostname} is used as a
- * placeholder — fit-cli fills in defaultHostname and rest.hostname at runtime
- * via the runtime config piece.
- */
-function buildCbdinoclusterFitConfig(cng: boolean): FitConfigPiece {
-  if (cng) {
-    return {
-      clusterAccess: {
-        driver: {
-          connectionString: "couchbase://${defaultHostname}",
-          tls: null,
-        },
-        performer: {
-          connectionString: "couchbase2://${defaultHostname}",
-          tls: null,
-        },
-        username: DEFAULT_CREDENTIALS.username,
-        password: DEFAULT_CREDENTIALS.password,
-        rest: {
-          hostname: "${defaultHostname}",
-          resolveDnsSrv: false,
-        },
-        proxy: null,
-      },
-      excludeTests: ["situational"],
-    };
-  }
-  return {
-    clusterAccess: {
-      connectionString: "couchbase://${defaultHostname}",
-      username: DEFAULT_CREDENTIALS.username,
-      password: DEFAULT_CREDENTIALS.password,
-      tls: null,
-      rest: {
-        hostname: "${defaultHostname}",
-        resolveDnsSrv: false,
-      },
-      proxy: {
-        hostname: "host.docker.internal",
-      },
-    },
-    bucketConfig: {
-      numReplicas: 1,
-      bucketType: "couchbase",
-      storage: "couchstore",
-    },
-    excludeTests: ["situational"],
-  };
-}
 
 /**
  * Build the cbdinocluster init setup for a definition.
  *
- * The docker path carries an editable `cbdinocluster init` args string; fit-cli
- * appends the GitHub credentials at runtime, so `githubUser` isn't baked in here.
+ * For non-CNG clusters the args are generated at runtime (defaultCbdinoclusterInitArgs /
+ * situationalCbdinoclusterInitArgs), so nothing is baked into the definition.
  *
  * CNG still carries a `config` object uploaded as `~/.cbdinocluster`: the docker
  * block plus optionally the github block (token added at runtime). The `k8s` block
@@ -158,10 +88,7 @@ function buildCbdinoclusterFitConfig(cng: boolean): FitConfigPiece {
  * context by default (or the local k3d cluster under `FIT_CNG_K8S=k3d`), with the
  * CSP-dependent cao-tools/kubeconfig paths — so it stays out of the definition.
  */
-function buildCbdinoclusterInit(cng: boolean, githubUser?: string): CbdinoclusterInitSetup {
-  if (!cng) {
-    return { args: defaultCbdinoclusterInitArgs() };
-  }
+function buildCngCbdinoclusterInit(githubUser?: string): CbdinoclusterInitSetup {
   const base = defaultCbdinoclusterInitConfig();
   return {
     config: {
@@ -203,7 +130,6 @@ function buildPerformerSession(
 interface BuiltFunctionalInstance {
   instance: InstanceLifetime;
   clusterConfigRef: ClusterConfigRef;
-  fitConfigRef: FitConfigRef;
 }
 
 function buildFunctionalInstance(inputs: DefinitionInputs): BuiltFunctionalInstance {
@@ -225,18 +151,13 @@ function buildFunctionalInstance(inputs: DefinitionInputs): BuiltFunctionalInsta
           ...(inputs.onClusterExists ? { onClusterExists: inputs.onClusterExists } : {}),
         },
       };
-  const fitConfigRef: FitConfigRef = {
-    id: FIT_CONFIG_ID,
-    config: inputs.cluster.kind === "connection"
-      ? buildClusterAccessFitConfig(inputs.cluster.cluster)
-      : buildCbdinoclusterFitConfig(cng),
-  };
   const instance: InstanceLifetime = {
     ...(inputs.instance ?? { localhost: {} }),
-    // cbdinocluster init is set up once per instance — see InstanceSetup. Only
-    // cbdinocluster-backed clusters need it; connection clusters bring their own.
-    ...(inputs.cluster.kind === "cbdinocluster"
-      ? { setup: { cbdinocluster: { init: buildCbdinoclusterInit(cng, inputs.githubUser) } } }
+    // CNG needs its cbdinocluster config uploaded verbatim (docker + optional github block);
+    // the k8s block is injected at runtime. Non-CNG cbdinocluster init args are generated
+    // at runtime (defaultCbdinoclusterInitArgs) — nothing to bake into the definition.
+    ...(cng
+      ? { setup: { cbdinocluster: { init: buildCngCbdinoclusterInit(inputs.githubUser) } } }
       : {}),
     clusters: [
       {
@@ -247,7 +168,6 @@ function buildFunctionalInstance(inputs: DefinitionInputs): BuiltFunctionalInsta
             runs: [
               {
                 type: "functional",
-                fitConfig: FIT_CONFIG_ID,
                 tests: buildTests(inputs.selection),
               },
             ],
@@ -256,27 +176,7 @@ function buildFunctionalInstance(inputs: DefinitionInputs): BuiltFunctionalInsta
       },
     ],
   };
-  return { instance, clusterConfigRef, fitConfigRef };
-}
-
-function buildSituationalFitConfig(databaseMode: SituationalDatabaseMode): FitConfigPiece {
-  return {
-    clusterAccess: {
-      defaultHostname: "localhost",
-      username: DEFAULT_CREDENTIALS.username,
-      password: DEFAULT_CREDENTIALS.password,
-    },
-    excludeTests: [],
-    situational: {
-      cbdino: {
-        version: DEFAULT_CBDINO_SETTINGS.version,
-        enablePrivateEndpoint: DEFAULT_CBDINO_SETTINGS.enablePrivateEndpoint,
-      },
-      ...(databaseMode === "local"
-        ? (({ jdbc, username, password }) => ({ database: { jdbc, username, password } }))(localDatabaseConnection())
-        : {}),
-    },
-  };
+  return { instance, clusterConfigRef };
 }
 
 function buildSituationalInstance(inputs: SituationalDefinitionInputs): InstanceLifetime {
@@ -286,17 +186,10 @@ function buildSituationalInstance(inputs: SituationalDefinitionInputs): Instance
   const includeCapellaEnv = inputs.capellaEnvironment !== undefined;
   return {
     ...(inputs.instance ?? { localhost: {} }),
-    // Situational runs `cbdinocluster init` for the docker/github/aws/capella
-    // base (like the functional path). AWS credentials are uploaded before init
-    // so `--aws-region` enables the aws block directly. It's per-instance setup,
-    // applied once on the box (see InstanceSetup). The Capella environment lives
-    // here too — one box, one ~/.cbdinocluster identity.
-    setup: {
-      cbdinocluster: {
-        init: { args: situationalCbdinoclusterInitArgs() },
-      },
-      ...(includeCapellaEnv ? { capellaEnvironment: inputs.capellaEnvironment } : {}),
-    },
+    // cbdinocluster init args are generated at runtime (situationalCbdinoclusterInitArgs),
+    // nothing to bake into the definition. The Capella environment lives here so it's
+    // recorded alongside the instance that uses it.
+    ...(includeCapellaEnv ? { setup: { capellaEnvironment: inputs.capellaEnvironment } } : {}),
     clusters: [],
     clusterlessSessions: [
       {
@@ -304,7 +197,6 @@ function buildSituationalInstance(inputs: SituationalDefinitionInputs): Instance
         runs: [
           {
             type: "situational",
-            fitConfig: FIT_CONFIG_ID,
             tests: buildTests(inputs.selection),
             situational: {
               database: {
@@ -348,24 +240,18 @@ export function buildFitDefinition(inputs: {
 }
 
 export function buildFitFunctionalDefinitionFrom(inputs: DefinitionInputs): FitDefinition {
-  const { instance, clusterConfigRef, fitConfigRef } = buildFunctionalInstance(inputs);
+  const { instance, clusterConfigRef } = buildFunctionalInstance(inputs);
   return buildFitDefinition({
     ...(inputs.gerritRef ? { gerritRef: inputs.gerritRef } : {}),
     instances: [instance],
     clusterConfigs: [clusterConfigRef],
-    fitConfigs: [fitConfigRef],
   });
 }
 
 export function buildFitSituationalDefinitionFrom(inputs: SituationalDefinitionInputs): FitDefinition {
-  const fitConfigRef: FitConfigRef = {
-    id: FIT_CONFIG_ID,
-    config: buildSituationalFitConfig(inputs.databaseMode),
-  };
   return buildFitDefinition({
     ...(inputs.gerritRef ? { gerritRef: inputs.gerritRef } : {}),
     instances: [buildSituationalInstance(inputs)],
-    fitConfigs: [fitConfigRef],
   });
 }
 
@@ -420,14 +306,13 @@ function commentLinesFor(key: string, value: unknown, parentKey: string | undefi
         : [];
     case "configPatch":
       return parentKey === "init"
-        ? ["Merged onto ~/.cbdinocluster after `cbdinocluster init` runs — for config init can't set via flags (e.g. capella/aws)."]
+        ? ["Merged onto ~/.cbdinocluster after `cbdinocluster init` runs — for config init can't set via flags."]
         : [];
     case "bucketConfig":
       return ["numReplicas >= 1 is required for FTS tests to pass."];
     case "fitConfigs":
       return [
-        "Each fitConfig is used as a base when generating FITConfiguration.json.  Anything here will be copied into the config (unless overwritten by fit-cli).",
-        "fit-cli will provide some fields like ${defaultHostname} at runtime when cluster details are known.",
+        "Optional overrides for the generated FITConfiguration.json.  fit-cli generates sensible defaults; add a fitConfig here only to override specific fields.",
       ];
     case "setup":
       return [];
@@ -446,9 +331,7 @@ function commentLinesFor(key: string, value: unknown, parentKey: string | undefi
       }
       return [];
     case "excludeTests":
-      return Array.isArray(value) && value.length === 0
-        ? ["fit-cli will inject performerPorts at runtime."]
-        : [];
+      return [];
     default:
       return [];
   }

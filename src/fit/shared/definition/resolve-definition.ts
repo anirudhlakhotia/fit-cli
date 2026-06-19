@@ -432,11 +432,26 @@ export function resolveCluster(cluster: ClusterLifetime, path: DefinitionRunPath
 
 export function resolveInstancePlan(instance: InstanceLifetime, instanceIndex: number): ResolvedInstancePlan {
   const path = { instanceIndex } satisfies DefinitionRunPath;
+
+  // Use the explicit setup block when present; otherwise infer: any cbdinocluster-backed
+  // cluster or clusterless session needs cbdinocluster init on a clean remote box.
+  // An empty CbdinoclusterInitSetup ({}) signals "run default init" — the actual args
+  // are generated at runtime (defaultCbdinoclusterInitArgs / situationalCbdinoclusterInitArgs).
+  let cbdinoclusterInit: CbdinoclusterInitSetup | undefined;
+  if (instance.setup?.cbdinocluster !== undefined) {
+    cbdinoclusterInit = { ...instance.setup.cbdinocluster.init };
+  } else if (
+    instance.clusters.some((c) => c.cbdinocluster !== undefined) ||
+    (instance.clusterlessSessions?.length ?? 0) > 0
+  ) {
+    cbdinoclusterInit = {};
+  }
+
   return {
     path,
     instance: resolveInstance(instance),
     clusters: instance.clusters.map((cluster, clusterIndex) => resolveCluster(cluster, { instanceIndex, clusterIndex })),
-    ...(instance.setup?.cbdinocluster !== undefined ? { cbdinoclusterInit: { ...instance.setup.cbdinocluster.init } } : {}),
+    ...(cbdinoclusterInit !== undefined ? { cbdinoclusterInit } : {}),
     clusterlessSessions: (instance.clusterlessSessions ?? []).map((session, sessionIndex) =>
       resolveSession(session, { instanceIndex, sessionIndex, clusterlessSession: true }, false)),
     capellaEnvironment: instance.setup?.capellaEnvironment ?? DEFAULT_CAPELLA_ENV,
