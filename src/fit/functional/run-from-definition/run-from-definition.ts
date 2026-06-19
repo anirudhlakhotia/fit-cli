@@ -91,6 +91,7 @@ import {
 } from "../../performers/check-build-and-run-performer/check-build-and-run-performer.js";
 import type { PieceData } from "../../../util/non-fit/config-pieces.js";
 import { generateFitConfiguration } from "../../shared/fit-configuration/generate-fit-configuration.js";
+import { resourceCreationPiece, type ClusterCreatingConfig } from "../util/build-fit-configuration.js";
 import { generateSituationalConfiguration } from "../../situational/configuration/generate-situational-configuration.js";
 import {
   createFitExecutionContext,
@@ -553,12 +554,31 @@ export async function runTests(
     throwFatalToCluster("Cluster sanity test failed; this execution group cannot continue.");
   }
 
+  // When fit-cli allocated the cluster via cbdinocluster we know both the
+  // cbdinocluster binary path on the execution host and the server version under
+  // test, so we can enable the test-driver's cluster-creating functional tests.
+  // Existing/connection clusters carry neither, so they're left off (the
+  // preferredCluster.version the performer requires would be unknown).
+  let effectiveFitConfig = run.fitConfig;
+  if (clusterMode === "cbdinocluster" && clusterVersion) {
+    const cbdinoclusterPath = await resolveCbdinoclusterPathOnExecution(execution);
+    // clusterVersion is a label that may join multiple node versions with "+";
+    // preferredCluster wants a single concrete version, so take the first and
+    // resolve any alias (e.g. "8.0.0-release") to a concrete build.
+    const primaryVersion = clusterVersion.split("+")[0];
+    const version = isAlias(primaryVersion) ? await resolveAlias(primaryVersion) : primaryVersion;
+    console.log(
+      `→ Enabling cluster-creating functional tests (cbdinocluster=${cbdinoclusterPath}, version=${version}).`,
+    );
+    effectiveFitConfig = withClusterCreating(run.fitConfig, { cbdinoclusterPath, version });
+  }
+
   const fitConfig = generateFitConfigurationFn(
     run.cluster,
     execution.rootDir,
     run.path,
     run.performerPort,
-    run.fitConfig,
+    effectiveFitConfig,
   );
   artifacts.push(...fitConfig.artifacts);
   details.push(...fitConfig.details);
@@ -656,6 +676,23 @@ function withCbdinoclusterPath(fitConfig: ResolvedFitConfig | undefined, cbdinoP
         cbdino: { ...cbdino, cbDinoClusterAppPath: cbdinoPath },
       },
     },
+  };
+}
+
+/**
+ * Return a fitConfig piece with `resourceCreation.cluster` set so the test-driver
+ * enables its cluster-creating functional tests (`@RequiresClusterCreating`). The
+ * runtime-resolved cbdinocluster path and server version always win over anything
+ * the definition specified, since they're the ones valid on this execution host.
+ */
+function withClusterCreating(
+  fitConfig: ResolvedFitConfig | undefined,
+  clusterCreating: ClusterCreatingConfig,
+): ResolvedFitConfig {
+  const piece = fitConfig?.config ?? {};
+  return {
+    ...fitConfig,
+    config: { ...piece, ...resourceCreationPiece(clusterCreating) },
   };
 }
 
