@@ -1,11 +1,32 @@
 import { basename } from "node:path";
 
-const isTTY = process.stderr.isTTY ?? false;
-const RESET = isTTY ? "[0m" : "";
-const RED = isTTY ? "[31m" : "";
-const YELLOW = isTTY ? "[33m" : "";
+/**
+ * Decide whether to emit ANSI colour. Precedence:
+ *   FORCE_COLOR set & not "0"  -> on   (covers GHA/CI, which have no TTY but
+ *                                       whose log viewers still render ANSI)
+ *   NO_COLOR set               -> off  (https://no-color.org)
+ *   GITHUB_ACTIONS === "true"  -> on   (GHA renders ANSI despite no TTY)
+ *   otherwise                  -> stderr.isTTY
+ *
+ * FORCE_COLOR deliberately overrides NO_COLOR so the test runner can force a
+ * deterministic result even on a dev box that exports NO_COLOR.
+ */
+export function colourEnabled(
+  env: NodeJS.ProcessEnv = process.env,
+  isTTY: boolean = process.stderr.isTTY ?? false,
+): boolean {
+  if (env.FORCE_COLOR !== undefined && env.FORCE_COLOR !== "0") return true;
+  if (env.NO_COLOR !== undefined) return false;
+  if (env.GITHUB_ACTIONS === "true") return true;
+  return isTTY;
+}
+
+const colourOn = colourEnabled();
+const RESET = colourOn ?"[0m" : "";
+const RED = colourOn ? "[31m" : "";
+const YELLOW = colourOn ? "[33m" : "";
 /** Pastel blue for echoed commands (`$ ...`). */
-const BLUE = isTTY ? "[94m" : "";
+const BLUE = colourOn ? "[94m" : "";
 
 const baseConsoleError = console.error.bind(console);
 const baseConsoleWarn = console.warn.bind(console);
@@ -19,7 +40,7 @@ let rawTerminalWriteDepth = 0;
 let greyIndentDepth = 0;
 
 /** Soft grey (ANSI 90), for the unobtrusive separators in the log-line prefix. */
-const DIM = isTTY ? "[90m" : "";
+const DIM = colourOn ? "[90m" : "";
 /** The dot that separates the prefix's timestamp and context segments. */
 const PREFIX_SEPARATOR = "·";
 

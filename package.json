@@ -23,7 +23,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "test": "node --import tsx --test 'src/**/tests/*.test.ts'"
+    "test": "FORCE_COLOR=1 node --import tsx --test 'src/**/tests/*.test.ts'"
   },
   "engines": {
     "bun": ">=1.0"

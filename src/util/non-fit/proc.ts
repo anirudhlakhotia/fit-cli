@@ -4,6 +4,12 @@ import { dirname } from "node:path";
 import { echoCommand, formatCommandLine, formatTimestampedChunk, startGreyIndentedOutput, stopGreyIndentedOutput } from "./fit-cli-log.js";
 import { createRunFilePath } from "./replay.js";
 
+// Log files are plain-text artifacts, so strip the ANSI SGR (colour) sequences
+// that the terminal path embeds. Without this, colour leaks into session.info.log
+// / session.debug.log whenever colour is enabled (a real TTY, or GHA/FORCE_COLOR).
+const ANSI_SGR = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
+const stripAnsi = (s: string): string => s.replace(ANSI_SGR, "");
+
 /**
  * Where a process's *log output* goes, for the models that run a subprocess as a
  * logged step inside the session. This is the README's "Logging" section,
@@ -256,8 +262,9 @@ export function startSessionLog(logFile: string): SessionLog {
         : Buffer.from(chunk).toString(typeof args[1] === "string" ? args[1] : undefined);
       const formatted = formatTimestampedChunk(text, logLineStarts.get(stream) ?? true);
       logLineStarts.set(stream, formatted.atLineStart);
-      log.write(formatted.text);
-      currentDebugLog?.write(formatted.text);
+      const clean = stripAnsi(formatted.text);
+      log.write(clean);
+      currentDebugLog?.write(clean);
       return original(...args);
     } as StreamWrite;
   }
@@ -322,7 +329,7 @@ export function writeToDebugLog(content: string): void {
     return;
   }
   const normalized = content.endsWith("\n") ? content : `${content}\n`;
-  currentDebugLog.write(formatTimestampedChunk(normalized, true).text);
+  currentDebugLog.write(stripAnsi(formatTimestampedChunk(normalized, true).text));
 }
 
 /**
@@ -356,7 +363,7 @@ export function runHiddenUntilFailure(
     child.on("close", (code) => {
       if (currentDebugLog && output) {
         const normalized = output.endsWith("\n") ? output : `${output}\n`;
-        currentDebugLog.write(formatTimestampedChunk(normalized, true).text);
+        currentDebugLog.write(stripAnsi(formatTimestampedChunk(normalized, true).text));
       }
       if (code === 0) {
         resolve();
