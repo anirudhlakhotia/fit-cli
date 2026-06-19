@@ -1,6 +1,9 @@
-// Preset: run all FIT functional tests for a given SDK.
 {
-  preset: { order: 10 },
+  preset: {
+    order: 10,
+    description: 'run all FIT functional tests for a given SDK.',
+    expectedTime: 'TBD',
+  },
   version: 1,
   type: 'fit',
   instances: [
