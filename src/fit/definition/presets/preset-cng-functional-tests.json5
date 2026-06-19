@@ -47,20 +47,6 @@
                       'syncgateway',
                       'protostellarWillWorkLater',
                     ],
-                    maven: {
-                      args: [
-                        // TenThousandCollectionsTest: creates a 2048MB bucket, which exceeds
-                        // the ROSA cluster's Couchbase RAM quota (~650MB free after the default bucket).
-                        // DocNotLockedTest: CNG gateway maps DOCUMENT_NOT_LOCKED to a generic
-                        // COUCHBASE_EXCEPTION; needs protostellarWillWorkLater tag in Java code.
-                        // TODO: remove these once the Java tests are tagged protostellarWillWorkLater
-                        // or the CNG gateway is fixed.
-                        // Surefire 3.x exclusion syntax: prefix class names with ! in -Dtest.
-                        // GetTest#getWithProjectionNoPathsExist: CNG gateway returns empty body instead
-                        // of {} when all projected paths are absent; SDK fails to parse as JSON.
-                        '-Dtest=!com.couchbase.client.kv.TenThousandCollectionsTest,!com.couchbase.client.kv.DocNotLockedTest,!com.couchbase.client.kv.GetTest#getWithProjectionNoPathsExist',
-                      ],
-                    },
                   },
                 },
               ],
@@ -77,11 +63,8 @@
         config: {
           nodes: [
             {
-              // CNG on OpenShift pulls the server from cb-rhcc (not cb-vanilla), which
-              // only carries certain certified builds — a `-stable` alias resolves to a
-              // cb-vanilla build cb-rhcc lacks, so pin a build that exists there.
               count: 3,
-              version: '8.1.0-2222',
+              version: '8.0-stable',
               services: ['kv', 'n1ql', 'index', 'fts'],
             },
           ],
