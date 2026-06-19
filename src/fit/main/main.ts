@@ -17,6 +17,7 @@ import { runFromDefinition } from "../functional/run-from-definition/run-from-de
 import type { DefinitionFormat } from "../shared/definition/generate-definition.js";
 import { extractPushGistVisibility, type GistVisibility } from "../shared/definition/push-gist.js";
 import { runDefinitionMain } from "../definition/definition.js";
+import { runPresetWizard } from "../definition/preset-wizard/preset-wizard.js";
 import { runArchiveMain } from "../archive/archive.js";
 import { runConfigMain } from "../config/config.js";
 import { runEditWorkflow } from "../config/edit.js";
@@ -32,6 +33,7 @@ const WORKFLOW_PROMPT_MESSAGE = "What would you like to do?";
 const WORKFLOW_CHOICES = [
   { name: "Build a FIT definition file", value: "create-definition" },
   { name: "Run a FIT definition file", value: "run-definition" },
+  { name: "Export or run a preset", value: "preset" },
   { name: "Configure fit-cli", value: "configure" },
 ] as const;
 
@@ -75,6 +77,7 @@ export async function chooseWorkflow(
     ? ([
         { name: "Build a FIT definition file", value: "create-definition" },
         { name: "Run a FIT definition file", value: "run-definition" },
+        { name: "Export or run a preset", value: "preset" },
         { name: "Configure fit-cli (recommended)", value: "configure" },
       ] as const)
     : WORKFLOW_CHOICES;
@@ -115,6 +118,8 @@ export async function runWorkflow(choice: WorkflowChoice, rootDir: string, defin
       return createFitDefinition(rootDir, { format, pushGistVisibility });
     case "run-definition":
       return runFromDefinition(definitionPath ?? await askDefinitionPath(), rootDir);
+    case "preset":
+      return runPresetWizard(rootDir, { format, pushGistVisibility });
     case "configure":
       await runEditWorkflow();
       return { artifacts: [], details: [] };

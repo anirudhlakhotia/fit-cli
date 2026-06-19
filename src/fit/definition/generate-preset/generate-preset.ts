@@ -28,13 +28,20 @@ export function isPresetType(value: string): value is PresetType {
   return PRESET_TYPES.includes(value as PresetType);
 }
 
-/** Extract the `# Preset: ...` first-line description from the raw YAML text. */
+/** Extract the `Preset: ...` first-line description from the raw template, accepting both `#` (YAML) and `//` (JSON5) comment styles. */
 function extractPresetDescription(raw: string): string {
   for (const line of raw.split("\n")) {
-    const m = line.match(/^#\s*Preset:\s*(.*)/);
+    const m = line.match(/^(?:#|\/\/)\s*Preset:\s*(.*)/);
     if (m) return m[1].trim() || "(no description)";
   }
   return "(no description)";
+}
+
+/** Available preset types paired with their `# Preset:` descriptions, for menus. */
+export async function presetDescriptions(): Promise<{ type: PresetType; description: string }[]> {
+  return Promise.all(
+    PRESET_TYPES.map(async (type) => ({ type, description: extractPresetDescription(await loadPresetTemplate(type)) })),
+  );
 }
 
 /** Print a table of available preset types and their descriptions. */
