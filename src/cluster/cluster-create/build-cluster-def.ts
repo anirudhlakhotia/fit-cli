@@ -46,7 +46,7 @@ export const DEFAULT_CLUSTER_VERSION = "8.0-stable";
  * The same builds _should_ be available on both, but see:
  * https://couchbase.slack.com/archives/C04DB7P157T/p1781783413258219
  */
-export const DEFAULT_CNG_CLUSTER_VERSION = DEFAULT_CLUSTER_VERSION;
+export const DEFAULT_CNG_CLUSTER_VERSION = "8.0.2-5503"; // should be DEFAULT_CLUSTER_VERSION, but that version does not exist on cb-rhcc currently.
 
 /** The answers that describe the cluster to allocate. */
 export interface ClusterDef {
