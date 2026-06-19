@@ -35,7 +35,6 @@
           ],
         },
       ],
-      // FIT/SIT creates its own clusters, so none are configured here.
       clusterlessSessions: [
         {
           performer: {
@@ -124,9 +123,6 @@
               services: ['kv', 'n1ql', 'index', 'fts'],
             },
           ],
-          // The `cao` block makes this a CNG cluster: fit-cli uses the cao deployer,
-          // enables ingresses, and creates the default bucket via REST (cbdinocluster
-          // can't do that for cao yet). Override the versions here if needed.
           cao: {
             'operator-version': '2.9.2',
             'gateway-version': '1.1.0-135',

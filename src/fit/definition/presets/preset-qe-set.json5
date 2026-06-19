@@ -73,7 +73,6 @@
             'fts-memory': 4096,
           },
         },
-        // Reuse an existing cbdinocluster cluster if one is already running (avoids re-creating on resume).
         onClusterExists: 'useExisting',
       },
     },
