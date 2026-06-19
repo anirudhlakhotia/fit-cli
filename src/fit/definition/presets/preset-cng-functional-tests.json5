@@ -66,11 +66,7 @@
         tls: { insecure: true },
       },
       config: {
-        // fit-cli generates the CNG clusterAccess at runtime once the cluster is up:
-        // the performer connects over couchbase2:// (insecure TLS), the test-driver
-        // admin uses classic couchbase://, REST goes via the ui<ingress>, and proxy +
-        // ssh are null. The default bucket is left to the FIT test-driver to create.
-        excludeTests: ['situational', 'ssh', 'openshift'],
+        excludeTests: ['ssh', 'openshift'],
       },
     },
   ],
