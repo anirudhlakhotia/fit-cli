@@ -58,9 +58,11 @@ export function formatEc2DeletionResponsibilityBanner(
     "  https://github.com/couchbaselabs/fit-cli/actions/workflows/cleanup-instances.yaml",
   );
   if (otherInstances && otherInstances.length > 0) {
+    const uniqueOwners = [...new Set(otherInstances.map((i) => i.creator).filter(Boolean))];
+    const ownerStr = uniqueOwners.length > 0 ? `, owned by: ${uniqueOwners.join(", ")}` : "";
     lines.push(
       "",
-      `${otherInstances.length} other fit-cli instance${otherInstances.length === 1 ? "" : "s"} also running in ${AWS_REGION} — each keeps incurring AWS charges:`,
+      `${otherInstances.length} other fit-cli instance${otherInstances.length === 1 ? "" : "s"} also running in ${AWS_REGION}${ownerStr} — each keeps incurring AWS charges:`,
     );
     for (const inst of otherInstances) {
       const addr = inst.publicDns || inst.publicIp || "";
