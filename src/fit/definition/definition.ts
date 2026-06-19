@@ -10,7 +10,7 @@
 import { existsSync } from "node:fs";
 import { isMain, runCli } from "../../util/non-fit/cli.js";
 import { rootDirFromArgv } from "../util/root.js";
-import { extractInteractiveFlag, extractReplayFlag } from "../../util/non-fit/replay.js";
+import { extractInteractiveFlag, extractReplayFlag, markNonInteractiveByDefault } from "../../util/non-fit/replay.js";
 import { runFromDefinition } from "../functional/run-from-definition/run-from-definition.js";
 import { cacheDefinition, isDefinitionUrl, loadDefinition } from "../shared/definition/parse-definition.js";
 import { FIT_DEFINITION_TYPE } from "../shared/definition/types.js";
@@ -235,6 +235,12 @@ export async function definitionDispatch(argv: string[]): Promise<RunOutput | vo
 }
 
 export function runDefinitionMain(): void {
+  // The `definition` command (and its `execute-preset` flow) runs CI-style with
+  // default answers unless `--interactive` is passed. This is the single entrypoint
+  // for every launch form — `fit definition`, `fit run definition`, and
+  // `bun run definition` — so declaring it here covers them all, and it runs
+  // before runCli creates the prompt session below.
+  markNonInteractiveByDefault();
   const argv = process.argv.slice(2);
   // Handle help before runCli creates the artifact directory.
   const positionals = extractInteractiveFlag(extractReplayFlag(argv).positionals).positionals;

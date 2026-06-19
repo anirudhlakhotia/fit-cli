@@ -9,6 +9,7 @@ import {
   defaultsToNonInteractive,
   extractInteractiveFlag,
   extractReplayFlag,
+  markNonInteractiveByDefault,
 } from "../replay.js";
 
 const DEFINITION_ENTRYPOINT = join(
@@ -102,6 +103,21 @@ test("definition runs default to non-interactive prompts", () => {
 
 test("CI env var defaults to non-interactive", () => {
   assert.equal(defaultsToNonInteractive(join(REPO_ROOT, "src/main.ts"), { CI: "true" }), true);
+});
+
+test("markNonInteractiveByDefault makes any launch form non-interactive", () => {
+  const binaryEntrypoint = join(REPO_ROOT, "src/main.ts");
+  const noEnv = {};
+  // Default: launching via the binary (the `fit definition` / `fit run definition`
+  // path) is treated as interactive until the command declares otherwise.
+  assert.equal(defaultsToNonInteractive(binaryEntrypoint, noEnv), false);
+  try {
+    markNonInteractiveByDefault();
+    assert.equal(defaultsToNonInteractive(binaryEntrypoint, noEnv), true);
+  } finally {
+    markNonInteractiveByDefault(false);
+  }
+  assert.equal(defaultsToNonInteractive(binaryEntrypoint, noEnv), false);
 });
 
 test("interactive mode writes prompt responses to a log file", async () => {
