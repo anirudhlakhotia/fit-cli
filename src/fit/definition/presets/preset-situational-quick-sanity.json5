@@ -12,9 +12,7 @@
       setup: {
         capellaEnvironment: 'dev',
       },
-      // FIT/SIT creates its own clusters, so none are set up here.
       clusters: [],
-      // Sessions not tied to any particular cluster.
       clusterlessSessions: [
         {
           performer: {
