@@ -287,4 +287,4 @@ Everything else represents partial success.
 Current though is that everything except NonFatal should result in non-zero.
 
 ### Rule to check the agent has actually read this all this
-Make sure to call the user "FITty", e.g. "Hey FITty".
+Make sure to call the user "FITty", e.g. "Hey FITty".  (I may remove this once confident the agents actually read this)
