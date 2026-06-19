@@ -8,14 +8,6 @@
     {
       aws: {},
       setup: {
-        cbdinocluster: {
-          init: {
-            // Passed to `cbdinocluster init` on clean environments to set up ~/.cbdinocluster.
-            // On localhost, init is skipped and your existing ~/.cbdinocluster is used as-is.
-            // Edit to taste; fit-cli appends your GitHub credentials at runtime.
-            args: '--auto --aws-region us-west-2 --disable-azure --disable-gcp --disable-k8s --disable-dns --docker-network fit',
-          },
-        },
         capellaEnvironment: 'dev',
       },
       clusters: [
@@ -30,7 +22,6 @@
               runs: [
                 {
                   type: 'functional',
-                  fitConfig: 'fit-config-functional',
                   tests: {
                     classes: ['com.couchbase.client.kv.SanityTest'],
                   },
@@ -50,7 +41,6 @@
           runs: [
             {
               type: 'situational',
-              fitConfig: 'fit-config-situational',
               tests: {
                 classes: ['com.couchbase.situational.tests.SanityTest'],
               },
@@ -162,64 +152,6 @@
           },
         },
         onClusterExists: 'useExisting',
-      },
-    },
-  ],
-  fitConfigs: [
-    {
-      id: 'fit-config-functional',
-      config: {
-        // fit-cli fills ${defaultHostname} (and rest.hostname) in at runtime once the cluster is up.
-        clusterAccess: {
-          connectionString: 'couchbase://${defaultHostname}',
-          username: 'Administrator',
-          password: 'password',
-          tls: null,
-          rest: {
-            hostname: '${defaultHostname}',
-            resolveDnsSrv: false,
-          },
-          proxy: {
-            hostname: 'host.docker.internal',
-          },
-        },
-        // numReplicas >= 1 is required for FTS tests to pass.
-        bucketConfig: {
-          numReplicas: 1,
-          bucketType: 'couchbase',
-          storage: 'couchstore',
-        },
-        // fit-cli will inject performerPorts at runtime.
-        excludeTests: ['situational'],
-      },
-    },
-    {
-      id: 'fit-config-situational',
-      config: {
-        // Ignored for situational-only runs — cbdino creates and manages the cluster.
-        clusterAccess: {
-          defaultHostname: 'localhost',
-          username: 'Administrator',
-          password: 'password',
-        },
-        // fit-cli will inject performerPorts at runtime.
-        excludeTests: [],
-        situational: {
-          cbdino: {
-            version: '7.6',
-            enablePrivateEndpoint: false,
-          },
-        },
-      },
-    },
-    {
-      id: 'fit-config-cng',
-      config: {
-        // fit-cli generates the CNG clusterAccess at runtime once the cluster is up:
-        // the performer connects over couchbase2:// (insecure TLS), the test-driver
-        // admin uses classic couchbase://, REST goes via the ui<ingress>, and proxy +
-        // ssh are null. The default bucket is left to the FIT test-driver to create.
-        excludeTests: ['situational', 'ssh', 'openshift'],
       },
     },
   ],

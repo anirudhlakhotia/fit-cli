@@ -9,12 +9,6 @@
     {
       aws: {},
       setup: {
-        cbdinocluster: {
-          init: {
-            // Passed to `cbdinocluster init` on clean environments to set up ~/.cbdinocluster.  Added at runtime: GitHub creds
-            args: '--auto --aws-region us-west-2 --disable-azure --disable-gcp --disable-k8s --disable-dns --docker-network fit',
-          },
-        },
         capellaEnvironment: 'dev',
       },
       // FIT/SIT creates its own clusters, so none are set up here.
@@ -29,7 +23,6 @@
           runs: [
             {
               type: 'situational',
-              fitConfig: 'fit-config-0',
               tests: {
                 presets: [
                   'standard-qe',
@@ -45,29 +38,6 @@
           ],
         },
       ],
-    },
-  ],
-  // Each fitConfig is used as a base when generating FITConfiguration.json.  Anything here will be copied into the config (unless overwritten by fit-cli).
-  // fit-cli will provide some fields like ${defaultHostname} at runtime when cluster details are known.
-  fitConfigs: [
-    {
-      id: 'fit-config-0',
-      config: {
-        // Ignored for situational-only runs — cbdino creates and manages the cluster.
-        clusterAccess: {
-          defaultHostname: 'localhost',
-          username: 'Administrator',
-          password: 'password',
-        },
-        // fit-cli will inject performerPorts at runtime.
-        excludeTests: [],
-        situational: {
-          cbdino: {
-            version: '7.6',
-            enablePrivateEndpoint: false,
-          },
-        },
-      },
     },
   ],
 }
