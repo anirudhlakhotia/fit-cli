@@ -1,5 +1,6 @@
 // Preset: does quick sanity testing for functional tests against a given SDK.
 {
+  preset: { order: 30 },
   version: 1,
   type: 'fit',
   instances: [

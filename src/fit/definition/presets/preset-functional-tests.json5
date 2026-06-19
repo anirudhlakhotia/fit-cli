@@ -1,5 +1,6 @@
 // Preset: run all FIT functional tests for a given SDK.
 {
+  preset: { order: 10 },
   version: 1,
   type: 'fit',
   instances: [

@@ -37,21 +37,45 @@ function extractPresetDescription(raw: string): string {
   return "(no description)";
 }
 
+/** Extract the `preset.order` field from a template, defaulting to 50 if absent. */
+function extractPresetOrder(raw: string): number {
+  try {
+    const filled = raw.replace(/\{\{PERFORMER_IMAGE\}\}/g, "placeholder");
+    const parsed = JSON5.parse(filled) as { preset?: { order?: number } };
+    return parsed.preset?.order ?? 50;
+  } catch {
+    return 50;
+  }
+}
+
+function sortedPresetItems<T extends { order: number; type: PresetType }>(items: T[]): T[] {
+  return [...items].sort((a, b) => a.order - b.order || a.type.localeCompare(b.type));
+}
+
 /** Available preset types paired with their `# Preset:` descriptions, for menus. */
 export async function presetDescriptions(): Promise<{ type: PresetType; description: string }[]> {
-  return Promise.all(
-    PRESET_TYPES.map(async (type) => ({ type, description: extractPresetDescription(await loadPresetTemplate(type)) })),
+  const items = await Promise.all(
+    PRESET_TYPES.map(async (type) => {
+      const raw = await loadPresetTemplate(type);
+      return { type, description: extractPresetDescription(raw), order: extractPresetOrder(raw) };
+    }),
   );
+  return sortedPresetItems(items).map(({ type, description }) => ({ type, description }));
 }
 
 /** Print a table of available preset types and their descriptions. */
 export async function listPresets(): Promise<void> {
-  const col = PRESET_TYPES.reduce((max, t) => Math.max(max, t.length), 0);
+  const items = await Promise.all(
+    PRESET_TYPES.map(async (type) => {
+      const raw = await loadPresetTemplate(type);
+      return { type, description: extractPresetDescription(raw), order: extractPresetOrder(raw) };
+    }),
+  );
+  const sorted = sortedPresetItems(items);
+  const col = sorted.reduce((max, { type }) => Math.max(max, type.length), 0);
   console.log(`\nAvailable presets:\n`);
-  for (const type of PRESET_TYPES) {
-    const raw = await loadPresetTemplate(type);
-    const desc = extractPresetDescription(raw);
-    console.log(`  ${type.padEnd(col)}  ${desc}`);
+  for (const { type, description } of sorted) {
+    console.log(`  ${type.padEnd(col)}  ${description}`);
   }
   console.log();
 }
@@ -149,7 +173,9 @@ async function loadPresetTemplate(type: PresetType): Promise<string> {
  */
 function applyPresetParams(template: string, image: string): FitDefinition {
   const filled = template.replace(/\{\{PERFORMER_IMAGE\}\}/g, image);
-  return JSON5.parse(filled) as FitDefinition;
+  const definition = JSON5.parse(filled) as FitDefinition & { preset?: unknown };
+  delete definition.preset;
+  return definition;
 }
 
 export interface GeneratePresetArgs {
