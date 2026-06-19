@@ -986,10 +986,38 @@ interface TeardownInputs {
 }
 
 /**
+ * Tear down just an execution group's own cluster and performers (not the box):
+ * stop its performers and remove a cluster it allocated. Used when the box is shared
+ * with later execution groups from the same definition instance, so the instance is
+ * kept up while this group's per-group resources are cleaned away.
+ */
+async function disposeGroupClusterAndPerformers(
+  execution: FitExecutionContext | undefined,
+  clusterState: ResumeClusterState | undefined,
+  performers: readonly RunningPerformer[],
+  cbcollect = false,
+): Promise<void> {
+  if (!execution) {
+    return;
+  }
+  for (const performer of performers) {
+    await stopManagedPerformer(execution, performer);
+  }
+  popLogContext("performer", "run");
+  if (clusterState?.allocated && clusterState.clusterId && clusterState.cbdinoclusterCommand) {
+    if (clusterState.logsDir && cbcollect) {
+      await collectClusterLogs(clusterState.cbdinoclusterCommand, clusterState.clusterId, clusterState.logsDir, execution);
+    }
+    await removeCluster(clusterState.cbdinoclusterCommand, clusterState.clusterId, execution);
+    popLogContext("cluster");
+  }
+}
+
+/**
  * Tear down a single execution group's resources without prompting: stop its performers,
  * remove a cluster it allocated, and terminate an instance fit-cli provisioned for
- * it. Used at the end of an execution group that completed (or was abandoned) and isn't the
- * one we might leave up for debugging.
+ * it. Used at the end of the last execution group sharing a box (when it isn't the
+ * one we might leave up for debugging).
  */
 async function disposeCycleResources(
   execution: FitExecutionContext | undefined,
@@ -998,19 +1026,7 @@ async function disposeCycleResources(
   performers: readonly RunningPerformer[],
   cbcollect = false,
 ): Promise<void> {
-  if (execution) {
-    for (const performer of performers) {
-      await stopManagedPerformer(execution, performer);
-    }
-    popLogContext("performer", "run");
-    if (clusterState?.allocated && clusterState.clusterId && clusterState.cbdinoclusterCommand) {
-      if (clusterState.logsDir && cbcollect) {
-        await collectClusterLogs(clusterState.cbdinoclusterCommand, clusterState.clusterId, clusterState.logsDir, execution);
-      }
-      await removeCluster(clusterState.cbdinoclusterCommand, clusterState.clusterId, execution);
-      popLogContext("cluster");
-    }
-  }
+  await disposeGroupClusterAndPerformers(execution, clusterState, performers, cbcollect);
   if (teardown.terminate) {
     console.log(`\nTerminating instance ${teardown.instanceId ?? ""}...`);
     await teardown.terminate();
@@ -1435,8 +1451,15 @@ export async function runFromDefinition(
   // The "active" set tracks the cycle currently up so the outer finally tears down
   // (or offers to leave up) the right instance/cluster/performers. Completed,
   // non-final cycles dispose of their own resources inside the loop.
+  //
+  // Execution groups from the same definition instance share one box (same
+  // path.instanceIndex): we provision/reconnect for the first such group and reuse
+  // it for the rest, tearing it down only once the last group on it is done. While a
+  // box is shared, activeExecution/activeTeardown persist across cycles;
+  // currentBoxInstanceIndex says which definition instance that box belongs to.
   let activeExecution: FitExecutionContext | undefined;
   let activeTeardown: ExecutionTargetTeardown = { kind: "local" };
+  let currentBoxInstanceIndex: number | undefined;
   let activeCycleIndex = startCycleIndex;
   let activeIterationIndex = startIterationIndex;
   let activeResumePath: DefinitionRunPath | undefined = expectedResumePath;
@@ -1464,36 +1487,53 @@ export async function runFromDefinition(
       console.log(`  Execution: ${describeExecutionOverride(executionOverride, group.instance.kind)}`);
       console.log(`  Cluster: ${clusterLabel(group)}`);
 
-      // Acquire this cycle's execution target: reconnect the resumed instance for
-      // the start cycle, otherwise provision (or run locally) per the definition.
-      const isResumeStartCycle = savedState !== undefined && cycleIndex === startCycleIndex;
-      const targetOutcome = isResumeStartCycle
-        ? await reconnectExecutionTarget(savedState.target)
-        : await resolveExecutionGroupTarget(group.instance, executionOverride, cycleIndex, group.type, isInteractiveRun());
-      artifacts.push(...targetOutcome.artifacts);
-      instanceDetails.push(...targetOutcome.details);
-      if (!targetOutcome.ready) {
-        fitCliError({ classification: "FatalToInstance" }, `\n✗ Could not acquire an execution target for execution group ${cycleIndex + 1}; skipping it.`);
-        tracker.record("FatalToInstance", `Could not acquire an execution target for execution group ${cycleIndex + 1}`, failureContextFromPath(group.path));
-        globalIterationIndex += group.runs.length;
-        continue;
-      }
-      const cycleTeardown = targetOutcome.teardown;
-      activeTeardown = cycleTeardown;
-      setLogContext({ env: instanceLabel(group.path, cycleTeardown.kind === "remote" ? "aws" : "localhost") });
-      if (cycleTeardown.kind === "remote" && cycleTeardown.address) {
-        printResumeHint("after-instance-creation", definitionCopyPath, group.path, false);
-      }
+      // Acquire this cycle's execution target. Execution groups from the same
+      // definition instance share one box: reuse the box (and its prepared
+      // workspace) when the previous group belonged to the same instanceIndex;
+      // otherwise reconnect the resumed instance for the start cycle, or provision
+      // (or run locally) a fresh one per the definition.
+      const reuseBox =
+        currentBoxInstanceIndex === group.path.instanceIndex && activeExecution !== undefined;
+      let cycleTeardown: ExecutionTargetTeardown;
+      let execution: FitExecutionContext;
+      if (reuseBox) {
+        cycleTeardown = activeTeardown;
+        execution = activeExecution!;
+        console.log(
+          `  Instance: reusing the box from the previous execution group (definition instance ${group.path.instanceIndex + 1}).`,
+        );
+        setLogContext({ env: instanceLabel(group.path, cycleTeardown.kind === "remote" ? "aws" : "localhost") });
+      } else {
+        const isResumeStartCycle = savedState !== undefined && cycleIndex === startCycleIndex;
+        const targetOutcome = isResumeStartCycle
+          ? await reconnectExecutionTarget(savedState.target)
+          : await resolveExecutionGroupTarget(group.instance, executionOverride, cycleIndex, group.type, isInteractiveRun());
+        artifacts.push(...targetOutcome.artifacts);
+        instanceDetails.push(...targetOutcome.details);
+        if (!targetOutcome.ready) {
+          fitCliError({ classification: "FatalToInstance" }, `\n✗ Could not acquire an execution target for execution group ${cycleIndex + 1}; skipping it.`);
+          tracker.record("FatalToInstance", `Could not acquire an execution target for execution group ${cycleIndex + 1}`, failureContextFromPath(group.path));
+          globalIterationIndex += group.runs.length;
+          continue;
+        }
+        cycleTeardown = targetOutcome.teardown;
+        activeTeardown = cycleTeardown;
+        setLogContext({ env: instanceLabel(group.path, cycleTeardown.kind === "remote" ? "aws" : "localhost") });
+        if (cycleTeardown.kind === "remote" && cycleTeardown.address) {
+          printResumeHint("after-instance-creation", definitionCopyPath, group.path, false);
+        }
 
-      const execution = await createFitExecutionContext(targetOutcome.target, rootDir, group.runs[0].sdk, {
-        skipRemotePreparation: isResumeStartCycle && !phases.prepareRemote,
-        instanceIndex: group.path.instanceIndex,
-      });
-      activeExecution = execution;
-      artifacts.push(...execution.artifacts);
-      instanceDetails.push(...execution.details);
-      if (phases.prepareRemote && cycleTeardown.kind === "remote" && cycleTeardown.address) {
-        printResumeHint("after-remote-preparation", definitionCopyPath, group.path, false);
+        execution = await createFitExecutionContext(targetOutcome.target, rootDir, group.runs[0].sdk, {
+          skipRemotePreparation: isResumeStartCycle && !phases.prepareRemote,
+          instanceIndex: group.path.instanceIndex,
+        });
+        activeExecution = execution;
+        currentBoxInstanceIndex = group.path.instanceIndex;
+        artifacts.push(...execution.artifacts);
+        instanceDetails.push(...execution.details);
+        if (phases.prepareRemote && cycleTeardown.kind === "remote" && cycleTeardown.address) {
+          printResumeHint("after-remote-preparation", definitionCopyPath, group.path, false);
+        }
       }
 
       // This cycle's situational iterations may stream to the hosted DB; if it runs
@@ -1662,9 +1702,15 @@ export async function runFromDefinition(
             break;
           }
 
+          // Does the next group share this box (same definition instance)? If so we
+          // keep the box up and clean only this group's cluster/performers.
+          const nextGroupSharesBox =
+            executionGroups[cycleIndex + 1]?.path.instanceIndex === group.path.instanceIndex;
           const continueToNextCycle = await confirm({
             promptId: "run-from-definition.fatal-to-cycle.continue",
-            message: "Continue to the next execution group? (this instance and its resources are cleaned up first)",
+            message: nextGroupSharesBox
+              ? "Continue to the next execution group? (this group's cluster and performers are cleaned up first; the shared instance is kept)"
+              : "Continue to the next execution group? (this instance and its resources are cleaned up first)",
             default: true,
           });
 
@@ -1672,14 +1718,23 @@ export async function runFromDefinition(
             break;
           }
 
-          // Continuing: this cycle owns its own instance, so clean it (and the
-          // cluster/performers) up before the next cycle stands up its own.
-          await disposeCycleResources(execution, cycleTeardown, clusterState, cyclePerformers, cbcollect);
-          activeExecution = undefined;
-          activeTeardown = { kind: "local" };
-          activeClusterState = undefined;
-          activePerformers = [];
-          activePerformerStates = [];
+          if (nextGroupSharesBox) {
+            // The next group reuses this box: clean just this group's cluster and
+            // performers, leaving the instance up for it.
+            await disposeGroupClusterAndPerformers(execution, clusterState, cyclePerformers, cbcollect);
+            activeClusterState = undefined;
+            activePerformers = [];
+            activePerformerStates = [];
+          } else {
+            // The next group stands up its own box: tear this whole box down.
+            await disposeCycleResources(execution, cycleTeardown, clusterState, cyclePerformers, cbcollect);
+            activeExecution = undefined;
+            activeTeardown = { kind: "local" };
+            currentBoxInstanceIndex = undefined;
+            activeClusterState = undefined;
+            activePerformers = [];
+            activePerformerStates = [];
+          }
           clearLogContext();
           continue;
         }
@@ -1687,15 +1742,30 @@ export async function runFromDefinition(
       }
 
       const isLastCycle = cycleIndex === executionGroups.length - 1;
+      // The last group sharing this box (the next group, if any, runs on a fresh box).
+      const isLastGroupOnBox =
+        isLastCycle ||
+        executionGroups[cycleIndex + 1]?.path.instanceIndex !== group.path.instanceIndex;
       if (isLastCycle) {
+        // Leave the box and this last group's cluster/performers as the active set so
+        // the outer teardown can offer to leave everything up for debugging.
         activeClusterState = clusterState;
         activePerformers = cyclePerformers;
         activePerformerStates = cyclePerformerStates;
-      } else {
-        // A completed, non-final cycle: clean up its own instance/cluster/performers.
+      } else if (isLastGroupOnBox) {
+        // Last group on this box, but more groups follow on a fresh box: tear the
+        // whole box down — its cluster, performers and the instance itself.
         await disposeCycleResources(execution, cycleTeardown, clusterState, cyclePerformers, cbcollect);
         activeExecution = undefined;
         activeTeardown = { kind: "local" };
+        currentBoxInstanceIndex = undefined;
+        activeClusterState = undefined;
+        activePerformers = [];
+        activePerformerStates = [];
+      } else {
+        // More groups share this box: clean up just this group's cluster and
+        // performers, keeping the box up for the next group.
+        await disposeGroupClusterAndPerformers(execution, clusterState, cyclePerformers, cbcollect);
         activeClusterState = undefined;
         activePerformers = [];
         activePerformerStates = [];
