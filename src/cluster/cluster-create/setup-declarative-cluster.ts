@@ -402,13 +402,34 @@ async function connstrFor(
  * Resolve a cluster id's connection string into a {@link SelectedCluster}. For a
  * CNG cluster the classic string drives the test-driver (admin) while a second
  * `--couchbase2` string drives the performer, so both are fetched and combined.
+ *
+ * For CAO/OpenShift CNG clusters `cbdinocluster connstr` does not return
+ * endpoints; we use the `caoHosts` parsed from the allocate output instead.
  */
 async function selectedClusterFor(
   cbdinocluster: string,
   id: string,
   execution: ClusterCommandExecutor,
   cng = false,
+  caoHosts?: { uiHost: string; cngHost: string },
 ): Promise<SelectedCluster | undefined> {
+  // CAO/OpenShift clusters: build connstrs from the parsed route hostnames
+  // instead of calling `cbdinocluster connstr` (which returns "no endpoint available").
+  if (cng && caoHosts) {
+    // OpenShift TLS-passthrough routes expose external port 443 (not the native Couchbase
+    // management port 18091).  Include :443 so the SDK bootstraps on the correct port.
+    const managementConnstr = `couchbases://${caoHosts.uiHost}:443`;
+    // cngHost comes from `cbdinocluster connstr --couchbase2` with port already included.
+    const performerConnectionString = `couchbase2://${caoHosts.cngHost}`;
+    console.log(`→ setup-cluster: CNG cluster ${id} management at ${managementConnstr}`);
+    console.log(`→ setup-cluster: CNG performer connects over ${performerConnectionString}`);
+    const cluster = buildSelectedClusterFromConnstr(managementConnstr);
+    if (!cluster) {
+      return undefined;
+    }
+    return { ...cluster, cng: { performerConnectionString, tls: { insecure: true } } };
+  }
+
   const connectionString = await connstrFor(cbdinocluster, id, execution, false);
   if (!connectionString) {
     return undefined;
@@ -453,6 +474,43 @@ export async function removeCluster(
   }
 }
 
+/**
+ * Create the default bucket on a CAO/OpenShift CNG cluster via the management REST API.
+ *
+ * CAO clusters use `buckets.managed: false` so no bucket is auto-created, and there is no
+ * external KV port for the test-driver's classic SDK to use.  Retries for up to 120 s to
+ * survive the "Cannot create bucket during rebalance" window after the cluster first comes up.
+ */
+async function createCaoDefaultBucket(
+  uiHost: string,
+  username: string,
+  password: string,
+  execution: ClusterCommandExecutor,
+): Promise<void> {
+  const bucketUrl = `https://${uiHost}:443/pools/default/buckets`;
+  console.log(`→ setup-cluster: creating default bucket via ${bucketUrl}`);
+  const createScript = [
+    "set -e",
+    "deadline=$(($(date +%s) + 120))",
+    "while true; do",
+    "  tmpout=$(mktemp)",
+    // ramQuota=100 matches the GHA workflow — small enough to leave headroom for test buckets.
+    `  status=$(curl --silent --show-error --insecure -w '%{http_code}' -o "$tmpout" -X POST '${bucketUrl}' -u '${username}:${password}' -d name=default -d bucketType=couchbase -d ramQuota=100 2>&1 || echo 000)`,
+    "  body=$(cat \"$tmpout\"); rm -f \"$tmpout\"",
+    '  if [ "$status" = "202" ]; then echo "  ✓ Default bucket created (HTTP $status)"; exit 0; fi',
+    '  if [ "$status" = "400" ] && echo "$body" | grep -q "already exists"; then echo "  ✓ Default bucket already exists"; exit 0; fi',
+    '  if [ $(date +%s) -ge $deadline ]; then echo "  ✗ Timed out creating default bucket (HTTP $status): $body" >&2; exit 1; fi',
+    '  echo "  Management API not ready yet (HTTP $status, fit-cli is waiting not hung): $body"',
+    "  sleep 5",
+    "done",
+  ].join("\n");
+  try {
+    await execution.run("sh", ["-lc", createScript], undefined, { display: "create default bucket" });
+  } catch (err) {
+    console.error(`  ✗ Failed to create default bucket: ${(err as Error).message}`);
+  }
+}
+
 /** Allocate a fresh cluster from the resolved plan and resolve it for the run. */
 async function allocate(
   cbdinocluster: string,
@@ -487,7 +545,12 @@ async function allocate(
     await enableIngresses(cbdinocluster, allocated.clusterId, execution);
   }
 
-  const cluster = await selectedClusterFor(cbdinocluster, allocated.clusterId, execution, cng);
+  const cluster = await selectedClusterFor(cbdinocluster, allocated.clusterId, execution, cng, allocated.caoHosts);
+
+  if (cng && allocated.caoHosts) {
+    const { username, password } = cluster?.credentials ?? { username: "Administrator", password: "password" };
+    await createCaoDefaultBucket(allocated.caoHosts.uiHost, username, password, execution);
+  }
 
   return {
     ...(cluster ? { cluster } : {}),

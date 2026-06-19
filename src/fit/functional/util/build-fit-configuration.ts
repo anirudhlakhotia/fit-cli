@@ -36,26 +36,33 @@ export function firstHostname(defaultHostname: string): string {
  * entry test-driver connects to); it defaults to {@link DEFAULT_PERFORMER_PORT}.
  */
 /**
- * The clusterAccess for a CNG / Protostellar cluster: the test-driver keeps a
- * classic couchbase:// `driver` connection for admin while the performer connects
- * to the gateway over couchbase2://. The FIT proxy doesn't support couchbase2 yet,
- * so it's null. Mirrors FITConfiguration.couchbase2.example.json.
+ * The clusterAccess for a CNG / OpenShift cluster.
+ *
+ * On OpenShift (ROSA), Couchbase is exposed via TLS-passthrough routes on port 443 only.
+ * There is no external KV (memcached) port — only HTTPS management and the couchbase2
+ * gateway.  The driver therefore cannot use a classic couchbase:// connection (KV bootstrap
+ * would stall), so we use the flat `connectionString: couchbase2://…` structure matching
+ * the GHA workflow (fit-app-deployment PR #123).  The test-driver uses couchbase2 directly
+ * and skips bucket creation (the bucket is pre-created by cbdinocluster / the cluster spec).
+ *
+ * The REST field uses the management UI hostname (bare, no port) + explicit port 443 so the
+ * test-driver's HTTP client reaches the management API on the correct port.
  */
 function cngClusterAccess(cluster: SelectedCluster & { cng: NonNullable<SelectedCluster["cng"]> }): PieceData {
+  const firstHost = firstHostname(cluster.defaultHostname);
+  // Strip any :port suffix — rest.hostname must be a bare hostname; the port goes in rest.port.
+  const restHostname = firstHost.replace(/:\d+$/, "");
+  // Extract the explicit port from defaultHostname to use as rest.port (defaults to 18091 for
+  // couchbases:// but OpenShift routes expose on 443).
+  const portMatch = /:\d+$/.exec(firstHost);
+  const restPort = portMatch ? parseInt(portMatch[0].slice(1), 10) : undefined;
   return {
     defaultHostname: cluster.defaultHostname,
-    driver: {
-      "//": "The driver connects with classic, which lets it create users, inspect cluster configs, etc.",
-      connectionString: `${cluster.scheme}://\${defaultHostname}`,
-      tls: cluster.tls,
-    },
-    performer: {
-      connectionString: cluster.cng.performerConnectionString,
-      tls: cluster.cng.tls,
-    },
+    connectionString: cluster.cng.performerConnectionString,
+    tls: cluster.cng.tls,
     username: cluster.credentials.username,
     password: cluster.credentials.password,
-    rest: { hostname: firstHostname(cluster.defaultHostname), resolveDnsSrv: false },
+    rest: { hostname: restHostname, resolveDnsSrv: false, ...(restPort !== undefined ? { port: restPort } : {}) },
     ssh: null,
     "//": "The FIT proxy does not yet support couchbase2.",
     proxy: null,
@@ -74,6 +81,9 @@ export function generatedFitConfigurationPiece(
         clusterAccess: cngClusterAccess({ ...cluster, cng: cluster.cng }),
         performerPorts: [performerPort],
         excludeTests: ["situational"],
+        // The bucket is pre-created in the CouchbaseCluster spec; the driver must not try to
+        // create it via classic management (there is no external KV or mgmt port on OpenShift).
+        skipBucketCreation: true,
       },
     };
   }
@@ -126,13 +136,18 @@ export function generatedFitConfigurationPiece(
 }
 
 export function runtimeFitConfigurationPiece(cluster: SelectedCluster): ConfigPiece {
+  const firstHost = firstHostname(cluster.defaultHostname);
+  const restHostname = firstHost.replace(/:\d+$/, "");
+  const portMatch = /:\d+$/.exec(firstHost);
+  const restPort = portMatch ? parseInt(portMatch[0].slice(1), 10) : undefined;
   return {
     label: "fit-cli runtime cluster fields",
     data: {
       clusterAccess: {
         defaultHostname: cluster.defaultHostname,
         rest: {
-          hostname: firstHostname(cluster.defaultHostname),
+          hostname: restHostname,
+          ...(restPort !== undefined ? { port: restPort } : {}),
         },
       },
     },

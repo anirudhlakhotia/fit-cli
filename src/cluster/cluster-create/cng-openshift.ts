@@ -155,10 +155,27 @@ export async function installOcRemote(
  *
  * Best-effort: every step is guarded so a clean cluster is a no-op and a missing
  * CRD/namespace doesn't abort the run. Pure logic.
+ *
+ * grahamp: This was produced during a marathon LLM iteration to get stable testing against OpenShift.
  */
 export function openshiftPreflightScript(): string {
   return [
     "set -u",
+    // Remove cbdc2-<cluster-id> namespaces stuck in Terminating from previous runs.
+    // Only Terminating namespaces are targeted — an Active namespace might belong to
+    // another concurrent fit-cli run on the shared ROSA cluster.
+    // We skip cbdc2-cao-admission: it holds the admission controller whose CA bundle is
+    // embedded cluster-wide; deleting it causes "x509: certificate signed by unknown authority".
+    'echo "→ pre-flight: deleting cbdc2-* cluster namespaces stuck in Terminating"',
+    "term_ns=$(oc get ns -o jsonpath='{range .items[*]}{.metadata.name} {.status.phase}{\"\\n\"}{end}' 2>/dev/null | awk '$2==\"Terminating\" && $1 ~ /^cbdc2-/ && $1 != \"cbdc2-cao-admission\" {print \"namespace/\" $1}' || true)",
+    'if [ -n "$term_ns" ]; then',
+    '  echo "$term_ns" | while read ns; do',
+    '    echo "  deleting stuck $ns"',
+    "    oc delete \"$ns\" --wait=false 2>/dev/null || true",
+    "  done",
+    "else",
+    '  echo "  no cbdc2-* namespaces stuck in Terminating"',
+    "fi",
     'echo "→ pre-flight: clearing Couchbase CRs stuck in Terminating"',
     // Strip finalizers from any couchbase.com custom resource across all namespaces
     // so a half-deleted cluster from a previous run can finish draining.
@@ -170,6 +187,17 @@ export function openshiftPreflightScript(): string {
     '    echo "  patching $kind $ns to drop finalizers"',
     '    oc patch "$kind" "$name" -n "$namespace" --type=merge -p \'{"metadata":{"finalizers":[]}}\' 2>/dev/null || true',
     "  done",
+    "done",
+    // The Kubernetes GC may re-add the foregroundDeletion finalizer to CRs (because owned
+    // objects still exist), preventing the CRD from finishing its deletion.  Patching the
+    // CRD's own customresourcecleanup finalizer out lets the CRD complete deletion
+    // immediately — install-crds can then re-create it cleanly.
+    'echo "→ pre-flight: clearing Couchbase CRDs stuck in Terminating"',
+    "for crd in $(oc get crd -o name 2>/dev/null | grep 'couchbase.com' || true); do",
+    '  dt=$(oc get "$crd" -o jsonpath=\'{.metadata.deletionTimestamp}\' 2>/dev/null || true)',
+    '  [ -n "$dt" ] || continue',
+    '  echo "  patching $crd (deletionTimestamp: $dt) to drop CRD finalizers"',
+    '  oc patch "$crd" --type=merge -p \'{"metadata":{"finalizers":[]}}\' 2>/dev/null || true',
     "done",
     'echo "→ pre-flight: clearing namespaces stuck in Terminating"',
     "for ns in $(oc get ns -o jsonpath='{range .items[?(@.status.phase==\"Terminating\")]}{.metadata.name}{\"\\n\"}{end}' 2>/dev/null || true); do",

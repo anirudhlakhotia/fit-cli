@@ -294,15 +294,32 @@ function runLabelParts(
   instanceKind: "aws" | "localhost",
   clusterMode: RunLabelParts["clusterMode"],
   run: ResolvedExecutionRun,
+  clusterVersion?: string,
 ): RunLabelParts {
   return {
     instanceKind,
     ...(clusterMode ? { clusterMode } : {}),
+    ...(clusterVersion ? { clusterVersion } : {}),
     sdkValue: run.sdk.value,
     ...(run.performerVersion ? { performerVersion: run.performerVersion } : {}),
     type: run.type,
     ...(run.testSelection.presets ? { presets: run.testSelection.presets } : {}),
   };
+}
+
+/**
+ * The Couchbase Server version(s) of a functional group's allocated cbdino
+ * cluster, joined with `+` if its node groups differ. Undefined unless we're
+ * allocating via cbdinocluster (existing/connection clusters carry no version we
+ * know), so labels fall back to the `cbdino1` index form.
+ */
+function clusterVersionLabel(group: ResolvedExecutionGroup): string | undefined {
+  if (group.type !== "functional" || group.clusterMode !== "cbdinocluster") {
+    return undefined;
+  }
+  const versions = group.cbdinocluster?.config.nodes.map((node) => node.version) ?? [];
+  const distinct = [...new Set(versions)];
+  return distinct.length ? distinct.join("+") : undefined;
 }
 
 /** Print what an iteration resolved to, so a CI log shows the run's inputs. */
@@ -324,7 +341,12 @@ function announce(
     : testSelection.mavenTestSelector
       ? `${testSelection.selectedTests.length} test(s): ${testSelection.mavenTestSelector}`
       : "all tests";
-  const parts = runLabelParts(group.instance.kind, group.type === "functional" ? group.clusterMode : undefined, run);
+  const parts = runLabelParts(
+    group.instance.kind,
+    group.type === "functional" ? group.clusterMode : undefined,
+    run,
+    clusterVersionLabel(group),
+  );
   console.log(`\n=== ${formatRunLabel(run.path, parts)} (${group.instance.kind}, ${run.type}) ===`);
   console.log(`  SDK:     ${run.sdk.name}`);
   console.log(`  Tests:   ${testsLabel}`);
@@ -510,6 +532,7 @@ export async function runTests(
   run: ResolvedFunctionalExecutionRun,
   performer: RunningPerformer | undefined,
   dependencies: RunTestsDependencies = {},
+  clusterVersion?: string,
 ): Promise<RunOutput> {
   if (!run.cluster) {
     fitCliWarn(missingClusterMessage(clusterMode));
@@ -559,7 +582,7 @@ export async function runTests(
   artifacts.push(...testRun.artifacts);
   const pathLabel = formatRunLabel(
     run.path,
-    runLabelParts(execution.kind === "remote" ? "aws" : "localhost", clusterMode, run),
+    runLabelParts(execution.kind === "remote" ? "aws" : "localhost", clusterMode, run, clusterVersion),
   );
   const iterationLabel = (label: string) => `Run ${run.path.runIndex ?? 0} ${label}`;
   details.push(
@@ -791,6 +814,7 @@ async function runIteration(
   globalIterationIndex: number,
   definitionPath: string,
   recordResult: RecordRunResult,
+  functionalClusterVersion?: string,
 ): Promise<{ output: RunOutput; performer?: RunningPerformer }> {
   const artifacts: Artifact[] = [];
   const details: Detail[] = [];
@@ -811,7 +835,7 @@ async function runIteration(
     output = await runSituationalTests(execution, run, { recordResult });
   } else {
     const clusterMode: ResolvedFunctionalExecutionGroup["clusterMode"] = functionalClusterMode ?? "useExisting";
-    output = await runTests(execution, clusterMode, run, performer, { recordResult });
+    output = await runTests(execution, clusterMode, run, performer, { recordResult }, functionalClusterVersion);
   }
   artifacts.push(...output.artifacts);
   details.push(...output.details);
@@ -1516,7 +1540,9 @@ export async function runFromDefinition(
             }
           }
           if (clusterState) {
-            setLogContext({ cluster: clusterSegmentLabel(activeCycle.path, activeCycle.clusterMode) });
+            setLogContext({
+              cluster: clusterSegmentLabel(activeCycle.path, activeCycle.clusterMode, clusterVersionLabel(activeCycle)),
+            });
           }
         } else {
           if (execution.kind === "remote") {
@@ -1572,6 +1598,7 @@ export async function runFromDefinition(
               globalIterationIndex,
               definitionPath,
               recordResult,
+              clusterVersionLabel(activeCycle),
             );
             artifacts.push(...output.artifacts);
             details.push(...output.details);
