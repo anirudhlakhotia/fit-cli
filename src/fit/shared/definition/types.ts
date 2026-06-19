@@ -118,7 +118,17 @@ export interface TestsSection {
   presets?: TestPreset[];
   packages?: string[];
   classes?: string[];
+  /**
+   * Replaces the built-in default excluded Maven groups outright. Mutually
+   * exclusive with `addToDefaultExcludedGroups`.
+   */
   excludedGroups?: string[];
+  /**
+   * Adds these groups on top of the built-in defaults (the common case when a
+   * preset just needs one extra exclusion). Mutually exclusive with
+   * `excludedGroups`.
+   */
+  addToDefaultExcludedGroups?: string[];
   maven?: MavenOptions;
 }
 

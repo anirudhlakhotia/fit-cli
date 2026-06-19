@@ -14,7 +14,9 @@ import {
 import { type Sdk } from "../../../util/sdk/sdks.js";
 import { parsePerformerImage } from "../../performers/util/performer-image.js";
 import {
+  DEFAULT_EXCLUDED_GROUPS,
   DEFAULT_MAVEN_TEST_ARGS,
+  SITUATIONAL_DEFAULT_EXCLUDED_GROUPS,
   SITUATIONAL_MAVEN_GROUPS_ARG,
   SITUATIONAL_MAVEN_TEST_ARGS,
 } from "../run-test-driver/run-test-driver.js";
@@ -250,17 +252,33 @@ function resolveMavenSuffix(tests: TestsSection): string[] {
   return extra;
 }
 
+/**
+ * The final excluded-groups list for a run, or undefined to keep the built-in
+ * default args. `excludedGroups` replaces the defaults outright;
+ * `addToDefaultExcludedGroups` appends to them (the common case — a preset just
+ * needs one extra exclusion on top of the defaults). The two are mutually
+ * exclusive (enforced at parse time).
+ */
+function resolveExcludedGroups(tests: TestsSection, defaults: readonly string[]): string[] | undefined {
+  if (tests.addToDefaultExcludedGroups !== undefined) {
+    return [...defaults, ...tests.addToDefaultExcludedGroups];
+  }
+  return tests.excludedGroups;
+}
+
 export function resolveMavenArgs(tests: TestsSection): string[] {
-  const base = tests.excludedGroups === undefined
+  const excluded = resolveExcludedGroups(tests, DEFAULT_EXCLUDED_GROUPS);
+  const base = excluded === undefined
     ? [...DEFAULT_MAVEN_TEST_ARGS]
-    : [`-DexcludedGroups=${tests.excludedGroups.join(",")}`];
+    : [`-DexcludedGroups=${excluded.join(",")}`];
   return [...base, ...resolveMavenSuffix(tests)];
 }
 
 export function resolveSituationalMavenArgs(tests: TestsSection): string[] {
-  const base = tests.excludedGroups === undefined
+  const excluded = resolveExcludedGroups(tests, SITUATIONAL_DEFAULT_EXCLUDED_GROUPS);
+  const base = excluded === undefined
     ? [...SITUATIONAL_MAVEN_TEST_ARGS]
-    : [SITUATIONAL_MAVEN_GROUPS_ARG, `-DexcludedGroups=${tests.excludedGroups.join(",")}`];
+    : [SITUATIONAL_MAVEN_GROUPS_ARG, `-DexcludedGroups=${excluded.join(",")}`];
   return [...base, ...resolveMavenSuffix(tests)];
 }
 

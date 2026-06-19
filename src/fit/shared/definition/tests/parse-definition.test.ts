@@ -44,6 +44,30 @@ test("parses a minimal nested functional definition", () => {
   assert.equal(def.instances[0]?.clusters[0]?.sessions[0]?.runs[0]?.type, "functional");
 });
 
+test("parses addToDefaultExcludedGroups on a functional run", () => {
+  const def = parseDefinition(
+    FUNCTIONAL.replace("presets: [all]", "presets: [all]\n                  addToDefaultExcludedGroups: [protostellarWillWorkLater]"),
+  );
+  assert.deepEqual(
+    def.instances[0]?.clusters[0]?.sessions[0]?.runs[0] &&
+      "tests" in def.instances[0].clusters[0].sessions[0].runs[0]
+      ? def.instances[0].clusters[0].sessions[0].runs[0].tests.addToDefaultExcludedGroups
+      : undefined,
+    ["protostellarWillWorkLater"],
+  );
+});
+
+test("rejects setting both excludedGroups and addToDefaultExcludedGroups", () => {
+  const def = FUNCTIONAL.replace(
+    "presets: [all]",
+    "presets: [all]\n                  excludedGroups: [openshift]\n                  addToDefaultExcludedGroups: [protostellarWillWorkLater]",
+  );
+  assert.throws(
+    () => parseDefinition(def),
+    (err: unknown) => err instanceof InvalidDefinitionError && /mutually exclusive/.test(err.message),
+  );
+});
+
 test("rejects a performer image for an SDK without prebuilt images", () => {
   const def = FUNCTIONAL.replace("image: java-fit-performer:main", "image: python-fit-performer:main");
   assert.throws(() => parseDefinition(def), /publish prebuilt performer images/);

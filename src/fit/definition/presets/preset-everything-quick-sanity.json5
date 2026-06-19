@@ -95,13 +95,8 @@
                   tests: {
                     classes: ['com.couchbase.client.kv.SanityTest'],
                     // protostellarWillWorkLater is a known-broken Maven group on CNG;
-                    // the rest mirror the default CNG exclusions.
-                    excludedGroups: [
-                      'situational',
-                      'openshift',
-                      'syncgateway',
-                      'protostellarWillWorkLater',
-                    ],
+                    // added on top of the default functional exclusions.
+                    addToDefaultExcludedGroups: ['protostellarWillWorkLater'],
                   },
                 },
               ],

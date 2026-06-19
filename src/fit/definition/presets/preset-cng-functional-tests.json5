@@ -40,13 +40,8 @@
                   tests: {
                     presets: ['all'],
                     // protostellarWillWorkLater is a known-broken Maven group on CNG;
-                    // the rest mirror the default functional exclusions.
-                    excludedGroups: [
-                      'situational',
-                      'openshift',
-                      'syncgateway',
-                      'protostellarWillWorkLater',
-                    ],
+                    // added on top of the default functional exclusions.
+                    addToDefaultExcludedGroups: ['protostellarWillWorkLater'],
                   },
                 },
               ],

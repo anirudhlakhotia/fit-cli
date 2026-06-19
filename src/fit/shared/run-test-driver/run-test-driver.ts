@@ -20,12 +20,18 @@ import { rootDirFromArgv } from "../../util/root.js";
 import { createLocalFitExecutionContext, type FitExecutionContext } from "../util/remote-fit-run.js";
 import { selectFitTests, type FitTestSelection } from "../select-fit-tests/select-fit-tests.js";
 
+/** The Maven groups excluded by default on a functional run. */
+export const DEFAULT_EXCLUDED_GROUPS = ["situational", "openshift", "syncgateway"] as const;
+
 export const DEFAULT_MAVEN_TEST_ARGS = [
-  "-DexcludedGroups=situational,openshift,syncgateway",
+  `-DexcludedGroups=${DEFAULT_EXCLUDED_GROUPS.join(",")}`,
 ] as const;
 
 /** The `-Dgroups` filter that selects the cbdino-managed situational tests. */
 export const SITUATIONAL_MAVEN_GROUPS_ARG = "-Dgroups=situational,cbDino";
+
+/** The Maven groups excluded by default on a situational run. */
+export const SITUATIONAL_DEFAULT_EXCLUDED_GROUPS = ["openshift", "capella"] as const;
 
 /**
  * The default Maven group filter for situational runs: select the situational +
@@ -35,7 +41,7 @@ export const SITUATIONAL_MAVEN_GROUPS_ARG = "-Dgroups=situational,cbDino";
  */
 export const SITUATIONAL_MAVEN_TEST_ARGS = [
   SITUATIONAL_MAVEN_GROUPS_ARG,
-  "-DexcludedGroups=openshift,capella",
+  `-DexcludedGroups=${SITUATIONAL_DEFAULT_EXCLUDED_GROUPS.join(",")}`,
 ] as const;
 
 export interface TestRunResult extends RunOutput {

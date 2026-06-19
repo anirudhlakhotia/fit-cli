@@ -377,6 +377,15 @@ function validateTestsSection(value: unknown, path: string): TestsSection {
     }
     tests.excludedGroups = record.excludedGroups;
   }
+  if (record.addToDefaultExcludedGroups !== undefined) {
+    if (!isStringArray(record.addToDefaultExcludedGroups)) {
+      throw new InvalidDefinitionError(`"${path}.addToDefaultExcludedGroups" must be a list of strings when present; got ${JSON.stringify(record.addToDefaultExcludedGroups)}`);
+    }
+    if (record.excludedGroups !== undefined) {
+      throw new InvalidDefinitionError(`"${path}.excludedGroups" and "${path}.addToDefaultExcludedGroups" are mutually exclusive; set only one.`);
+    }
+    tests.addToDefaultExcludedGroups = record.addToDefaultExcludedGroups;
+  }
   if (record.maven !== undefined) {
     tests.maven = validateMaven(record.maven, `${path}.maven`);
   }
