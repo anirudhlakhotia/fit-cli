@@ -1,6 +1,7 @@
 // Preset: run all FIT functional tests for a given SDK against a CNG / Protostellar
 // Currently that runs against ROSA OpenShift, but that could change in future
 {
+  preset: { order: 20 },
   version: 1,
   type: 'fit',
   description: 'CNG functional tests',

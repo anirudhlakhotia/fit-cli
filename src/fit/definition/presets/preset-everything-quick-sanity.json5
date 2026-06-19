@@ -1,5 +1,6 @@
 // Preset: does quick sanity testing across all testing axes against a given SDK.
 {
+  preset: { order: 70 },
   version: 1,
   type: 'fit',
   description: 'Quick sanity — operational functional, CNG functional, and situational',

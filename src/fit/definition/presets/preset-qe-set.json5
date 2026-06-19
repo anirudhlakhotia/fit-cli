@@ -1,5 +1,6 @@
 // Preset: This is the set SDKQE-that-was like to run before signing off on a release.
 {
+  preset: { order: 60 },
   version: 1,
   type: 'fit',
   instances: [
