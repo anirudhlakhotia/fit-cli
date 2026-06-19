@@ -30,6 +30,7 @@ export function formatEc2DeletionResponsibilityBanner(
   address?: string,
   otherInstances?: InstanceInfo[],
   context?: InstanceListContext,
+  interactive?: boolean,
 ): string {
   const lines: string[] = [
     `Instance: ${instanceId}${address ? ` (${address})` : ""}`,
@@ -41,11 +42,14 @@ export function formatEc2DeletionResponsibilityBanner(
     if (context.creator) parts.push(`user: ${context.creator}`);
     lines.push(parts.join("  ·  "));
   }
+  const cleanupLine = interactive
+    ? "fit-cli will offer to delete it at the end of the run."
+    : "fit-cli will automatically delete it at the end of the run.";
   lines.push(
     `Console: ${awsConsoleInstancesUrl()}`,
     "",
     "This instance keeps incurring AWS charges until it is terminated.",
-    "fit-cli will offer to delete it at the end of the run.",
+    cleanupLine,
     "If you keep it running, or leave before cleanup, you must delete it yourself.",
     "Terminate it with:",
     `  ${terminateInstanceCommand(instanceId)}`,

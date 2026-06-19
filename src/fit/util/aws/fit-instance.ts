@@ -107,6 +107,8 @@ export interface ProvisionOptions {
   instanceType?: string;
   /** Instance this execution target belongs to; its key and info land under that instance dir. */
   instanceIndex?: number;
+  /** Whether the run is interactive; affects the lifecycle warning message shown to the user. */
+  interactive?: boolean;
 }
 
 /**
@@ -227,7 +229,7 @@ export async function provisionFitInstance(options: ProvisionOptions = {}): Prom
     ];
 
     console.log(`\n✓ EC2 instance ${id} is ready at ${address}${vpcId ? `  (VPC: ${vpcId})` : ""}`);
-    fitCliWarn(`\n${formatEc2DeletionResponsibilityBanner(id, address, existingInstances, { account: creds.identity.account, creator: creatorTag })}\n`);
+    fitCliWarn(`\n${formatEc2DeletionResponsibilityBanner(id, address, existingInstances, { account: creds.identity.account, creator: creatorTag }, options.interactive)}\n`);
     console.log(formatBanner("SSH ACCESS", [
       "Direct (requires key):",
       `  ssh -i ${keyPath} ${FIT_INSTANCE_USER}@${address}`,

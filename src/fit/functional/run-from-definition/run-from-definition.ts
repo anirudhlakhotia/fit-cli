@@ -1436,7 +1436,7 @@ export async function runFromDefinition(
       const isResumeStartCycle = savedState !== undefined && cycleIndex === startCycleIndex;
       const targetOutcome = isResumeStartCycle
         ? await reconnectExecutionTarget(savedState.target)
-        : await resolveExecutionGroupTarget(group.instance, executionOverride, cycleIndex, group.type);
+        : await resolveExecutionGroupTarget(group.instance, executionOverride, cycleIndex, group.type, isInteractiveRun());
       artifacts.push(...targetOutcome.artifacts);
       instanceDetails.push(...targetOutcome.details);
       if (!targetOutcome.ready) {

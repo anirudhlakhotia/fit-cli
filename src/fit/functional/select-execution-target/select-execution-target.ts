@@ -147,6 +147,7 @@ export async function resolveExecutionGroupTarget(
   override: ExecutionOverride,
   executionGroupIndex: number,
   purpose: CloudInstancePurpose,
+  interactive?: boolean,
 ): Promise<ExecutionTargetOutcome> {
   // The run-wide "existing EC2 instance" override: every group runs on the box
   // the user picked up front. They brought it, so cleanup is a no-op.
@@ -183,6 +184,7 @@ export async function resolveExecutionGroupTarget(
     const provisioned = await provisionFitInstance({
       instanceIndex: executionGroupIndex,
       instanceType,
+      interactive,
     });
     const teardown: ExecutionTargetTeardown = {
       kind: "remote",
@@ -244,7 +246,7 @@ export async function selectExecutionTarget(): Promise<ExecutionTargetOutcome> {
     }
 
     try {
-      const instance = await provisionFitInstance();
+      const instance = await provisionFitInstance({ interactive: true });
       const teardown: ExecutionTargetTeardown = {
         kind: "remote",
         instanceId: instance.instanceId,
