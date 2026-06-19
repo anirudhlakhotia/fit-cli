@@ -8,7 +8,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join, dirname, extname, resolve } from "node:path";
-import YAML from "yaml";
+import JSON5 from "json5";
 import { printFileContent } from "../../../util/non-fit/fit-cli-log.js";
 import { resolveOutputFormat } from "../../util/config.js";
 import { analysePerformerImage, performerImageShortName } from "../../performers/util/performer-image.js";
@@ -50,12 +50,12 @@ export async function listPresets(): Promise<void> {
 }
 
 const PRESET_TEMPLATE_FILES: Record<PresetType, string> = {
-  "preset-functional-tests": "preset-functional-tests.yaml",
-  "preset-cng-functional-tests": "preset-cng-functional-tests.yaml",
-  "preset-functional-quick-sanity": "preset-functional-quick-sanity.yaml",
-  "preset-situational-quick-sanity": "preset-situational-quick-sanity.yaml",
-  "preset-qe-set": "preset-qe-set.yaml",
-  "preset-everything-quick-sanity": "preset-everything-quick-sanity.yaml",
+  "preset-functional-tests": "preset-functional-tests.json5",
+  "preset-cng-functional-tests": "preset-cng-functional-tests.json5",
+  "preset-functional-quick-sanity": "preset-functional-quick-sanity.json5",
+  "preset-situational-quick-sanity": "preset-situational-quick-sanity.json5",
+  "preset-qe-set": "preset-qe-set.json5",
+  "preset-everything-quick-sanity": "preset-everything-quick-sanity.json5",
 };
 
 function resolvePresetOutputFormat(outputPath: string | undefined, format: DefinitionFormat | undefined): DefinitionFormat {
@@ -80,37 +80,37 @@ function loadPresetTemplateFromDisk(type: PresetType): string {
 async function loadBundledPresetTemplate(type: PresetType): Promise<string> {
   switch (type) {
     case "preset-functional-tests": {
-      const templateModule = await import("../presets/preset-functional-tests.yaml", {
+      const templateModule = await import("../presets/preset-functional-tests.json5", {
         with: { type: "text" },
       }) as { default: string };
       return templateModule.default;
     }
     case "preset-cng-functional-tests": {
-      const templateModule = await import("../presets/preset-cng-functional-tests.yaml", {
+      const templateModule = await import("../presets/preset-cng-functional-tests.json5", {
         with: { type: "text" },
       }) as { default: string };
       return templateModule.default;
     }
     case "preset-functional-quick-sanity": {
-      const templateModule = await import("../presets/preset-functional-quick-sanity.yaml", {
+      const templateModule = await import("../presets/preset-functional-quick-sanity.json5", {
         with: { type: "text" },
       }) as { default: string };
       return templateModule.default;
     }
     case "preset-situational-quick-sanity": {
-      const templateModule = await import("../presets/preset-situational-quick-sanity.yaml", {
+      const templateModule = await import("../presets/preset-situational-quick-sanity.json5", {
         with: { type: "text" },
       }) as { default: string };
       return templateModule.default;
     }
     case "preset-qe-set": {
-      const templateModule = await import("../presets/preset-qe-set.yaml", {
+      const templateModule = await import("../presets/preset-qe-set.json5", {
         with: { type: "text" },
       }) as { default: string };
       return templateModule.default;
     }
     case "preset-everything-quick-sanity": {
-      const templateModule = await import("../presets/preset-everything-quick-sanity.yaml", {
+      const templateModule = await import("../presets/preset-everything-quick-sanity.json5", {
         with: { type: "text" },
       }) as { default: string };
       return templateModule.default;
@@ -135,7 +135,7 @@ async function loadPresetTemplate(type: PresetType): Promise<string> {
  */
 function applyPresetParams(template: string, image: string): FitDefinition {
   const filled = template.replace(/\{\{PERFORMER_IMAGE\}\}/g, image);
-  return YAML.parse(filled) as FitDefinition;
+  return JSON5.parse(filled) as FitDefinition;
 }
 
 export interface GeneratePresetArgs {

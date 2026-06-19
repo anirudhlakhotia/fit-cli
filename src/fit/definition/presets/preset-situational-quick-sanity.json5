@@ -1,0 +1,76 @@
+// Preset: does quick sanity testing for situational tests against a given SDK.
+{
+  version: 1,
+  type: 'fit',
+  setup: {
+    repos: {
+      'transactions-fit-performer': {
+        // todo remove this later when merged
+        gerritRef: 'refs/changes/02/247102/2',
+      },
+    },
+  },
+  instances: [
+    {
+      aws: {},
+      setup: {
+        cbdinocluster: {
+          init: {
+            // Passed to `cbdinocluster init` on clean environments to set up ~/.cbdinocluster.
+            // On localhost, init is skipped and your existing ~/.cbdinocluster is used as-is.
+            // Edit to taste; fit-cli appends your GitHub credentials at runtime.
+            args: '--auto --aws-region us-west-2 --disable-azure --disable-gcp --disable-k8s --disable-dns --docker-network fit',
+          },
+        },
+        capellaEnvironment: 'dev',
+      },
+      // FIT/SIT creates its own clusters, so none are set up here.
+      clusters: [],
+      // Sessions not tied to any particular cluster.
+      clusterlessSessions: [
+        {
+          performer: {
+            image: '{{PERFORMER_IMAGE}}',
+            onPortInUse: 'reuse',
+          },
+          runs: [
+            {
+              type: 'situational',
+              fitConfig: 'fit-config-0',
+              tests: {
+                classes: ['com.couchbase.situational.tests.SanityTest'],
+              },
+              situational: {
+                database: {
+                  mode: 'hosted',
+                  resultsEnvironment: 'dev',
+                },
+              },
+            },
+          ],
+        },
+      ],
+    },
+  ],
+  fitConfigs: [
+    {
+      id: 'fit-config-0',
+      config: {
+        // Ignored for situational-only runs — cbdino creates and manages the cluster.
+        clusterAccess: {
+          defaultHostname: 'localhost',
+          username: 'Administrator',
+          password: 'password',
+        },
+        // fit-cli will inject performerPorts at runtime.
+        excludeTests: [],
+        situational: {
+          cbdino: {
+            version: '7.6',
+            enablePrivateEndpoint: false,
+          },
+        },
+      },
+    },
+  ],
+}

@@ -1,0 +1,226 @@
+// Preset: does quick sanity testing across all testing axes against a given SDK.
+{
+  version: 1,
+  type: 'fit',
+  description: 'Quick sanity — operational functional, CNG functional, and situational',
+  instances: [
+    // Instance 1: operational functional SanityTest + situational sanity (shared Docker instance)
+    {
+      aws: {},
+      setup: {
+        cbdinocluster: {
+          init: {
+            // Passed to `cbdinocluster init` on clean environments to set up ~/.cbdinocluster.
+            // On localhost, init is skipped and your existing ~/.cbdinocluster is used as-is.
+            // Edit to taste; fit-cli appends your GitHub credentials at runtime.
+            args: '--auto --aws-region us-west-2 --disable-azure --disable-gcp --disable-k8s --disable-dns --docker-network fit',
+          },
+        },
+        capellaEnvironment: 'dev',
+      },
+      clusters: [
+        {
+          clusterConfig: 'cluster-operational',
+          sessions: [
+            {
+              performer: {
+                image: '{{PERFORMER_IMAGE}}',
+                onPortInUse: 'reuse',
+              },
+              runs: [
+                {
+                  type: 'functional',
+                  fitConfig: 'fit-config-functional',
+                  tests: {
+                    classes: ['com.couchbase.client.kv.SanityTest'],
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      // FIT/SIT creates its own clusters, so none are configured here.
+      clusterlessSessions: [
+        {
+          performer: {
+            image: '{{PERFORMER_IMAGE}}',
+            onPortInUse: 'reuse',
+          },
+          runs: [
+            {
+              type: 'situational',
+              fitConfig: 'fit-config-situational',
+              tests: {
+                classes: ['com.couchbase.situational.tests.SanityTest'],
+              },
+              situational: {
+                database: {
+                  mode: 'hosted',
+                  resultsEnvironment: 'dev',
+                },
+              },
+            },
+          ],
+        },
+      ],
+    },
+
+    // Instance 2: CNG functional SanityTest on OpenShift (ROSA)
+    // Will add back when CNG testing is stable.
+    /*
+    {
+      aws: {},
+      setup: {
+        cbdinocluster: {
+          init: {
+            // CNG uploads this config verbatim as ~/.cbdinocluster. fit-cli adds the
+            // `k8s` block (pointing at the logged-in OpenShift context) and your
+            // GitHub credentials at runtime, so they stay out of this file. Unlike the
+            // docker preset there is no `--disable-k8s`: the cao deployer needs k8s.
+            config: {
+              version: 6,
+              docker: {
+                enabled: true,
+                network: 'fit',
+                host: 'unix:///var/run/docker.sock',
+              },
+            },
+          },
+        },
+      },
+      clusters: [
+        {
+          clusterConfig: 'cluster-cng',
+          sessions: [
+            {
+              performer: {
+                image: '{{PERFORMER_IMAGE}}',
+                onPortInUse: 'reuse',
+              },
+              runs: [
+                {
+                  type: 'functional',
+                  fitConfig: 'fit-config-cng',
+                  tests: {
+                    classes: ['com.couchbase.client.kv.SanityTest'],
+                    // protostellarWillWorkLater is a known-broken Maven group on CNG;
+                    // the rest mirror the default CNG exclusions.
+                    excludedGroups: [
+                      'situational',
+                      'openshift',
+                      'syncgateway',
+                      'protostellarWillWorkLater',
+                    ],
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+    */
+  ],
+  clusterConfigs: [
+    {
+      id: 'cluster-operational',
+      cbdinocluster: {
+        config: {
+          nodes: [
+            {
+              count: 3,
+              version: '8.0-stable',
+              services: ['kv', 'n1ql', 'index', 'fts'],
+            },
+          ],
+          docker: {
+            'kv-memory': 4096,
+            'fts-memory': 4096,
+          },
+        },
+        onClusterExists: 'useExisting',
+      },
+    },
+    {
+      id: 'cluster-cng',
+      cbdinocluster: {
+        config: {
+          nodes: [
+            {
+              count: 3,
+              version: '8.0-stable',
+              services: ['kv', 'n1ql', 'index', 'fts'],
+            },
+          ],
+          // The `cao` block makes this a CNG cluster: fit-cli uses the cao deployer,
+          // enables ingresses, and creates the default bucket via REST (cbdinocluster
+          // can't do that for cao yet). Override the versions here if needed.
+          cao: {
+            'operator-version': '2.9.2',
+            'gateway-version': '1.1.0-135',
+          },
+        },
+        onClusterExists: 'useExisting',
+      },
+    },
+  ],
+  fitConfigs: [
+    {
+      id: 'fit-config-functional',
+      config: {
+        // fit-cli fills ${defaultHostname} (and rest.hostname) in at runtime once the cluster is up.
+        clusterAccess: {
+          connectionString: 'couchbase://${defaultHostname}',
+          username: 'Administrator',
+          password: 'password',
+          tls: null,
+          rest: {
+            hostname: '${defaultHostname}',
+            resolveDnsSrv: false,
+          },
+          proxy: {
+            hostname: 'host.docker.internal',
+          },
+        },
+        // numReplicas >= 1 is required for FTS tests to pass.
+        bucketConfig: {
+          numReplicas: 1,
+          bucketType: 'couchbase',
+          storage: 'couchstore',
+        },
+        // fit-cli will inject performerPorts at runtime.
+        excludeTests: ['situational'],
+      },
+    },
+    {
+      id: 'fit-config-situational',
+      config: {
+        // Ignored for situational-only runs — cbdino creates and manages the cluster.
+        clusterAccess: {
+          defaultHostname: 'localhost',
+          username: 'Administrator',
+          password: 'password',
+        },
+        // fit-cli will inject performerPorts at runtime.
+        excludeTests: [],
+        situational: {
+          cbdino: {
+            version: '7.6',
+            enablePrivateEndpoint: false,
+          },
+        },
+      },
+    },
+    {
+      id: 'fit-config-cng',
+      config: {
+        // fit-cli generates the CNG clusterAccess at runtime once the cluster is up:
+        // the performer connects over couchbase2:// (insecure TLS), the test-driver
+        // admin uses classic couchbase://, REST goes via the ui<ingress>, and proxy +
+        // ssh are null. The default bucket is left to the FIT test-driver to create.
+        excludeTests: ['situational', 'ssh', 'openshift'],
+      },
+    },
+  ],
+}
