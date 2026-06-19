@@ -408,12 +408,11 @@ function scriptInvocation(script: string): string {
 
 /**
  * Return the prefix for a `definition execute` command, adjusted for whether
- * the user is running as the compiled `fit` binary or via `bun run definition`.
- * When using `fit`, a definition file path is passed directly to the binary:
- *   fit [flags] <file>   ≡   bun run definition execute [flags] <file>
+ * the user is running as the compiled `fit` binary or via `bun run`.
+ *   fit definition execute [flags] <file>   ≡   bun run definition execute [flags] <file>
  */
 export function definitionExecutePrefix(): string {
-  return isFitBinary() ? "fit" : `${scriptInvocation("definition")} execute`;
+  return isFitBinary() ? "fit definition execute" : `${scriptInvocation("definition")} execute`;
 }
 
 /**

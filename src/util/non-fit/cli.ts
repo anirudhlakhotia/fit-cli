@@ -82,7 +82,7 @@ export function runCli(main: () => Promise<void | Partial<RunOutput>>): void {
         }
       }
       emitGhaArtifactNotice();
-      console.log(`\n$ ${runScriptPrefix("archive")} s3-upload --zip ${promptSession.runDir} s3://fit-cli/runs/`);
+      console.log(`\nTo upload run artifacts to S3 (optional):\n  ${runScriptPrefix("archive")} s3-upload --zip ${promptSession.runDir} s3://fit-cli/runs/`);
       if (runOutput?.worstFailure && worstFailureShouldExitNonZero(runOutput.worstFailure)) {
         fitCliError(formatFailureSummaryLine(runOutput.worstFailure, runOutput.failureCount ?? 1));
         await Promise.all([sessionLog.flush(), debugLog.flush()]);
