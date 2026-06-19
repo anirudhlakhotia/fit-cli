@@ -61,6 +61,10 @@
   fitConfigs: [
     {
       id: 'fit-config-0',
+      connection: {
+        scheme: 'couchbase2',
+        tls: { insecure: true },
+      },
       config: {
         // fit-cli generates the CNG clusterAccess at runtime once the cluster is up:
         // the performer connects over couchbase2:// (insecure TLS), the test-driver

@@ -41,10 +41,13 @@ import type {
   FitDefinition,
   FitRun,
   InstanceLifetime,
+  ResolvedFitConfig,
   SessionLifetime,
   SituationalDatabaseMode,
   TestsSection,
 } from "./types.js";
+
+export type { ResolvedFitConfig } from "./types.js";
 
 export type ResolvedInstance =
   | { kind: "aws"; instanceType?: string }
@@ -62,7 +65,7 @@ export function resolveInstance(instance: InstanceLifetime): ResolvedInstance {
 
 export interface ResolvedRunCommon {
   path: DefinitionRunPath;
-  fitConfig?: PieceData;
+  fitConfig?: ResolvedFitConfig;
   testSelection: FitTestSelection;
   extraMavenArgs: string[];
 }
@@ -175,7 +178,14 @@ export function resolveDefinitionRefs(def: FitDefinition): FitDefinition {
     if (!ref) {
       throw new Error(`fitConfig ref "${run.fitConfig}" not found in fitConfigs (at ${path}.fitConfig).`);
     }
-    return { ...run, fitConfig: ref.config };
+    return {
+      ...run,
+      fitConfig: {
+        ...(ref.config !== undefined ? { config: ref.config } : {}),
+        ...(ref.connection !== undefined ? { connection: ref.connection } : {}),
+        ...(ref.patch !== undefined ? { patch: ref.patch } : {}),
+      },
+    };
   }
 
   function resolveSessionRefs(session: SessionLifetime, path: string): SessionLifetime {
@@ -300,7 +310,7 @@ function requireString(record: Record<string, unknown>, key: string, path: strin
   return record[key];
 }
 
-function asFitConfigPiece(value: FitConfigPiece | string | undefined): FitConfigPiece | undefined {
+function asFitConfig(value: ResolvedFitConfig | string | undefined): ResolvedFitConfig | undefined {
   return typeof value === "string" ? undefined : value;
 }
 
@@ -346,23 +356,28 @@ export function resolveConnectionCluster(connection: ConnectionClusterSetup | un
 }
 
 export function resolveFitConfigCluster(
-  fitConfig: PieceData | undefined,
+  fitConfig: ResolvedFitConfig | undefined,
   path: string = "cluster.fitConfig",
 ): SelectedCluster | undefined {
-  if (!fitConfig) {
+  if (!fitConfig?.config) {
     return undefined;
   }
-  const clusterAccess = requireRecord(fitConfig.clusterAccess, `${path}.clusterAccess`);
+  const clusterAccess = requireRecord(fitConfig.config.clusterAccess, `${path}.clusterAccess`);
   return resolveClusterConnectionRecord(clusterAccess, `${path}.clusterAccess`);
 }
 
-function stripFitConfigClusterAccess(fitConfig: PieceData | undefined): PieceData | undefined {
-  if (!fitConfig || !("clusterAccess" in fitConfig)) {
+function stripFitConfigClusterAccess(fitConfig: ResolvedFitConfig | undefined): ResolvedFitConfig | undefined {
+  if (!fitConfig?.config || !("clusterAccess" in fitConfig.config)) {
     return fitConfig;
   }
-  const rest = { ...fitConfig };
+  const rest = { ...fitConfig.config };
   delete rest.clusterAccess;
-  return Object.keys(rest).length > 0 ? rest : undefined;
+  const config = Object.keys(rest).length > 0 ? rest : undefined;
+  const stripped = { ...fitConfig, ...(config !== undefined ? { config } : {}) };
+  if (config === undefined) {
+    delete stripped.config;
+  }
+  return Object.keys(stripped).length > 0 ? stripped : undefined;
 }
 
 export function resolveCbdinocluster(cluster: ClusterLifetime): ResolvedCbdinocluster | undefined {
@@ -379,7 +394,7 @@ export function resolveCbdinocluster(cluster: ClusterLifetime): ResolvedCbdinocl
 type ResolvedRunWithoutPath = Omit<ResolvedFunctionalRun, "path"> | Omit<ResolvedSituationalRun, "path">;
 
 function resolveRun(run: FitRun, stripClusterAccess: boolean): ResolvedRunWithoutPath {
-  const rawFitConfig = asFitConfigPiece(run.fitConfig);
+  const rawFitConfig = asFitConfig(run.fitConfig);
   const fitConfig = stripClusterAccess ? stripFitConfigClusterAccess(rawFitConfig) : rawFitConfig;
   if (run.type === "situational") {
     return {
@@ -431,7 +446,7 @@ export function resolveCluster(cluster: ClusterLifetime, path: DefinitionRunPath
   const clusterMode = connection ? "connection" : useExisting ? "useExisting" : "cbdinocluster";
   let resolvedCluster = connection;
   if (useExisting) {
-    const firstRunFitConfig = asFitConfigPiece(cluster.sessions[0]?.runs[0]?.fitConfig);
+    const firstRunFitConfig = asFitConfig(cluster.sessions[0]?.runs[0]?.fitConfig);
     resolvedCluster = resolveFitConfigCluster(firstRunFitConfig);
     if (!resolvedCluster) {
       throw new Error("cluster.useExisting requires a run-level fitConfig with clusterAccess.");
