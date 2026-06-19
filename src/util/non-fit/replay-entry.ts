@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-import { spawn } from "node:child_process";
 import { accessSync, constants } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 import { installFitCliConsoleFormatting } from "./fit-cli-log.js";
+import { reexecInherit } from "./proc.js";
 import { readPromptLog, extractReplayFlag, REPO_ROOT } from "./replay.js";
 import { isMain } from "./cli.js";
 
@@ -56,22 +56,7 @@ export function buildReplayDispatch(
 export function main(argv: string[] = process.argv.slice(2)): void {
   installFitCliConsoleFormatting();
   const { entrypoint, args } = buildReplayDispatch(argv);
-  const child = spawn(process.platform === "win32" ? "tsx.cmd" : "tsx", [entrypoint, ...args], {
-    stdio: "inherit",
-  });
-
-  child.on("exit", (code, signal) => {
-    if (signal) {
-      process.kill(process.pid, signal);
-      return;
-    }
-    process.exit(code ?? 1);
-  });
-
-  child.on("error", (err) => {
-    console.error(err instanceof Error ? err.message : err);
-    process.exit(1);
-  });
+  reexecInherit(process.platform === "win32" ? "tsx.cmd" : "tsx", [entrypoint, ...args]);
 }
 
 export function shouldAutoRunReplayEntry(metaUrl: string, argv1: string | undefined = process.argv[1]): boolean {

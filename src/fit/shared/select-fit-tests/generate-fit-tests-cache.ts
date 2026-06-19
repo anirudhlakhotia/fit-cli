@@ -4,10 +4,10 @@
  * Usage:
  *   bunx tsx src/fit/shared/select-fit-tests/generate-fit-tests-cache.ts --root /path/to/transactions-fit-performer
  */
-import { execSync } from "node:child_process";
 import { existsSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { captureValueSync } from "../../../util/non-fit/proc.js";
 import { isMain } from "../../../util/non-fit/cli.js";
 
 const CACHE_PATH = join(dirname(fileURLToPath(import.meta.url)), "fit-tests-cache.json5");
@@ -21,10 +21,12 @@ function discoverTestPaths(performerDir: string): string[] {
   if (!existsSync(testRoot)) {
     throw new Error(`test-driver/src/test not found under ${performerDir}`);
   }
-  const output = execSync(
-    `find "${testRoot}" -type f \\( -name '*Test.java' -o -name '*Test.scala' \\) -printf '%P\\n'`,
-    { encoding: "utf8" },
-  );
+  const output = captureValueSync("find", [
+    testRoot,
+    "-type", "f",
+    "(", "-name", "*Test.java", "-o", "-name", "*Test.scala", ")",
+    "-printf", "%P\n",
+  ], { quiet: true });
   return output
     .split(/\r?\n/)
     .map((line) => line.trim())
