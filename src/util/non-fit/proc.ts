@@ -375,7 +375,7 @@ export function streamToFile(
       const str = partial + chunk.toString();
       const lines = str.split('\n');
       partial = lines.pop() ?? '';
-      const last = lines.findLast((l) => l.trim()) ?? (partial.trim() ? partial : '');
+      const last = lines.filter((l) => l.trim()).at(-1) ?? (partial.trim() ? partial : '');
       if (last) lastLine = last;
     };
 

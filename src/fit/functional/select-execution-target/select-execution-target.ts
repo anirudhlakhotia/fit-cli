@@ -180,7 +180,7 @@ export async function resolveExecutionGroupTarget(
   try {
     // The definition's explicit instanceType wins; otherwise use the configured
     // default for this run's purpose (functional/situational/perf).
-    const instanceType = instance.instanceType ?? resolveCloudInstanceType(purpose);
+    const instanceType = (instance.kind === "aws" ? instance.instanceType : undefined) ?? resolveCloudInstanceType(purpose);
     const provisioned = await provisionFitInstance({
       instanceIndex: executionGroupIndex,
       instanceType,

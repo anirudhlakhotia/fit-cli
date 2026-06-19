@@ -12,6 +12,7 @@ function baseArgs(overrides: Partial<AutoInitCliArgs> = {}): AutoInitCliArgs {
     disableGithub: false,
     disableGerrit: false,
     disableCapella: false,
+    suppressArtifacts: false,
     configPath: "/tmp/test-config.json5",
     ...overrides,
   };
