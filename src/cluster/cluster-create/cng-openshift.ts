@@ -218,6 +218,24 @@ export async function runOpenShiftPreflight(execution: OpenShiftExecutor): Promi
 }
 
 /**
+ * Post-login sanity diagnostics: `oc get nodes` and `oc get couchbaseclusters -A`.
+ * Both are NonFatal — failures are logged but don't block the setup.
+ */
+export async function ocPostLoginDiagnostics(execution: OpenShiftExecutor): Promise<void> {
+  const checks: [string, string[]][] = [
+    ["oc", ["get", "nodes"]],
+    ["oc", ["get", "couchbaseclusters", "-A"]],
+  ];
+  for (const [cmd, args] of checks) {
+    try {
+      await execution.run(cmd, args);
+    } catch {
+      console.warn(`→ setup-cluster: ${cmd} ${args.join(" ")} failed (non-fatal)`);
+    }
+  }
+}
+
+/**
  * `oc login` to the ROSA cluster. The password is kept out of the echoed command
  * via `display`. `--insecure-skip-tls-verify` matches the self-signed serving cert
  * the shared ROSA cluster presents (CNG itself also runs with `tls.insecure`).
@@ -293,6 +311,7 @@ export async function provisionRemoteOpenShift(
   console.log(`\n→ setup-cluster: preparing OpenShift (ROSA) on ${execution.description} for CNG…`);
   await installOcRemote(execution, version);
   await ocLogin(execution, creds);
+  await ocPostLoginDiagnostics(execution);
   const context = await currentOcContext(execution);
   await runOpenShiftPreflight(execution);
   await installCaoToolsRemote(execution, `${home}/.dinotools/cao/${CAO_TOOLS_VERSION}`);

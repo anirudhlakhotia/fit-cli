@@ -37,7 +37,7 @@ import { installCbdinoclusterRemote } from "./install-cbdinocluster.js";
 import { installCaoCrdsAndAdmission } from "./install-cao-tools.js";
 import { enableIngresses } from "./cao-ingress.js";
 import { type ClusterExistsPolicy } from "./cluster-exists-policy.js";
-import { DEFAULT_CLUSTER_VERSION, type CbdinoclusterDef } from "./build-cluster-def.js";
+import { cngServerImageRef, DEFAULT_CLUSTER_VERSION, type CbdinoclusterDef } from "./build-cluster-def.js";
 import { isAlias, resolveAlias } from "./cb-alias.js";
 import type { CbdinoclusterInitSetup } from "../../fit/shared/definition/types.js";
 import { defaultCbdinoclusterInitArgs, situationalCbdinoclusterInitArgs } from "./default-cbdinocluster-init-config.js";
@@ -636,6 +636,21 @@ export async function setupDeclarativeCluster(plan: {
     );
     for (const cluster of decision.remove) {
       await removeCluster(cbdinocluster, cluster.id, execution);
+    }
+  }
+
+  // Pull the server image before handing off to cbdinocluster — image pull failures are
+  // a common cause of long, opaque cbdinocluster timeouts, so surfacing them early helps.
+  if (cng && isRemoteExecution(execution)) {
+    const serverVersion = plan.config.nodes[0]?.version;
+    if (serverVersion) {
+      const imageRef = cngServerImageRef(serverVersion);
+      console.log(`→ setup-cluster: pre-flight docker pull ${imageRef} (non-fatal)…`);
+      try {
+        await execution.run("docker", ["pull", imageRef]);
+      } catch {
+        console.warn(`→ setup-cluster: docker pull ${imageRef} failed (non-fatal — cbdinocluster will try again)`);
+      }
     }
   }
 
