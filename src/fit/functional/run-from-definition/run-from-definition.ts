@@ -1197,9 +1197,11 @@ async function teardownRun(inputs: TeardownInputs): Promise<{ leftUp: boolean }>
 
 /**
  * Whether this run is interactive (so we can prompt) or running with default
- * answers (CI). Mirrors how PromptSession decides its mode: the `definition` bun
- * script and the run-from-definition entrypoint default to non-interactive unless
- * `--interactive` is passed.
+ * answers (CI). Mirrors how PromptSession decides its mode: the `definition`
+ * command (every launch form, via markNonInteractiveByDefault) and the
+ * run-from-definition entrypoint default to non-interactive unless `--interactive`
+ * is passed. The wizard reaches runFromDefinition without that marker, so it
+ * stays interactive.
  */
 function isInteractiveRun(): boolean {
   const { interactive } = extractInteractiveFlag(process.argv.slice(2));
