@@ -75,7 +75,11 @@ export async function appendJunitStepSummary(runDir: string, description?: strin
   const summaryPath = process.env.GITHUB_STEP_SUMMARY;
   if (!summaryPath) return;
 
-  const heading = `## ${description ?? "FIT run results"}\n\n`;
+  // Leading \n is load-bearing: appendRunSummaryToGhaSummary writes raw HTML
+  // (<table> etc.) via @actions/core, and GFM only closes an HTML block on a
+  // blank line. Without it this heading is swallowed into the open HTML block
+  // and rendered as literal text instead of an <h2>.
+  const heading = `\n## ${description ?? "FIT run results"}\n\n`;
 
   try {
     const resp = await fetch(JUNIT_MARKDOWN_URL);
