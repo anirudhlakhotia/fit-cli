@@ -13,14 +13,21 @@ test("terminateInstanceCommand includes the instance id", () => {
   );
 });
 
-test("formatEc2DeletionResponsibilityBanner explains ongoing ownership clearly", () => {
-  const banner = formatEc2DeletionResponsibilityBanner("i-123", "ec2-1-2-3-4.compute.amazonaws.com");
+test("formatEc2DeletionResponsibilityBanner interactive mode offers to delete", () => {
+  const banner = formatEc2DeletionResponsibilityBanner("i-123", "ec2-1-2-3-4.compute.amazonaws.com", undefined, undefined, true);
 
   assert.match(banner, /EC2 LIFECYCLE WARNING/);
   assert.match(banner, /This instance keeps incurring AWS charges until it is terminated\./);
   assert.match(banner, /fit-cli will offer to delete it at the end of the run\./);
   assert.match(banner, /you must delete it yourself\./);
   assert.match(banner, /terminate-instance\.ts --id i-123/);
+});
+
+test("formatEc2DeletionResponsibilityBanner non-interactive mode says automatically deleted", () => {
+  const banner = formatEc2DeletionResponsibilityBanner("i-123", "ec2-1-2-3-4.compute.amazonaws.com", undefined, undefined, false);
+
+  assert.match(banner, /fit-cli will automatically delete it at the end of the run\./);
+  assert.doesNotMatch(banner, /fit-cli will offer to delete it at the end of the run\./);
 });
 
 test("formatEc2CleanupPromptBanner explains the default cleanup choice", () => {
