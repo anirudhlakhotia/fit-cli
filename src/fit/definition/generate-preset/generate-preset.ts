@@ -28,6 +28,27 @@ export function isPresetType(value: string): value is PresetType {
   return PRESET_TYPES.includes(value as PresetType);
 }
 
+/** Extract the `# Preset: ...` first-line description from the raw YAML text. */
+function extractPresetDescription(raw: string): string {
+  for (const line of raw.split("\n")) {
+    const m = line.match(/^#\s*Preset:\s*(.*)/);
+    if (m) return m[1].trim() || "(no description)";
+  }
+  return "(no description)";
+}
+
+/** Print a table of available preset types and their descriptions. */
+export async function listPresets(): Promise<void> {
+  const col = PRESET_TYPES.reduce((max, t) => Math.max(max, t.length), 0);
+  console.log(`\nAvailable presets:\n`);
+  for (const type of PRESET_TYPES) {
+    const raw = await loadPresetTemplate(type);
+    const desc = extractPresetDescription(raw);
+    console.log(`  ${type.padEnd(col)}  ${desc}`);
+  }
+  console.log();
+}
+
 const PRESET_TEMPLATE_FILES: Record<PresetType, string> = {
   "preset-functional-tests": "preset-functional-tests.yaml",
   "preset-cng-functional-tests": "preset-cng-functional-tests.yaml",
