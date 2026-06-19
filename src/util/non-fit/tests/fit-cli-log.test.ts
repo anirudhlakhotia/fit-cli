@@ -2,10 +2,38 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { capture } from "../proc.js";
 import {
+  colourEnabled,
   formatFitCliError,
   formatFitCliWarn,
   formatTimestampedChunk,
 } from "../fit-cli-log.js";
+
+test("colourEnabled: FORCE_COLOR forces colour on even without a TTY", () => {
+  assert.equal(colourEnabled({ FORCE_COLOR: "1" }, false), true);
+});
+
+test("colourEnabled: FORCE_COLOR overrides NO_COLOR", () => {
+  assert.equal(colourEnabled({ FORCE_COLOR: "1", NO_COLOR: "1" }, false), true);
+});
+
+test("colourEnabled: FORCE_COLOR=0 does not force colour on", () => {
+  assert.equal(colourEnabled({ FORCE_COLOR: "0" }, false), false);
+  // ...and with a TTY it falls through to the TTY result rather than forcing off.
+  assert.equal(colourEnabled({ FORCE_COLOR: "0" }, true), true);
+});
+
+test("colourEnabled: NO_COLOR forces colour off even with a TTY", () => {
+  assert.equal(colourEnabled({ NO_COLOR: "" }, true), false);
+});
+
+test("colourEnabled: GitHub Actions enables colour despite no TTY", () => {
+  assert.equal(colourEnabled({ GITHUB_ACTIONS: "true" }, false), true);
+});
+
+test("colourEnabled: falls back to the TTY flag when no env signal is set", () => {
+  assert.equal(colourEnabled({}, true), true);
+  assert.equal(colourEnabled({}, false), false);
+});
 
 test("formatFitCliError prefixes and colours errors", () => {
   assert.equal(
