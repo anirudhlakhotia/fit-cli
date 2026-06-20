@@ -36,6 +36,8 @@ export interface RecordedFailure {
     sessionIndex?: number;
     runIndex?: number;
     clusterless?: boolean;
+    /** Standardised position label (e.g. `aws1 / 7.6-stable / java:main / func`), preferred over the indexes when known. */
+    label?: string;
   };
 }
 
@@ -60,15 +62,20 @@ export function worstFailureShouldExitNonZero(failure: RecordedFailure): boolean
 export function formatFailureSummaryLine(failure: RecordedFailure, totalCount: number): string {
   const { classification, message, context } = failure;
   const extra = totalCount > 1 ? ` (+${totalCount - 1} more failure${totalCount > 2 ? "s" : ""})` : "";
-  const parts = [
-    `instance ${context.instanceIndex + 1}`,
-    // Clusterless (situational) sessions aren't tied to a cluster, so they show a
-    // session but no cluster; functional runs show both.
-    ...(!context.clusterless && context.clusterIndex !== undefined ? [`cluster ${context.clusterIndex + 1}`] : []),
-    ...(context.sessionIndex !== undefined ? [`session ${context.sessionIndex + 1}`] : []),
-    ...(context.runIndex !== undefined ? [`run ${context.runIndex + 1}`] : []),
-  ];
-  return `Returning non-zero due to ${classification} error '${message}' on ${parts.join(", ")}${extra}`;
+  // Prefer the standardised label (e.g. `aws1 / 7.6-stable / java:main / func`)
+  // that the rest of fit-cli uses; fall back to the bare index form for failures
+  // raised before a run's inputs were known (precondition checks, etc.).
+  const location =
+    context.label ??
+    [
+      `instance ${context.instanceIndex + 1}`,
+      // Clusterless (situational) sessions aren't tied to a cluster, so they show a
+      // session but no cluster; functional runs show both.
+      ...(!context.clusterless && context.clusterIndex !== undefined ? [`cluster ${context.clusterIndex + 1}`] : []),
+      ...(context.sessionIndex !== undefined ? [`session ${context.sessionIndex + 1}`] : []),
+      ...(context.runIndex !== undefined ? [`run ${context.runIndex + 1}`] : []),
+    ].join(", ");
+  return `Returning non-zero due to ${classification} error '${message}' on ${location}${extra}`;
 }
 
 interface ArtifactTableRow extends Artifact {

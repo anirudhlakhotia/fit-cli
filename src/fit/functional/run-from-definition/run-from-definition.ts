@@ -981,13 +981,14 @@ function resumeSelectorMatchesPath(selector: ResumeSelector, path: DefinitionRun
  * line names the cluster/session (functional) or just the session (clusterless /
  * situational) that failed, rather than internal loop counters.
  */
-function failureContextFromPath(path: DefinitionRunPath): FailureContext {
+function failureContextFromPath(path: DefinitionRunPath, label?: string): FailureContext {
   if (path.clusterlessSession) {
     return {
       instanceIndex: path.instanceIndex,
       clusterless: true,
       ...(path.sessionIndex !== undefined ? { sessionIndex: path.sessionIndex } : {}),
       ...(path.runIndex !== undefined ? { runIndex: path.runIndex } : {}),
+      ...(label ? { label } : {}),
     };
   }
   return {
@@ -995,7 +996,27 @@ function failureContextFromPath(path: DefinitionRunPath): FailureContext {
     ...(path.clusterIndex !== undefined ? { clusterIndex: path.clusterIndex } : {}),
     ...(path.sessionIndex !== undefined ? { sessionIndex: path.sessionIndex } : {}),
     ...(path.runIndex !== undefined ? { runIndex: path.runIndex } : {}),
+    ...(label ? { label } : {}),
   };
+}
+
+/**
+ * The standardised position label for a failure in a group, matching the
+ * `aws1 / 7.6-stable / java:main / func` form used in run headers and log
+ * prefixes. With a `run` it names the full path; without one (a cluster- or
+ * instance-level failure that has no single run) it names just the box and, for
+ * functional groups, the cluster.
+ */
+function failureLabel(group: ResolvedExecutionGroup, run?: ResolvedExecutionRun): string {
+  const instanceKind = group.instance.kind;
+  const clusterMode = group.type === "functional" ? group.clusterMode : undefined;
+  const clusterVersion = clusterVersionLabel(group);
+  if (run) {
+    return formatRunLabel(run.path, runLabelParts(instanceKind, clusterMode, run, clusterVersion));
+  }
+  return [instanceLabel(group.path, instanceKind), clusterSegmentLabel(group.path, clusterMode, clusterVersion)]
+    .filter((segment): segment is string => Boolean(segment))
+    .join(" / ");
 }
 
 
@@ -1555,7 +1576,7 @@ export async function runFromDefinition(
         instanceDetails.push(...targetOutcome.details);
         if (!targetOutcome.ready) {
           fitCliError({ classification: "FatalToInstance" }, `\n✗ Could not acquire an execution target for execution group ${cycleIndex + 1}; skipping it.`);
-          tracker.record("FatalToInstance", `Could not acquire an execution target for execution group ${cycleIndex + 1}`, failureContextFromPath(group.path));
+          tracker.record("FatalToInstance", `Could not acquire an execution target for execution group ${cycleIndex + 1}`, failureContextFromPath(group.path, failureLabel(group)));
           globalIterationIndex += group.runs.length;
           continue;
         }
@@ -1721,7 +1742,7 @@ export async function runFromDefinition(
                 ? "no more runs in this execution group"
                 : "moving to the next run";
               fitCliError({ classification: err.classification }, `\n✗ ${err.message} (${nextStep})`);
-              tracker.record(err.classification, err.message, failureContextFromPath(iteration.path));
+              tracker.record(err.classification, err.message, failureContextFromPath(iteration.path, failureLabel(activeCycle, iteration)));
             } else {
               throw err;
             }
@@ -1731,7 +1752,7 @@ export async function runFromDefinition(
       } catch (err) {
         if (err instanceof ClassifiedFailure && err.classification === "FatalToCluster") {
           fitCliError({ classification: "FatalToCluster" }, `\n✗ ${err.message}`);
-          tracker.record("FatalToCluster", err.message, failureContextFromPath(group.path));
+          tracker.record("FatalToCluster", err.message, failureContextFromPath(group.path, failureLabel(activeCycle)));
           globalIterationIndex += activeCycle.runs.length;
 
           // Promote this cycle as the active set so that stopping here lets
