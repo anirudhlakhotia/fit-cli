@@ -104,6 +104,29 @@ test("formatFailureSummaryLine: clusterless session omits cluster", () => {
   assert.equal(line, "Returning non-zero due to FatalToSession error 'tests failed' on instance 1, session 2");
 });
 
+test("formatFailureSummaryLine: prefers the standardised label over raw indexes", () => {
+  const line = formatFailureSummaryLine(
+    {
+      classification: "FatalToSession",
+      message: "FIT tests failed — check the test-driver log for details.",
+      context: { instanceIndex: 0, clusterIndex: 0, sessionIndex: 0, runIndex: 0, label: "aws1 / 7.6-stable / java:main / func" },
+    },
+    1,
+  );
+  assert.equal(
+    line,
+    "Returning non-zero due to FatalToSession error 'FIT tests failed — check the test-driver log for details.' on aws1 / 7.6-stable / java:main / func",
+  );
+});
+
+test("formatFailureSummaryLine: label still gets the +N more suffix", () => {
+  const line = formatFailureSummaryLine(
+    { classification: "FatalToSession", message: "tests failed", context: { instanceIndex: 0, label: "aws1 / 7.6-stable / java:main / func" } },
+    2,
+  );
+  assert.equal(line, "Returning non-zero due to FatalToSession error 'tests failed' on aws1 / 7.6-stable / java:main / func (+1 more failure)");
+});
+
 test("formatFailureSummaryLine: shows +N more for multiple failures", () => {
   const line = formatFailureSummaryLine(
     { classification: "FatalToCluster", message: "cluster failed", context: { instanceIndex: 0, clusterIndex: 0 } },

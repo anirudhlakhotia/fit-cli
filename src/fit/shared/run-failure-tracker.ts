@@ -17,6 +17,12 @@ const SEVERITY: Record<FailureClassification, number> = {
  * carry a session but no cluster. All but `instanceIndex` are optional — a
  * failure raised before any run started (e.g. a precondition check) only knows
  * the instance, if that.
+ *
+ * `label` is the standardised human-friendly position (e.g.
+ * `aws1 / 7.6-stable / java:main / func`, the same form built by `formatRunLabel`
+ * and shown in log prefixes/headers) when the caller knew the run's inputs at
+ * failure time; the summary prefers it over the bare `instance N, cluster N`
+ * index form built from the indexes above.
  */
 export interface FailureContext {
   instanceIndex: number;
@@ -24,6 +30,7 @@ export interface FailureContext {
   sessionIndex?: number;
   runIndex?: number;
   clusterless?: boolean;
+  label?: string;
 }
 
 export class RunFailureTracker {
