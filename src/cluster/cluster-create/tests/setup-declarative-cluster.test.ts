@@ -78,7 +78,9 @@ function initAwareExecutor(): ClusterCommandExecutor & {
     stagedFiles,
     run: (command, args) => {
       runCalls.push({ command, args });
-      if (command === "cbdinocluster" && args[0] === "init") {
+      // init now runs through a login shell (`bash -lc "cbdinocluster init …"`)
+      // so it sources ~/.profile and inherits the forwarded CAPELLA_*/AWS_* vars.
+      if (command === "bash" && args[0] === "-lc" && (args[1] ?? "").includes("cbdinocluster init")) {
         inited = true;
       }
       return Promise.resolve();
@@ -118,13 +120,17 @@ test("setupDeclarativeCluster runs `cbdinocluster init` for the docker args path
     execution,
   );
 
-  const initCall = execution.runCalls.find((c) => c.command === "cbdinocluster" && c.args[0] === "init");
+  const initCall = execution.runCalls.find(
+    (c) => c.command === "bash" && c.args[0] === "-lc" && (c.args[1] ?? "").includes("cbdinocluster init"),
+  );
   assert.ok(initCall, "expected a `cbdinocluster init` call");
-  // The editable args are passed through and the GitHub credentials are appended.
-  assert.deepEqual(initCall.args, [
-    "init", "--auto", "--disable-k8s", "--docker-network", "fit",
-    "--github-user", "alice", "--github-token", "ghtoken",
-  ]);
+  // init runs in a login shell so it picks up forwarded CAPELLA_*/AWS_* env; the
+  // editable args are passed through and the GitHub credentials are appended.
+  assert.equal(
+    initCall.args[1],
+    "cbdinocluster init --auto --disable-k8s --docker-network fit " +
+      "--github-user alice --github-token ghtoken",
+  );
   // The docker network the args name is created, and no config file is uploaded.
   assert.ok(execution.runCalls.some((c) => c.command === "docker" && c.args.join(" ") === "network create fit"));
   assert.equal(execution.stagedFiles.length, 0);
@@ -141,8 +147,10 @@ test("setupDeclarativeCluster falls back to --disable-github when no credentials
     },
     execution,
   );
-  const initCall = execution.runCalls.find((c) => c.command === "cbdinocluster" && c.args[0] === "init");
-  assert.deepEqual(initCall?.args, ["init", "--auto", "--docker-network", "fit", "--disable-github"]);
+  const initCall = execution.runCalls.find(
+    (c) => c.command === "bash" && c.args[0] === "-lc" && (c.args[1] ?? "").includes("cbdinocluster init"),
+  );
+  assert.equal(initCall?.args[1], "cbdinocluster init --auto --docker-network fit --disable-github");
 });
 
 test("setupDeclarativeCluster initializes cbdinocluster before retrying ps", async () => {
