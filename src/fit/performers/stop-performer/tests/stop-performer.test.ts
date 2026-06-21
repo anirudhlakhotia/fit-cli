@@ -26,7 +26,7 @@ test("stopPerformer stops all running containers for the matching image", async 
     },
   };
 
-  assert.equal(await stopPerformer(createLocalFitExecutionContext("/work/root"), sdk, undefined, deps), true);
+  assert.equal(await stopPerformer(createLocalFitExecutionContext(), sdk, undefined, deps), true);
   assert.deepEqual(stoppedIds, [["abc123", "def456"]]);
 });
 
@@ -46,6 +46,6 @@ test("stopPerformer succeeds without stopping anything when no containers are ru
     },
   };
 
-  assert.equal(await stopPerformer(createLocalFitExecutionContext("/work/root"), sdk, undefined, deps), true);
+  assert.equal(await stopPerformer(createLocalFitExecutionContext(), sdk, undefined, deps), true);
   assert.equal(stopCalled, false);
 });

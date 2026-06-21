@@ -14,7 +14,6 @@ import { fileURLToPath } from "node:url";
 import JSON5 from "json5";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { checkbox, qualifyPromptId, search, select } from "../../../util/non-fit/prompts.js";
-import { rootDirFromArgv } from "../../util/root.js";
 import { createLocalFitExecutionContext, type FitExecutionContext } from "../util/remote-fit-run.js";
 
 const FIT_TESTS_CACHE_PATH = join(dirname(fileURLToPath(import.meta.url)), "fit-tests-cache.json5");
@@ -499,8 +498,7 @@ export async function selectFitTests(
 
 if (isMain(import.meta.url)) {
   runCli(async () => {
-    const { rootDir } = rootDirFromArgv(process.argv.slice(2));
-    const execution = createLocalFitExecutionContext(rootDir);
+    const execution = createLocalFitExecutionContext();
     console.log(formatFitTestSelectionOutput(await selectFitTests(execution)));
   });
 }

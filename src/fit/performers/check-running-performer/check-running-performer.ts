@@ -6,7 +6,6 @@
  */
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { confirm } from "../../../util/non-fit/prompts.js";
-import { rootDirFromArgv } from "../../util/root.js";
 import { type Sdk } from "../../../util/sdk/sdks.js";
 import { chooseSdk } from "../../../util/sdk/choose-sdk.js";
 import { createLocalFitExecutionContext, type FitExecutionContext } from "../../shared/util/remote-fit-run.js";
@@ -379,16 +378,15 @@ export async function stopRunningPerformer(
   return stopPerformerContainers(execution, containers.map((container) => container.id));
 }
 
-export async function runCheckRunningPerformerWorkflow(rootDir: string): Promise<void> {
+export async function runCheckRunningPerformerWorkflow(): Promise<void> {
   const sdk = await chooseSdk("Which SDK performer do you want to check?");
   const version = await askPerformerTag(sdk);
-  const result = await checkRunningPerformer(createLocalFitExecutionContext(rootDir), sdk, version);
+  const result = await checkRunningPerformer(createLocalFitExecutionContext(), sdk, version);
   console.log(JSON.stringify(result, null, 2));
 }
 
 if (isMain(import.meta.url)) {
   runCli(async () => {
-    const { rootDir } = rootDirFromArgv(process.argv.slice(2));
-    await runCheckRunningPerformerWorkflow(rootDir);
+    await runCheckRunningPerformerWorkflow();
   });
 }

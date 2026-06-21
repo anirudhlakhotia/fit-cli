@@ -16,7 +16,6 @@ import { type PieceData } from "../../../util/non-fit/config-pieces.js";
 import { printFileContent } from "../../../util/non-fit/fit-cli-log.js";
 import type { DefinitionRunPath } from "../../../util/non-fit/replay.js";
 import { DEFAULT_PERFORMER_PORT } from "../../performers/util/performer-port.js";
-import { rootDirFromArgv } from "../../util/root.js";
 import { type ResultsDatabase } from "../../shared/util/results-database.js";
 import {
   buildSituationalConfiguration,
@@ -29,7 +28,7 @@ import { fitConfigDocPath, writeFitConfiguration } from "../../shared/fit-config
 export function generateSituationalConfiguration(
   database: ResultsDatabase,
   cbdino: CbdinoSettings = DEFAULT_CBDINO_SETTINGS,
-  rootDir: string,
+  fitPerformerDir: string,
   path: DefinitionRunPath,
   performerPort: number = DEFAULT_PERFORMER_PORT,
   fitConfigPiece?: PieceData,
@@ -38,7 +37,7 @@ export function generateSituationalConfiguration(
 
   console.log(
     `\nGenerating a situational FITConfiguration.json for you. You can also produce this by hand by ` +
-      `following ${fitConfigDocPath(rootDir)} and the situational notes in SITUATIONAL_TESTING.md.`,
+      `following ${fitConfigDocPath(fitPerformerDir)} and the situational notes in SITUATIONAL_TESTING.md.`,
   );
   // The results-DB password is secret, so don't echo the config verbatim; show
   // it with the password masked while writing the real value to the file.
@@ -67,7 +66,6 @@ export function maskDatabasePassword(config: Record<string, unknown>): Record<st
 
 if (isMain(import.meta.url)) {
   runCli(() => {
-    rootDirFromArgv(process.argv.slice(2));
     const sample = buildSituationalConfiguration({
       jdbc: "jdbc:postgresql://faas.couchbase.com:5432/perf",
       username: "postgres",

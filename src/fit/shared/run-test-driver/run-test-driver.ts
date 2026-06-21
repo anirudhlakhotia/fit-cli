@@ -6,7 +6,7 @@
  * caller supplies (see {@link DEFAULT_MAVEN_TEST_ARGS} for functional runs and
  * {@link SITUATIONAL_MAVEN_TEST_ARGS} for situational ones).
  *
- * Run on its own (add --root <dir> to point elsewhere):
+ * Run on its own:
  *   npx tsx src/fit/shared/run-test-driver/run-test-driver.ts
  */
 import { existsSync, readFileSync, readdirSync } from "node:fs";
@@ -16,7 +16,6 @@ import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { createLogFile } from "../../../util/non-fit/proc.js";
 import type { DefinitionRunPath } from "../../../util/non-fit/replay.js";
 import { surefireReportsDir } from "./collect-junit.js";
-import { rootDirFromArgv } from "../../util/root.js";
 import { createLocalFitExecutionContext, type FitExecutionContext } from "../util/remote-fit-run.js";
 import { selectFitTests, type FitTestSelection } from "../select-fit-tests/select-fit-tests.js";
 
@@ -209,6 +208,13 @@ export async function runTestDriver(
   fitConfigPath?: string,
   extraMavenArgs: readonly string[] = DEFAULT_MAVEN_TEST_ARGS,
 ): Promise<TestRunResult> {
+  // The Maven test-driver runs from the performer checkout, so make sure it's
+  // present first — cloning it locally if missing (idempotent on a remote box).
+  // ensureWorkspace prints actionable guidance when localhost isn't configured.
+  if (!(await execution.ensureWorkspace())) {
+    throw new Error("transactions-fit-performer checkout is unavailable; cannot run the FIT test-driver.");
+  }
+
   // Per-run config/log lives in this run's own dir on the execution target —
   // locally that's the artifact tree, on a remote box a mirror under artifacts/.
   // Surefire reports can't be redirected there (its reportsDirectory has no CLI
@@ -263,8 +269,7 @@ export async function runTestDriver(
 
 if (isMain(import.meta.url)) {
   runCli(async () => {
-    const { rootDir } = rootDirFromArgv(process.argv.slice(2));
-    const execution = createLocalFitExecutionContext(rootDir);
+    const execution = createLocalFitExecutionContext();
     const selection = await selectFitTests(execution);
     return await runTestDriver(execution, selection, { instanceIndex: 0, clusterIndex: 0, sessionIndex: 0, runIndex: 0 });
   });

@@ -22,7 +22,7 @@
  *   bun run definition execute --resume-at=after-cluster-creation <file>    # reuse cluster
  *   bun run definition execute --resume-at=after-performer <file>           # reuse cluster + performer
  *
- * Run on its own (add --root <dir> to point at another workspace):
+ * Run on its own:
  *   npx tsx src/fit/functional/run-from-definition/run-from-definition.ts <file.yaml>
  *
  * Existing-cluster modes (`setup.cluster.connection` and
@@ -56,7 +56,6 @@ import {
 } from "../../../util/non-fit/replay.js";
 import { clusterLabel as clusterSegmentLabel, formatRunLabel, instanceLabel, performerLabel, runLabel, type RunLabelParts } from "../../shared/util/run-labels.js";
 import { confirm, select } from "../../../util/non-fit/prompts.js";
-import { rootDirFromArgv } from "../../util/root.js";
 import { DEFAULT_CAPELLA_ENV, resolveCapellaConfig, resolveGithubCredentials, resolveResultsDbCredentials, resolveRosaCredentials } from "../../util/config.js";
 import { terminateInstanceCommand } from "../../util/aws/lifecycle-warning.js";
 import { uploadRunArtifacts } from "../../util/aws/upload-run-artifacts.js";
@@ -575,7 +574,7 @@ export async function runTests(
 
   const fitConfig = generateFitConfigurationFn(
     run.cluster,
-    execution.rootDir,
+    execution.fitPerformerDir,
     run.path,
     run.performerPort,
     effectiveFitConfig,
@@ -739,7 +738,7 @@ export async function runSituationalTests(
       "(usually `dinonet`) so it can reach the cluster cbdino creates.",
   );
 
-  const database = await resolveResultsDatabase(run.databaseMode, run.resultsEnvironment, execution.rootDir);
+  const database = await resolveResultsDatabase(run.databaseMode, run.resultsEnvironment);
   if (!database.ready) {
     return { artifacts: database.artifacts, details: database.details };
   }
@@ -755,7 +754,7 @@ export async function runSituationalTests(
   const fitConfig = generateSituationalConfiguration(
     database.database,
     undefined,
-    execution.rootDir,
+    execution.fitPerformerDir,
     run.path,
     run.performerPort,
     fitConfigPiece.config,
@@ -1336,7 +1335,6 @@ export interface RunFromDefinitionOptions {
 /** Run FIT functional tests as described by the definition file at `definitionPath`. */
 export async function runFromDefinition(
   definitionPath: string,
-  rootDir: string,
   options: RunFromDefinitionOptions = {},
 ): Promise<RunOutput> {
   const tracker = new RunFailureTracker();
@@ -1587,7 +1585,7 @@ export async function runFromDefinition(
           printResumeHint("after-instance-creation", definitionCopyPath, group.path, false);
         }
 
-        execution = await createFitExecutionContext(targetOutcome.target, rootDir, group.runs[0].sdk, {
+        execution = await createFitExecutionContext(targetOutcome.target, group.runs[0].sdk, {
           skipRemotePreparation: isResumeStartCycle && !phases.prepareRemote,
           instanceIndex: group.path.instanceIndex,
         });
@@ -1875,15 +1873,14 @@ export async function runFromDefinition(
 
 if (isMain(import.meta.url)) {
   runCli(async () => {
-    const { rootDir, positionals } = rootDirFromArgv(process.argv.slice(2));
-    const { resumeAt, positionals: resumeRest } = extractResumeAt(positionals);
+    const { resumeAt, positionals: resumeRest } = extractResumeAt(process.argv.slice(2));
     const { selector: resumeSelector, positionals: resumeRest2 } = extractResumeSelector(resumeRest);
     const { cbcollect, positionals: rest } = extractCbcollectFlag(resumeRest2);
     const [definitionPath, ...extra] = rest;
     if (!definitionPath || extra.length > 0) {
       console.error(
-        "Primary usage: bun run definition execute <file.yaml> [--resume-at=<point>] [--resume-instance=<n>] [--resume-cluster=<n>] [--resume-session=<n>] [--resume-clusterless-session=<n>] [--resume-run=<n>] [--root <dir>] [--cbcollect]\n" +
-          "Direct:        tsx src/workflows/fit-functional/run-from-definition/run-from-definition.ts <file.yaml> [--resume-at=<point>] [resume selectors]\n" +
+        "Primary usage: bun run definition execute <file.yaml> [--resume-at=<point>] [--resume-instance=<n>] [--resume-cluster=<n>] [--resume-session=<n>] [--resume-clusterless-session=<n>] [--resume-run=<n>] [--cbcollect]\n" +
+          "Direct:        tsx src/fit/functional/run-from-definition/run-from-definition.ts <file.yaml> [--resume-at=<point>] [resume selectors]\n" +
           "  --resume-at: after-instance-creation | after-remote-preparation | after-cluster-creation | after-performer",
       );
       process.exit(2);
@@ -1895,7 +1892,7 @@ if (isMain(import.meta.url)) {
       console.error((err as Error).message);
       process.exit(2);
     }
-    return runFromDefinition(definitionPath, rootDir, {
+    return runFromDefinition(definitionPath, {
       ...(resumePoint ? { resumeAt: resumePoint } : {}),
       ...(hasResumeSelector(resumeSelector) ? { resumeSelector } : {}),
       ...(cbcollect ? { cbcollect } : {}),

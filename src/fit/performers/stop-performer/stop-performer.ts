@@ -5,7 +5,6 @@
  *   npx tsx src/fit/performers/stop-performer/stop-performer.ts
  */
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
-import { rootDirFromArgv } from "../../util/root.js";
 import { type Sdk } from "../../../util/sdk/sdks.js";
 import { chooseSdk } from "../../../util/sdk/choose-sdk.js";
 import { createLocalFitExecutionContext, type FitExecutionContext } from "../../shared/util/remote-fit-run.js";
@@ -49,15 +48,14 @@ export async function stopPerformer(
 }
 
 /** Guided flow for choosing and stopping a performer Docker image. */
-export async function runStopPerformerWorkflow(rootDir: string): Promise<void> {
+export async function runStopPerformerWorkflow(): Promise<void> {
   const sdk = await chooseSdk("Which SDK performer do you want to stop?");
   const version = await askPerformerTag(sdk);
-  await stopPerformer(createLocalFitExecutionContext(rootDir), sdk, version);
+  await stopPerformer(createLocalFitExecutionContext(), sdk, version);
 }
 
 if (isMain(import.meta.url)) {
   runCli(async () => {
-    const { rootDir } = rootDirFromArgv(process.argv.slice(2));
-    await runStopPerformerWorkflow(rootDir);
+    await runStopPerformerWorkflow();
   });
 }

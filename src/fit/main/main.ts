@@ -12,7 +12,6 @@ import { input, select } from "../../util/non-fit/prompts.js";
 import { ensurePromptSession, type PromptSession } from "../../util/non-fit/replay.js";
 import { createFitDefinition } from "../shared/create-definition/create-definition.js";
 import { resolveOutputFormat } from "../util/config.js";
-import { rootDirFromArgv } from "../util/root.js";
 import { runFromDefinition } from "../functional/run-from-definition/run-from-definition.js";
 import type { DefinitionFormat } from "../shared/definition/generate-definition.js";
 import { extractPushGistVisibility, type GistVisibility } from "../shared/definition/push-gist.js";
@@ -112,14 +111,14 @@ export async function askDefinitionPath(): Promise<string> {
   return definitionPath.trim();
 }
 
-export async function runWorkflow(choice: WorkflowChoice, rootDir: string, definitionPath?: string, format?: DefinitionFormat, pushGistVisibility?: GistVisibility): Promise<RunOutput> {
+export async function runWorkflow(choice: WorkflowChoice, definitionPath?: string, format?: DefinitionFormat, pushGistVisibility?: GistVisibility): Promise<RunOutput> {
   switch (choice) {
     case "create-definition":
-      return createFitDefinition(rootDir, { format, pushGistVisibility });
+      return createFitDefinition({ format, pushGistVisibility });
     case "run-definition":
-      return runFromDefinition(definitionPath ?? await askDefinitionPath(), rootDir);
+      return runFromDefinition(definitionPath ?? await askDefinitionPath());
     case "preset":
-      return runPresetWizard(rootDir, { format, pushGistVisibility });
+      return runPresetWizard({ format, pushGistVisibility });
     case "configure":
       await runEditWorkflow();
       return { artifacts: [], details: [] };
@@ -180,23 +179,22 @@ async function runWizard(): Promise<RunOutput> {
   loadDotenv();
 
   const { format, positionals: afterOutput } = extractOutputFormat(process.argv.slice(2));
-  const { rootDir, positionals: afterRoot } = rootDirFromArgv(afterOutput);
-  const pushGistVisibility = extractPushGistVisibility(afterRoot);
+  const pushGistVisibility = extractPushGistVisibility(afterOutput);
   // Remove --push-gist (and its optional value) from positionals so the length
   // check below works cleanly.
-  const positionals = afterRoot.filter((arg, i) => {
+  const positionals = afterOutput.filter((arg, i) => {
     if (arg === "--push-gist") return false;
     if (arg === "public" || arg === "private") {
-      return afterRoot[i - 1] !== "--push-gist";
+      return afterOutput[i - 1] !== "--push-gist";
     }
     if (arg.startsWith("--push-gist=")) return false;
     return true;
   });
   if (positionals.length > 0) {
-    throw new Error("Usage: fit wizard [--output yaml|json5] [--push-gist [public|private]] [--root <dir>]");
+    throw new Error("Usage: fit wizard [--output yaml|json5] [--push-gist [public|private]]");
   }
   const choice = await chooseWorkflow();
-  return runWorkflow(choice, rootDir, undefined, format, pushGistVisibility);
+  return runWorkflow(choice, undefined, format, pushGistVisibility);
 }
 
 function runWizardMain(): void {
