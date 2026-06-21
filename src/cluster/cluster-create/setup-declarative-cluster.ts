@@ -156,8 +156,13 @@ export async function runCbdinoclusterInit(
   console.log(
     `→ setup-cluster: initializing cbdinocluster on ${execution.description} with \`cbdinocluster init ${args}\``,
   );
-  // The credentials are kept out of the echoed command via `display`.
-  await execution.run(cbdinocluster, ["init", ...initArgs, ...credArgs], undefined, {
+  // Run via a login shell so `~/.profile` is sourced and `init --auto` inherits the
+  // forwarded CAPELLA_*/AWS_* env vars (without them it silently leaves the capella
+  // block disabled and `cbdinocluster allocate --deployer cloud` later fatals with
+  // "no deployers"). `execution.run` would otherwise ssh in non-login. The
+  // credentials are kept out of the echoed command via `display`.
+  const initCmdline = [cbdinocluster, "init", ...initArgs, ...credArgs].map(posixQuote).join(" ");
+  await execution.run("bash", ["-lc", initCmdline], undefined, {
     display: `cbdinocluster init ${args}`,
   });
   const network = dockerNetworkFromInitArgs(args);
