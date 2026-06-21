@@ -4,8 +4,7 @@
  * Performers are always prebuilt images pulled from GHCR; fit-cli no longer
  * builds them from source.
  *
- * Run this flow on its own (skipping the top-level menu; add --root <dir> to
- * point at another workspace):
+ * Run this flow on its own (skipping the top-level menu):
  *   npx tsx src/fit/performers/check-build-and-run-performer/check-build-and-run-performer.ts
  */
 import { join } from "node:path";
@@ -13,7 +12,6 @@ import { artifactFromPath, type RunOutput } from "../../../util/non-fit/artifact
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { createLogFile } from "../../../util/non-fit/proc.js";
 import type { DefinitionRunPath } from "../../../util/non-fit/replay.js";
-import { rootDirFromArgv } from "../../util/root.js";
 import { type Sdk } from "../../../util/sdk/sdks.js";
 import { chooseSdk } from "../../../util/sdk/choose-sdk.js";
 import {
@@ -103,7 +101,7 @@ export async function checkBuildAndRunPerformer(
   // specific patchset; the performer image itself is always a prebuilt GHCR image
   // and independent of the ref. The repo must be present before we can check it out.
   if (gerritRef) {
-    if (!(await execution.ensureWorkspace(sdk))) {
+    if (!(await execution.ensureWorkspace())) {
       return undefined;
     }
     if (!(await checkoutFitGerritRef(execution, gerritRef))) {
@@ -218,17 +216,16 @@ export async function stopManagedPerformer(
 }
 
 /** Guided flow for choosing a performer, pulling it, and running it. */
-export async function runCheckBuildAndRunPerformer(rootDir: string): Promise<void> {
+export async function runCheckBuildAndRunPerformer(): Promise<void> {
   const sdk = await chooseSdk("Which SDK performer do you want to check and run?");
   const version = await askPerformerTag(sdk);
-  const execution = createLocalFitExecutionContext(rootDir);
+  const execution = createLocalFitExecutionContext();
   const performer = await checkBuildAndRunPerformer(execution, sdk, { instanceIndex: 0, clusterIndex: 0, sessionIndex: 0 }, version);
   await stopManagedPerformer(execution, performer);
 }
 
 if (isMain(import.meta.url)) {
   runCli(async () => {
-    const { rootDir } = rootDirFromArgv(process.argv.slice(2));
-    await runCheckBuildAndRunPerformer(rootDir);
+    await runCheckBuildAndRunPerformer();
   });
 }

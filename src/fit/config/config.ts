@@ -41,6 +41,7 @@ Edit options:
   --disable-github       Skip writing the github section.
   --disable-gerrit       Skip writing the gerrit section.
   --disable-capella      Skip writing the capella section.
+  --disable-localhost    Skip writing the localhost section (source checkout + cbdinocluster path).
   --aws-instance-type-functional <t>  EC2 instance type for functional tests
                          (env: FIT_EC2_INSTANCE_TYPE_FUNCTIONAL / FIT_EC2_INSTANCE_TYPE, default: c5.2xlarge).
   --aws-instance-type-situational <t> EC2 instance type for situational (SIT) tests
@@ -57,8 +58,10 @@ Edit options:
                          (AWS secret "fit-cli/gerrit/ssh-key" used as fallback on EC2).
   --capella-username <u> Your Capella username for situational/SIT runs (env: CAPELLA_USER / CAP_USER).
   --capella-password <p> Your Capella password (env: CAPELLA_PASS / CAP_PASS).
-  --cbdinocluster-path <path> Absolute path to the cbdinocluster binary, for non-PATH installs
-                         (env: CBDINOCLUSTER_PATH).
+  --fit-performer-dir <path>  Path to your local transactions-fit-performer checkout, for localhost runs
+                         (env: FIT_PERFORMER_DIR). Stored under localhost.repos.
+  --cbdinocluster-path <path> Absolute path to the cbdinocluster binary, for non-PATH installs (localhost runs)
+                         (env: CBDINOCLUSTER_PATH). Stored under localhost.
   --config-path <path>   Override config file path (default: ~/.fit-cli/config.json5).
                          (Capella endpoint/oid and the results-DB credentials are no longer set here —
                           they come from environments.json5 + AWS Secrets Manager, keyed by the
@@ -73,6 +76,7 @@ export interface AutoInitCliArgs {
   disableGithub: boolean;
   disableGerrit: boolean;
   disableCapella: boolean;
+  disableLocalhost: boolean;
   /** Default EC2 instance type per testing purpose. */
   awsInstanceTypes?: FitCliInstanceTypes;
   githubUser?: string;
@@ -81,6 +85,8 @@ export interface AutoInitCliArgs {
   gerritUser?: string;
   capellaUsername?: string;
   capellaPassword?: string;
+  /** Local transactions-fit-performer checkout dir (localhost runs). */
+  fitPerformerDir?: string;
   cbdinoclusterPath?: string;
   configPath: string;
   /** Skip creating a fit-cli artifact directory for this run. Used for the CI config step. */
@@ -116,6 +122,7 @@ export function parseEditArgs(argv: string[]): AutoInitCliArgs {
   const disableGithub = consumeFlag(args, "--disable-github");
   const disableGerrit = consumeFlag(args, "--disable-gerrit");
   const disableCapella = consumeFlag(args, "--disable-capella");
+  const disableLocalhost = consumeFlag(args, "--disable-localhost");
 
   const awsInstanceTypes: FitCliInstanceTypes = {};
   for (const purpose of CLOUD_INSTANCE_PURPOSES) {
@@ -128,6 +135,7 @@ export function parseEditArgs(argv: string[]): AutoInitCliArgs {
   const gerritUser = consumeValue(args, "--gerrit-user");
   const capellaUsername = consumeValue(args, "--capella-username");
   const capellaPassword = consumeValue(args, "--capella-password");
+  const fitPerformerDir = consumeValue(args, "--fit-performer-dir");
   const cbdinoclusterPath = consumeValue(args, "--cbdinocluster-path");
   const configPath = consumeValue(args, "--config-path") ?? defaultFitCliConfigPath();
 
@@ -147,6 +155,7 @@ export function parseEditArgs(argv: string[]): AutoInitCliArgs {
     disableGithub,
     disableGerrit,
     disableCapella,
+    disableLocalhost,
     ...(Object.keys(awsInstanceTypes).length > 0 ? { awsInstanceTypes } : {}),
     githubUser,
     githubToken,
@@ -154,6 +163,7 @@ export function parseEditArgs(argv: string[]): AutoInitCliArgs {
     gerritUser,
     capellaUsername,
     capellaPassword,
+    fitPerformerDir,
     cbdinoclusterPath,
     configPath,
   };
@@ -196,6 +206,7 @@ export function runConfigMain(): void {
           args: {
             auto: false, dryRun: false, suppressArtifacts: false,
             disableAws: false, disableGithub: false, disableGerrit: false, disableCapella: false,
+            disableLocalhost: false,
             configPath,
           },
         });

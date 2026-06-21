@@ -126,6 +126,35 @@ export interface FitCliGerritConfig {
 }
 
 /**
+ * A repo fit-cli works with on localhost, keyed under `localhost.repos`. Mirrors
+ * the definition file's `setup.repos` shape (see ReposSetup in
+ * definition/types.ts), but carries the local checkout location rather than a
+ * gerritRef.
+ */
+export interface FitCliRepoConfig {
+  /** Absolute path to the local checkout of this repo. */
+  dir?: string;
+}
+
+export interface FitCliReposConfig {
+  "transactions-fit-performer"?: FitCliRepoConfig;
+}
+
+/**
+ * Settings that only matter when running FIT tests on this machine (localhost).
+ * EC2 runs need none of these — the remote box clones the repos itself and
+ * installs its own cbdinocluster. github/gerrit creds are deliberately NOT here:
+ * when set locally they're used for remote runs too (GHCR pulls, uploaded
+ * `.git-credentials`), so they stay top-level.
+ */
+export interface FitCliLocalhostConfig {
+  /** Local checkouts of the repos a localhost run needs (the FIT test-driver). */
+  repos?: FitCliReposConfig;
+  /** Absolute path to the cbdinocluster binary, for non-PATH installs. */
+  cbdinoclusterPath?: string;
+}
+
+/**
  * Capella control-plane settings the situational cbdinocluster cloud deployer
  * authenticates with. fit-cli forwards these to the remote box as `CAPELLA_*`
  * environment variables so `cbdinocluster init --auto` bakes them into
@@ -148,8 +177,8 @@ export interface FitCliConfig {
   output?: FitCliOutputConfig;
   gerrit?: FitCliGerritConfig;
   capella?: FitCliCapellaConfig;
-  /** Absolute path to the cbdinocluster binary, for non-PATH installs. */
-  cbdinoclusterPath?: string;
+  /** Settings that only matter for running FIT tests on this machine. */
+  localhost?: FitCliLocalhostConfig;
 }
 
 export interface FitCliConfigResult {
@@ -307,7 +336,10 @@ export function validateFitCliConfig(raw: unknown): FitCliConfig {
       })
     : undefined;
 
-  const cbdinoclusterPath = readOptionalString(raw, "cbdinoclusterPath", "cbdinoclusterPath");
+  // Legacy: cbdinoclusterPath used to be top-level; it now lives under `localhost`.
+  // Fold an old top-level value in so existing configs keep working (no version bump).
+  const legacyCbdinoclusterPath = readOptionalString(raw, "cbdinoclusterPath", "cbdinoclusterPath");
+  const localhost = validateLocalhostConfig(raw.localhost, legacyCbdinoclusterPath);
 
   return {
     version: FIT_CLI_CONFIG_VERSION,
@@ -316,6 +348,49 @@ export function validateFitCliConfig(raw: unknown): FitCliConfig {
     ...(output ? { output } : {}),
     ...(gerrit && Object.keys(gerrit).length > 0 ? { gerrit } : {}),
     ...(capella && Object.keys(capella).length > 0 ? { capella } : {}),
+    ...(localhost ? { localhost } : {}),
+  };
+}
+
+/**
+ * Validate and compact the `localhost` section: the local checkouts of repos a
+ * localhost run needs (`repos["transactions-fit-performer"].dir`) and the
+ * cbdinocluster binary path. `legacyCbdinoclusterPath` is an old top-level value
+ * folded in when `localhost` doesn't set one. Returns undefined when empty.
+ */
+function validateLocalhostConfig(
+  value: unknown,
+  legacyCbdinoclusterPath?: string,
+): FitCliLocalhostConfig | undefined {
+  if (value !== undefined && !isRecord(value)) {
+    throw new InvalidFitCliConfigError(`Field "localhost" must be a mapping; got ${JSON.stringify(value)}`);
+  }
+
+  let repos: FitCliReposConfig | undefined;
+  const reposValue = value?.repos;
+  if (reposValue !== undefined) {
+    if (!isRecord(reposValue)) {
+      throw new InvalidFitCliConfigError(`Field "localhost.repos" must be a mapping; got ${JSON.stringify(reposValue)}`);
+    }
+    const performer = reposValue["transactions-fit-performer"];
+    if (performer !== undefined) {
+      if (!isRecord(performer)) {
+        throw new InvalidFitCliConfigError(
+          `Field "localhost.repos.transactions-fit-performer" must be a mapping; got ${JSON.stringify(performer)}`,
+        );
+      }
+      const dir = readOptionalString(performer, "dir", "localhost.repos.transactions-fit-performer.dir");
+      if (dir) repos = { "transactions-fit-performer": { dir } };
+    }
+  }
+
+  const cbdinoclusterPath =
+    (value ? readOptionalString(value, "cbdinoclusterPath", "localhost.cbdinoclusterPath") : undefined) ??
+    legacyCbdinoclusterPath;
+
+  if (!repos && !cbdinoclusterPath) return undefined;
+  return {
+    ...(repos ? { repos } : {}),
     ...(cbdinoclusterPath ? { cbdinoclusterPath } : {}),
   };
 }
@@ -462,7 +537,20 @@ export function resolveCbdinoclusterPath(
 ): string | undefined {
   const env = options.env ?? process.env;
   const config = options.config ?? loadFitCliConfig(options.path).config;
-  return config?.cbdinoclusterPath ?? (env.CBDINOCLUSTER_PATH?.trim() || undefined);
+  return config?.localhost?.cbdinoclusterPath ?? (env.CBDINOCLUSTER_PATH?.trim() || undefined);
+}
+
+/**
+ * Resolve the local transactions-fit-performer checkout directory for localhost
+ * runs, from `localhost.repos["transactions-fit-performer"].dir` in the config.
+ * Returns undefined when the user hasn't configured localhost testing — there's
+ * no env var or default; the EC2 path clones the repo on the remote box instead.
+ */
+export function resolveFitPerformerDir(
+  options: { config?: FitCliConfig; path?: string } = {},
+): string | undefined {
+  const config = options.config ?? loadFitCliConfig(options.path).config;
+  return config?.localhost?.repos?.["transactions-fit-performer"]?.dir;
 }
 
 /**

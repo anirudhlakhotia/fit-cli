@@ -11,7 +11,6 @@ import { posixQuote } from "../../../util/non-fit/remote-target.js";
 import { createRunFilePath } from "../../../util/non-fit/replay.js";
 import { resolveGithubToken } from "../../util/config.js";
 import { chooseSdk } from "../../../util/sdk/choose-sdk.js";
-import { rootDirFromArgv } from "../../util/root.js";
 import { type Sdk } from "../../../util/sdk/sdks.js";
 import { createLocalFitExecutionContext, type FitExecutionContext } from "../../shared/util/remote-fit-run.js";
 import { choosePerformerVersion } from "../list-docker-containers/list-docker-containers.js";
@@ -108,15 +107,14 @@ export async function checkAndPullPerformer(
 }
 
 /** Guided flow for choosing a performer and pulling it locally. */
-export async function runCheckAndPullPerformer(rootDir: string): Promise<void> {
+export async function runCheckAndPullPerformer(): Promise<void> {
   const sdk = await chooseSdk("Which SDK performer do you want to check?");
   const version = await choosePerformerVersion(sdk);
-  await checkAndPullPerformer(createLocalFitExecutionContext(rootDir), sdk, version);
+  await checkAndPullPerformer(createLocalFitExecutionContext(), sdk, version);
 }
 
 if (isMain(import.meta.url)) {
   runCli(async () => {
-    const { rootDir } = rootDirFromArgv(process.argv.slice(2));
-    await runCheckAndPullPerformer(rootDir);
+    await runCheckAndPullPerformer();
   });
 }

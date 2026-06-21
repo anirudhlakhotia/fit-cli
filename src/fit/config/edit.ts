@@ -16,9 +16,12 @@ import {
   type FitCliCloudConfig,
   type FitCliConfig,
   type FitCliInstanceTypes,
+  type FitCliLocalhostConfig,
   type FitCliOutputConfig,
   type OutputFormat,
 } from "../util/config.js";
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import { confirm, input, password, select } from "../../util/non-fit/prompts.js";
 import { findOnPath } from "../../util/non-fit/which.js";
 import type { AutoInitCliArgs } from "./config.js";
@@ -64,7 +67,11 @@ export interface InitAnswers {
   gerritUser?: string;
   configureCapella: boolean;
   capella?: CapellaInitAnswers;
-  /** Absolute path to the cbdinocluster binary, for non-PATH installs. */
+  /** Whether the user wants to run FIT tests on this machine (gates the localhost fields). */
+  configureLocalhost: boolean;
+  /** Local transactions-fit-performer checkout dir for localhost runs; empty/undefined to skip. */
+  fitPerformerDir?: string;
+  /** Absolute path to the cbdinocluster binary, for non-PATH installs (localhost only). */
   cbdinoclusterPath?: string;
 }
 
@@ -157,7 +164,10 @@ export function initAnswersToConfig(answers: InitAnswers, existing?: FitCliConfi
   const capella =
     answers.configureCapella && answers.capella ? capellaAnswersToConfig(answers.capella) : existing?.capella;
 
-  const cbdinoclusterPath = answers.cbdinoclusterPath ?? existing?.cbdinoclusterPath;
+  // Declining the localhost prompt leaves any saved localhost settings untouched.
+  const localhost = answers.configureLocalhost
+    ? buildLocalhostConfig(answers, existing?.localhost)
+    : existing?.localhost;
 
   return {
     version: FIT_CLI_CONFIG_VERSION,
@@ -166,6 +176,21 @@ export function initAnswersToConfig(answers: InitAnswers, existing?: FitCliConfi
     ...(output ? { output } : {}),
     ...(gerrit ? { gerrit } : {}),
     ...(capella ? { capella } : {}),
+    ...(localhost ? { localhost } : {}),
+  };
+}
+
+/** Assemble the localhost config from answers, keeping existing values for blanks. */
+function buildLocalhostConfig(
+  answers: InitAnswers,
+  existing?: FitCliLocalhostConfig,
+): FitCliLocalhostConfig | undefined {
+  const dir = trimOptional(answers.fitPerformerDir) ?? existing?.repos?.["transactions-fit-performer"]?.dir;
+  const cbdinoclusterPath = trimOptional(answers.cbdinoclusterPath) ?? existing?.cbdinoclusterPath;
+  const repos = dir ? { "transactions-fit-performer": { dir } } : undefined;
+  if (!repos && !cbdinoclusterPath) return undefined;
+  return {
+    ...(repos ? { repos } : {}),
     ...(cbdinoclusterPath ? { cbdinoclusterPath } : {}),
   };
 }
@@ -238,7 +263,7 @@ async function promptForOutputFormat(existing?: FitCliConfig): Promise<OutputFor
 }
 
 async function promptForCbdinoclusterPath(existing?: FitCliConfig): Promise<string | undefined> {
-  const existingPath = existing?.cbdinoclusterPath;
+  const existingPath = existing?.localhost?.cbdinoclusterPath;
   const onPath = findOnPath("cbdinocluster");
 
   if (onPath) {
@@ -259,8 +284,58 @@ async function promptForCbdinoclusterPath(existing?: FitCliConfig): Promise<stri
   return trimOptional(entered) ?? existingPath;
 }
 
-async function promptForConfig(existing?: FitCliConfig, configPath?: string): Promise<InitAnswers> {
+/** Path to the transactions-fit-performer checkout used for localhost runs. */
+async function promptForFitPerformerDir(existing?: FitCliConfig): Promise<string | undefined> {
+  const existingDir = existing?.localhost?.repos?.["transactions-fit-performer"]?.dir;
+  console.log(
+    "\ntransactions-fit-performer — fit-cli runs the FIT test-driver from this checkout:" +
+      "\non localhost it runs `./mvnw test` in <dir>/test-driver against your SDK + Couchbase and reads" +
+      "\nthe JUnit results from there, and checks out a Gerrit patchset there when you pass a gerritRef." +
+      "\nNot needed for EC2 runs — the remote box clones it itself.",
+  );
+  const sibling = resolve(process.cwd(), "..", "transactions-fit-performer");
+  const suggested = existingDir ?? (existsSync(sibling) ? sibling : "");
+  const entered = await input({
+    promptId: "init.localhost.fit-performer-dir",
+    message: existingDir
+      ? `Path to your transactions-fit-performer checkout (leave blank to keep "${existingDir}"):`
+      : suggested
+        ? `Path to your transactions-fit-performer checkout (detected: ${suggested}):`
+        : "Path to your transactions-fit-performer checkout (leave blank to skip — fit-cli clones it when a localhost run needs it):",
+    default: suggested,
+  });
+  return trimOptional(entered) ?? existingDir;
+}
+
+/**
+ * The upfront localhost gate: ask whether the user runs FIT on this machine, and
+ * if so gather the source checkout + cbdinocluster path. EC2-only users skip it.
+ */
+async function promptForLocalhost(existing?: FitCliConfig): Promise<{
+  configureLocalhost: boolean;
+  fitPerformerDir?: string;
+  cbdinoclusterPath?: string;
+}> {
+  const hasExisting = existing?.localhost !== undefined;
+  const configureLocalhost = await confirm({
+    promptId: "init.localhost.configure",
+    message: hasExisting
+      ? "Edit localhost testing settings? (the source checkout and cbdinocluster path used for runs on this machine)"
+      : "Do you plan to run FIT tests on this machine (localhost)? EC2 runs don't need this.",
+    default: false,
+  });
+  if (!configureLocalhost) return { configureLocalhost: false };
+  const fitPerformerDir = await promptForFitPerformerDir(existing);
   const cbdinoclusterPath = await promptForCbdinoclusterPath(existing);
+  return {
+    configureLocalhost: true,
+    ...(fitPerformerDir ? { fitPerformerDir } : {}),
+    ...(cbdinoclusterPath ? { cbdinoclusterPath } : {}),
+  };
+}
+
+async function promptForConfig(existing?: FitCliConfig, configPath?: string): Promise<InitAnswers> {
+  const { configureLocalhost, fitPerformerDir, cbdinoclusterPath } = await promptForLocalhost(existing);
   const githubUser = await promptForGithubUser(existing);
   const githubToken = await promptForGithubToken(existing);
   const outputFormat = await promptForOutputFormat(existing);
@@ -299,6 +374,8 @@ async function promptForConfig(existing?: FitCliConfig, configPath?: string): Pr
     gerritUser,
     configureCapella,
     ...(capella ? { capella } : {}),
+    configureLocalhost,
+    ...(fitPerformerDir ? { fitPerformerDir } : {}),
     ...(cbdinoclusterPath ? { cbdinoclusterPath } : {}),
   };
 }
@@ -655,9 +732,28 @@ export function buildAutoConfig(
     }
   }
 
-  const cbdinoclusterPath = resolveField(log, "cbdinocluster.path", args.cbdinoclusterPath, "--cbdinocluster-path", [
-    { name: "CBDINOCLUSTER_PATH", value: env.CBDINOCLUSTER_PATH },
-  ]);
+  // Localhost section: the source checkout + cbdinocluster path only matter for
+  // runs on this machine. EC2 runs need none of it, hence the --disable-localhost gate.
+  let localhost: FitCliConfig["localhost"] | undefined;
+  if (args.disableLocalhost) {
+    log.push({ field: "localhost.*", source: "--disable-localhost", found: false });
+  } else {
+    const fitPerformerDir = resolveField(
+      log,
+      "localhost.repos.transactions-fit-performer.dir",
+      args.fitPerformerDir,
+      "--fit-performer-dir",
+      [{ name: "FIT_PERFORMER_DIR", value: env.FIT_PERFORMER_DIR }],
+    );
+    const cbdinoclusterPath = resolveField(log, "localhost.cbdinoclusterPath", args.cbdinoclusterPath, "--cbdinocluster-path", [
+      { name: "CBDINOCLUSTER_PATH", value: env.CBDINOCLUSTER_PATH },
+    ]);
+    const parts: FitCliConfig["localhost"] = {
+      ...(fitPerformerDir ? { repos: { "transactions-fit-performer": { dir: fitPerformerDir } } } : {}),
+      ...(cbdinoclusterPath ? { cbdinoclusterPath } : {}),
+    };
+    if (Object.keys(parts).length > 0) localhost = parts;
+  }
 
   const config: FitCliConfig = {
     version: FIT_CLI_CONFIG_VERSION,
@@ -666,7 +762,7 @@ export function buildAutoConfig(
     ...(output ? { output } : {}),
     ...(gerrit ? { gerrit } : {}),
     ...(capella ? { capella } : {}),
-    ...(cbdinoclusterPath ? { cbdinoclusterPath } : {}),
+    ...(localhost ? { localhost } : {}),
   };
 
   return { config, log };

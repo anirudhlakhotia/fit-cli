@@ -1,14 +1,13 @@
 /**
- * Workflow: choose where situational test results are stored. The hosted database
+ * Workflow: choose which hosted database situational test results are stored in
  * (the results environment selected in the definition file — "dev"=faas,
- * "prod"=performance-sdk; default dev) is the recommended default; the alternative
- * is a local Docker database, which this workflow can set up via ../setup-local-database.
+ * "prod"=performance-sdk; default dev).
  *
  * The hosted database's password is secret and comes from that results environment's
  * AWS Secrets Manager secret (see resolveResultsDbCredentials / environments.json5),
  * resolved with the ambient AWS credentials rather than prompted for or stored.
  *
- * Run on its own (add --root <dir> to point elsewhere):
+ * Run on its own:
  *   bun run src/fit/situational/choose-results-database/choose-results-database.ts
  */
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
@@ -18,9 +17,7 @@ import { fitCliError } from "../../../util/non-fit/fit-cli-log.js";
 import { capture } from "../../../util/non-fit/proc.js";
 import { qualifyPromptId, select } from "../../../util/non-fit/prompts.js";
 import { loadEnvironments } from "../../util/environments.js";
-import { rootDirFromArgv } from "../../util/root.js";
 import { type ResultsDatabase } from "../../shared/util/results-database.js";
-import { setupLocalDatabase } from "../setup-local-database/setup-local-database.js";
 
 /** Default hosted results host, used for connectivity defaults and JDBC parsing fallbacks. */
 export const DEFAULT_RESULTS_HOST = "faas.couchbase.com";
@@ -79,18 +76,17 @@ export async function checkResultsDatabaseConnectivity(
   }
 }
 
-/** Where situational results will be stored: a hosted environment (with its host), or local Docker. */
+/** Which hosted environment situational results will be stored in (its host). */
 export interface ResultsTarget {
-  mode: ResultsDatabaseMode;
-  /** The chosen results environment; only set when mode is "hosted". */
-  resultsEnvironment?: string;
+  mode: "hosted";
+  /** The chosen results environment. */
+  resultsEnvironment: string;
 }
 
 /**
- * Single prompt for where situational results go: each hosted results environment
- * (showing the host data lands on), or a local Docker database. Combines the
- * hosted-vs-local and which-environment choices so the user picks once. Sourced
- * from environments.json5.
+ * Prompt for which hosted results environment situational results go to (showing
+ * the host data lands on). Sourced from environments.json5. The local Docker
+ * database option was removed along with jenkins-sdk.
  */
 export async function chooseResultsTarget(promptIdPrefix?: string): Promise<ResultsTarget> {
   const results = loadEnvironments().results;
@@ -100,11 +96,10 @@ export async function chooseResultsTarget(promptIdPrefix?: string): Promise<Resu
   });
   const choice = await select<string>({
     promptId: qualifyPromptId("situational.database.target", promptIdPrefix),
-    message: "Where should situational test results be stored?",
+    message: "Which hosted results database should situational test results be stored in?",
     default: `hosted:${DEFAULT_RESULTS_ENV}`,
-    choices: [...hostedChoices, { name: "A local database in Docker (this tool will set it up)", value: "local" }],
+    choices: hostedChoices,
   });
-  if (choice === "local") return { mode: "local" };
   return { mode: "hosted", resultsEnvironment: choice.slice("hosted:".length) };
 }
 
@@ -126,43 +121,33 @@ async function resolveHostedDatabase(block: string): Promise<ResultsDatabaseOutc
 }
 
 /**
- * Resolve a results database for a non-interactive (definition-driven) run: the
- * `mode` from the file (`hosted` or `local`) and the selected results `block`.
- * Nothing is prompted for.
+ * Resolve a results database for a non-interactive (definition-driven) run from
+ * the selected results `block`. The local Docker database mode was removed along
+ * with jenkins-sdk; a definition asking for `local` fails fast with guidance.
  */
 export async function resolveResultsDatabase(
-  mode: "hosted" | "local",
+  mode: ResultsDatabaseMode,
   block: string,
-  rootDir: string,
 ): Promise<ResultsDatabaseOutcome> {
   if (mode === "local") {
-    const local = await setupLocalDatabase(rootDir);
-    if (!local.ready) {
-      return { ready: false, artifacts: local.artifacts, details: local.details };
-    }
-    return { ready: true, database: local.database, artifacts: local.artifacts, details: local.details };
+    fitCliError(
+      "The local Docker results database is no longer supported (it was removed with jenkins-sdk).\n" +
+        "  Set the situational database mode to \"hosted\" and pick a results environment instead.",
+    );
+    return { ready: false, artifacts: [], details: [] };
   }
   return resolveHostedDatabase(block);
 }
 
-/** Choose a results database interactively: a hosted environment, or a freshly set-up local one. */
-export async function chooseResultsDatabase(rootDir: string): Promise<ResultsDatabaseOutcome> {
+/** Choose a hosted results database interactively. */
+export async function chooseResultsDatabase(): Promise<ResultsDatabaseOutcome> {
   const target = await chooseResultsTarget();
-  if (target.mode === "hosted") {
-    return resolveHostedDatabase(target.resultsEnvironment ?? DEFAULT_RESULTS_ENV);
-  }
-
-  const local = await setupLocalDatabase(rootDir);
-  if (!local.ready) {
-    return { ready: false, artifacts: local.artifacts, details: local.details };
-  }
-  return { ready: true, database: local.database, artifacts: local.artifacts, details: local.details };
+  return resolveHostedDatabase(target.resultsEnvironment ?? DEFAULT_RESULTS_ENV);
 }
 
 if (isMain(import.meta.url)) {
   runCli(async () => {
-    const { rootDir } = rootDirFromArgv(process.argv.slice(2));
-    const outcome = await chooseResultsDatabase(rootDir);
+    const outcome = await chooseResultsDatabase();
     if (outcome.ready) {
       console.log(`\nResults database JDBC: ${outcome.database.jdbc}`);
     }

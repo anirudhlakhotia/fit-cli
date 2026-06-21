@@ -1,15 +1,13 @@
 /**
  * Build a reusable `fit` definition file interactively.
  *
- * Run on its own (skipping the top-level menu; add --root <dir> to point at
- * another workspace):
+ * Run on its own (skipping the top-level menu):
  *   npx tsx src/fit/shared/create-definition/create-definition.ts
  */
 import { type RunOutput } from "../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { printFileContent } from "../../../util/non-fit/fit-cli-log.js";
 import { qualifyPromptId, select, confirm, input } from "../../../util/non-fit/prompts.js";
-import { rootDirFromArgv } from "../../util/root.js";
 import { loadFitCliConfig, resolveOutputFormat } from "../../util/config.js";
 import { chooseSdk } from "../../../util/sdk/choose-sdk.js";
 import { askClusterDef } from "../../../cluster/cluster-create/ask-cluster-def.js";
@@ -215,13 +213,12 @@ function collectSubDefClusterlessSession(subDef: FitDefinition): SessionLifetime
 }
 
 async function addFunctionalRun(
-  rootDir: string,
   state: DefinitionBuilderState,
   runIndex: number,
 ): Promise<void> {
   await ensureSharedRepoSetup(state);
   const promptIdPrefix = `fit.definition.run.${runIndex + 1}.functional`;
-  const execution = createLocalFitExecutionContext(rootDir);
+  const execution = createLocalFitExecutionContext();
   const connectivity = await chooseFunctionalConnectivity(promptIdPrefix);
   const sdk = await chooseSdk("Which SDK do you want to test with FIT functional?", promptIdPrefix);
   const version = await askPerformerTag(sdk, promptIdPrefix);
@@ -324,13 +321,12 @@ async function chooseCapellaEnvironment(promptIdPrefix: string): Promise<string>
 }
 
 async function addSituationalRun(
-  rootDir: string,
   state: DefinitionBuilderState,
   runIndex: number,
 ): Promise<void> {
   await ensureSharedRepoSetup(state);
   const promptIdPrefix = `fit.definition.run.${runIndex + 1}.situational`;
-  const execution = createLocalFitExecutionContext(rootDir);
+  const execution = createLocalFitExecutionContext();
   const sdk = await chooseSdk("Which SDK do you want to test with FIT situational?", promptIdPrefix);
   const version = await askPerformerTag(sdk, promptIdPrefix);
   const onPortInUse = await askPortInUsePolicy(promptIdPrefix);
@@ -373,7 +369,7 @@ async function addSituationalRun(
   state.instances.push(generatedInstance);
 }
 
-export async function createFitDefinition(rootDir: string, options?: { format?: DefinitionFormat; pushGistVisibility?: GistVisibility }): Promise<RunOutput> {
+export async function createFitDefinition(options?: { format?: DefinitionFormat; pushGistVisibility?: GistVisibility }): Promise<RunOutput> {
   console.log(
     "\nThis builds a reusable fit definition file. Nothing is set up — no cluster is allocated, no performer built, no tests run.\n",
   );
@@ -392,9 +388,9 @@ export async function createFitDefinition(rootDir: string, options?: { format?: 
     }
     const nextRunIndex = runCount(state);
     if (action === "functional") {
-      await addFunctionalRun(rootDir, state, nextRunIndex);
+      await addFunctionalRun(state, nextRunIndex);
     } else {
-      await addSituationalRun(rootDir, state, nextRunIndex);
+      await addSituationalRun(state, nextRunIndex);
     }
   }
 
@@ -435,8 +431,7 @@ export async function createFitDefinition(rootDir: string, options?: { format?: 
 
 if (isMain(import.meta.url)) {
   runCli(async () => {
-    const { rootDir, positionals } = rootDirFromArgv(process.argv.slice(2));
-    const pushGistVisibility = extractPushGistVisibility(positionals);
-    return createFitDefinition(rootDir, { pushGistVisibility });
+    const pushGistVisibility = extractPushGistVisibility(process.argv.slice(2));
+    return createFitDefinition({ pushGistVisibility });
   });
 }

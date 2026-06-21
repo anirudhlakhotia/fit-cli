@@ -7,18 +7,16 @@ import { HEARTBEAT_INTERVAL_SECS, streamToFile, type RunOptions } from "../../..
 import { createRunFilePath, runRunDir, type DefinitionRunPath } from "../../../util/non-fit/replay.js";
 import { posixQuote } from "../../../util/non-fit/remote-target.js";
 import type { ExecutionTarget } from "../../../util/non-fit/target.js";
-import { rootDirFromArgv } from "../../util/root.js";
+import { fitCliError, runScriptPrefix } from "../../../util/non-fit/fit-cli-log.js";
 import { FIT_INSTANCE_USER } from "../../util/aws/fit-instance.js";
-import { FIT_PERFORMER, JENKINS_SDK, repoPath, type Repo } from "../../util/repos.js";
+import { FIT_PERFORMER, repoPath, type Repo } from "../../util/repos.js";
 import { ensureRepo } from "../../util/ensure-repo.js";
 import { collectJunitArtifacts } from "../run-test-driver/collect-junit.js";
-import { requiredReposForSdk } from "../../../util/sdk/ensure-sdk-workspace.js";
-import { ensureSdkWorkspace } from "../../../util/sdk/ensure-sdk-workspace.js";
 import type { Sdk } from "../../../util/sdk/sdks.js";
 import type { AwsCredentials } from "../../../cloud/util/aws/identity.js";
 import { DEFAULT_PERFORMER_PORT } from "../../performers/util/performer-port.js";
 import { createRemoteFitExecutionContext } from "./remote-fit-execution-context.js";
-import { resolveGerritSshKey, type ResolvedCapellaConfig } from "../../util/config.js";
+import { resolveFitPerformerDir, resolveGerritSshKey, type ResolvedCapellaConfig } from "../../util/config.js";
 
 const REMOTE_FIT_WORKSPACE_DIR = "fit-workspace";
 const REMOTE_DOCKER_WRAPPER_FILE = "docker";
@@ -28,7 +26,17 @@ export interface FitExecutionContext {
   readonly kind: "local" | "remote";
   readonly description: string;
   readonly target: ExecutionTarget;
+  /**
+   * Workspace root. On remote contexts this is the remote FIT workspace dir that
+   * everything (repos, credentials, artifacts) hangs off. On local contexts it's
+   * unused beyond bookkeeping — local paths come from {@link fitPerformerDir}.
+   */
   readonly rootDir: string;
+  /**
+   * The transactions-fit-performer checkout the Maven test-driver runs from.
+   * Empty on a local context when localhost testing isn't configured; callers
+   * that need it (the test-driver, Gerrit checkout) go through {@link ensureWorkspace}.
+   */
   readonly fitPerformerDir: string;
   readonly dockerCommand: string;
   readonly artifacts: Artifact[];
@@ -40,7 +48,8 @@ export interface FitExecutionContext {
    */
   gerritSshKeyPath?: string;
 
-  ensureWorkspace(sdk: Sdk): Promise<boolean>;
+  /** Ensure the FIT performer checkout is present (cloning it if missing). */
+  ensureWorkspace(): Promise<boolean>;
   run(command: string, args: string[], cwd?: string, opts?: RunOptions): Promise<void>;
   capture(command: string, args: string[], cwd?: string, opts?: RunOptions): Promise<string>;
   runHiddenUntilFailure(command: string, args: string[], cwd?: string, opts?: RunOptions): Promise<void>;
@@ -93,22 +102,13 @@ export function remoteDockerWrapperPath(rootDir: string): string {
   return join(remoteFitBinDir(rootDir), REMOTE_DOCKER_WRAPPER_FILE);
 }
 
-function uniqueRepos(repos: readonly Repo[]): Repo[] {
-  return [...new Map(repos.map((repo) => [repo.dir, repo])).values()];
-}
-
-export function remoteWorkspaceRepos(sdk: Sdk): Repo[] {
-  return uniqueRepos([FIT_PERFORMER, ...requiredReposForSdk(sdk)]);
-}
-
 /**
- * Repos cloned onto a remote box. transactions-fit-performer holds the FIT test
- * driver; jenkins-sdk is kept solely for situational "local" results-database
- * setup (`./gradlew setupPerfDatabase`) — performers themselves are now always
- * pulled as prebuilt images, never built from source.
+ * Repos cloned onto a remote box: just transactions-fit-performer, which holds
+ * the FIT test driver. Performers themselves are always pulled as prebuilt
+ * images, never built from source.
  */
-export function remoteFitRepos(sdk: Sdk): Repo[] {
-  return uniqueRepos([FIT_PERFORMER, JENKINS_SDK, ...requiredReposForSdk(sdk)]);
+export function remoteFitRepos(): Repo[] {
+  return [FIT_PERFORMER];
 }
 
 export function remoteDockerWrapperScript(): string {
@@ -353,25 +353,34 @@ export function remotePerformerArgs(
   ];
 }
 
-export function createLocalFitExecutionContext(rootDir: string): FitExecutionContext {
+export function createLocalFitExecutionContext(): FitExecutionContext {
   const target = new LocalTarget();
+  // The performer checkout location comes from the localhost config. It can be
+  // empty (localhost testing not configured) — that's fine for flows that only
+  // pull/run a prebuilt performer image; flows that need the source go through
+  // ensureWorkspace, which fails fast with guidance when it's unset.
+  const fitPerformerDir = resolveFitPerformerDir() ?? "";
   return {
     kind: "local",
     description: target.description,
     target,
-    rootDir,
-    fitPerformerDir: repoPath(FIT_PERFORMER, rootDir),
+    rootDir: fitPerformerDir ? dirname(fitPerformerDir) : "",
+    fitPerformerDir,
     dockerCommand: "docker",
     artifacts: [],
     details: [],
     gerritSshKeyPath: resolveGerritSshKey(),
-    ensureWorkspace: async (sdk: Sdk): Promise<boolean> => {
-      if (!(await ensureRepo(FIT_PERFORMER, rootDir))) {
-        console.log("\nOnce transactions-fit-performer is in place, run fit-cli again.");
+    ensureWorkspace: async (): Promise<boolean> => {
+      if (!fitPerformerDir) {
+        fitCliError(
+          "No local transactions-fit-performer checkout is configured.\n" +
+            `  Run \`${runScriptPrefix("config")} edit\` and enable localhost testing ` +
+            "(sets localhost.repos.\"transactions-fit-performer\".dir).",
+        );
         return false;
       }
-      if (!(await ensureSdkWorkspace(sdk, rootDir))) {
-        console.log("\nOnce the SDK workspace repos are in place, run fit-cli again.");
+      if (!(await ensureRepo(FIT_PERFORMER, fitPerformerDir))) {
+        console.log("\nOnce transactions-fit-performer is in place, run fit-cli again.");
         return false;
       }
       return true;
@@ -417,12 +426,11 @@ export function createLocalFitExecutionContext(rootDir: string): FitExecutionCon
 
 export async function createFitExecutionContext(
   target: ExecutionTarget,
-  rootDir: string,
   sdk: Sdk,
   options: { skipRemotePreparation?: boolean; instanceIndex?: number } = {},
 ): Promise<FitExecutionContext> {
   return target.kind === "local"
-    ? createLocalFitExecutionContext(rootDir)
+    ? createLocalFitExecutionContext()
     : await createRemoteFitExecutionContext(target, sdk, options.skipRemotePreparation, options.instanceIndex);
 }
 
@@ -449,7 +457,7 @@ function isLocalCliAction(value: string | undefined): value is LocalCliAction {
 const LOCAL_CLI_HELP = `Drive a local FIT execution context (createLocalFitExecutionContext) directly.
 
 Usage:
-  tsx src/workflows/fit-shared/util/remote-fit-run.ts <subcommand> [args] [--root <dir>]
+  tsx src/fit/shared/util/remote-fit-run.ts <subcommand> [args]
 
 Subcommands:
   run <command> [args...]          Run a command locally, streaming its output.
@@ -462,7 +470,6 @@ Put a \`--\` before the forwarded command so its own flags aren't parsed by fit-
   ... run -- ls -la
 
 Options:
-  --root <dir>, -r <dir>           Workspace ROOT_DIR (default: parent of cwd; or FIT_ROOT).
   --help, -h                       Show this help.`;
 
 if (isMain(import.meta.url)) {
@@ -473,8 +480,7 @@ if (isMain(import.meta.url)) {
       return;
     }
 
-    const { rootDir, positionals } = rootDirFromArgv(rawArgs);
-    const [action, ...rest] = positionals;
+    const [action, ...rest] = rawArgs;
     if (!isLocalCliAction(action)) {
       console.error(`Unknown or missing subcommand.\n\n${LOCAL_CLI_HELP}`);
       process.exit(2);
@@ -483,7 +489,7 @@ if (isMain(import.meta.url)) {
     // Drop the optional `--` separator so its only job is shielding the inner
     // command's flags from fit-cli's argv parsing, not becoming an argument.
     const args = rest[0] === "--" ? rest.slice(1) : rest;
-    const execution = createLocalFitExecutionContext(rootDir);
+    const execution = createLocalFitExecutionContext();
     switch (action) {
       case "run":
         await execution.run(args[0], args.slice(1));

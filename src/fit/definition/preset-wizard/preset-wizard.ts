@@ -61,7 +61,7 @@ async function choosePresetType(): Promise<PresetType> {
  * RunOutput of the definition run when running, or an empty output when only
  * exporting.
  */
-export async function runPresetWizard(rootDir: string, options: RunPresetWizardOptions = {}): Promise<RunOutput> {
+export async function runPresetWizard(options: RunPresetWizardOptions = {}): Promise<RunOutput> {
   const action = await choosePresetAction();
   const type = await choosePresetType();
   const sdk = await chooseSdk("Which SDK's performer should the preset run against?", PROMPT_PREFIX);
@@ -70,7 +70,7 @@ export async function runPresetWizard(rootDir: string, options: RunPresetWizardO
 
   if (action === "run") {
     const { path } = await generatePreset({ type, image, skipGuidance: true });
-    return runFromDefinition(path, rootDir);
+    return runFromDefinition(path);
   }
 
   await generatePreset({ type, image, format: options.format, pushGistVisibility: options.pushGistVisibility });
@@ -78,5 +78,5 @@ export async function runPresetWizard(rootDir: string, options: RunPresetWizardO
 }
 
 if (isMain(import.meta.url)) {
-  runCli(() => runPresetWizard(process.cwd()));
+  runCli(() => runPresetWizard());
 }

@@ -1,7 +1,7 @@
 /**
  * Step: fetch and checkout transactions-fit-performer at a specific Gerrit ref.
  *
- * Run on its own (add --root <dir> to point at another workspace):
+ * Run on its own:
  *   npx tsx src/fit/performers/checkout-fit-gerrit-ref/checkout-fit-gerrit-ref.ts refs/changes/29/246329/1
  */
 import { captureValueSync } from "../../../util/non-fit/proc.js";
@@ -9,7 +9,6 @@ import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { fitCliError, runScriptPrefix } from "../../../util/non-fit/fit-cli-log.js";
 import { posixQuote } from "../../../util/non-fit/remote-target.js";
 import { resolveGerritUser } from "../../util/config.js";
-import { rootDirFromArgv } from "../../util/root.js";
 import { createLocalFitExecutionContext, type FitExecutionContext } from "../../shared/util/remote-fit-run.js";
 
 export const FIT_GERRIT_HOST = "review.couchbase.org";
@@ -183,14 +182,14 @@ export async function checkoutFitGerritRef(
 
 if (isMain(import.meta.url)) {
   runCli(async () => {
-    const { rootDir, positionals } = rootDirFromArgv(process.argv.slice(2));
+    const positionals = process.argv.slice(2);
     const gerritRef = positionals[0];
     if (!gerritRef || positionals.length > 1) {
       console.error(
-        "Usage: tsx src/workflows/performers/checkout-fit-gerrit-ref/checkout-fit-gerrit-ref.ts <refs/changes/...> [--root <dir>]",
+        "Usage: tsx src/fit/performers/checkout-fit-gerrit-ref/checkout-fit-gerrit-ref.ts <refs/changes/...>",
       );
       process.exit(2);
     }
-    process.exit((await checkoutFitGerritRef(createLocalFitExecutionContext(rootDir), gerritRef)) ? 0 : 1);
+    process.exit((await checkoutFitGerritRef(createLocalFitExecutionContext(), gerritRef)) ? 0 : 1);
   });
 }

@@ -6,12 +6,12 @@
  * workflow; this step only deals with FIT configuration.
  *
  * Run on its own (this picks a cluster via the cluster-select workflow, then
- * generates its config; add --root <dir> to point elsewhere):
+ * generates its config):
  *   npx tsx src/fit/shared/fit-configuration/generate-fit-configuration.ts
  */
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { type RunOutput } from "../../../util/non-fit/artifacts.js";
-import { rootDirFromArgv } from "../../util/root.js";
+import { resolveFitPerformerDir } from "../../util/config.js";
 import { selectOrCreateCluster } from "../../../cluster/cluster-select-or-create/cluster-select-or-create.js";
 import { type SelectedCluster } from "../../../cluster/cluster-select/cluster-select.js";
 import { DEFAULT_PERFORMER_PORT } from "../../performers/util/performer-port.js";
@@ -33,7 +33,7 @@ import {
  */
 export function generateFitConfiguration(
   cluster: SelectedCluster,
-  rootDir: string,
+  fitPerformerDir: string,
   path: DefinitionRunPath,
   performerPort: number = DEFAULT_PERFORMER_PORT,
   fitConfig?: ResolvedFitConfig,
@@ -48,7 +48,7 @@ export function generateFitConfiguration(
 
   console.log(
     `\nGenerating a FITConfiguration.json for you. You can also produce this by hand by ` +
-      `following ${fitConfigDocPath(rootDir)}.`,
+      `following ${fitConfigDocPath(fitPerformerDir)}.`,
   );
   const result = writeFitConfiguration(config, path);
 
@@ -64,7 +64,7 @@ export function generateFitConfiguration(
 
 if (isMain(import.meta.url)) {
   runCli(async () => {
-    const { rootDir } = rootDirFromArgv(process.argv.slice(2));
+    const fitPerformerDir = resolveFitPerformerDir() ?? "";
     // Select an existing cluster or create a fresh one; a created Capella cluster
     // is classified from its connection string so the FITConfig gets the Capella
     // treatment automatically.
@@ -72,6 +72,6 @@ if (isMain(import.meta.url)) {
     if (!outcome.ready) {
       process.exit(1);
     }
-    return generateFitConfiguration(outcome.cluster, rootDir, { instanceIndex: 0, clusterIndex: 0, sessionIndex: 0, runIndex: 0 });
+    return generateFitConfiguration(outcome.cluster, fitPerformerDir, { instanceIndex: 0, clusterIndex: 0, sessionIndex: 0, runIndex: 0 });
   });
 }

@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { sdkByValue } from "../../../util/sdk/sdks.js";
 import {
   createLocalFitExecutionContext,
   gitCredentialsLine,
@@ -10,7 +9,6 @@ import {
   remoteDockerWrapperScript,
   remoteFitRepos,
   remoteFitRootDir,
-  remoteWorkspaceRepos,
   remotePerformerArgs,
 } from "../util/remote-fit-run.js";
 
@@ -18,20 +16,9 @@ test("remoteFitRootDir defaults to the ubuntu home directory", () => {
   assert.equal(remoteFitRootDir(), "/home/ubuntu/fit-workspace");
 });
 
-test("remoteFitRepos clones transactions-fit-performer and jenkins-sdk (the latter for the situational perf DB)", () => {
-  const sdk = sdkByValue("java");
-  assert.ok(sdk);
+test("remoteFitRepos only includes transactions-fit-performer (jenkins-sdk was removed)", () => {
   assert.deepEqual(
-    remoteFitRepos(sdk).map((repo) => repo.dir),
-    ["transactions-fit-performer", "jenkins-sdk"],
-  );
-});
-
-test("remoteWorkspaceRepos only includes transactions-fit-performer", () => {
-  const sdk = sdkByValue("java");
-  assert.ok(sdk);
-  assert.deepEqual(
-    remoteWorkspaceRepos(sdk).map((repo) => repo.dir),
+    remoteFitRepos().map((repo) => repo.dir),
     ["transactions-fit-performer"],
   );
 });
@@ -45,12 +32,12 @@ test("gitCredentialsLine grants github.com access via the x-access-token user", 
 });
 
 test("createLocalFitExecutionContext keeps local file paths unchanged", () => {
-  const execution = createLocalFitExecutionContext("/work/root");
+  const execution = createLocalFitExecutionContext();
   assert.equal(execution.targetFilePath("/tmp/fit-cli/run/driver.log"), "/tmp/fit-cli/run/driver.log");
 });
 
 test("createLocalFitExecutionContext builds local docker run args without host-gateway wiring", () => {
-  const execution = createLocalFitExecutionContext("/work/root");
+  const execution = createLocalFitExecutionContext();
   assert.deepEqual(execution.performerRunArgs("performer-node-main"), [
     "run",
     "--detach",
@@ -64,7 +51,7 @@ test("createLocalFitExecutionContext builds local docker run args without host-g
 });
 
 test("createLocalFitExecutionContext can attach the performer to a cluster Docker network", () => {
-  const execution = createLocalFitExecutionContext("/work/root");
+  const execution = createLocalFitExecutionContext();
   assert.deepEqual(execution.performerRunArgs("performer-node-main", 8060, "fit-net"), [
     "run",
     "--detach",

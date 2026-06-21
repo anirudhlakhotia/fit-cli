@@ -28,7 +28,6 @@ import {
   remoteGerritSshKeyPath,
   remotePerformerArgs,
   remoteRunArtifactsDir,
-  remoteWorkspaceRepos,
   stageGerritSshKey,
   type FitExecutionContext,
 } from "./remote-fit-run.js";
@@ -101,7 +100,10 @@ export function remoteAptGetCommand(args: string): string {
  */
 export async function createRemoteFitExecutionContext(
   target: ExecutionTarget,
-  sdk: Sdk,
+  // Performers are prebuilt images and the only cloned repo (the test-driver) is
+  // SDK-agnostic, so the box layout no longer varies by SDK — kept for the
+  // signature shared with the local path and the standalone CLI.
+  _sdk: Sdk,
   skipPreparation = false,
   instanceIndex = 0,
 ): Promise<FitExecutionContext> {
@@ -129,9 +131,8 @@ export async function createRemoteFitExecutionContext(
     });
     await target.runHiddenUntilFailure("sh", [
       "-lc",
-      // JDK 17+ needed for jenkins-sdk ./gradlew
-      remoteAptGetCommand("install -y git docker.io openjdk-17-jdk-headless lsof"),
-    ], undefined, { display: "apt-get install git docker.io openjdk-17-jdk-headless lsof" });
+      remoteAptGetCommand("install -y git docker.io lsof"),
+    ], undefined, { display: "apt-get install git docker.io lsof" });
     // Allow running Docker without sudo
     await target.run("sudo", ["usermod", "-aG", "docker", "ubuntu"]);
     await target.run("sudo", ["-n", "systemctl", "enable", "--now", "docker"]);
@@ -155,7 +156,7 @@ export async function createRemoteFitExecutionContext(
       );
     }
 
-    await ensureRemoteRepos(target, rootDir, remoteFitRepos(sdk));
+    await ensureRemoteRepos(target, rootDir, remoteFitRepos());
 
     if (localGerritKey) {
       console.log(`\n→ Staging Gerrit SSH key to remote instance...`);
@@ -175,8 +176,8 @@ export async function createRemoteFitExecutionContext(
     artifacts: [],
     details: [{ label: "Remote workspace", value: rootDir }],
     gerritSshKeyPath,
-    ensureWorkspace: async (sdk) => {
-      await ensureRemoteRepos(target, rootDir, remoteWorkspaceRepos(sdk));
+    ensureWorkspace: async () => {
+      await ensureRemoteRepos(target, rootDir, remoteFitRepos());
       return true;
     },
     run: (command, args, cwd, opts) =>

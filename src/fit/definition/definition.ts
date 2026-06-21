@@ -3,13 +3,12 @@
  * Top-level dispatcher for the `definition` bun script and for the compiled
  * `fit definition [...]` subcommand.
  *
- * bun run definition execute <file.yaml> [--resume-at=<point>] [resume selectors] [--root <dir>]
+ * bun run definition execute <file.yaml> [--resume-at=<point>] [resume selectors]
  * bun run definition validate <file.yaml>
- * bun run definition execute-preset --type <preset> --performer-image-name <image> [resume flags] [--root <dir>]
+ * bun run definition execute-preset --type <preset> --performer-image-name <image> [resume flags]
  */
 import { existsSync } from "node:fs";
 import { isMain, runCli } from "../../util/non-fit/cli.js";
-import { rootDirFromArgv } from "../util/root.js";
 import { extractInteractiveFlag, extractReplayFlag, markNonInteractiveByDefault } from "../../util/non-fit/replay.js";
 import { runFromDefinition } from "../functional/run-from-definition/run-from-definition.js";
 import { cacheDefinition, isDefinitionUrl, loadDefinition } from "../shared/definition/parse-definition.js";
@@ -29,11 +28,11 @@ type Subcommand = (typeof SUBCOMMANDS)[number];
 const HELP = `Manage FIT definition files.
 
 Usage:
-  bun run definition execute <file.json5> [--resume-at=<point>] [resume selectors] [--root <dir>]
+  bun run definition execute <file.json5> [--resume-at=<point>] [resume selectors]
   bun run definition validate <file.json5>
   bun run definition generate-desc <file.json5>
   bun run definition generate-preset --type <preset> --performer-image-name <image> [--output <path>]
-  bun run definition execute-preset --type <preset> --performer-image-name <image> [resume flags] [--root <dir>]
+  bun run definition execute-preset --type <preset> --performer-image-name <image> [resume flags]
   bun run definition list-presets
   bun run definition --help
 
@@ -105,8 +104,7 @@ export async function definitionDispatch(argv: string[]): Promise<RunOutput | vo
   // The global --interactive / --replay flags are read straight from
   // process.argv by the prompt session, so strip them here before we pick the
   // subcommand off the front — otherwise `definition -- --interactive <file>`
-  // would treat "--interactive" as the subcommand and bail. The execute path's
-  // rootDirFromArgv strips them from its own positionals too, so this is safe.
+  // would treat "--interactive" as the subcommand and bail.
   const cleaned = extractInteractiveFlag(extractReplayFlag(argv).positionals).positionals;
   const [subcommand, ...rest] = cleaned;
 
@@ -156,8 +154,7 @@ export async function definitionDispatch(argv: string[]): Promise<RunOutput | vo
       console.error((err as Error).message);
       process.exit(2);
     }
-    const { rootDir, positionals: afterRoot } = rootDirFromArgv(presetPositionals);
-    const { resumeAt, positionals: afterResume } = extractResumeAt(afterRoot);
+    const { resumeAt, positionals: afterResume } = extractResumeAt(presetPositionals);
     const { selector: resumeSelector, positionals: afterSelector } = extractResumeSelector(afterResume);
     if (afterSelector.length > 0) {
       console.error(`Unexpected arguments: ${afterSelector.join(" ")}`);
@@ -171,7 +168,7 @@ export async function definitionDispatch(argv: string[]): Promise<RunOutput | vo
       process.exit(2);
     }
     const { path: definitionPath } = await generatePreset({ ...presetArgs, skipGuidance: true });
-    return runFromDefinition(definitionPath, rootDir, {
+    return runFromDefinition(definitionPath, {
       ...(resumePoint ? { resumeAt: resumePoint } : {}),
       resumeSelector,
     });
@@ -198,13 +195,12 @@ export async function definitionDispatch(argv: string[]): Promise<RunOutput | vo
   // execute — either an explicit `execute ...` or an implicit bare path, in
   // which case the path itself is the first positional, so keep it.
   const executeArgs = isSubcommand ? rest : cleaned;
-  const { rootDir, positionals } = rootDirFromArgv(executeArgs);
-  const { resumeAt, positionals: afterResume } = extractResumeAt(positionals);
+  const { resumeAt, positionals: afterResume } = extractResumeAt(executeArgs);
   const { selector: resumeSelector, positionals: afterSelector } = extractResumeSelector(afterResume);
   const [definitionPath, ...extra] = afterSelector;
   if (!definitionPath || extra.length > 0) {
     console.error(
-      "Usage: bun run definition execute <file.yaml> [--resume-at=<point>] [resume selectors] [--root <dir>]\n" +
+      "Usage: bun run definition execute <file.yaml> [--resume-at=<point>] [resume selectors]\n" +
         "  --resume-at: after-instance-creation | after-remote-preparation | after-cluster-creation | after-performer\n" +
         "  resume selectors: --resume-instance=<n> --resume-cluster=<n> --resume-session=<n> --resume-clusterless-session=<n> --resume-run=<n>",
     );
@@ -228,7 +224,7 @@ export async function definitionDispatch(argv: string[]): Promise<RunOutput | vo
     `✓ Valid ${FIT_DEFINITION_TYPE} definition (version ${definition.version}, ` +
       `${definition.instances.length} instance(s), ${countRuns(definition)} run(s)).`,
   );
-  return runFromDefinition(resolvedDefinitionPath, rootDir, {
+  return runFromDefinition(resolvedDefinitionPath, {
     ...(resumePoint ? { resumeAt: resumePoint } : {}),
     resumeSelector,
   });

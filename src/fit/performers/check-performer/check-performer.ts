@@ -4,14 +4,13 @@
  * Performers are always prebuilt GHCR images (couchbase/<sdk>-fit-performer);
  * there is no on-disk source to check.
  *
- * Run on its own (add --root <dir> to point at another workspace):
+ * Run on its own:
  *   npx tsx src/fit/performers/check-performer/check-performer.ts java
  *
  * Exits 0 if the Docker image exists locally, 1 if it does not (or the SDK is unknown).
  */
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { fitCliError } from "../../../util/non-fit/fit-cli-log.js";
-import { rootDirFromArgv } from "../../util/root.js";
 import { PREBUILT_PERFORMER_SDKS, sdkByValue, type Sdk } from "../../../util/sdk/sdks.js";
 import { createLocalFitExecutionContext, type FitExecutionContext } from "../../shared/util/remote-fit-run.js";
 import { performerImageName } from "../util/performer-image.js";
@@ -74,17 +73,17 @@ export async function checkPerformer(
 
 if (isMain(import.meta.url)) {
   runCli(async () => {
-    const { rootDir, positionals } = rootDirFromArgv(process.argv.slice(2));
+    const positionals = process.argv.slice(2);
     const value = positionals[0];
     const sdk = value ? sdkByValue(value) : undefined;
     const version = positionals[1];
     if (!sdk) {
       const values = PREBUILT_PERFORMER_SDKS.map((s) => s.value).join(" | ");
       console.error(
-        `Usage: tsx src/fit/performers/check-performer/check-performer.ts <${values}> [tag] [--root <dir>]`,
+        `Usage: tsx src/fit/performers/check-performer/check-performer.ts <${values}> [tag]`,
       );
       process.exit(2);
     }
-    process.exit((await checkPerformer(createLocalFitExecutionContext(rootDir), sdk, version)) ? 0 : 1);
+    process.exit((await checkPerformer(createLocalFitExecutionContext(), sdk, version)) ? 0 : 1);
   });
 }
