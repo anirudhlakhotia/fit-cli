@@ -41,9 +41,13 @@ export interface FitExecutionContext {
   gerritSshKeyPath?: string;
 
   ensureWorkspace(sdk: Sdk): Promise<boolean>;
+  /** StreamToTerminal process model (LogType1): stdout/stderr stream into this process's own stdout/stderr. */
   run(command: string, args: string[], cwd?: string, opts?: RunOptions): Promise<void>;
+  /** CaptureValue process model (no LogType): run a process to parse a value (SHA, username, file list), not to produce log noise. */
   capture(command: string, args: string[], cwd?: string, opts?: RunOptions): Promise<string>;
+  /** HiddenUntilFailure process model (LogType2): output hidden as noise and only shown on failure (also kept in the session.debug.log artifact). */
   runHiddenUntilFailure(command: string, args: string[], cwd?: string, opts?: RunOptions): Promise<void>;
+  /** StreamToArtifact process model (LogType3): output sent to a separate artifact file, with the last line surfaced every N seconds for proof-of-life. */
   runToFile(command: string, args: string[], targetPath: string, cwd?: string): Promise<void>;
   targetFilePath(localPath: string): string;
   stageFile(localPath: string, targetPath?: string): Promise<string>;
