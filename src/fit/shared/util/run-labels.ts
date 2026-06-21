@@ -64,17 +64,26 @@ export function performerLabel(path: DefinitionRunPath, sdkValue?: string, versi
   return `s${(path.sessionIndex ?? 0) + 1}`;
 }
 
-/** The run, named by its single preset, else its type (`func`/`sit`), else `r1`. */
+/** The run type's short form: `func` / `sit`. */
+function typeAbbrev(type: NonNullable<RunLabelParts["type"]>): string {
+  return type === "functional" ? "func" : "sit";
+}
+
+/**
+ * The run, named by its single preset (qualified by type, e.g. `sit:standard-qe`),
+ * else its type (`func`/`sit`), else `r1`. A preset without a known type falls
+ * back to the bare preset name.
+ */
 export function runLabel(
   path: DefinitionRunPath,
   type?: RunLabelParts["type"],
   presets?: readonly string[],
 ): string | undefined {
   if (presets && presets.length === 1) {
-    return presets[0];
+    return type ? `${typeAbbrev(type)}:${presets[0]}` : presets[0];
   }
   if (type) {
-    return type === "functional" ? "func" : "sit";
+    return typeAbbrev(type);
   }
   return path.runIndex !== undefined ? `r${path.runIndex + 1}` : undefined;
 }

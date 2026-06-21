@@ -31,8 +31,11 @@ test("performerLabel names the session by performer, falling back to sN", () => 
   assert.equal(performerLabel({ ...path, sessionIndex: 1 }), "s2");
 });
 
-test("runLabel prefers a single preset, then the type, then rN", () => {
-  assert.equal(runLabel(path, "functional", ["all-transactions"]), "all-transactions");
+test("runLabel qualifies a single preset with its type, then the type, then rN", () => {
+  assert.equal(runLabel(path, "functional", ["all-transactions"]), "func:all-transactions");
+  assert.equal(runLabel(path, "situational", ["standard-qe"]), "sit:standard-qe");
+  // A preset with no known type keeps the bare name.
+  assert.equal(runLabel(path, undefined, ["standard-qe"]), "standard-qe");
   assert.equal(runLabel(path, "functional", ["all-transactions", "standard-qe"]), "func");
   assert.equal(runLabel(path, "situational"), "sit");
   assert.equal(runLabel(path), "r1");
