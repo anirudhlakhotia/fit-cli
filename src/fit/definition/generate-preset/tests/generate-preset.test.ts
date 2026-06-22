@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 test("parseGeneratePresetArgs derives sdk from performer image and accepts output", () => {
   const args = parseGeneratePresetArgs([
     "--type",
-    "preset-functional-tests",
+    "functional",
     "--performer-image-name",
     "java-fit-performer:refs-changes-67-246067-3",
     "--output",
@@ -16,7 +16,7 @@ test("parseGeneratePresetArgs derives sdk from performer image and accepts outpu
   ]);
 
   assert.deepEqual(args, {
-    type: "preset-functional-tests",
+    type: "functional",
     image: "java-fit-performer:refs-changes-67-246067-3",
     outputPath: "/tmp/generated-fit.yaml",
     pushGistVisibility: undefined,
@@ -25,12 +25,12 @@ test("parseGeneratePresetArgs derives sdk from performer image and accepts outpu
 
 test("parseGeneratePresetArgs normalises a fully-qualified GHCR image to short form", () => {
   const args = parseGeneratePresetArgs([
-    "--type=preset-functional-tests",
+    "--type=functional",
     "--performer-image-name=ghcr.io/couchbase/java-fit-performer:refs-changes-67-246067-3",
     "--output=/tmp/generated-fit.yaml",
   ]);
 
-  assert.equal(args.type, "preset-functional-tests");
+  assert.equal(args.type, "functional");
   assert.equal(args.image, "java-fit-performer:refs-changes-67-246067-3");
   assert.equal(args.outputPath, "/tmp/generated-fit.yaml");
 });
@@ -39,7 +39,7 @@ test("parseGeneratePresetArgs requires a performer image name", () => {
   assert.throws(
     () =>
       parseGeneratePresetArgs([
-        "--type=preset-functional-tests",
+        "--type=functional",
       ]),
     /--performer-image-name is required/,
   );
@@ -49,7 +49,7 @@ test("parseGeneratePresetArgs rejects an SDK without prebuilt images", () => {
   assert.throws(
     () =>
       parseGeneratePresetArgs([
-        "--type=preset-functional-tests",
+        "--type=functional",
         "--performer-image-name=python-fit-performer:main",
       ]),
     /publish prebuilt performer images/,
@@ -60,7 +60,7 @@ test("parseGeneratePresetArgs rejects the removed sdk flag", () => {
   assert.throws(
     () =>
       parseGeneratePresetArgs([
-        "--type=preset-functional-tests",
+        "--type=functional",
         "--sdk=java",
         "--performer-image-name=java-fit-performer:refs-changes-67-246067-3",
       ]),
@@ -72,7 +72,7 @@ test("parseGeneratePresetArgs rejects the removed cluster-version flag", () => {
   assert.throws(
     () =>
       parseGeneratePresetArgs([
-        "--type=preset-functional-tests",
+        "--type=functional",
         "--cluster-version=8.0-stable",
         "--performer-image-name=java-fit-performer:refs-changes-67-246067-3",
       ]),
@@ -85,7 +85,7 @@ test("generatePreset writes YAML when the output path ends in .yaml", async () =
   const outputPath = join(dir, "generated.yaml");
 
   await generatePreset({
-    type: "preset-functional-tests",
+    type: "functional",
     image: "java-fit-performer:refs-changes-67-246067-3",
     outputPath,
   });
