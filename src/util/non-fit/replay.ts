@@ -68,11 +68,11 @@ type PromptSessionMode = "record" | "replay" | "defaults" | "non-interactive";
 const RUN_ROOT_DIR = "/tmp/fit-cli";
 const RUN_FROM_DEFINITION_ENTRYPOINT = "src/fit/functional/run-from-definition/run-from-definition.ts";
 
-// Some commands (notably `definition` / `execute-preset`) should run with default
-// answers unless `--interactive` is passed, regardless of how they were launched —
-// the compiled `fit` binary, `fit run <cmd>`, or `bun run <cmd>` all share one
-// entrypoint, so we can't tell them apart by entrypoint path alone. The command's
-// entrypoint declares its default by calling this before the prompt session starts.
+// Some commands (notably `run` / `definition`) should run with default answers
+// unless `--interactive` is passed, regardless of how they were launched — the
+// compiled `fit` binary and `bun run <cmd>` share one entrypoint, so we can't
+// tell them apart by entrypoint path alone. The command's entrypoint declares
+// its default by calling this before the prompt session starts.
 let nonInteractiveByDefault = false;
 export function markNonInteractiveByDefault(value = true): void {
   nonInteractiveByDefault = value;

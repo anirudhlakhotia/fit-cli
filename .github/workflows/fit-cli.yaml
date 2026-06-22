@@ -134,9 +134,9 @@ jobs:
         run: |
           set -o pipefail
           if [[ "${{ inputs.fitCliSource }}" == "source" ]]; then
-            cd fit-cli && bun run definition execute "${FIT_DEFINITION_FILE}" ${{ inputs.cbcollect && '--cbcollect' || '' }} | tee /tmp/fit-cli-output.log
+            cd fit-cli && bun run run definition "${FIT_DEFINITION_FILE}" ${{ inputs.cbcollect && '--cbcollect' || '' }} | tee /tmp/fit-cli-output.log
           else
-            fit definition execute "${FIT_DEFINITION_FILE}" ${{ inputs.cbcollect && '--cbcollect' || '' }} | tee /tmp/fit-cli-output.log
+            fit run definition "${FIT_DEFINITION_FILE}" ${{ inputs.cbcollect && '--cbcollect' || '' }} | tee /tmp/fit-cli-output.log
           fi
         id: run-fit-cli
 

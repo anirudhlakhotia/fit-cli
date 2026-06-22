@@ -187,7 +187,7 @@ export interface GeneratePresetArgs {
   outputPath?: string;
   format?: DefinitionFormat;
   pushGistVisibility?: GistVisibility;
-  /** When true, skip printing the "Run it later with…" guidance (used by execute-preset which runs it immediately). */
+  /** When true, skip printing the "Run it later with…" guidance (used by `fit run <preset>` which runs it immediately). */
   skipGuidance?: boolean;
 }
 
@@ -282,48 +282,5 @@ export function parseGeneratePresetArgs(argv: string[]): GeneratePresetArgs {
     image: performerImageShortName(parsed.sdk, parsed.tag),
     outputPath,
     pushGistVisibility,
-  };
-}
-
-/**
- * Parse `execute-preset` args, extracting --type and --performer-image-name and
- * returning everything else as positionals for the resume/root extractors in
- * definition.ts to consume.
- */
-export function parseExecutePresetArgs(argv: string[]): { presetArgs: Pick<GeneratePresetArgs, "type" | "image">; positionals: string[] } {
-  let type: string | undefined;
-  let performerImageName: string | undefined;
-  const positionals: string[] = [];
-
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i];
-    if (arg === "--type") {
-      type = argv[++i];
-    } else if (arg.startsWith("--type=")) {
-      type = arg.slice("--type=".length);
-    } else if (arg === "--performer-image-name") {
-      performerImageName = argv[++i];
-    } else if (arg.startsWith("--performer-image-name=")) {
-      performerImageName = arg.slice("--performer-image-name=".length);
-    } else {
-      positionals.push(arg);
-    }
-  }
-
-  if (!type) throw new Error(`--type is required.\nAvailable presets: ${PRESET_TYPES.join(", ")}`);
-  if (!isPresetType(type)) {
-    throw new Error(`Unknown preset type: ${type}\nKnown types: ${PRESET_TYPES.join(", ")}`);
-  }
-  if (!performerImageName) {
-    throw new Error("--performer-image-name is required, e.g. java-fit-performer:main");
-  }
-  const parsed = analysePerformerImage(performerImageName);
-  if ("error" in parsed) {
-    throw new Error(`--performer-image-name: ${parsed.error}`);
-  }
-
-  return {
-    presetArgs: { type, image: performerImageShortName(parsed.sdk, parsed.tag) },
-    positionals,
   };
 }

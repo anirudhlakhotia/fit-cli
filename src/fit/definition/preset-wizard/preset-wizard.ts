@@ -5,7 +5,7 @@
  * sanity, the QE set, …) that only needs a performer image filling in. This
  * flow asks which preset, which SDK + performer tag, and whether to just write
  * the definition file (export) or write-and-run it immediately (run). It is the
- * interactive front-end to `definition generate-preset` / `execute-preset`.
+ * interactive front-end to `definition generate-preset` / `fit run <preset>`.
  *
  * Run on its own:
  *   bun src/fit/definition/preset-wizard/preset-wizard.ts

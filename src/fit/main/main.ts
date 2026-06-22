@@ -16,6 +16,7 @@ import { runFromDefinition } from "../functional/run-from-definition/run-from-de
 import type { DefinitionFormat } from "../shared/definition/generate-definition.js";
 import { extractPushGistVisibility, type GistVisibility } from "../shared/definition/push-gist.js";
 import { runDefinitionMain } from "../definition/definition.js";
+import { runRunMain } from "../run/run.js";
 import { runPresetWizard } from "../definition/preset-wizard/preset-wizard.js";
 import { runArchiveMain } from "../archive/archive.js";
 import { runConfigMain } from "../config/config.js";
@@ -209,7 +210,8 @@ function runReplayMain(): void {
 // Anything listed here is available as both `fit <cmd>` and `bun run <cmd>`.
 const COMMANDS: Record<string, { fn: () => void; description: string }> = {
   "wizard":          { fn: runWizardMain,          description: "Interactive walkthrough (default when no command given)" },
-  "definition":      { fn: runDefinitionMain,      description: "Run or validate a FIT definition file" },
+  "run":             { fn: runRunMain,             description: "Run FIT tests from a preset or a definition file" },
+  "definition":      { fn: runDefinitionMain,      description: "Author or inspect a FIT definition file" },
   "config":          { fn: runConfigMain,           description: "Manage fit-cli configuration" },
   "cloud-instances": { fn: runCloudInstancesMain,  description: "Manage cloud (EC2) instances" },
   "secrets":         { fn: runSecretsMain,          description: "Manage AWS secrets" },
@@ -232,19 +234,10 @@ function printHelp(): void {
 if (isMain(import.meta.url) || import.meta.main) {
   const cmd = process.argv[2];
 
-  // Resolve the command, with backward-compat support for `fit run <cmd>`.
-  let command: (() => void) | undefined;
-  let argsToRemove = 0;
-  if (cmd === "run" && COMMANDS[process.argv[3]]) {
-    command = COMMANDS[process.argv[3]].fn;
-    argsToRemove = 2;
-  } else if (cmd && COMMANDS[cmd]) {
-    command = COMMANDS[cmd].fn;
-    argsToRemove = 1;
-  }
+  const command = cmd && COMMANDS[cmd] ? COMMANDS[cmd].fn : undefined;
 
   if (command) {
-    process.argv.splice(2, argsToRemove);
+    process.argv.splice(2, 1);
     command();
   } else if (!cmd || cmd.startsWith("-")) {
     // bare `fit` or flags only → wizard

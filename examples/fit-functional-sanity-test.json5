@@ -6,7 +6,7 @@
 //
 // Validate / run with:
 //   bun run definition validate examples/fit-functional-sanity-test.json5
-//   bun run definition execute --interactive examples/fit-functional-sanity-test.json5
+//   bun run run definition --interactive examples/fit-functional-sanity-test.json5
 {
   version: 1,
   type: 'fit',
