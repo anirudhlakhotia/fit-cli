@@ -441,7 +441,7 @@ export async function setupCluster(
     return { group, artifacts: [], details: [] };
   }
   if (group.cbdinocluster) {
-    const clusterDir = clusterRunDir(group.path.instanceIndex, group.path.clusterIndex ?? 0);
+    const clusterDir = clusterRunDir(group.path);
     const outcome = await setupDeclarativeClusterFn(
       { ...group.cbdinocluster, cng: group.cng, cngSharedCluster: group.cng && cngKubernetesBackend() === "openshift", githubCredentials, source: group.cbdinoclusterSource },
       execution,
@@ -1705,7 +1705,7 @@ export async function runFromDefinition(
             execution,
             group.cbdinoclusterInit,
             githubCredentials,
-            instanceRunDir(group.path.instanceIndex),
+            instanceRunDir(group.path),
             group.cbdinoclusterSource,
           );
           // Fail fast if init left the cloud (Capella) deployer disabled — otherwise

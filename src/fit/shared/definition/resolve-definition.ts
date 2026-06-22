@@ -4,6 +4,7 @@
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import type { PieceData } from "../../../util/non-fit/config-pieces.js";
 import type { DefinitionRunPath } from "../../../util/non-fit/replay.js";
+import { clusterLabel, instanceLabel, performerLabel, runLabel } from "../util/run-labels.js";
 import { classifyConnectionString } from "../../../cluster/cluster-select/classify-connection-string.js";
 import type { SelectedCluster } from "../../../cluster/cluster-select/cluster-select.js";
 import {
@@ -427,14 +428,16 @@ export function resolveSession(
   stripClusterAccess: boolean,
 ): ResolvedSessionPlan {
   const { sdk, tag } = parsePerformerImage(session.performer.image);
+  const sessionSeg = performerLabel(path, sdk.value, tag);
+  const pathWithSession: DefinitionRunPath = { ...path, dirSegments: { ...path.dirSegments, session: sessionSeg } };
   return {
-    path,
+    path: pathWithSession,
     sdk,
     performerPort: session.performer.port ?? DEFAULT_PERFORMER_PORT,
     performerVersion: tag,
     onPortInUse: session.performer.onPortInUse ?? DEFAULT_PORT_IN_USE_POLICY,
     runs: session.runs.map((run, runIndex) =>
-      resolveRunWithPath(run, { ...path, runIndex }, stripClusterAccess)),
+      resolveRunWithPath(run, { ...pathWithSession, runIndex }, stripClusterAccess)),
   };
 }
 
@@ -443,7 +446,13 @@ function resolveRunWithPath(
   path: DefinitionRunPath,
   stripClusterAccess: boolean,
 ): ResolvedRun {
-  return { ...resolveRun(run, stripClusterAccess), path };
+  const resolved = resolveRun(run, stripClusterAccess);
+  const runSeg = runLabel(path, run.type, resolved.testSelection.presets);
+  const pathWithRun: DefinitionRunPath = {
+    ...path,
+    dirSegments: { ...path.dirSegments, ...(runSeg !== undefined ? { run: runSeg } : {}) },
+  };
+  return { ...resolved, path: pathWithRun };
 }
 
 export function resolveCluster(cluster: ClusterLifetime, path: DefinitionRunPath): ResolvedClusterPlan {
@@ -459,19 +468,27 @@ export function resolveCluster(cluster: ClusterLifetime, path: DefinitionRunPath
       throw new Error("cluster.useExisting requires a run-level fitConfig with clusterAccess.");
     }
   }
+  const cbdinoclusterVersion =
+    clusterMode === "cbdinocluster" && cbdinocluster
+      ? [...new Set(cbdinocluster.config.nodes.map((n) => n.version))].filter(Boolean).join("+") || undefined
+      : undefined;
+  const clusterSeg = clusterLabel(path, clusterMode, cbdinoclusterVersion) ?? String(path.clusterIndex ?? 0);
+  const pathWithCluster: DefinitionRunPath = { ...path, dirSegments: { ...path.dirSegments, cluster: clusterSeg } };
   return {
-    path,
+    path: pathWithCluster,
     clusterMode,
     cng: cbdinocluster?.config.cao !== undefined,
     ...(resolvedCluster ? { cluster: resolvedCluster } : {}),
     ...(cbdinocluster ? { cbdinocluster } : {}),
     sessions: cluster.sessions.map((session, sessionIndex) =>
-      resolveSession(session, { ...path, sessionIndex }, clusterMode === "connection")),
+      resolveSession(session, { ...pathWithCluster, sessionIndex }, clusterMode === "connection")),
   };
 }
 
 export function resolveInstancePlan(instance: InstanceLifetime, instanceIndex: number): ResolvedInstancePlan {
-  const path = { instanceIndex } satisfies DefinitionRunPath;
+  const resolvedInstance = resolveInstance(instance);
+  const instanceSeg = instanceLabel({ instanceIndex }, resolvedInstance.kind);
+  const path: DefinitionRunPath = { instanceIndex, dirSegments: { instance: instanceSeg } };
 
   // Use the explicit setup block when present; otherwise infer: any cbdinocluster-backed
   // cluster or clusterless session needs cbdinocluster init on a clean remote box.
@@ -490,12 +507,13 @@ export function resolveInstancePlan(instance: InstanceLifetime, instanceIndex: n
 
   return {
     path,
-    instance: resolveInstance(instance),
-    clusters: instance.clusters.map((cluster, clusterIndex) => resolveCluster(cluster, { instanceIndex, clusterIndex })),
+    instance: resolvedInstance,
+    clusters: instance.clusters.map((cluster, clusterIndex) =>
+      resolveCluster(cluster, { instanceIndex, clusterIndex, dirSegments: { instance: instanceSeg } })),
     ...(cbdinoclusterInit !== undefined ? { cbdinoclusterInit } : {}),
     ...(cbdinoclusterSource !== undefined ? { cbdinoclusterSource } : {}),
     clusterlessSessions: (instance.clusterlessSessions ?? []).map((session, sessionIndex) =>
-      resolveSession(session, { instanceIndex, sessionIndex, clusterlessSession: true }, false)),
+      resolveSession(session, { instanceIndex, sessionIndex, clusterlessSession: true, dirSegments: { instance: instanceSeg } }, false)),
     capellaEnvironment: instance.setup?.capellaEnvironment ?? DEFAULT_CAPELLA_ENV,
   };
 }
@@ -554,7 +572,12 @@ export function buildExecutionGroups(instances: ResolvedInstancePlan[]): Resolve
       : [
           {
             type: "situational" as const,
-            path: { instanceIndex: instance.path.instanceIndex, sessionIndex: instance.clusterlessSessions[0]?.path.sessionIndex, clusterlessSession: true },
+            path: {
+              instanceIndex: instance.path.instanceIndex,
+              sessionIndex: instance.clusterlessSessions[0]?.path.sessionIndex,
+              clusterlessSession: true,
+              dirSegments: { instance: instance.path.dirSegments?.instance },
+            },
             instance: instance.instance,
             cbdinoclusterInit: instance.cbdinoclusterInit,
             ...(instance.cbdinoclusterSource ? { cbdinoclusterSource: instance.cbdinoclusterSource } : {}),
