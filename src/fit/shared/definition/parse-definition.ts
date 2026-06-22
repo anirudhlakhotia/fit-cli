@@ -609,10 +609,9 @@ function validateInstanceSetup(value: unknown, path: string): InstanceSetup | un
   const setup: InstanceSetup = {};
   if (record.cbdinocluster !== undefined) {
     const cbdinocluster = requireRecord(record.cbdinocluster, `${path}.cbdinocluster`);
-    if (cbdinocluster.init === undefined) {
-      throw new InvalidDefinitionError(`Missing required field: ${path}.cbdinocluster.init`);
-    }
-    setup.cbdinocluster = { init: validateCbdinoclusterInit(cbdinocluster.init, `${path}.cbdinocluster.init`) };
+    setup.cbdinocluster = cbdinocluster.init !== undefined
+      ? { init: validateCbdinoclusterInit(cbdinocluster.init, `${path}.cbdinocluster.init`) }
+      : {};
   }
   const capellaEnvironment = optionalEnvironmentName(record, "capellaEnvironment", path);
   if (capellaEnvironment !== undefined) {

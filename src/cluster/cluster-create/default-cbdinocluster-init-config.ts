@@ -1,4 +1,3 @@
-import type { PieceData } from "../../util/non-fit/config-pieces.js";
 import { AWS_REGION } from "../../cloud/util/aws/aws-target.js";
 
 /** The docker network clean FIT environments allocate their clusters on. */
@@ -59,55 +58,3 @@ export function situationalCbdinoclusterInitArgs(
   return baseCbdinoclusterInitArgs(dockerNetwork, false, AWS_REGION);
 }
 
-/**
- * A conservative cbdinocluster config for clean remote FIT environments:
- * docker-only, on a dedicated `fit` network, with the rest disabled unless the
- * user edits the definition.
- *
- * Still used by the CNG path (which uploads a `~/.cbdinocluster` config and adds
- * a `k8s` block) — the docker path now uses {@link defaultCbdinoclusterInitArgs}.
- */
-export function defaultCbdinoclusterInitConfig(): PieceData {
-  return {
-    version: 6,
-    docker: {
-      enabled: true,
-      network: DEFAULT_CBDINOCLUSTER_DOCKER_NETWORK,
-      host: "unix:///var/run/docker.sock"
-    },
-  };
-}
-
-/**
- * A cbdinocluster config for situational FIT/SIT environments: docker + the
- * cloud (Capella) deployer, on a dedicated `fit` network.
- *
- * The FIT test-driver always allocates clusters using cbdinocluster with the
- * cloud deployer — it hard-codes `Deployer: cloud` in the definition it passes
- * to `cbdinocluster allocate`. In cbdinocluster the `cloud` deployer is the
- * Capella deployer, and it only registers when the `capella` section is
- * enabled (see cmd/cmdhelper.go: getCloudDeployer returns nil unless
- * `config.Capella.Enabled`). The `aws` section is NOT a deployer of its own —
- * it only tells the cloud deployer where to provision — so enabling it alone
- * leaves `Deployer: cloud` with no deployer and cbdinocluster fatals with
- * "you have no deployers configured".
- *
- * The Capella block is laid down by `cbdinocluster init --auto` from the
- * forwarded `CAPELLA_*` env; the aws block is laid down by `--aws-region` (AWS
- * credentials are uploaded before init runs so init can enable the aws section
- * directly).
- */
-export function defaultSituationalCbdinoclusterInitConfig(): PieceData {
-  return {
-    version: 6,
-    docker: {
-      enabled: true,
-      network: "fit",
-      host: "unix:///var/run/docker.sock",
-    },
-    aws: {
-      enabled: "true",
-      region: AWS_REGION,
-    },
-  };
-}

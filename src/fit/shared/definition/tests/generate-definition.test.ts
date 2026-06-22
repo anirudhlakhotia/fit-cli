@@ -64,7 +64,7 @@ test("buildFitFunctionalDefinitionFrom records a cbdinocluster in clusterConfigs
   // "RAM quota specified is too large" on large-bucket tests.
   assert.deepEqual(definition.clusterConfigs?.[0]?.cbdinocluster?.config.docker, { "kv-memory": 4096 });
 
-  // cbdinocluster init is NOT emitted for non-CNG clusters — args are generated at runtime.
+  // cbdinocluster init is NOT emitted — args/config are generated at runtime.
   assert.equal(definition.instances[0]?.setup, undefined);
 
   // No fitConfig ref on the run — the FIT config is fully generated at runtime.
@@ -129,7 +129,6 @@ test("formatFitDefinition never leaks comment markers into the output", () => {
   const functional = buildFitFunctionalDefinitionFrom({
     cluster: { kind: "cbdinocluster", def: { cng: false, nodeCount: 1, version: "7.6.0", services: ["kv"] } },
     sdk,
-    githubUser: "octocat",
     selection: buildDefaultFitTestSelection(),
   });
   const situational = buildFitSituationalDefinitionFrom({

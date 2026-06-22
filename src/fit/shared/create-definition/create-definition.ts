@@ -233,7 +233,6 @@ async function addFunctionalRun(
       ...(version ? { version } : {}),
       onPortInUse,
       selection,
-      githubUser: loadFitCliConfig().config?.github?.user,
     });
     currentInstance.clusters[0]?.sessions.push(collectSubDefSession(subDef));
     return;
@@ -255,7 +254,6 @@ async function addFunctionalRun(
     ...(version ? { version } : {}),
     onPortInUse,
     selection,
-    githubUser: loadFitCliConfig().config?.github?.user,
   });
   const generatedInstance = collectSubDefInstance(state, subDef);
   if (!generatedInstance) {
