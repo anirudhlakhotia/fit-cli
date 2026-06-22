@@ -325,7 +325,7 @@ async function promptForLocalhost(existing?: FitCliConfig): Promise<{
     promptId: "init.localhost.configure",
     message: hasExisting
       ? "Edit localhost testing settings? (the source checkout and cbdinocluster path used for runs on this machine)"
-      : "Do you plan to run FIT tests on this machine (localhost)? EC2 runs don't need this.",
+      : "Do you plan to run FIT tests on this machine (localhost)?",
     default: false,
   });
   if (!configureLocalhost) return { configureLocalhost: false };
@@ -353,8 +353,8 @@ async function promptForConfig(existing?: FitCliConfig, configPath?: string): Pr
   const configureAws = await confirm({
     promptId: "init.aws.configure",
     message: hasExistingAws
-      ? "Edit AWS settings? This is only required for some workflows."
-      : "Configure AWS settings? This is only required for some workflows.",
+      ? "Edit AWS settings? The defaults are generally fine."
+      : "Configure AWS settings? The defaults are generally fine.",
     default: false,
   });
 
@@ -400,8 +400,8 @@ async function promptForCapella(
   const configureCapella = await confirm({
     promptId: "init.capella.configure",
     message: hasExisting
-      ? "Edit Capella settings? Only needed for situational (SIT) runs."
-      : "Configure Capella settings? Only needed for situational (SIT) runs.",
+      ? "Edit Capella settings? Optional: only used for situational (FIT/SIT) runs, and only to login with a custom Capella user."
+      : "Configure Capella settings? Optional: only used for situational (FIT/SIT) runs, and only to login with a custom Capella user.",
     default: false,
   });
   if (!configureCapella) {
