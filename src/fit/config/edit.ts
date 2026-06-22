@@ -309,10 +309,14 @@ async function promptForFitPerformerDir(existing?: FitCliConfig): Promise<string
 
 /**
  * The upfront localhost gate: ask whether the user runs FIT on this machine, and
- * if so gather the source checkout + cbdinocluster path. EC2-only users skip it.
+ * if so gather the source checkout, cbdinocluster path, and GitHub/Gerrit creds.
+ * EC2-only users skip all of it.
  */
 async function promptForLocalhost(existing?: FitCliConfig): Promise<{
   configureLocalhost: boolean;
+  githubUser?: string;
+  githubToken?: string;
+  gerritUser?: string;
   fitPerformerDir?: string;
   cbdinoclusterPath?: string;
 }> {
@@ -325,21 +329,25 @@ async function promptForLocalhost(existing?: FitCliConfig): Promise<{
     default: false,
   });
   if (!configureLocalhost) return { configureLocalhost: false };
+  const githubUser = await promptForGithubUser(existing);
+  const githubToken = await promptForGithubToken(existing);
+  const gerritUser = await promptForGerritUser(existing);
   const fitPerformerDir = await promptForFitPerformerDir(existing);
   const cbdinoclusterPath = await promptForCbdinoclusterPath(existing);
   return {
     configureLocalhost: true,
+    ...(githubUser ? { githubUser } : {}),
+    ...(githubToken ? { githubToken } : {}),
+    ...(gerritUser ? { gerritUser } : {}),
     ...(fitPerformerDir ? { fitPerformerDir } : {}),
     ...(cbdinoclusterPath ? { cbdinoclusterPath } : {}),
   };
 }
 
 async function promptForConfig(existing?: FitCliConfig, configPath?: string): Promise<InitAnswers> {
-  const { configureLocalhost, fitPerformerDir, cbdinoclusterPath } = await promptForLocalhost(existing);
-  const githubUser = await promptForGithubUser(existing);
-  const githubToken = await promptForGithubToken(existing);
+  const { configureLocalhost, githubUser, githubToken, gerritUser, fitPerformerDir, cbdinoclusterPath } =
+    await promptForLocalhost(existing);
   const outputFormat = await promptForOutputFormat(existing);
-  const gerritUser = await promptForGerritUser(existing);
   const defaults = buildInitialDefaults(existing);
   const hasExistingAws = existing?.cloud?.aws !== undefined;
   const configureAws = await confirm({
