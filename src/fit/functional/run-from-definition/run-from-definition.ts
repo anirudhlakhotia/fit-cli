@@ -36,7 +36,6 @@ import {
   artifactFromPath,
   combineArtifacts,
   combineDetails,
-  formatDetailsSection,
   type Artifact,
   type Detail,
   type RecordedFailure,
@@ -160,7 +159,8 @@ import {
   type ResumeTargetState,
   type RunState,
 } from "./resume-state.js";
-import { appendJunitStepSummary, appendRunSummaryToGhaSummary } from "../../util/gha.js";
+import { appendRunSummaryToGhaSummary } from "../../util/gha.js";
+import { junitToPlainTextFromDir } from "../../shared/run-test-driver/junit-to-markdown.js";
 
 /** True for a functional iteration that has resolved to a concrete cluster. */
 function functionalWithCluster(
@@ -512,6 +512,8 @@ export interface RunResultSummary {
   type: ResolvedExecutionRun["type"];
   ok: boolean;
   summary?: FitTestDriverSummary;
+  /** Local path to the surefire-reports dir for this run; absent if no test driver ran. */
+  surefireDir?: string;
 }
 
 /** Sink the run loop passes down so each run records its result as it finishes. */
@@ -617,6 +619,7 @@ export async function runTests(
     type: run.type,
     ok: testRun.ok,
     ...(testRun.summary ? { summary: testRun.summary } : {}),
+    surefireDir: join(dirname(testRun.logFile), "surefire-reports"),
   });
   if (!testRun.ok) {
     throwFatalToSession("FIT tests failed — check the test-driver log for details.");
@@ -793,6 +796,7 @@ export async function runSituationalTests(
     type: run.type,
     ok: testRun.ok,
     ...(testRun.summary ? { summary: testRun.summary } : {}),
+    surefireDir: join(dirname(testRun.logFile), "surefire-reports"),
   });
   if (!testRun.ok) {
     throwFatalToSession("FIT tests failed — check the test-driver log for details.");
@@ -1117,25 +1121,20 @@ function resumeSuggestions(inputs: TeardownInputs): ResumePoint[] {
 }
 
 /**
- * A compact pass/fail line for every run that produced a result, rendered as a
- * label/value table. Shown before the leave-up prompt so the user can judge from
- * the failures (if any) whether it's worth keeping resources up to debug.
+ * Print one JUnit results table per run (with a heading) before the leave-up
+ * prompt, so the user can see exactly how each run did before deciding whether
+ * to keep resources up for debugging.
  */
-function formatRunResultsSummary(results: readonly RunResultSummary[]): string | undefined {
-  if (results.length === 0) {
-    return undefined;
+function printRunResultsTables(results: readonly RunResultSummary[]): void {
+  for (const result of results) {
+    const heading = `${result.pathLabel} (${result.sdk})`;
+    console.log(`\n── ${heading} ──`);
+    if (result.surefireDir) {
+      process.stdout.write(junitToPlainTextFromDir(result.surefireDir));
+    } else {
+      console.log(`${result.ok ? "PASS" : "FAIL"} — no test report available`);
+    }
   }
-  const rows: Detail[] = results.map((result) => {
-    const counts = result.summary
-      ? ` — ${result.summary.testsRun} run, ${result.summary.failures} failed, ` +
-        `${result.summary.errors} errors, ${result.summary.skipped} skipped`
-      : "";
-    return {
-      label: `${result.pathLabel} (${result.sdk})`,
-      value: `${result.ok ? "PASS" : "FAIL"}${counts}`,
-    };
-  });
-  return formatDetailsSection(rows);
 }
 
 /**
@@ -1158,9 +1157,8 @@ async function teardownRun(inputs: TeardownInputs): Promise<{ leftUp: boolean }>
   // "moving to next iteration" line, which read as if more was still to come — then
   // show how each run did so the leave-up choice is informed.
   console.log("\n── Run finished — no more iterations, clusters or instances to run. ──");
-  const resultsSummary = formatRunResultsSummary(results);
-  if (resultsSummary) {
-    console.log(`\nResults summary:\n${resultsSummary}`);
+  if (results.length > 0) {
+    printRunResultsTables(results);
   }
 
   let leaveUp: boolean;
@@ -1900,8 +1898,6 @@ export async function runFromDefinition(
     // Best-effort: ship the run's artifacts to S3 after teardown (so anything
     // teardown writes is included). Runs only inside GitHub Actions; never throws.
     await uploadRunArtifacts(runDir);
-    // Best-effort: append JUnit summary to $GITHUB_STEP_SUMMARY. Never throws.
-    await appendJunitStepSummary(runDir, definition.description);
   }
   return finalizeRunFromDefinition(artifacts, details, runDir, tracker.worst, tracker.failureCount);
 }
