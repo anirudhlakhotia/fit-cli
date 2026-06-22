@@ -1,6 +1,6 @@
 import * as core from "@actions/core";
 import { appendFileSync, existsSync, statSync } from "node:fs";
-import { junitToMarkdownFromDir, junitToPlainTextFromDir } from "../shared/run-test-driver/junit-to-markdown.js";
+import { junitToMarkdownFromDir } from "../shared/run-test-driver/junit-to-markdown.js";
 
 /** Current size of the $GITHUB_STEP_SUMMARY file in bytes, or -1 if missing/unset. */
 function summaryFileSize(): number {
@@ -22,12 +22,14 @@ interface RunSummary {
   type: string;
   ok: boolean;
   summary?: { testsRun: number; failures: number; errors: number; skipped: number };
+  /** Local path to the surefire-reports dir for this run; appended as a JUnit table if present. */
+  surefireDir?: string;
 }
 
 /**
  * Append a per-run result block to $GITHUB_STEP_SUMMARY. No-ops outside GHA.
- * The format mirrors the terminal Details table: label/value pairs rendered as
- * a GH-flavoured markdown table so each run gets its own block in the job summary.
+ * Writes a heading, a label/value details table, and (if surefireDir is set) the
+ * full per-package JUnit results table — one block per run.
  */
 export async function appendRunSummaryToGhaSummary(result: RunSummary): Promise<void> {
   if (!process.env.GITHUB_STEP_SUMMARY) {
@@ -35,7 +37,7 @@ export async function appendRunSummaryToGhaSummary(result: RunSummary): Promise<
     return;
   }
 
-  const { pathLabel, sdk, type, ok, summary } = result;
+  const { pathLabel, sdk, type, ok, summary, surefireDir } = result;
   const status = ok ? "✅ PASS" : "❌ FAIL";
   const sizeBefore = summaryFileSize();
 
@@ -60,6 +62,22 @@ export async function appendRunSummaryToGhaSummary(result: RunSummary): Promise<
     .addTable(rows)
     .write({ overwrite: false });
 
+  // Append the per-package JUnit table directly to the summary file.
+  // appendFileSync is used here rather than core.summary because core.summary
+  // writes raw HTML blocks whose GFM parsing requires a blank line before the
+  // next markdown element — we inject that leading \n to close the HTML block.
+  if (surefireDir) {
+    const summaryPath = process.env.GITHUB_STEP_SUMMARY;
+    if (summaryPath) {
+      try {
+        const markdown = junitToMarkdownFromDir(surefireDir);
+        appendFileSync(summaryPath, "\n" + markdown + "\n");
+      } catch (err) {
+        console.warn(`Warning: failed to append JUnit table for "${pathLabel}": ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+  }
+
   console.log(
     `[gha-summary] wrote per-run block for "${pathLabel}" to ${process.env.GITHUB_STEP_SUMMARY} ` +
       `(file ${sizeBefore} → ${summaryFileSize()} bytes)`,
@@ -79,45 +97,4 @@ export function emitGhaArtifactNotice(): void {
   const name = `fit-cli-run-${GITHUB_RUN_ID}`;
   // GHA workflow command: printed to stdout, parsed by the runner.
   console.log(`::notice title=Run artifacts (${name})::${url}`);
-}
-
-/**
- * Append a JUnit test summary to $GITHUB_STEP_SUMMARY and stdout.
- * Uses `description` (from the definition file) as the section heading.
- * Falls back to a plain heading-only entry on error. Never throws.
- */
-export function appendJunitStepSummary(runDir: string, description?: string): void {
-  // Leading \n is load-bearing: appendRunSummaryToGhaSummary writes raw HTML
-  // (<table> etc.) via @actions/core, and GFM only closes an HTML block on a
-  // blank line. Without it this heading is swallowed into the open HTML block
-  // and rendered as literal text instead of an <h2>.
-  const heading = `\n## ${description ?? "FIT run results"}\n\n`;
-  const summaryPath = process.env.GITHUB_STEP_SUMMARY;
-
-  try {
-    console.log(junitToPlainTextFromDir(runDir));
-
-    if (summaryPath) {
-      const markdown = junitToMarkdownFromDir(runDir);
-      console.log(`[gha-summary] appending to ${summaryPath} (currently ${summaryFileSize()} bytes)`);
-      const sizeBefore = summaryFileSize();
-      appendFileSync(summaryPath, heading + markdown + "\n");
-      const sizeAfter = summaryFileSize();
-      console.log(
-        `[gha-summary] appended ${heading.length + markdown.length + 1} bytes; ` +
-          `file ${sizeBefore} → ${sizeAfter} bytes. ` +
-          // GitHub silently drops the whole step summary if the file exceeds 1 MiB.
-          (sizeAfter > 1024 * 1024 ? `⚠ OVER 1 MiB cap — GitHub will drop the step summary!` : `(under 1 MiB cap)`),
-      );
-    }
-  } catch (err) {
-    console.warn(`Warning: failed to generate JUnit step summary (${err instanceof Error ? err.message : String(err)}); writing plain summary`);
-    if (summaryPath) {
-      try {
-        appendFileSync(summaryPath, heading + "_JUnit summary unavailable._\n");
-      } catch {
-        // ignore — if we can't write the fallback, there's nothing more to do
-      }
-    }
-  }
 }
