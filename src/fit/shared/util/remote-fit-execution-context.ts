@@ -131,8 +131,8 @@ export async function createRemoteFitExecutionContext(
     });
     await target.runHiddenUntilFailure("sh", [
       "-lc",
-      remoteAptGetCommand("install -y git docker.io lsof"),
-    ], undefined, { display: "apt-get install git docker.io lsof" });
+      remoteAptGetCommand("install -y git docker.io lsof default-jdk"),
+    ], undefined, { display: "apt-get install git docker.io lsof default-jdk" });
     // Allow running Docker without sudo
     await target.run("sudo", ["usermod", "-aG", "docker", "ubuntu"]);
     await target.run("sudo", ["-n", "systemctl", "enable", "--now", "docker"]);
