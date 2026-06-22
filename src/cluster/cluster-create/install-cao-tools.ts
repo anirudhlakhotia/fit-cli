@@ -17,13 +17,13 @@
  *
  * Run on its own:
  *   # Just print the script it would run (no SSH, no AWS):
- *   npx tsx src/cluster/cluster-create/install-cao-tools.ts --print [--cao-dir <path>] [--version 2.8.0]
+ *   bun src/cluster/cluster-create/install-cao-tools.ts --print [--cao-dir <path>] [--version 2.8.0]
  *   # Install using a saved instance dir (reads ec2-instance.json + .pem automatically):
- *   npx tsx src/cluster/cluster-create/install-cao-tools.ts --dir /tmp/fit-cli/<run>/instances/0
+ *   bun src/cluster/cluster-create/install-cao-tools.ts --dir /tmp/fit-cli/<run>/instances/0
  *   # Install cao tools and also deploy CRDs + admission controller:
- *   npx tsx src/cluster/cluster-create/install-cao-tools.ts --dir /tmp/fit-cli/<run>/instances/0 --deploy
+ *   bun src/cluster/cluster-create/install-cao-tools.ts --dir /tmp/fit-cli/<run>/instances/0 --deploy
  *   # Install with explicit flags:
- *   npx tsx src/cluster/cluster-create/install-cao-tools.ts \
+ *   bun src/cluster/cluster-create/install-cao-tools.ts \
  *     --instance i-0123456789abcdef0 --key ~/.ssh/my-key.pem [--user ubuntu] [--region eu-west-1] [--version 2.8.0]
  */
 import { readFileSync } from "fs";

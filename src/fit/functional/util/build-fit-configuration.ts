@@ -5,7 +5,7 @@
  * transactions-fit-performer/test-driver/.
  *
  * Run on its own:
- *   npx tsx src/fit/functional/util/build-fit-configuration.ts
+ *   bun src/fit/functional/util/build-fit-configuration.ts
  *
  * Prints a sample generated config as JSON.
  */

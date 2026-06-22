@@ -2,7 +2,7 @@
  * Step: ask which SDK to test and return it.
  *
  * Run on its own:
- *   npx tsx src/util/sdk/choose-sdk.ts
+ *   bun src/util/sdk/choose-sdk.ts
  *
  * Prints the chosen SDK as JSON.
  */

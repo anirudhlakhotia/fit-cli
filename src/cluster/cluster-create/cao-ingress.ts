@@ -8,7 +8,7 @@
  * it via REST.)
  *
  * Run on its own:
- *   npx tsx src/cluster/cluster-create/cao-ingress.ts <cluster-id>
+ *   bun src/cluster/cluster-create/cao-ingress.ts <cluster-id>
  */
 import { isMain, runCli } from "../../util/non-fit/cli.js";
 import { localClusterCommandExecutor, type ClusterCommandExecutor } from "./allocate-cluster.js";

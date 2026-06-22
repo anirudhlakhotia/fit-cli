@@ -7,7 +7,7 @@
  * {@link SITUATIONAL_MAVEN_TEST_ARGS} for situational ones).
  *
  * Run on its own:
- *   npx tsx src/fit/shared/run-test-driver/run-test-driver.ts
+ *   bun src/fit/shared/run-test-driver/run-test-driver.ts
  */
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { basename, dirname, join } from "node:path";

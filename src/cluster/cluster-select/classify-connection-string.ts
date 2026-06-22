@@ -4,7 +4,7 @@
  * tests/classify-connection-string.test.ts).
  *
  * Run on its own:
- *   npx tsx src/cluster/cluster-select/classify-connection-string.ts couchbase://localhost
+ *   bun src/cluster/cluster-select/classify-connection-string.ts couchbase://localhost
  *
  * Prints the classification as JSON.
  */

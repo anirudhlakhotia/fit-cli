@@ -17,7 +17,7 @@
  *     gateway-version: "1.1.0-135"
  *
  * Run on its own:
- *   npx tsx src/cluster/cluster-create/build-cluster-def.ts
+ *   bun src/cluster/cluster-create/build-cluster-def.ts
  *
  * Prints a sample def.
  */

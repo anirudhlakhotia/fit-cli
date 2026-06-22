@@ -5,7 +5,7 @@
  * performer-port.ts.
  *
  * Run on its own:
- *   npx tsx src/fit/performers/util/ask-port-in-use-policy.ts
+ *   bun src/fit/performers/util/ask-port-in-use-policy.ts
  *
  * Prints the chosen policy.
  */

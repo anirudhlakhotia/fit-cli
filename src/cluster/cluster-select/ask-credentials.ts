@@ -2,7 +2,7 @@
  * Step: ask for the username and password FIT will use to test with.
  *
  * Run on its own:
- *   npx tsx src/cluster/cluster-select/ask-credentials.ts
+ *   bun src/cluster/cluster-select/ask-credentials.ts
  *
  * Prints the username (and that a password was captured).
  */

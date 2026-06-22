@@ -846,8 +846,8 @@ Primary usage:
   bun run definition validate <file.json5>
 
 Direct invocation (for debugging):
-  npx tsx src/fit/shared/definition/parse-definition.ts <file.json5>
-  npx tsx src/fit/shared/definition/parse-definition.ts --help
+  bun src/fit/shared/definition/parse-definition.ts <file.json5>
+  bun src/fit/shared/definition/parse-definition.ts --help
 
 Both .json5 and .yaml definition files are accepted.
 Exits 0 and prints the normalised definition as JSON if the file is valid;

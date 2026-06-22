@@ -5,7 +5,7 @@
  * cluster-exists-policy.ts.
  *
  * Run on its own:
- *   npx tsx src/cluster/cluster-create/ask-cluster-exists-policy.ts
+ *   bun src/cluster/cluster-create/ask-cluster-exists-policy.ts
  *
  * Prints the chosen policy.
  */

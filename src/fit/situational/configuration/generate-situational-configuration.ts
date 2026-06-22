@@ -8,7 +8,7 @@
  * the IO and masks the secret results-DB password in the echoed output.
  *
  * Run on its own (prints where a config would be written):
- *   npx tsx src/fit/situational/configuration/generate-situational-configuration.ts
+ *   bun src/fit/situational/configuration/generate-situational-configuration.ts
  */
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { type RunOutput } from "../../../util/non-fit/artifacts.js";

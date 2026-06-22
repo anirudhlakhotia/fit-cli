@@ -22,7 +22,7 @@ function formatLaunchInfo(inst: InstanceInfo): string {
 }
 
 export function terminateInstanceCommand(instanceId: string): string {
-  return `npx tsx src/cloud/util/aws/terminate-instance.ts --id ${instanceId}`;
+  return `bun src/cloud/util/aws/terminate-instance.ts --id ${instanceId}`;
 }
 
 export function formatEc2DeletionResponsibilityBanner(

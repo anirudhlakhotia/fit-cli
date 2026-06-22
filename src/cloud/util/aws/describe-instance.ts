@@ -4,7 +4,7 @@
  * the EC2 SDK; the JSON shaping lives in parse-instance.ts.
  *
  * Run on its own:
- *   npx tsx src/cloud/util/aws/describe-instance.ts --id i-0123456789abcdef0
+ *   bun src/cloud/util/aws/describe-instance.ts --id i-0123456789abcdef0
  */
 import { DescribeInstancesCommand } from "@aws-sdk/client-ec2";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";

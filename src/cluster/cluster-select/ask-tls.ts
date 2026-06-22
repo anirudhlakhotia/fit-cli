@@ -9,9 +9,9 @@
  * See transactions-fit-performer/test-driver/FITConfiguration.md for more.
  *
  * Run on its own:
- *   npx tsx src/cluster/cluster-select/ask-tls.ts internal-capella
- *   npx tsx src/cluster/cluster-select/ask-tls.ts production-capella
- *   npx tsx src/cluster/cluster-select/ask-tls.ts self-managed
+ *   bun src/cluster/cluster-select/ask-tls.ts internal-capella
+ *   bun src/cluster/cluster-select/ask-tls.ts production-capella
+ *   bun src/cluster/cluster-select/ask-tls.ts self-managed
  *
  * Prints the resulting tls value as JSON.
  */

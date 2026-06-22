@@ -7,7 +7,7 @@
  *
  * Run on its own (allocates a default single-node cluster — this really does
  * create a cluster, so only run it if you mean to):
- *   npx tsx src/cluster/cluster-create/allocate-cluster.ts
+ *   bun src/cluster/cluster-create/allocate-cluster.ts
  */
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";

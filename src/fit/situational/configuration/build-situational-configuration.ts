@@ -16,7 +16,7 @@
  * tests/build-situational-configuration.test.ts).
  *
  * Run on its own (prints a sample situational config as JSON):
- *   npx tsx src/fit/situational/configuration/build-situational-configuration.ts
+ *   bun src/fit/situational/configuration/build-situational-configuration.ts
  */
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { mergeConfigPieces, type ConfigPiece, type PieceData } from "../../../util/non-fit/config-pieces.js";

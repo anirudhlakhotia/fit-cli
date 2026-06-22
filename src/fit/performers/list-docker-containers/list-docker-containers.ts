@@ -3,9 +3,9 @@
  * one for a given SDK.
  *
  * Run on its own:
- *   npx tsx src/fit/performers/list-docker-containers/list-docker-containers.ts java
- *   npx tsx src/fit/performers/list-docker-containers/list-docker-containers.ts --url https://github.com/couchbase/couchbase-jvm-clients/pkgs/container/java-fit-performer --compact
- *   npx tsx src/fit/performers/list-docker-containers/list-docker-containers.ts --help
+ *   bun src/fit/performers/list-docker-containers/list-docker-containers.ts java
+ *   bun src/fit/performers/list-docker-containers/list-docker-containers.ts --url https://github.com/couchbase/couchbase-jvm-clients/pkgs/container/java-fit-performer --compact
+ *   bun src/fit/performers/list-docker-containers/list-docker-containers.ts --help
  */
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { input, select } from "../../../util/non-fit/prompts.js";

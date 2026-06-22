@@ -460,11 +460,11 @@ export async function createFitExecutionContext(
  * Mini CLI: run a local FIT execution context on its own, to poke at its
  * operations during development. Run with --help for the subcommands, or:
  *
- *   npx tsx src/fit/shared/util/remote-fit-run.ts --help
- *   npx tsx src/fit/shared/util/remote-fit-run.ts run -- ls -la
- *   npx tsx src/fit/shared/util/remote-fit-run.ts capture -- git status
- *   npx tsx src/fit/shared/util/remote-fit-run.ts path-exists /tmp
- *   npx tsx src/fit/shared/util/remote-fit-run.ts command-available docker
+ *   bun src/fit/shared/util/remote-fit-run.ts --help
+ *   bun src/fit/shared/util/remote-fit-run.ts run -- ls -la
+ *   bun src/fit/shared/util/remote-fit-run.ts capture -- git status
+ *   bun src/fit/shared/util/remote-fit-run.ts path-exists /tmp
+ *   bun src/fit/shared/util/remote-fit-run.ts command-available docker
  *
  * The `--` separates the action from the command/args it should forward, so flags
  * meant for the inner command aren't eaten by fit-cli's own argv parsing.

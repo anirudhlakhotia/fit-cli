@@ -2,7 +2,7 @@
  * Workflow: check whether a performer can be started in the background.
  *
  * Run this flow on its own:
- *   npx tsx src/fit/performers/check-running-performer/check-running-performer.ts
+ *   bun src/fit/performers/check-running-performer/check-running-performer.ts
  */
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { confirm } from "../../../util/non-fit/prompts.js";

@@ -5,8 +5,8 @@
  * callers choose the name and where the key lands.
  *
  * Run on its own:
- *   npx tsx src/cloud/util/aws/key-pair.ts --create my-key --out /tmp/my-key.pem
- *   npx tsx src/cloud/util/aws/key-pair.ts --delete my-key
+ *   bun src/cloud/util/aws/key-pair.ts --create my-key --out /tmp/my-key.pem
+ *   bun src/cloud/util/aws/key-pair.ts --delete my-key
  */
 import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";

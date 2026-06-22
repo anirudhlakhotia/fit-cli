@@ -6,8 +6,8 @@
  * `buildScpArgs`) so it can be unit tested (see tests/ssh.test.ts).
  *
  * Run a command on a host directly:
- *   npx tsx src/util/non-fit/ssh.ts --host <ip-or-dns> --key <path.pem> -- echo hello
- *   npx tsx src/util/non-fit/ssh.ts --host <ip> --user ec2-user --key k.pem -- uname -a
+ *   bun src/util/non-fit/ssh.ts --host <ip-or-dns> --key <path.pem> -- echo hello
+ *   bun src/util/non-fit/ssh.ts --host <ip> --user ec2-user --key k.pem -- uname -a
  */
 import { isMain, runCli } from "./cli.js";
 import { capture, run, type RunOptions } from "./proc.js";

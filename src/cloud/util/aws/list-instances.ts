@@ -5,9 +5,9 @@
  * lives in parse-instance.ts.
  *
  * Run on its own:
- *   npx tsx src/cloud/util/aws/list-instances.ts                                 # fit-cli=owned
- *   npx tsx src/cloud/util/aws/list-instances.ts --tag env=ci
- *   npx tsx src/cloud/util/aws/list-instances.ts --key fit-cli-abc123
+ *   bun src/cloud/util/aws/list-instances.ts                                 # fit-cli=owned
+ *   bun src/cloud/util/aws/list-instances.ts --tag env=ci
+ *   bun src/cloud/util/aws/list-instances.ts --key fit-cli-abc123
  */
 import { DescribeInstancesCommand } from "@aws-sdk/client-ec2";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";

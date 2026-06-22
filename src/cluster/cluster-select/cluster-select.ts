@@ -8,7 +8,7 @@
  * into a FITConfiguration lives under src/workflows/fit-functional/.
  *
  * Run this workflow on its own:
- *   npx tsx src/cluster/cluster-select/cluster-select.ts
+ *   bun src/cluster/cluster-select/cluster-select.ts
  *
  * Prints the selection as JSON.
  */

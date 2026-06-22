@@ -9,7 +9,7 @@
  * `cbdinocluster connstr <id>` for the one the user picks.
  *
  * Run on its own:
- *   npx tsx src/cluster/cluster-select/detect-cbdinocluster.ts
+ *   bun src/cluster/cluster-select/detect-cbdinocluster.ts
  *
  * Prints the chosen cluster as JSON, or "(none)".
  */

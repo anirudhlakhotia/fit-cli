@@ -6,7 +6,7 @@
  * `<sdk>-fit-performer:<tag>` (see performer-image.ts).
  *
  * Run on its own:
- *   npx tsx src/fit/performers/util/ask-performer-image.ts
+ *   bun src/fit/performers/util/ask-performer-image.ts
  *
  * Prints the chosen tag.
  */

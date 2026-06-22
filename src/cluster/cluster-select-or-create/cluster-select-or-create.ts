@@ -8,7 +8,7 @@
  * into a FITConfiguration lives under src/workflows/fit-functional/.
  *
  * Run this workflow on its own:
- *   npx tsx src/cluster/cluster-select-or-create/cluster-select-or-create.ts
+ *   bun src/cluster/cluster-select-or-create/cluster-select-or-create.ts
  */
 import { confirm } from "../../util/non-fit/prompts.js";
 import { type RunOutput } from "../../util/non-fit/artifacts.js";
