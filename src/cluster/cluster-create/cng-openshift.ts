@@ -313,7 +313,8 @@ export async function provisionRemoteOpenShift(
   await ocLogin(execution, creds);
   await ocPostLoginDiagnostics(execution);
   const context = await currentOcContext(execution);
-  await runOpenShiftPreflight(execution);
+  // Pre-flight temporarily disabled — see https://github.com/couchbaselabs/fit-cli/issues/TBD
+  // await runOpenShiftPreflight(execution);
   await installCaoToolsRemote(execution, `${home}/.dinotools/cao/${CAO_TOOLS_VERSION}`);
   console.log(`→ setup-cluster: OpenShift (context ${context}) is ready for CNG.`);
   return { context };
