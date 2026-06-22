@@ -28,6 +28,19 @@ export function buildRemoteCommand(command: string, args: readonly string[], cwd
   return cwd ? `cd ${posixQuote(cwd)} && ${cmdline}` : cmdline;
 }
 
+/**
+ * Wrap a command so its output streams live (to the terminal, via the caller's
+ * `run`) *and* is saved to `path` — the L1 + saved-to-file model used for
+ * `cbdinocluster allocate`. `pipefail` makes the pipeline exit non-zero when the
+ * command (not `tee`) fails, preserving the non-zero-means-failure contract.
+ * `command` is the already-assembled inner command string (from
+ * {@link buildRemoteCommand} / pathPrefixedCommand remotely, or the quoted
+ * command+args locally).
+ */
+export function teeToFileCommand(command: string, path: string): string {
+  return `set -o pipefail; ${command} 2>&1 | tee ${posixQuote(path)}`;
+}
+
 export class RemoteTarget implements ExecutionTarget {
   readonly kind = "remote" as const;
   readonly description: string;

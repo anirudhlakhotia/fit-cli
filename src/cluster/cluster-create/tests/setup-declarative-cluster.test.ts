@@ -40,7 +40,7 @@ function executor(): ClusterCommandExecutor & {
       }
       return Promise.resolve("");
     },
-    runToFile: () => Promise.resolve(),
+    streamToTerminalAndFile: () => Promise.resolve(),
     targetFilePath: (path) => path,
     stageFile: (localPath, targetPath = localPath) => {
       stagedFiles.push({ localPath, targetPath });
@@ -96,7 +96,7 @@ function initAwareExecutor(): ClusterCommandExecutor & {
       }
       return Promise.resolve("");
     },
-    runToFile: () => Promise.resolve(),
+    streamToTerminalAndFile: () => Promise.resolve(),
     targetFilePath: (path) => path,
     stageFile: (localPath, targetPath = localPath) => {
       stagedFiles.push({ localPath, targetPath });

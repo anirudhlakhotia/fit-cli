@@ -241,7 +241,7 @@ export async function runTestDriver(
   let commandOk: boolean;
   const startMs = Date.now();
   try {
-    await execution.runToFile("./mvnw", args, targetLogFile, execution.fitPerformerDir);
+    await execution.streamToArtifactFile("./mvnw", args, targetLogFile, execution.fitPerformerDir);
     console.log("\n✓ FIT test-driver finished");
     commandOk = true;
   } catch (err) {

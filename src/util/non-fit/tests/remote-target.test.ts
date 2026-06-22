@@ -6,7 +6,7 @@
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { buildRemoteCommand, posixQuote } from "../remote-target.js";
+import { buildRemoteCommand, posixQuote, teeToFileCommand } from "../remote-target.js";
 
 test("posixQuote leaves safe bare tokens untouched", () => {
   assert.equal(posixQuote("git"), "git");
@@ -34,4 +34,18 @@ test("buildRemoteCommand prefixes a cd when cwd is given", () => {
 
 test("buildRemoteCommand quotes a cwd and args that need it", () => {
   assert.equal(buildRemoteCommand("grep", ["a b"], "/my dir"), "cd '/my dir' && grep 'a b'");
+});
+
+test("teeToFileCommand pipes output to a file under pipefail", () => {
+  assert.equal(
+    teeToFileCommand("cbdinocluster allocate", "/tmp/out.log"),
+    "set -o pipefail; cbdinocluster allocate 2>&1 | tee /tmp/out.log",
+  );
+});
+
+test("teeToFileCommand quotes a path that needs it", () => {
+  assert.equal(
+    teeToFileCommand("cmd", "/my dir/out.log"),
+    "set -o pipefail; cmd 2>&1 | tee '/my dir/out.log'",
+  );
 });

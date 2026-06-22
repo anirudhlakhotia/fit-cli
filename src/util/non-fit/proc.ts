@@ -62,6 +62,24 @@ export enum ProcessExecModel {
  */
 let currentDebugLog: WriteStream | null = null;
 
+/** Ensure `s` ends with exactly one trailing newline (no-op if it already does). */
+function ensureTrailingNewline(s: string): string {
+  return s.endsWith("\n") ? s : `${s}\n`;
+}
+
+/**
+ * Append captured (non-terminal) command output to the debug log, if one is
+ * active. The single place the "normalize + timestamp + strip colour + write"
+ * pattern lives — used by the capture models so the full command I/O reaches
+ * session.debug.log even when it never flowed through process.stdout/stderr.
+ */
+function appendToDebugLog(content: string): void {
+  if (!currentDebugLog || !content) {
+    return;
+  }
+  currentDebugLog.write(stripAnsi(formatTimestampedChunk(ensureTrailingNewline(content), true).text));
+}
+
 /** Knobs shared by every command-runner for how the command is announced. */
 export interface RunOptions {
   /**
@@ -161,16 +179,8 @@ export function capture(command: string, args: string[], cwd: string = process.c
     child.stderr.on("data", (chunk) => (stderr += chunk));
     child.on("error", reject);
     child.on("close", (code) => {
-      if (currentDebugLog) {
-        if (stdout) {
-          const normalized = stdout.endsWith("\n") ? stdout : `${stdout}\n`;
-          currentDebugLog.write(formatTimestampedChunk(normalized, true).text);
-        }
-        if (stderr) {
-          const normalized = stderr.endsWith("\n") ? stderr : `${stderr}\n`;
-          currentDebugLog.write(formatTimestampedChunk(normalized, true).text);
-        }
-      }
+      appendToDebugLog(stdout);
+      appendToDebugLog(stderr);
       if (code !== null && okCodes.includes(code)) {
         resolve(stdout);
       } else {
@@ -204,14 +214,8 @@ export function captureValueSync(
   const result = spawnSync(command, args, { encoding: "utf8", env: opts?.env });
   const stdout = result.stdout ?? "";
   const stderr = result.stderr ?? "";
-  if (currentDebugLog) {
-    for (const chunk of [stdout, stderr]) {
-      if (chunk) {
-        const normalized = chunk.endsWith("\n") ? chunk : `${chunk}\n`;
-        currentDebugLog.write(formatTimestampedChunk(normalized, true).text);
-      }
-    }
-  }
+  appendToDebugLog(stdout);
+  appendToDebugLog(stderr);
   if (opts?.allowFailure) {
     return result.status === 0 ? stdout : "";
   }
@@ -297,8 +301,12 @@ export interface SessionLog {
  * 2. The captured stdout/stderr from every capture() call — output that is
  *    consumed programmatically and never shown on the terminal.
  *
-  * The result is a superset of session.info.log: every command echo AND its full
- * output in one file, useful for diagnosing failures after the fact.
+ * The result is close to a superset of session.info.log: every command echo AND
+ * its full output in one file, useful for diagnosing failures after the fact.
+ * The exception is L3 (StreamToArtifact) steps: their bulk output (e.g. the FIT
+ * test-driver, docker logs) stays in its own artifact file rather than being
+ * inlined here — the debug log instead carries the L3 intro line, which points
+ * at that file (see announceArtifactStream).
  */
 export function startDebugLog(logFile: string): SessionLog {
   mkdirSync(dirname(logFile), { recursive: true, mode: 0o700 });
@@ -316,20 +324,6 @@ export function startDebugLog(logFile: string): SessionLog {
     });
 
   return { path: logFile, flush };
-}
-
-/**
- * Write content to the current debug log (if one has been started). Used to
- * surface captured file output — e.g. the cbdinocluster allocate stdout
- * collected from a remote machine — so the full command I/O ends up in one
- * place even when it couldn't flow through process.stdout/stderr.
- */
-export function writeToDebugLog(content: string): void {
-  if (!currentDebugLog || !content) {
-    return;
-  }
-  const normalized = content.endsWith("\n") ? content : `${content}\n`;
-  currentDebugLog.write(stripAnsi(formatTimestampedChunk(normalized, true).text));
 }
 
 /**
@@ -361,15 +355,12 @@ export function runHiddenUntilFailure(
     child.stderr.on("data", collect);
     child.on("error", reject);
     child.on("close", (code) => {
-      if (currentDebugLog && output) {
-        const normalized = output.endsWith("\n") ? output : `${output}\n`;
-        currentDebugLog.write(stripAnsi(formatTimestampedChunk(normalized, true).text));
-      }
+      appendToDebugLog(output);
       if (code === 0) {
         resolve();
       } else {
         if (output) {
-          process.stderr.write(output.endsWith("\n") ? output : `${output}\n`);
+          process.stderr.write(ensureTrailingNewline(output));
         }
         reject(new Error(`${command} exited with code ${code}`));
       }
@@ -388,6 +379,37 @@ export function runHiddenUntilFailure(
  */
 export const HEARTBEAT_INTERVAL_SECS = 30;
 
+/** What the shared L3 proof-of-life intro needs to know. */
+export interface ArtifactStreamIntro {
+  /** Absolute path to the log file, on the execution target. */
+  logPath: string;
+  /** The logical command being run, re-echoed so it survives the long scroll-off. */
+  command: string;
+  /**
+   * Where the log file (and command) live. Omit for local runs; pass a host
+   * label (e.g. `ubuntu@1.2.3.4`) for remote runs so it's clear the log is on
+   * the remote box, not this machine.
+   */
+  onHost?: string;
+}
+
+/**
+ * Print the single, shared proof-of-life intro for every L3 (StreamToArtifact)
+ * step — local `streamToFile` and the remote heartbeat alike. It is the one
+ * place this wording lives, and it states where the log file is (and that it's
+ * on the remote host when relevant) and re-echoes the command as a reminder
+ * before what may be a long, near-silent wait.
+ */
+export function announceArtifactStream({ logPath, command, onHost }: ArtifactStreamIntro): void {
+  const where = onHost ? `  (on ${onHost})` : "";
+  process.stdout.write(
+    `This may be a long-running process; full output goes to the log file.\n` +
+      `  Log: ${logPath}${where}\n` +
+      `  Command: ${command}${where}\n` +
+      `The last log line will be printed every ${HEARTBEAT_INTERVAL_SECS}s as proof-of-life.\n`,
+  );
+}
+
 export function streamToFile(
   command: string,
   args: string[],
@@ -396,7 +418,7 @@ export function streamToFile(
   opts?: RunOptions,
 ): Promise<void> {
   announce(command, args, opts);
-  process.stdout.write(`This may be a long-running process. The last log line will be printed every ${HEARTBEAT_INTERVAL_SECS}s as proof-of-life.\n`);
+  announceArtifactStream({ logPath: logFile, command: opts?.display ?? formatCommandLine(command, args) });
   mkdirSync(dirname(logFile), { recursive: true, mode: 0o700 });
 
   return new Promise((resolve, reject) => {

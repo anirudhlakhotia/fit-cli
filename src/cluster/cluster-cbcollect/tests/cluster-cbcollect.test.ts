@@ -30,7 +30,7 @@ function collectExecutor(opts: { collectFails?: boolean } = {}): ClusterCommandE
     },
     capture: (_command, args) =>
       args.includes("-1") ? Promise.resolve("node1.zip\nnode2.zip\n") : Promise.resolve(""),
-    runToFile: () => Promise.resolve(),
+    streamToTerminalAndFile: () => Promise.resolve(),
     // Remote layout: cbdinocluster writes under <rootDir>/<basename>.
     targetFilePath: (path) => join("/remote/root", path.split("/").pop() ?? ""),
     stageFile: (localPath, targetPath = localPath) => Promise.resolve(targetPath),
