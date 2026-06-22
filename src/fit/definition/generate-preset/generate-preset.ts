@@ -5,9 +5,9 @@
  * Usage:
  *   bun run definition generate-preset --type functional --performer-image-name java-fit-performer:refs-changes-67-246067-3
  */
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { join, dirname, extname, resolve } from "node:path";
 import JSON5 from "json5";
 import { printFileContent } from "../../../util/non-fit/fit-cli-log.js";
 import { resolveOutputFormat } from "../../util/config.js";
@@ -21,11 +21,42 @@ import type { FitDefinition } from "../../shared/definition/types.js";
 import { printDefinitionRunGuidance } from "../../shared/definition/run-guidance.js";
 import { pushGist, type GistVisibility } from "../../shared/definition/push-gist.js";
 
-export const PRESET_TYPES = ["functional", "cng-functional", "functional-quick-sanity", "cng-functional-quick-sanity", "situational-quick-sanity", "qe-set", "everything-quick-sanity"] as const;
-export type PresetType = (typeof PRESET_TYPES)[number];
+/**
+ * Returns a map of { "<name>.json5": "<contents>" } for every preset in `presets/`.
+ *
+ * In a compiled binary (`/$bunfs/`) the `import.meta.glob` call is resolved at bundle
+ * time by `bun build --compile` — no runtime glob is needed.  When running from source
+ * with `bun run`, `import.meta.glob` is not available, so we read from disk instead.
+ */
+function loadPresetMap(): Record<string, string> {
+  if (import.meta.url.includes("/$bunfs/")) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const globbed = (import.meta as any).glob("../../../../presets/*.json5", { as: "text", eager: true }) as Record<string, string>;
+    return Object.fromEntries(Object.entries(globbed).map(([k, v]) => [k.replace(/^.*\//, ""), v]));
+  }
+  const presetsDir = join(dirname(fileURLToPath(import.meta.url)), "../../../../presets");
+  return Object.fromEntries(
+    readdirSync(presetsDir)
+      .filter(f => f.endsWith(".json5"))
+      .map(f => [f, readFileSync(join(presetsDir, f), "utf8")]),
+  );
+}
+
+const PRESET_MAP = loadPresetMap();
+
+export const PRESET_TYPES: string[] = Object.entries(PRESET_MAP)
+  .map(([filename, content]) => {
+    const name = filename.replace(/\.json5$/, "");
+    const { order } = extractPresetMeta(content);
+    return { name, order };
+  })
+  .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name))
+  .map(({ name }) => name);
+
+export type PresetType = string;
 
 export function isPresetType(value: string): value is PresetType {
-  return PRESET_TYPES.includes(value as PresetType);
+  return PRESET_TYPES.includes(value);
 }
 
 interface PresetMeta {
@@ -54,24 +85,20 @@ function sortedPresetItems<T extends { order: number; type: PresetType }>(items:
 }
 
 /** Available preset types paired with their descriptions and expected run time, for menus. */
-export async function presetDescriptions(): Promise<{ type: PresetType; description: string; expectedTime?: string }[]> {
-  const items = await Promise.all(
-    PRESET_TYPES.map(async (type) => {
-      const { order, description, expectedTime } = extractPresetMeta(await loadPresetTemplate(type));
-      return { type, description, expectedTime, order };
-    }),
-  );
+export function presetDescriptions(): { type: PresetType; description: string; expectedTime?: string }[] {
+  const items = PRESET_TYPES.map((type) => {
+    const { order, description, expectedTime } = extractPresetMeta(loadPresetTemplate(type));
+    return { type, description, expectedTime, order };
+  });
   return sortedPresetItems(items).map(({ type, description, expectedTime }) => ({ type, description, expectedTime }));
 }
 
 /** Print a table of available preset types and their descriptions. */
-export async function listPresets(): Promise<void> {
-  const items = await Promise.all(
-    PRESET_TYPES.map(async (type) => {
-      const { order, description, expectedTime } = extractPresetMeta(await loadPresetTemplate(type));
-      return { type, description, expectedTime, order };
-    }),
-  );
+export function listPresets(): void {
+  const items = PRESET_TYPES.map((type) => {
+    const { order, description, expectedTime } = extractPresetMeta(loadPresetTemplate(type));
+    return { type, description, expectedTime, order };
+  });
   const sorted = sortedPresetItems(items);
   const col = sorted.reduce((max, { type }) => Math.max(max, type.length), 0);
   console.log(`\nAvailable presets:\n`);
@@ -81,16 +108,6 @@ export async function listPresets(): Promise<void> {
   }
   console.log();
 }
-
-const PRESET_TEMPLATE_FILES: Record<PresetType, string> = {
-  "functional": "functional.json5",
-  "cng-functional": "cng-functional.json5",
-  "functional-quick-sanity": "functional-quick-sanity.json5",
-  "cng-functional-quick-sanity": "cng-functional-quick-sanity.json5",
-  "situational-quick-sanity": "situational-quick-sanity.json5",
-  "qe-set": "qe-set.json5",
-  "everything-quick-sanity": "everything-quick-sanity.json5",
-};
 
 function resolvePresetOutputFormat(outputPath: string | undefined, format: DefinitionFormat | undefined): DefinitionFormat {
   if (format) {
@@ -106,67 +123,10 @@ function resolvePresetOutputFormat(outputPath: string | undefined, format: Defin
   return resolveOutputFormat();
 }
 
-function loadPresetTemplateFromDisk(type: PresetType): string {
-  const presetsDir = join(dirname(fileURLToPath(import.meta.url)), "../../../../presets");
-  return readFileSync(join(presetsDir, PRESET_TEMPLATE_FILES[type]), "utf8");
-}
-
-async function loadBundledPresetTemplate(type: PresetType): Promise<string> {
-  switch (type) {
-    case "functional": {
-      const templateModule = await import("../../../../presets/functional.json5", {
-        with: { type: "text" },
-      }) as { default: string };
-      return templateModule.default;
-    }
-    case "cng-functional": {
-      const templateModule = await import("../../../../presets/cng-functional.json5", {
-        with: { type: "text" },
-      }) as { default: string };
-      return templateModule.default;
-    }
-    case "functional-quick-sanity": {
-      const templateModule = await import("../../../../presets/functional-quick-sanity.json5", {
-        with: { type: "text" },
-      }) as { default: string };
-      return templateModule.default;
-    }
-    case "cng-functional-quick-sanity": {
-      const templateModule = await import("../../../../presets/cng-functional-quick-sanity.json5", {
-        with: { type: "text" },
-      }) as { default: string };
-      return templateModule.default;
-    }
-    case "situational-quick-sanity": {
-      const templateModule = await import("../../../../presets/situational-quick-sanity.json5", {
-        with: { type: "text" },
-      }) as { default: string };
-      return templateModule.default;
-    }
-    case "qe-set": {
-      const templateModule = await import("../../../../presets/qe-set.json5", {
-        with: { type: "text" },
-      }) as { default: string };
-      return templateModule.default;
-    }
-    case "everything-quick-sanity": {
-      const templateModule = await import("../../../../presets/everything-quick-sanity.json5", {
-        with: { type: "text" },
-      }) as { default: string };
-      return templateModule.default;
-    }
-  }
-}
-
-async function loadPresetTemplate(type: PresetType): Promise<string> {
-  try {
-    return loadPresetTemplateFromDisk(type);
-  } catch (err) {
-    if (!(err instanceof Error) || !import.meta.url.includes("/$bunfs/")) {
-      throw err;
-    }
-    return loadBundledPresetTemplate(type);
-  }
+function loadPresetTemplate(type: string): string {
+  const content = PRESET_MAP[`${type}.json5`];
+  if (content === undefined) throw new Error(`Unknown preset: ${type}\nKnown presets: ${PRESET_TYPES.join(", ")}`);
+  return content;
 }
 
 /**
@@ -194,7 +154,7 @@ export interface GeneratePresetArgs {
 export async function generatePreset(args: GeneratePresetArgs): Promise<{ path: string }> {
   const { type, image, outputPath, format, pushGistVisibility, skipGuidance } = args;
 
-  const template = await loadPresetTemplate(type);
+  const template = loadPresetTemplate(type);
   const definition = applyPresetParams(template, image);
   const outputFormat = resolvePresetOutputFormat(outputPath, format);
   const formatted = formatFitDefinition(definition, outputFormat);
