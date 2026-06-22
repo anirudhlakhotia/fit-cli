@@ -3,7 +3,7 @@
  * from a named preset template, parameterised by performer image.
  *
  * Usage:
- *   bun run definition generate-preset --type preset-functional-tests --performer-image-name java-fit-performer:refs-changes-67-246067-3
+ *   bun run definition generate-preset --type functional --performer-image-name java-fit-performer:refs-changes-67-246067-3
  */
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -21,7 +21,7 @@ import type { FitDefinition } from "../../shared/definition/types.js";
 import { printDefinitionRunGuidance } from "../../shared/definition/run-guidance.js";
 import { pushGist, type GistVisibility } from "../../shared/definition/push-gist.js";
 
-export const PRESET_TYPES = ["preset-functional-tests", "preset-cng-functional-tests", "preset-functional-quick-sanity", "preset-cng-functional-quick-sanity", "preset-situational-quick-sanity", "preset-qe-set", "preset-everything-quick-sanity"] as const;
+export const PRESET_TYPES = ["functional", "cng-functional", "functional-quick-sanity", "cng-functional-quick-sanity", "situational-quick-sanity", "qe-set", "everything-quick-sanity"] as const;
 export type PresetType = (typeof PRESET_TYPES)[number];
 
 export function isPresetType(value: string): value is PresetType {
@@ -83,13 +83,13 @@ export async function listPresets(): Promise<void> {
 }
 
 const PRESET_TEMPLATE_FILES: Record<PresetType, string> = {
-  "preset-functional-tests": "preset-functional-tests.json5",
-  "preset-cng-functional-tests": "preset-cng-functional-tests.json5",
-  "preset-functional-quick-sanity": "preset-functional-quick-sanity.json5",
-  "preset-cng-functional-quick-sanity": "preset-cng-functional-quick-sanity.json5",
-  "preset-situational-quick-sanity": "preset-situational-quick-sanity.json5",
-  "preset-qe-set": "preset-qe-set.json5",
-  "preset-everything-quick-sanity": "preset-everything-quick-sanity.json5",
+  "functional": "functional.json5",
+  "cng-functional": "cng-functional.json5",
+  "functional-quick-sanity": "functional-quick-sanity.json5",
+  "cng-functional-quick-sanity": "cng-functional-quick-sanity.json5",
+  "situational-quick-sanity": "situational-quick-sanity.json5",
+  "qe-set": "qe-set.json5",
+  "everything-quick-sanity": "everything-quick-sanity.json5",
 };
 
 function resolvePresetOutputFormat(outputPath: string | undefined, format: DefinitionFormat | undefined): DefinitionFormat {
@@ -113,44 +113,44 @@ function loadPresetTemplateFromDisk(type: PresetType): string {
 
 async function loadBundledPresetTemplate(type: PresetType): Promise<string> {
   switch (type) {
-    case "preset-functional-tests": {
-      const templateModule = await import("../presets/preset-functional-tests.json5", {
+    case "functional": {
+      const templateModule = await import("../presets/functional.json5", {
         with: { type: "text" },
       }) as { default: string };
       return templateModule.default;
     }
-    case "preset-cng-functional-tests": {
-      const templateModule = await import("../presets/preset-cng-functional-tests.json5", {
+    case "cng-functional": {
+      const templateModule = await import("../presets/cng-functional.json5", {
         with: { type: "text" },
       }) as { default: string };
       return templateModule.default;
     }
-    case "preset-functional-quick-sanity": {
-      const templateModule = await import("../presets/preset-functional-quick-sanity.json5", {
+    case "functional-quick-sanity": {
+      const templateModule = await import("../presets/functional-quick-sanity.json5", {
         with: { type: "text" },
       }) as { default: string };
       return templateModule.default;
     }
-    case "preset-cng-functional-quick-sanity": {
-      const templateModule = await import("../presets/preset-cng-functional-quick-sanity.json5", {
+    case "cng-functional-quick-sanity": {
+      const templateModule = await import("../presets/cng-functional-quick-sanity.json5", {
         with: { type: "text" },
       }) as { default: string };
       return templateModule.default;
     }
-    case "preset-situational-quick-sanity": {
-      const templateModule = await import("../presets/preset-situational-quick-sanity.json5", {
+    case "situational-quick-sanity": {
+      const templateModule = await import("../presets/situational-quick-sanity.json5", {
         with: { type: "text" },
       }) as { default: string };
       return templateModule.default;
     }
-    case "preset-qe-set": {
-      const templateModule = await import("../presets/preset-qe-set.json5", {
+    case "qe-set": {
+      const templateModule = await import("../presets/qe-set.json5", {
         with: { type: "text" },
       }) as { default: string };
       return templateModule.default;
     }
-    case "preset-everything-quick-sanity": {
-      const templateModule = await import("../presets/preset-everything-quick-sanity.json5", {
+    case "everything-quick-sanity": {
+      const templateModule = await import("../presets/everything-quick-sanity.json5", {
         with: { type: "text" },
       }) as { default: string };
       return templateModule.default;
