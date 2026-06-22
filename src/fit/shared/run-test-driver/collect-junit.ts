@@ -53,13 +53,12 @@ function parseJunitXmlFiles(output: string): string[] {
 }
 
 // It takes forever to copy these individually.
-export function remoteJunitArchiveArgs(sourceDir: string, xmlFiles: readonly string[]): string[] {
+export function remoteJunitArchiveArgs(sourceDir: string): string[] {
   return [
     "-lc",
-    'tmp=$(mktemp /tmp/fit-junit-XXXXXX.tar.gz) && src="$1" && shift && tar -C "$src" -czf "$tmp" -- "$@" && printf \'%s\\n\' "$tmp"',
+    'tmp=$(mktemp /tmp/fit-junit-XXXXXX.tar.gz) && cd "$1" && tar -czf "$tmp" -- TEST-*.xml && printf \'%s\\n\' "$tmp"',
     "sh",
     sourceDir,
-    ...xmlFiles,
   ];
 }
 
@@ -199,7 +198,7 @@ export async function collectJunitArtifactsFromTarget(
   mkdirSync(destDir, { recursive: true, mode: 0o700 });
   let remoteArchive = "";
   try {
-    remoteArchive = (await target.capture("sh", remoteJunitArchiveArgs(sourceDir, xmlFiles))).trim();
+    remoteArchive = (await target.capture("sh", remoteJunitArchiveArgs(sourceDir))).trim();
     if (remoteArchive === "") {
       throw new Error("Remote JUnit archive path was empty.");
     }
