@@ -5,8 +5,8 @@
  * Prints each test suite sorted by duration (slowest first) with pass/skip/fail counts.
  *
  * Usage:
- *   bun run junit-summary <surefire-reports-dir-or-archive>
- *   bun run junit-summary /tmp/fit-cli/20260616-143259/instances/0/clusters/0/sessions/0/runs/0/surefire-reports.tar.gz
+ *   bun src/fit/shared/run-test-driver/junit-summary.ts <surefire-reports-dir-or-archive>
+ *   bun src/fit/shared/run-test-driver/junit-summary.ts /tmp/fit-cli/20260616-143259/instances/0/clusters/0/sessions/0/runs/0/surefire-reports.tar.gz
  */
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -131,7 +131,7 @@ function findXmlDir(dir: string): string {
 async function main(): Promise<void> {
   const args = process.argv.slice(2).filter((a) => a !== "--");
   if (args.length !== 1 || args[0] === "--help" || args[0] === "-h") {
-    console.log("Usage: bun run junit-summary <surefire-reports-dir-or-archive.tar.gz>");
+    console.log("Usage: bun src/fit/shared/run-test-driver/junit-summary.ts <surefire-reports-dir-or-archive.tar.gz>");
     process.exit(args.length === 1 ? 0 : 2);
   }
 

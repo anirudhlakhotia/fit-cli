@@ -4,9 +4,9 @@
  * for each failed test. Skipped tests are counted but not annotated.
  *
  * Usage:
- *   bun run junit-to-markdown <surefire-reports-dir-or-archive.tar.gz>
- *   bun run junit-to-markdown /tmp/fit-cli/20260622-122009/instances/0/clusters/0/sessions/0/runs/0/surefire-reports.tar.gz
- *   bun run junit-to-markdown /tmp/fit-cli/20260622-122009
+ *   bun src/fit/shared/run-test-driver/junit-to-markdown.ts <surefire-reports-dir-or-archive.tar.gz>
+ *   bun src/fit/shared/run-test-driver/junit-to-markdown.ts /tmp/fit-cli/20260622-122009
+ *   bun src/fit/shared/run-test-driver/junit-to-markdown.ts /tmp/fit-cli/20260622-122009/instances/0/clusters/0/sessions/0/runs/0/surefire-reports.tar.gz
  */
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -317,7 +317,7 @@ export function junitToPlainTextFromDir(dir: string): string {
 async function main(): Promise<void> {
   const args = process.argv.slice(2).filter((a) => a !== "--");
   if (args.length !== 1 || args[0] === "--help" || args[0] === "-h") {
-    console.log("Usage: bun run junit-to-markdown <surefire-reports-dir-or-archive.tar.gz>");
+    console.log("Usage: bun src/fit/shared/run-test-driver/junit-to-markdown.ts <surefire-reports-dir-or-archive.tar.gz>");
     process.exit(args.length === 1 ? 0 : 2);
   }
 
