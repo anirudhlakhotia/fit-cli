@@ -142,9 +142,6 @@ Each step should be runnable independently from the CLI wherever possible - see 
 This is for debugging and development rather than intended for end-users. 
 End-users should be starting at `fit wizard`.
 
-### ROOT_DIR
-- Everything file-based is relative to a ROOT_DIR (see "ROOT_DIR" below): the FIT repos live directly under it and the generated config is written under it. It defaults to the parent of the current directory and can be overridden with `--root <dir>` or the `FIT_ROOT` env var.
-
 ### Comments and code style
 - Avoid comments that have "Step 1", "Step 2", etc.  They need updating too often.
 
