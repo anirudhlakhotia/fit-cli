@@ -152,7 +152,8 @@ export async function provisionFitInstance(options: ProvisionOptions = {}): Prom
   );
 
   const keyName = `fit-cli-${Date.now().toString(36)}`;
-  const instanceDir = instanceRunDir(options.instanceIndex ?? 0);
+  const instanceIdx = options.instanceIndex ?? 0;
+  const instanceDir = instanceRunDir({ instanceIndex: instanceIdx, dirSegments: { instance: `aws${instanceIdx + 1}` } });
   mkdirSync(instanceDir, { recursive: true, mode: 0o700 });
   const keyPath = join(instanceDir, `${keyName}.pem`);
   await createKeyPair(keyName, keyPath);

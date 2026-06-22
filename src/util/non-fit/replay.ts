@@ -581,30 +581,46 @@ export interface DefinitionRunPath {
   sessionIndex?: number;
   runIndex?: number;
   clusterlessSession?: boolean;
+  /** Human-readable directory name overrides for each level of the artifact tree.
+   *  When set, these replace the numeric fallbacks (e.g. `aws1` instead of `0`). */
+  dirSegments?: {
+    instance?: string;
+    cluster?: string;
+    session?: string;
+    run?: string;
+  };
 }
 
-/** Absolute path to the artifact directory for instance N (e.g. `{runDir}/instances/0`). */
-export function instanceRunDir(instanceIndex: number, runDir: string = ensureRunDir()): string {
-  return join(runDir, "instances", String(instanceIndex));
+/** Absolute path to the artifact directory for instance N (e.g. `{runDir}/instances/aws1`).
+ *  Accepts a full {@link DefinitionRunPath} (uses `dirSegments.instance` when present) or a
+ *  plain index for callers that don't have label context. */
+export function instanceRunDir(pathOrIndex: DefinitionRunPath | number, runDir: string = ensureRunDir()): string {
+  if (typeof pathOrIndex === "number") {
+    return join(runDir, "instances", String(pathOrIndex));
+  }
+  const seg = pathOrIndex.dirSegments?.instance ?? String(pathOrIndex.instanceIndex);
+  return join(runDir, "instances", seg);
 }
 
 /** Absolute path to the artifact directory for a cluster lifetime. */
-export function clusterRunDir(instanceIndex: number, clusterIndex: number, runDir: string = ensureRunDir()): string {
-  return join(instanceRunDir(instanceIndex, runDir), "clusters", String(clusterIndex));
+export function clusterRunDir(path: DefinitionRunPath, runDir: string = ensureRunDir()): string {
+  const seg = path.dirSegments?.cluster ?? String(path.clusterIndex ?? 0);
+  return join(instanceRunDir(path, runDir), "clusters", seg);
 }
 
 /** Absolute path to the artifact directory for a session lifetime. */
 export function sessionRunDir(path: DefinitionRunPath, runDir: string = ensureRunDir()): string {
+  const seg = path.dirSegments?.session ?? String(path.sessionIndex);
   if (path.clusterlessSession) {
     if (path.sessionIndex === undefined) {
       throw new Error("clusterless session paths require sessionIndex.");
     }
-    return join(instanceRunDir(path.instanceIndex, runDir), "clusterless-sessions", String(path.sessionIndex));
+    return join(instanceRunDir(path, runDir), "clusterless-sessions", seg);
   }
   if (path.clusterIndex === undefined || path.sessionIndex === undefined) {
     throw new Error("cluster session paths require clusterIndex and sessionIndex.");
   }
-  return join(clusterRunDir(path.instanceIndex, path.clusterIndex, runDir), "sessions", String(path.sessionIndex));
+  return join(clusterRunDir(path, runDir), "sessions", seg);
 }
 
 /** Absolute path to the artifact directory for a run. */
@@ -612,10 +628,11 @@ export function runRunDir(path: DefinitionRunPath, runDir: string = ensureRunDir
   if (path.runIndex === undefined) {
     throw new Error("run paths require runIndex.");
   }
-  return join(sessionRunDir(path, runDir), "runs", String(path.runIndex));
+  const seg = path.dirSegments?.run ?? String(path.runIndex);
+  return join(sessionRunDir(path, runDir), "runs", seg);
 }
 
 /** Absolute path to the internal-files directory for an instance. */
-export function instanceInternalRunDir(instanceIndex: number, runDir: string = ensureRunDir()): string {
-  return join(instanceRunDir(instanceIndex, runDir), "_internal");
+export function instanceInternalRunDir(pathOrIndex: DefinitionRunPath | number, runDir: string = ensureRunDir()): string {
+  return join(instanceRunDir(pathOrIndex, runDir), "_internal");
 }

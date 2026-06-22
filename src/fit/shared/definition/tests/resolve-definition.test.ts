@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  buildExecutionGroups,
   resolveConnectionCluster,
   resolveDefinition,
   resolveDefinitionRefs,
   resolveFitConfigCluster,
   resolveMavenArgs,
+  resolveInstancePlan,
   resolveSession,
   resolveSituationalMavenArgs,
 } from "../resolve-definition.js";
@@ -14,7 +16,7 @@ import {
   SITUATIONAL_MAVEN_TEST_ARGS,
 } from "../../run-test-driver/run-test-driver.js";
 import { DEFAULT_PERFORMER_PORT } from "../../../performers/util/performer-port.js";
-import type { FitDefinition, SessionLifetime } from "../types.js";
+import type { FitDefinition, InstanceLifetime, SessionLifetime } from "../types.js";
 
 const LOCAL_FIT_CONFIG = {
   clusterAccess: {
@@ -312,4 +314,33 @@ test("resolveDefinitionRefs throws on unknown fitConfig ref", () => {
       }),
     /nonexistent/,
   );
+});
+
+test("dirSegments are populated through instance → cluster → session → run", () => {
+  const instance: InstanceLifetime = {
+    aws: {},
+    clusters: [
+      {
+        cbdinocluster: { config: { nodes: [{ version: "8.0-stable", count: 1, services: ["kv"] }] } },
+        sessions: [
+          {
+            performer: { image: "java-fit-performer:main" },
+            runs: [{ type: "functional", tests: { presets: ["standard-qe"] } }],
+          },
+        ],
+      },
+    ],
+  };
+  const plan = resolveInstancePlan(instance, 0);
+  const groups = buildExecutionGroups([plan]);
+  const group = groups[0];
+  assert.ok(group);
+  assert.equal(group.path.dirSegments?.instance, "aws1");
+  assert.equal(group.path.dirSegments?.cluster, "8.0-stable");
+  const run = group.runs[0];
+  assert.ok(run);
+  assert.equal(run.path.dirSegments?.instance, "aws1");
+  assert.equal(run.path.dirSegments?.cluster, "8.0-stable");
+  assert.equal(run.path.dirSegments?.session, "java:main");
+  assert.equal(run.path.dirSegments?.run, "func:standard-qe");
 });
