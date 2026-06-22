@@ -43,7 +43,7 @@ import {
   type RunOutput,
 } from "../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
-import { clearLogContext, runDefinitionPrefix, fitCliError, fitCliWarn, popLogContext, printWithoutTimestamps, setLogContext } from "../../../util/non-fit/fit-cli-log.js";
+import { clearLogContext, runDefinitionPrefix, fitCliError, fitCliWarn, popLogContext, printWithoutTimestamps, runScriptPrefix, setLogContext } from "../../../util/non-fit/fit-cli-log.js";
 import { createLogFile } from "../../../util/non-fit/proc.js";
 import {
   defaultsToNonInteractive,
@@ -56,7 +56,7 @@ import {
 } from "../../../util/non-fit/replay.js";
 import { clusterLabel as clusterSegmentLabel, formatRunLabel, instanceLabel, performerLabel, runLabel, type RunLabelParts } from "../../shared/util/run-labels.js";
 import { confirm, select } from "../../../util/non-fit/prompts.js";
-import { DEFAULT_CAPELLA_ENV, resolveCapellaConfig, resolveGithubCredentials, resolveResultsDbCredentials, resolveRosaCredentials } from "../../util/config.js";
+import { DEFAULT_CAPELLA_ENV, resolveCapellaConfig, resolveFitPerformerDir, resolveGithubCredentials, resolveResultsDbCredentials, resolveRosaCredentials } from "../../util/config.js";
 import { terminateInstanceCommand } from "../../util/aws/lifecycle-warning.js";
 import { uploadRunArtifacts } from "../../util/aws/upload-run-artifacts.js";
 import { resolveAwsCredentials, type AwsCredentials } from "../../../cloud/util/aws/identity.js";
@@ -1473,6 +1473,24 @@ export async function runFromDefinition(
   const executionOverride = await resolveExecutionOverride(executionGroups.slice(startCycleIndex), savedState);
   const forceLocalhost = executionOverride.kind === "localhost";
   const forceAws = executionOverride.kind === "aws";
+
+  // Fail early if any group will run on localhost but the performer checkout isn't configured.
+  // The same check happens inside ensureWorkspace, but that fires deep into the run (after
+  // cluster creation), so catching it here saves the user a long wait.
+  const willRunLocally =
+    forceLocalhost ||
+    (executionOverride.kind === "definition" &&
+      executionGroups.slice(startCycleIndex).some((g) => g.instance.kind === "localhost"));
+  if (willRunLocally && !resolveFitPerformerDir()) {
+    fitCliError(
+      { classification: "FatalToAll" },
+      `\n✗ No local transactions-fit-performer checkout is configured.\n` +
+        `  Run \`${runScriptPrefix("config")} edit\` and enable localhost testing ` +
+        `(sets localhost.repos."transactions-fit-performer".dir).`,
+    );
+    tracker.record("FatalToAll", "No local transactions-fit-performer checkout configured", preconditionCtx);
+    return finalizeRunFromDefinition([], [], undefined, tracker.worst, tracker.failureCount);
+  }
 
   // Local connectivity check — skip when running remotely, since EC2 instances are
   // in the same VPC as faas.couchbase.com and can reach it without VPN.
