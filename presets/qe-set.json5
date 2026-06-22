@@ -6,6 +6,14 @@
   },
   version: 1,
   type: 'fit',
+  setup: {
+    repos: {
+      // todo can remove this once merged, needed for FIT/SIT
+      'transactions-fit-performer': {
+        gerritRef: 'refs/changes/75/247275/2',
+      },
+    },
+  },
   instances: [
     {
       aws: {},
