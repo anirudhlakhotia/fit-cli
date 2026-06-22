@@ -103,7 +103,7 @@ async function chooseFunctionalConnectivity(promptIdPrefix: string): Promise<Fun
     message: "What do you want to FIT functional test against?  (Analytics to come)",
     choices: [
       { name: "Operational", value: "operational" },
-      { name: "Cloud Native Gateway (couchbase2://)", value: "cng" },
+      { name: "Cloud Native Gateway (couchbase2://) [Warning: CNG support is currently unstable due to a cbdinocluster issue]", value: "cng" },
     ],
   });
 }
