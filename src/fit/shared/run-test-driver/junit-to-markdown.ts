@@ -1,0 +1,236 @@
+/**
+ * Generate GitHub-flavoured Markdown from JUnit surefire XML reports.
+ * Produces a badge summary, a per-package results table, and detail blocks
+ * for each failed test. Skipped tests are counted but not annotated.
+ */
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
+
+interface TestIssue {
+  tag: "failure" | "error";
+  message: string;
+  body: string;
+}
+
+export interface FailingTestCase {
+  classname: string;
+  name: string;
+  timeMs: number;
+  issues: TestIssue[];
+}
+
+export interface PackageStats {
+  pkg: string;
+  passed: number;
+  failed: number;
+  skipped: number;
+  timeMs: number;
+}
+
+export interface JunitMarkdownData {
+  packages: PackageStats[];
+  failingCases: FailingTestCase[];
+  totalPassed: number;
+  totalFailed: number;
+  totalSkipped: number;
+  totalTimeMs: number;
+}
+
+function getAttr(attrs: string, name: string): string {
+  const m = attrs.match(new RegExp(`\\b${name}="([^"]*)"`, "i"));
+  return m ? m[1] : "";
+}
+
+/** Parse failing/erroring <testcase> elements from a single TEST-*.xml file. */
+export function parseFailingTestCases(xml: string): FailingTestCase[] {
+  const cases: FailingTestCase[] = [];
+  const re = /<testcase\b([^>]*?)(?:\/>|>([\s\S]*?)<\/testcase>)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(xml)) !== null) {
+    const inner = m[2] ?? "";
+    // Only collect cases that have <failure> or <error> children — skip <skipped>.
+    const childRe = /<(failure|error)\b([^>]*)>([\s\S]*?)<\/\1>|<(failure|error)\b([^>]*)\/>/g;
+    let cm: RegExpExecArray | null;
+    const issues: TestIssue[] = [];
+    while ((cm = childRe.exec(inner)) !== null) {
+      const tag = (cm[1] ?? cm[4]) as "failure" | "error";
+      const childAttrs = cm[2] ?? cm[5] ?? "";
+      const body = (cm[3] ?? "").trim();
+      const message = getAttr(childAttrs, "message") || body.split("\n")[0]?.trim() || "";
+      issues.push({ tag, message, body });
+    }
+    if (issues.length > 0) {
+      const attrs = m[1];
+      const classname = getAttr(attrs, "classname");
+      const name = getAttr(attrs, "name");
+      const timeMs = Math.round(parseFloat(getAttr(attrs, "time") || "0") * 1000);
+      cases.push({ classname, name, timeMs, issues });
+    }
+  }
+  return cases;
+}
+
+/** Parse suite-level stats and failing test cases from an array of {filename, xml} pairs. */
+export function parseJunitData(files: ReadonlyArray<{ filename: string; xml: string }>): JunitMarkdownData {
+  const packageMap = new Map<string, Omit<PackageStats, "pkg">>();
+  const failingCases: FailingTestCase[] = [];
+
+  for (const { filename, xml } of files) {
+    const suiteMatch = xml.match(/<testsuite\b([^>]*)>/);
+    if (!suiteMatch) continue;
+    const attrs = suiteMatch[1];
+    const suiteName = getAttr(attrs, "name") || filename.replace(/^TEST-/, "").replace(/\.xml$/, "");
+    const timeMs = Math.round(parseFloat(getAttr(attrs, "time") || "0") * 1000);
+    const tests = parseInt(getAttr(attrs, "tests") || "0", 10);
+    const failures = parseInt(getAttr(attrs, "failures") || "0", 10);
+    const errors = parseInt(getAttr(attrs, "errors") || "0", 10);
+    const skipped = parseInt(getAttr(attrs, "skipped") || "0", 10);
+    const failed = failures + errors;
+    const passed = Math.max(0, tests - failed - skipped);
+
+    const dotIdx = suiteName.lastIndexOf(".");
+    const pkg = dotIdx === -1 ? "(default)" : suiteName.substring(0, dotIdx);
+    const existing = packageMap.get(pkg) ?? { passed: 0, failed: 0, skipped: 0, timeMs: 0 };
+    packageMap.set(pkg, {
+      passed: existing.passed + passed,
+      failed: existing.failed + failed,
+      skipped: existing.skipped + skipped,
+      timeMs: existing.timeMs + timeMs,
+    });
+
+    failingCases.push(...parseFailingTestCases(xml));
+  }
+
+  // Packages with failures first, then alphabetical.
+  const packages: PackageStats[] = [...packageMap.entries()]
+    .sort(([pkgA, a], [pkgB, b]) => {
+      if (a.failed > 0 && b.failed === 0) return -1;
+      if (a.failed === 0 && b.failed > 0) return 1;
+      return pkgA.localeCompare(pkgB);
+    })
+    .map(([pkg, s]) => ({ pkg, ...s }));
+
+  let totalPassed = 0,
+    totalFailed = 0,
+    totalSkipped = 0,
+    totalTimeMs = 0;
+  for (const s of packages) {
+    totalPassed += s.passed;
+    totalFailed += s.failed;
+    totalSkipped += s.skipped;
+    totalTimeMs += s.timeMs;
+  }
+
+  return { packages, failingCases, totalPassed, totalFailed, totalSkipped, totalTimeMs };
+}
+
+function formatTime(ms: number): string {
+  const minutes = Math.floor(ms / 60000);
+  const seconds = Math.floor((ms % 60000) / 1000);
+  const millis = ms % 1000;
+  return `${minutes}:${String(seconds).padStart(2, "0")}.${String(millis).padStart(3, "0")}`;
+}
+
+function truncate(s: string, max = 8 * 1024): string {
+  if (s.length <= max) return s;
+  const half = Math.floor(max / 2);
+  return s.substring(0, half) + "\n[...truncated...]\n" + s.substring(s.length - half);
+}
+
+function removePackage(name: string): string {
+  const idx = name.lastIndexOf(".");
+  return idx === -1 ? name : name.substring(idx + 1);
+}
+
+/** Render a JunitMarkdownData object to a GFM markdown string. */
+export function renderJunitMarkdown(data: JunitMarkdownData): string {
+  const { packages, failingCases, totalPassed, totalFailed, totalSkipped, totalTimeMs } = data;
+  const lines: string[] = [];
+
+  // Badge
+  const badgeText = `tests-${totalPassed} ✅ | ${totalFailed} ❌ | ${totalSkipped} ⏭ | ${formatTime(totalTimeMs)} ⏱️-white`;
+  const badgeUrl = `https://img.shields.io/badge/${encodeURIComponent(badgeText).replace(/\+/g, "%20")}`;
+  const altText = `Test results: ${totalPassed} passed, ${totalFailed} failed, ${totalSkipped} skipped, time: ${formatTime(totalTimeMs)}`;
+  lines.push(`![${altText}](${badgeUrl})`);
+  lines.push("");
+
+  // Per-package summary table
+  lines.push("<details>");
+  lines.push("<summary>Test results by package</summary>");
+  lines.push("");
+  lines.push("| Package | Passed | Failed | Skipped | Time |");
+  lines.push("|:---|---:|---:|---:|---:|");
+  for (const s of packages) {
+    lines.push(
+      `| ${s.pkg} | ${s.passed > 0 ? `${s.passed} ✅` : ""} | ${s.failed > 0 ? `${s.failed} ❌` : ""} | ${s.skipped > 0 ? `${s.skipped} ⏭️` : ""} | ${formatTime(s.timeMs)} ⏱️ |`,
+    );
+  }
+  lines.push(
+    `| **TOTAL** | **${totalPassed > 0 ? `${totalPassed} ✅` : ""}** | **${totalFailed > 0 ? `${totalFailed} ❌` : ""}** | **${totalSkipped > 0 ? `${totalSkipped} ⏭️` : ""}** | **${formatTime(totalTimeMs)} ⏱️** |`,
+  );
+  lines.push("");
+  lines.push("</details>");
+  lines.push("");
+
+  // Per-failure detail blocks
+  for (const tc of failingCases) {
+    const simpleClass = removePackage(tc.classname);
+    lines.push(`#### ❌ ${simpleClass}.${tc.name}`);
+    lines.push("");
+    for (const issue of tc.issues) {
+      if (issue.message) {
+        lines.push("```");
+        lines.push(issue.message);
+        lines.push("```");
+        lines.push("");
+      }
+      if (tc.timeMs > 0) {
+        lines.push(`${formatTime(tc.timeMs)} ⏱️`);
+        lines.push("");
+      }
+      if (issue.body) {
+        lines.push("<details>");
+        lines.push("<summary>Stack trace</summary>");
+        lines.push("");
+        lines.push("```");
+        lines.push(truncate(issue.body));
+        lines.push("```");
+        lines.push("");
+        lines.push("</details>");
+        lines.push("");
+      }
+    }
+    lines.push("---");
+    lines.push("");
+  }
+
+  return lines.join("\n");
+}
+
+/** Find TEST-*.xml files: check dir directly, then one level of subdirs. */
+function findXmlFiles(dir: string): Array<{ filename: string; xml: string }> {
+  const direct = readdirSync(dir).filter((f) => f.startsWith("TEST-") && f.endsWith(".xml"));
+  if (direct.length > 0) {
+    return direct.map((f) => ({ filename: f, xml: readFileSync(join(dir, f), "utf8") }));
+  }
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      const sub = join(dir, entry.name);
+      const found = readdirSync(sub).filter((f) => f.startsWith("TEST-") && f.endsWith(".xml"));
+      if (found.length > 0) {
+        return found.map((f) => ({ filename: f, xml: readFileSync(join(sub, f), "utf8") }));
+      }
+    }
+  }
+  return [];
+}
+
+/**
+ * Read all TEST-*.xml files under `dir` (or one subdir deep) and return a GFM
+ * markdown string suitable for appending to $GITHUB_STEP_SUMMARY.
+ */
+export function junitToMarkdownFromDir(dir: string): string {
+  const files = findXmlFiles(dir);
+  if (files.length === 0) return "_No JUnit reports found._\n";
+  return renderJunitMarkdown(parseJunitData(files));
+}

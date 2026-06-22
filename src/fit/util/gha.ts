@@ -1,7 +1,6 @@
 import * as core from "@actions/core";
-import { appendFileSync, existsSync, statSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { capture } from "../../util/non-fit/proc.js";
+import { appendFileSync, existsSync, statSync } from "node:fs";
+import { junitToMarkdownFromDir } from "../shared/run-test-driver/junit-to-markdown.js";
 
 /** Current size of the $GITHUB_STEP_SUMMARY file in bytes, or -1 if missing/unset. */
 function summaryFileSize(): number {
@@ -82,54 +81,46 @@ export function emitGhaArtifactNotice(): void {
   console.log(`::notice title=Run artifacts (${name})::${url}`);
 }
 
-const JUNIT_MARKDOWN_URL =
-  "https://raw.githubusercontent.com/couchbaselabs/junit-markdown/refs/heads/main/JunitMarkdown.java";
-
 /**
- * Append a JUnit test summary to $GITHUB_STEP_SUMMARY using JunitMarkdown.java.
+ * Append a JUnit test summary to $GITHUB_STEP_SUMMARY and stdout.
  * Uses `description` (from the definition file) as the section heading.
- * Falls back to a plain heading-only entry if java is unavailable or the
- * download fails. Never throws — a broken summary is a warning, not a failure.
+ * Falls back to a plain heading-only entry on error. Never throws.
  */
-export async function appendJunitStepSummary(runDir: string, description?: string): Promise<void> {
-  const summaryPath = process.env.GITHUB_STEP_SUMMARY;
-  if (!summaryPath) {
-    console.log(`[gha-summary] appendJunitStepSummary: GITHUB_STEP_SUMMARY unset — skipping`);
-    return;
-  }
-  console.log(`[gha-summary] appendJunitStepSummary: target=${summaryPath} (currently ${summaryFileSize()} bytes)`);
-
+export function appendJunitStepSummary(runDir: string, description?: string): void {
   // Leading \n is load-bearing: appendRunSummaryToGhaSummary writes raw HTML
   // (<table> etc.) via @actions/core, and GFM only closes an HTML block on a
   // blank line. Without it this heading is swallowed into the open HTML block
   // and rendered as literal text instead of an <h2>.
   const heading = `\n## ${description ?? "FIT run results"}\n\n`;
+  const summaryPath = process.env.GITHUB_STEP_SUMMARY;
 
   try {
-    const resp = await fetch(JUNIT_MARKDOWN_URL);
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const javaPath = join(runDir, "JunitMarkdown.java");
-    writeFileSync(javaPath, await resp.text());
+    const markdown = junitToMarkdownFromDir(runDir);
+    console.log(`[gha-summary] generated JUnit markdown (${markdown.length} chars)`);
+    console.log(heading + markdown);
 
-    // Exit 2 means "ran fine but found test failures" — still a valid markdown output.
-    const markdown = await capture("java", [javaPath, runDir], undefined, { allowExitCodes: [0, 2] });
-    console.log(`[gha-summary] JunitMarkdown produced ${markdown.length} chars of markdown`);
-
-    const sizeBefore = summaryFileSize();
-    appendFileSync(summaryPath, heading + markdown + "\n");
-    const sizeAfter = summaryFileSize();
-    console.log(
-      `[gha-summary] appended JUnit summary (${heading.length + markdown.length + 1} bytes); ` +
-        `file ${sizeBefore} → ${sizeAfter} bytes. ` +
-        // GitHub silently drops the whole step summary if the file exceeds 1 MiB.
-        (sizeAfter > 1024 * 1024 ? `⚠ OVER 1 MiB cap — GitHub will drop the step summary!` : `(under 1 MiB cap)`),
-    );
+    if (summaryPath) {
+      console.log(`[gha-summary] appending to ${summaryPath} (currently ${summaryFileSize()} bytes)`);
+      const sizeBefore = summaryFileSize();
+      appendFileSync(summaryPath, heading + markdown + "\n");
+      const sizeAfter = summaryFileSize();
+      console.log(
+        `[gha-summary] appended ${heading.length + markdown.length + 1} bytes; ` +
+          `file ${sizeBefore} → ${sizeAfter} bytes. ` +
+          // GitHub silently drops the whole step summary if the file exceeds 1 MiB.
+          (sizeAfter > 1024 * 1024 ? `⚠ OVER 1 MiB cap — GitHub will drop the step summary!` : `(under 1 MiB cap)`),
+      );
+    } else {
+      console.log(`[gha-summary] GITHUB_STEP_SUMMARY unset — printed to stdout only`);
+    }
   } catch (err) {
-    console.warn(`Warning: failed to generate JUnit step summary (${err}); writing plain summary`);
-    try {
-      appendFileSync(summaryPath, heading + "_JUnit summary unavailable._\n");
-    } catch {
-      // ignore — if we can't write the fallback, there's nothing more to do
+    console.warn(`Warning: failed to generate JUnit step summary (${err instanceof Error ? err.message : String(err)}); writing plain summary`);
+    if (summaryPath) {
+      try {
+        appendFileSync(summaryPath, heading + "_JUnit summary unavailable._\n");
+      } catch {
+        // ignore — if we can't write the fallback, there's nothing more to do
+      }
     }
   }
 }
