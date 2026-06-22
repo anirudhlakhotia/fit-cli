@@ -11,9 +11,6 @@ import { ensureRunDir } from "../../../util/non-fit/replay.js";
 import type { PieceData } from "../../../util/non-fit/config-pieces.js";
 import type { Sdk } from "../../../util/sdk/sdks.js";
 import { buildClusterDefObject, type ClusterDef } from "../../../cluster/cluster-create/build-cluster-def.js";
-import {
-  defaultCbdinoclusterInitConfig,
-} from "../../../cluster/cluster-create/default-cbdinocluster-init-config.js";
 import type { ClusterExistsPolicy } from "../../../cluster/cluster-create/cluster-exists-policy.js";
 import type { SelectedCluster } from "../../../cluster/cluster-select/cluster-select.js";
 import type { PortInUsePolicy } from "../../performers/util/performer-port.js";
@@ -22,7 +19,6 @@ import type { FitTestSelection } from "../select-fit-tests/select-fit-tests.js";
 import {
   CURRENT_FIT_DEFINITION_VERSION,
   FIT_DEFINITION_TYPE,
-  type CbdinoclusterInitSetup,
   type ClusterConfigRef,
   type FitConfigRef,
   type FitDefinition,
@@ -57,8 +53,6 @@ export interface DefinitionInputs {
   onPortInUse?: PortInUsePolicy;
   selection: FitTestSelection;
   instance?: InstanceMode;
-  /** GitHub username for the cbdinocluster github section (needed for GHCR pulls). */
-  githubUser?: string;
 }
 
 export interface SituationalDefinitionInputs {
@@ -76,27 +70,6 @@ export interface SituationalDefinitionInputs {
 }
 
 
-/**
- * Build the cbdinocluster init setup for a definition.
- *
- * For non-CNG clusters the args are generated at runtime (defaultCbdinoclusterInitArgs /
- * situationalCbdinoclusterInitArgs), so nothing is baked into the definition.
- *
- * CNG still carries a `config` object uploaded as `~/.cbdinocluster`: the docker
- * block plus optionally the github block (token added at runtime). The `k8s` block
- * is added entirely at runtime — fit-cli points it at the logged-in OpenShift
- * context by default (or the local k3d cluster under `FIT_CNG_K8S=k3d`), with the
- * CSP-dependent cao-tools/kubeconfig paths — so it stays out of the definition.
- */
-function buildCngCbdinoclusterInit(githubUser?: string): CbdinoclusterInitSetup {
-  const base = defaultCbdinoclusterInitConfig();
-  return {
-    config: {
-      ...base,
-      ...(githubUser ? { github: { enabled: "true", user: githubUser } } : {}),
-    },
-  };
-}
 
 function buildTests(selection: FitTestSelection): TestsSection {
   if (selection.presets?.length) {
@@ -133,7 +106,6 @@ interface BuiltFunctionalInstance {
 }
 
 function buildFunctionalInstance(inputs: DefinitionInputs): BuiltFunctionalInstance {
-  const cng = inputs.cluster.kind === "cbdinocluster" && inputs.cluster.def.cng;
   const clusterConfigRef: ClusterConfigRef = inputs.cluster.kind === "connection"
     ? {
         id: CLUSTER_CONFIG_ID,
@@ -153,12 +125,6 @@ function buildFunctionalInstance(inputs: DefinitionInputs): BuiltFunctionalInsta
       };
   const instance: InstanceLifetime = {
     ...(inputs.instance ?? { localhost: {} }),
-    // CNG needs its cbdinocluster config uploaded verbatim (docker + optional github block);
-    // the k8s block is injected at runtime. Non-CNG cbdinocluster init args are generated
-    // at runtime (defaultCbdinoclusterInitArgs) — nothing to bake into the definition.
-    ...(cng
-      ? { setup: { cbdinocluster: { init: buildCngCbdinoclusterInit(inputs.githubUser) } } }
-      : {}),
     clusters: [
       {
         clusterConfig: CLUSTER_CONFIG_ID,

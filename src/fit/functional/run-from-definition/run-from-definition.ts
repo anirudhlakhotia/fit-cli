@@ -69,18 +69,17 @@ import { prepareCbdinoclusterInit, removeCluster, setupDeclarativeCluster } from
 import { isAlias, resolveAlias } from "../../../cluster/cluster-create/cb-alias.js";
 import { collectClusterLogs } from "../../../cluster/cluster-cbcollect/cluster-cbcollect.js";
 import { installCbdinoclusterRemote } from "../../../cluster/cluster-create/install-cbdinocluster.js";
-import { defaultCbdinoclusterInitConfig } from "../../../cluster/cluster-create/default-cbdinocluster-init-config.js";
 import {
+  buildRemoteK8sBlock,
   checkLocalhostCngKubernetes,
   provisionRemoteK3d,
   remoteHomeFromWorkspace,
-  withRemoteK8sBlock,
 } from "../../../cluster/cluster-create/cng-kubernetes.js";
 import {
+  buildOpenShiftK8sBlock,
   cngKubernetesBackend,
   provisionRemoteOpenShift,
   resolveOcVersion,
-  withOpenShiftK8sBlock,
 } from "../../../cluster/cluster-create/cng-openshift.js";
 import {
   checkBuildAndRunPerformer,
@@ -370,17 +369,16 @@ function announce(
  */
 function withRemoteK8sInit(
   group: ResolvedFunctionalExecutionGroup,
-  addK8s: (initConfig: PieceData) => PieceData,
+  k8sBlock: PieceData,
 ): ResolvedFunctionalExecutionGroup {
   if (!group.cbdinocluster) {
     return group;
   }
-  const initConfig = group.cbdinocluster.init?.config ?? defaultCbdinoclusterInitConfig();
   return {
     ...group,
     cbdinocluster: {
       ...group.cbdinocluster,
-      init: { config: addK8s(initConfig) },
+      init: { configPatch: k8sBlock },
     },
   };
 }
@@ -406,14 +404,14 @@ async function prepareFunctionalCngCycle(
     const home = remoteHomeFromWorkspace(execution.rootDir);
     if (cngKubernetesBackend() === "k3d") {
       await provisionRemoteK3d(execution, home);
-      return withRemoteK8sInit(group, (initConfig) => withRemoteK8sBlock(initConfig, home));
+      return withRemoteK8sInit(group, buildRemoteK8sBlock(home));
     }
     const creds = await resolveRosaCredentials();
     if (typeof creds === "string") {
       throwFatalToCluster(creds);
     }
     const { context } = await provisionRemoteOpenShift(execution, home, creds, resolveOcVersion());
-    return withRemoteK8sInit(group, (initConfig) => withOpenShiftK8sBlock(initConfig, home, context));
+    return withRemoteK8sInit(group, buildOpenShiftK8sBlock(home, context));
   }
   const check = checkLocalhostCngKubernetes();
   if (!check.ok) {

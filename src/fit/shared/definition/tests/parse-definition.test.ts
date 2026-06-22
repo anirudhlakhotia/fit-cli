@@ -201,6 +201,32 @@ instances:
   );
 });
 
+test("accepts setup.cbdinocluster without init (init is optional)", () => {
+  const def = parseDefinition(`
+version: 1
+type: fit
+instances:
+  - aws: {}
+    setup:
+      cbdinocluster: {}
+    clusters:
+      - cbdinocluster:
+          config:
+            nodes:
+              - count: 1
+                version: "8.1.0"
+                services: [kv]
+        sessions:
+          - performer:
+              image: java-fit-performer:main
+            runs:
+              - type: functional
+                tests:
+                  presets: [all]
+`);
+  assert.equal(def.instances[0]?.setup?.cbdinocluster?.init, undefined);
+});
+
 test("rejects cbdinocluster init left on a cluster config (moved to instance.setup)", () => {
   assert.throws(
     () =>
