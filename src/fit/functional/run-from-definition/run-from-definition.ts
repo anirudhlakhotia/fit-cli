@@ -59,6 +59,7 @@ import { confirm, select } from "../../../util/non-fit/prompts.js";
 import { DEFAULT_CAPELLA_ENV, resolveCapellaConfig, resolveFitPerformerDir, resolveGithubCredentials, resolveResultsDbCredentials, resolveRosaCredentials } from "../../util/config.js";
 import { terminateInstanceCommand } from "../../util/aws/lifecycle-warning.js";
 import { uploadRunArtifacts } from "../../util/aws/upload-run-artifacts.js";
+import { AWS_REGION } from "../../../cloud/util/aws/aws-target.js";
 import { resolveAwsCredentials, type AwsCredentials } from "../../../cloud/util/aws/identity.js";
 import {
   localClusterCommandExecutor,
@@ -1221,6 +1222,7 @@ async function teardownRun(inputs: TeardownInputs): Promise<{ leftUp: boolean }>
       fitCliWarn(`\nInstance ${teardown.instanceId} is still running — remember to terminate it when done.`);
       if (teardown.identityFile && teardown.user && teardown.address) {
         console.log(`\nSSH in with:\n  ssh -i ${teardown.identityFile} ${teardown.user}@${teardown.address}`);
+        console.log(`\nOr via EC2 Instance Connect (no key needed — requires ec2-instance-connect:SendSSHPublicKey):\n  aws ec2-instance-connect ssh --instance-id ${teardown.instanceId} --os-user ${teardown.user} --region ${AWS_REGION}`);
       }
       console.log(`\nTerminate it with:\n  ${terminateInstanceCommand(teardown.instanceId)}`);
     }
