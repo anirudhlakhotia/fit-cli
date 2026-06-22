@@ -1,0 +1,36 @@
+# Fix: add missing `return` after reject(err) in three fs.readFile callbacks.
+# Without it, execution falls through to checkUTF(undefined) and throws on Node.js v24,
+# which started passing undefined content when readFile errors rather than silently swallowing it.
+# Can be removed if detect-file-encoding-and-language releases a version > 2.4.0 that fixes this,
+# or if xunit-viewer drops/replaces that dependency.
+diff --git a/src/index-node.js b/src/index-node.js
+index d5b43c69aca0f79ce43c5a15fabf1a3c1a2d785b..cac41e2988afef2af8e27b0a77b4aa9a211860bb 100644
+--- a/src/index-node.js
++++ b/src/index-node.js
+@@ -49,7 +49,7 @@ module.exports = (filePath) => {
+         // Node.js only supports UTF-8 and UTF-16LE. If one of them has been detected, we know how to read the content
+         if (fileInfo.encoding === "UTF-8" || fileInfo.encoding === "UTF-16LE") {
+           getContent(filePath, fileInfo.encoding, (err, utfContent) => {
+-            if (err) reject(err);
++            if (err) { reject(err); return; }
+             data.content = utfContent;
+             resolve(processContent(data, fileInfo));
+           });
+@@ -64,7 +64,7 @@ module.exports = (filePath) => {
+         }
+       } else {
+         getContent(filePath, "UTF-8", (err, utfContent) => {
+-          if (err) reject(err);
++          if (err) { reject(err); return; }
+ 
+           const utf8 = checkUTF(utfContent);
+ 
+@@ -78,7 +78,7 @@ module.exports = (filePath) => {
+             resolve(processContent(data, fileInfo));
+           } else {
+             getContent(filePath, "latin1", (err, isoContent) => {
+-              if (err) reject(err);
++              if (err) { reject(err); return; }
+ 
+               data.content = isoContent;
+               resolve(processContent(data, fileInfo));
