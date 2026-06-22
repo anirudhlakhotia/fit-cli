@@ -107,50 +107,50 @@ function resolvePresetOutputFormat(outputPath: string | undefined, format: Defin
 }
 
 function loadPresetTemplateFromDisk(type: PresetType): string {
-  const presetsDir = join(dirname(fileURLToPath(import.meta.url)), "../presets");
+  const presetsDir = join(dirname(fileURLToPath(import.meta.url)), "../../../../presets");
   return readFileSync(join(presetsDir, PRESET_TEMPLATE_FILES[type]), "utf8");
 }
 
 async function loadBundledPresetTemplate(type: PresetType): Promise<string> {
   switch (type) {
     case "functional": {
-      const templateModule = await import("../presets/functional.json5", {
+      const templateModule = await import("../../../../presets/functional.json5", {
         with: { type: "text" },
       }) as { default: string };
       return templateModule.default;
     }
     case "cng-functional": {
-      const templateModule = await import("../presets/cng-functional.json5", {
+      const templateModule = await import("../../../../presets/cng-functional.json5", {
         with: { type: "text" },
       }) as { default: string };
       return templateModule.default;
     }
     case "functional-quick-sanity": {
-      const templateModule = await import("../presets/functional-quick-sanity.json5", {
+      const templateModule = await import("../../../../presets/functional-quick-sanity.json5", {
         with: { type: "text" },
       }) as { default: string };
       return templateModule.default;
     }
     case "cng-functional-quick-sanity": {
-      const templateModule = await import("../presets/cng-functional-quick-sanity.json5", {
+      const templateModule = await import("../../../../presets/cng-functional-quick-sanity.json5", {
         with: { type: "text" },
       }) as { default: string };
       return templateModule.default;
     }
     case "situational-quick-sanity": {
-      const templateModule = await import("../presets/situational-quick-sanity.json5", {
+      const templateModule = await import("../../../../presets/situational-quick-sanity.json5", {
         with: { type: "text" },
       }) as { default: string };
       return templateModule.default;
     }
     case "qe-set": {
-      const templateModule = await import("../presets/qe-set.json5", {
+      const templateModule = await import("../../../../presets/qe-set.json5", {
         with: { type: "text" },
       }) as { default: string };
       return templateModule.default;
     }
     case "everything-quick-sanity": {
-      const templateModule = await import("../presets/everything-quick-sanity.json5", {
+      const templateModule = await import("../../../../presets/everything-quick-sanity.json5", {
         with: { type: "text" },
       }) as { default: string };
       return templateModule.default;
