@@ -14,6 +14,7 @@ import { extractInteractiveFlag, extractReplayFlag, markNonInteractiveByDefault 
 import { cacheDefinition, definitionSummary, isDefinitionUrl, loadDefinition, resolveAndLoadDefinition } from "../shared/definition/parse-definition.js";
 import { describeDefinition } from "../shared/definition/generate-desc.js";
 import { generatePreset, listPresets, parseGeneratePresetArgs, PRESET_TYPES } from "./generate-preset/generate-preset.js";
+import { runDispatch } from "../run/run.js";
 import type { RunOutput } from "../../util/non-fit/artifacts.js";
 
 const SUBCOMMANDS = ["validate", "generate-desc", "generate-preset", "list-presets"] as const;
@@ -43,6 +44,28 @@ generate-preset options:
   --performer-image-name <image>  SDK-specific performer image ref (e.g. java-fit-performer:refs-changes-67-246067-3 or ghcr.io/couchbase/java-fit-performer:refs-changes-67-246067-3).
   --output <path>               Write to an explicit path instead of the default run dir.
   --push-gist [public|private]  Create a GitHub Gist after writing. Requires a GitHub token in the fit-cli config or GITHUB_TOKEN / GH_TOKEN.`;
+
+/**
+ * Translate legacy `execute-preset` args (preset chosen via `--type <preset>`)
+ * into `run preset` args (preset given as a positional). Other args — the
+ * performer image, resume flags — pass straight through for the run dispatcher
+ * to parse.
+ */
+function legacyExecutePresetToRunPreset(rest: string[]): string[] {
+  const passthrough: string[] = [];
+  let type: string | undefined;
+  for (let i = 0; i < rest.length; i++) {
+    const arg = rest[i];
+    if (arg === "--type") {
+      type = rest[++i];
+    } else if (arg.startsWith("--type=")) {
+      type = arg.slice("--type=".length);
+    } else {
+      passthrough.push(arg);
+    }
+  }
+  return type ? [type, ...passthrough] : passthrough;
+}
 
 /**
  * Dispatcher for definition subcommands. Called either from the `bun run
@@ -78,6 +101,16 @@ export async function definitionDispatch(argv: string[]): Promise<RunOutput | vo
     console.log(HELP);
     if (!subcommand) process.exit(2);
     return;
+  }
+
+  // Hidden backward-compat: the old `definition execute` / `execute-preset`
+  // subcommands now live under `fit run`. Keep them working (undocumented — not
+  // in HELP) by delegating to the run dispatcher.
+  if (subcommand === "execute") {
+    return runDispatch(["definition", ...rest]);
+  }
+  if (subcommand === "execute-preset") {
+    return runDispatch(["preset", ...legacyExecutePresetToRunPreset(rest)]);
   }
 
   if (!SUBCOMMANDS.includes(subcommand as Subcommand)) {
