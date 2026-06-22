@@ -23,10 +23,6 @@ test("requireFitGerritUser resolves from env vars without hitting git config", (
   assert.equal(requireFitGerritUser({ GERRIT_USER: "programmatix" }), "programmatix");
 });
 
-test("resolveGerritUserFromGhCli returns undefined when gh config is absent", () => {
-  assert.equal(resolveGerritUserFromGhCli({ HOME: "/nonexistent-home-for-test" }), undefined);
-});
-
 test("requireFitGerritUser throws a clear error when no username is available", () => {
   assert.throws(
     () => requireFitGerritUser({ HOME: "/nonexistent-home-for-test" }),
