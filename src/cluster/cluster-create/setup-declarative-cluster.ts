@@ -171,6 +171,17 @@ export async function runCbdinoclusterInit(
   console.log(
     `→ setup-cluster: initializing cbdinocluster on ${execution.description} with \`cbdinocluster init ${args}\``,
   );
+  // Start from a clean slate: an instance with several execution groups runs init
+  // once per group against the same `~/.cbdinocluster`. `init --auto` takes its
+  // "enable Capella?" default from any existing config, so a docker-only group's
+  // init (`--disable-capella`) would otherwise poison a later situational group's
+  // init into leaving Capella disabled — no `cloud` deployer, and `allocate
+  // --deployer cloud` later fatals with "no deployers". Removing the file first
+  // makes `--auto` key off the forwarded env/flags, not the previous group's run.
+  // Only the config (deployers/creds) is removed; cluster state lives in Docker.
+  await execution.run("sh", ["-lc", `rm -f ${CBDINOCLUSTER_DEFAULT_REMOTE_CONFIG_PATH}`], undefined, {
+    display: `rm -f ${CBDINOCLUSTER_DEFAULT_REMOTE_CONFIG_PATH}`,
+  });
   // Run via a login shell so `~/.profile` is sourced and `init --auto` inherits the
   // forwarded CAPELLA_*/AWS_* env vars (without them it silently leaves the capella
   // block disabled and `cbdinocluster allocate --deployer cloud` later fatals with
@@ -220,6 +231,31 @@ export async function mergeRemoteCbdinoclusterConfig(
     `→ setup-cluster: merging capella/aws config into ${CBDINOCLUSTER_DEFAULT_REMOTE_CONFIG_PATH} on ${execution.description}`,
   );
   await uploadCbdinoclusterConfig(execution, merged, cycleDir);
+}
+
+/**
+ * Verify `cbdinocluster init` actually enabled the Capella (cloud) deployer, by
+ * confirming the forwarded control-plane `endpoint` made it into the written
+ * `~/.cbdinocluster`. Situational runs need the cloud deployer; without it every
+ * test later fatals at `allocate --deployer cloud` with "no deployers", so a
+ * fail-fast check here surfaces the real cause. Schema-agnostic on purpose — we
+ * look for the endpoint string rather than cbdinocluster's internal YAML keys.
+ * Remote-only, and skipped when there's no endpoint to look for (returns true).
+ */
+export async function remoteCbdinoclusterCloudEnabled(
+  execution: ClusterCommandExecutor,
+  capellaEndpoint: string | undefined,
+): Promise<boolean> {
+  if (!("kind" in execution) || execution.kind !== "remote" || !capellaEndpoint) {
+    return true;
+  }
+  const config = await execution.capture(
+    "sh",
+    ["-lc", `cat ${CBDINOCLUSTER_DEFAULT_REMOTE_CONFIG_PATH}`],
+    undefined,
+    { quiet: true },
+  );
+  return config.includes(capellaEndpoint);
 }
 
 /**

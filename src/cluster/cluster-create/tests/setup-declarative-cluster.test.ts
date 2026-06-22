@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { ClusterCommandExecutor } from "../allocate-cluster.js";
-import { cbdinoclusterNeedsInit, dockerNetworkFromInitArgs, setupDeclarativeCluster } from "../setup-declarative-cluster.js";
+import { cbdinoclusterNeedsInit, dockerNetworkFromInitArgs, remoteCbdinoclusterCloudEnabled, setupDeclarativeCluster } from "../setup-declarative-cluster.js";
 
 const CLUSTER_PS_OUTPUT = `2026-06-03T13:02:18.157+0100    INFO    logger initialized
 Clusters:
@@ -60,6 +60,32 @@ test("dockerNetworkFromInitArgs reads --docker-network in both forms", () => {
   assert.equal(dockerNetworkFromInitArgs("--auto --disable-k8s --docker-network fit"), "fit");
   assert.equal(dockerNetworkFromInitArgs("--docker-network=mynet --auto"), "mynet");
   assert.equal(dockerNetworkFromInitArgs("--auto --disable-k8s"), undefined);
+});
+
+/** A minimal remote executor whose `capture` returns a fixed `~/.cbdinocluster`. */
+function configReadingExecutor(config: string): ClusterCommandExecutor & { kind: "remote" } {
+  return {
+    kind: "remote",
+    description: "remote host",
+    run: () => Promise.resolve(),
+    capture: () => Promise.resolve(config),
+    streamToTerminalAndFile: () => Promise.resolve(),
+    targetFilePath: (path) => path,
+    stageFile: (localPath, targetPath = localPath) => Promise.resolve(targetPath),
+    collectFile: () => Promise.resolve(),
+    commandAvailable: () => Promise.resolve(true),
+  };
+}
+
+test("remoteCbdinoclusterCloudEnabled detects whether init enabled the cloud deployer", async () => {
+  const endpoint = "https://api.dev.example.com";
+  const withCloud = configReadingExecutor(`capella:\n  endpoint: ${endpoint}\n`);
+  const withoutCloud = configReadingExecutor("docker:\n  enabled: true\n");
+
+  assert.equal(await remoteCbdinoclusterCloudEnabled(withCloud, endpoint), true);
+  assert.equal(await remoteCbdinoclusterCloudEnabled(withoutCloud, endpoint), false);
+  // No endpoint to look for → can't verify, so treat as enabled (skip the guard).
+  assert.equal(await remoteCbdinoclusterCloudEnabled(withoutCloud, undefined), true);
 });
 
 /** A remote executor that only succeeds at `ps` once `cbdinocluster init` has run. */
@@ -131,6 +157,17 @@ test("setupDeclarativeCluster runs `cbdinocluster init` for the docker args path
     "cbdinocluster init --auto --disable-k8s --docker-network fit " +
       "--github-user alice --github-token ghtoken",
   );
+  // The stale `~/.cbdinocluster` is removed before init so `init --auto` keys off
+  // the forwarded env/flags, not a previous execution group's config (which may
+  // have left Capella disabled — see runCbdinoclusterInit).
+  const rmIndex = execution.runCalls.findIndex(
+    (c) => c.command === "sh" && (c.args[1] ?? "") === "rm -f ~/.cbdinocluster",
+  );
+  const initIndex = execution.runCalls.findIndex(
+    (c) => c.command === "bash" && (c.args[1] ?? "").includes("cbdinocluster init"),
+  );
+  assert.ok(rmIndex !== -1, "expected a clean-slate `rm -f ~/.cbdinocluster` before init");
+  assert.ok(rmIndex < initIndex, "the config must be removed before `cbdinocluster init` runs");
   // The docker network the args name is created, and no config file is uploaded.
   assert.ok(execution.runCalls.some((c) => c.command === "docker" && c.args.join(" ") === "network create fit"));
   assert.equal(execution.stagedFiles.length, 0);
