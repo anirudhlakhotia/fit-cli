@@ -65,7 +65,7 @@ import {
   type ClusterCommandExecutor,
 } from "../../../cluster/cluster-create/allocate-cluster.js";
 import { runClusterDiag } from "../../../cluster/cluster-diag/cluster-diag.js";
-import { prepareCbdinoclusterInit, removeCluster, setupDeclarativeCluster } from "../../../cluster/cluster-create/setup-declarative-cluster.js";
+import { prepareCbdinoclusterInit, remoteCbdinoclusterCloudEnabled, removeCluster, setupDeclarativeCluster } from "../../../cluster/cluster-create/setup-declarative-cluster.js";
 import { isAlias, resolveAlias } from "../../../cluster/cluster-create/cb-alias.js";
 import { collectClusterLogs } from "../../../cluster/cluster-cbcollect/cluster-cbcollect.js";
 import { installCbdinoclusterRemote } from "../../../cluster/cluster-create/install-cbdinocluster.js";
@@ -1672,6 +1672,8 @@ export async function runFromDefinition(
             });
           }
         } else {
+          const capellaEnvironment = group.type === "situational" ? group.capellaEnvironment : DEFAULT_CAPELLA_ENV;
+          let capellaEndpoint: string | undefined;
           if (execution.kind === "remote") {
             // When a source is specified the binary will be built from the PR
             // by prepareCbdinoclusterInit → resolveCbdinoclusterCommand; skip
@@ -1684,7 +1686,6 @@ export async function runFromDefinition(
             // (run via a login shell sourcing ~/.profile) picks them up and writes the
             // capella and aws blocks. Without a username it can't enable Capella, so fail
             // clearly rather than letting `cbdinocluster allocate` later fail with "no deployers".
-            const capellaEnvironment = group.type === "situational" ? group.capellaEnvironment : DEFAULT_CAPELLA_ENV;
             let capella;
             try {
               capella = await resolveCapellaConfig({ block: capellaEnvironment });
@@ -1694,6 +1695,7 @@ export async function runFromDefinition(
                   `credentials couldn't be resolved: ${(err as Error).message}`,
               );
             }
+            capellaEndpoint = capella.endpoint;
             await uploadRemoteCapellaConfig(execution.target, execution.rootDir, capella);
             if (awsCredentials) {
               await uploadRemoteAwsCredentials(execution.target, execution.rootDir, awsCredentials);
@@ -1706,6 +1708,16 @@ export async function runFromDefinition(
             instanceRunDir(group.path.instanceIndex),
             group.cbdinoclusterSource,
           );
+          // Fail fast if init left the cloud (Capella) deployer disabled — otherwise
+          // every situational test fatals later at `allocate --deployer cloud` with
+          // "no deployers". See remoteCbdinoclusterCloudEnabled.
+          if (!(await remoteCbdinoclusterCloudEnabled(execution, capellaEndpoint))) {
+            throwFatalToCluster(
+              `cbdinocluster init left the Capella (cloud) deployer disabled on the instance, so ` +
+                `situational tests can't allocate clusters (they would fail later with "no deployers"). ` +
+                `Check that the "${capellaEnvironment}" Capella settings were picked up by the init step above.`,
+            );
+          }
         }
 
         for (const [cycleIterationIndex, iteration] of activeCycle.runs.entries()) {
