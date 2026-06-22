@@ -207,26 +207,24 @@ export function renderJunitMarkdown(data: JunitMarkdownData): string {
   return lines.join("\n");
 }
 
-/** Find TEST-*.xml files: check dir directly, then one level of subdirs. */
+/** Recursively collect all TEST-*.xml files under `dir`. */
 function findXmlFiles(dir: string): Array<{ filename: string; xml: string }> {
-  const direct = readdirSync(dir).filter((f) => f.startsWith("TEST-") && f.endsWith(".xml"));
-  if (direct.length > 0) {
-    return direct.map((f) => ({ filename: f, xml: readFileSync(join(dir, f), "utf8") }));
-  }
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (entry.isDirectory()) {
-      const sub = join(dir, entry.name);
-      const found = readdirSync(sub).filter((f) => f.startsWith("TEST-") && f.endsWith(".xml"));
-      if (found.length > 0) {
-        return found.map((f) => ({ filename: f, xml: readFileSync(join(sub, f), "utf8") }));
+  const results: Array<{ filename: string; xml: string }> = [];
+  function walk(current: string): void {
+    for (const entry of readdirSync(current, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        walk(join(current, entry.name));
+      } else if (entry.name.startsWith("TEST-") && entry.name.endsWith(".xml")) {
+        results.push({ filename: entry.name, xml: readFileSync(join(current, entry.name), "utf8") });
       }
     }
   }
-  return [];
+  walk(dir);
+  return results;
 }
 
 /**
- * Read all TEST-*.xml files under `dir` (or one subdir deep) and return a GFM
+ * Read all TEST-*.xml files recursively under `dir` and return a GFM
  * markdown string suitable for appending to $GITHUB_STEP_SUMMARY.
  */
 export function junitToMarkdownFromDir(dir: string): string {
