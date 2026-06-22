@@ -443,7 +443,7 @@ export async function setupCluster(
   if (group.cbdinocluster) {
     const clusterDir = clusterRunDir(group.path.instanceIndex, group.path.clusterIndex ?? 0);
     const outcome = await setupDeclarativeClusterFn(
-      { ...group.cbdinocluster, cng: group.cng, githubCredentials, source: group.cbdinoclusterSource },
+      { ...group.cbdinocluster, cng: group.cng, cngSharedCluster: group.cng && cngKubernetesBackend() === "openshift", githubCredentials, source: group.cbdinoclusterSource },
       execution,
       clusterDir,
     );
