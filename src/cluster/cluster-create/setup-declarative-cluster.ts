@@ -632,6 +632,12 @@ export async function setupDeclarativeCluster(plan: {
   deployer?: string;
   /** CNG cluster: also fetch the couchbase2 connstr so the performer can connect. */
   cng?: boolean;
+  /**
+   * True when the Kubernetes cluster is shared (e.g. OpenShift/ROSA): CRDs and the
+   * admission controller are already installed cluster-wide, so we must not delete and
+   * reinstall them — doing so would break other users' clusters running in other namespaces.
+   */
+  cngSharedCluster?: boolean;
   /** GitHub credentials to inject into the uploaded ~/.cbdinocluster (for GHCR image pulls). */
   githubCredentials?: { user: string; token: string };
   /** Where to get the cbdinocluster binary. Absent means latest release. */
@@ -657,12 +663,13 @@ export async function setupDeclarativeCluster(plan: {
     await runCbdinoclusterInit(execution, cbdinocluster, args, plan.githubCredentials, plan.init.configPatch, cycleDir);
   }
 
-  // CNG on a clean box: the k3d cluster is up (provisionRemoteK3d) and the config
-  // is now uploaded, so install the Couchbase CRDs + admission controller the cao
+  // CNG on a clean k3d box: install the Couchbase CRDs + admission controller the cao
   // deployer needs — the steps cbdinocluster's interactive `init` would prompt for
   // and which the non-interactive allocate would otherwise fail on. On localhost
   // we leave the operator's own ~/.cbdinocluster (and its cluster) alone.
-  if (cng && isRemoteExecution(execution)) {
+  // On a shared cluster (OpenShift/ROSA) the CRDs are already installed cluster-wide;
+  // deleting and reinstalling them would break other users' clusters in other namespaces.
+  if (cng && isRemoteExecution(execution) && !plan.cngSharedCluster) {
     await installCaoCrdsAndAdmission(execution, cbdinocluster);
   }
 
