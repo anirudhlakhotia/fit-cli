@@ -154,8 +154,13 @@ export async function updateGhaRunTitle(title: string): Promise<void> {
         body: JSON.stringify({ display_title: title }),
       },
     );
-    if (!resp.ok) {
-      console.warn(`Warning: failed to update GHA run title (HTTP ${resp.status})`);
+    if (resp.ok) {
+      console.log(`Updated GHA run title to "${title}" (HTTP ${resp.status})`);
+    } else {
+      const body = await resp.text().catch(() => "");
+      console.warn(
+        `Warning: failed to update GHA run title (HTTP ${resp.status})${body ? `: ${body}` : ""}`,
+      );
     }
   } catch (e) {
     console.warn(`Warning: failed to update GHA run title: ${e}`);
