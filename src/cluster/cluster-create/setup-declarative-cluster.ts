@@ -33,13 +33,13 @@ import {
   type ClusterCommandExecutor,
 } from "./allocate-cluster.js";
 import { CBDINOCLUSTER_URL } from "../../fit/util/config.js";
-import { installCbdinoclusterRemote } from "./install-cbdinocluster.js";
+import { buildCbdinoclusterFromPr, installCbdinoclusterRemote } from "./install-cbdinocluster.js";
 import { installCaoCrdsAndAdmission } from "./install-cao-tools.js";
 import { enableIngresses } from "./cao-ingress.js";
 import { type ClusterExistsPolicy } from "./cluster-exists-policy.js";
 import { cngServerImageRef, DEFAULT_CLUSTER_VERSION, type CbdinoclusterDef } from "./build-cluster-def.js";
 import { isAlias, resolveAlias } from "./cb-alias.js";
-import type { CbdinoclusterInitSetup } from "../../fit/shared/definition/types.js";
+import type { CbdinoclusterInitSetup, CbdinoclusterSource } from "../../fit/shared/definition/types.js";
 import { defaultCbdinoclusterInitArgs, situationalCbdinoclusterInitArgs } from "./default-cbdinocluster-init-config.js";
 
 /** The bare command name we look for on the PATH. */
@@ -48,7 +48,22 @@ const CBDINOCLUSTER_INIT_REQUIRED = "you must run the `init` command first";
 const CBDINOCLUSTER_CONFIG_FILENAME = ".cbdinocluster";
 const CBDINOCLUSTER_DEFAULT_REMOTE_CONFIG_PATH = `~/${CBDINOCLUSTER_CONFIG_FILENAME}`;
 
-async function resolveCbdinoclusterCommand(execution: ClusterCommandExecutor): Promise<string | undefined> {
+async function resolveCbdinoclusterCommand(
+  execution: ClusterCommandExecutor,
+  source?: CbdinoclusterSource,
+): Promise<string | undefined> {
+  // When a PR source is specified, always build from that PR on the remote box —
+  // even if some other cbdinocluster binary happens to be on PATH already.
+  if (source?.git !== undefined) {
+    if (execution.description === "this machine") {
+      console.error(
+        `\n✗ setup-cluster: cbdinocluster.source.git is only supported on remote (AWS) instances, not on this machine.`,
+      );
+      return undefined;
+    }
+    return buildCbdinoclusterFromPr(execution, source.git);
+  }
+
   if (await execution.commandAvailable(CBDINOCLUSTER)) {
     return CBDINOCLUSTER;
   }
@@ -219,6 +234,7 @@ export async function prepareCbdinoclusterInit(
   init: CbdinoclusterInitSetup | undefined,
   githubCredentials?: { user: string; token: string },
   cycleDir: string = ensureRunDir(),
+  source?: CbdinoclusterSource,
 ): Promise<void> {
   if (init?.config !== undefined) {
     await prepareCbdinoclusterConfig(execution, init.config, githubCredentials, cycleDir);
@@ -226,7 +242,7 @@ export async function prepareCbdinoclusterInit(
     // Situational path: run cbdinocluster init with explicit args if present, or
     // generate the standard situational defaults.
     const args = init.args ?? situationalCbdinoclusterInitArgs();
-    const cbdinocluster = await resolveCbdinoclusterCommand(execution);
+    const cbdinocluster = await resolveCbdinoclusterCommand(execution, source);
     if (!cbdinocluster) {
       console.error(
         `\n✗ setup-cluster: cbdinocluster isn't on the PATH for ${execution.description}. ` +
@@ -582,9 +598,11 @@ export async function setupDeclarativeCluster(plan: {
   cng?: boolean;
   /** GitHub credentials to inject into the uploaded ~/.cbdinocluster (for GHCR image pulls). */
   githubCredentials?: { user: string; token: string };
+  /** Where to get the cbdinocluster binary. Absent means latest release. */
+  source?: CbdinoclusterSource;
 }, execution: ClusterCommandExecutor = localClusterCommandExecutor(), cycleDir: string = ensureRunDir()): Promise<SetupDeclarativeClusterResult> {
   const cng = plan.cng ?? false;
-  const cbdinocluster = await resolveCbdinoclusterCommand(execution);
+  const cbdinocluster = await resolveCbdinoclusterCommand(execution, plan.source);
   if (!cbdinocluster) {
     console.error(
       `\n✗ setup-cluster: cbdinocluster isn't on the PATH for ${execution.description}. ` +

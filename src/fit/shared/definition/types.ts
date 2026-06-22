@@ -41,6 +41,25 @@ export interface CbdinoclusterInitSetup {
   configPatch?: PieceData;
 }
 
+/**
+ * Build cbdinocluster from a pull request instead of downloading the latest
+ * release. `pr` is the PR number against the canonical `couchbaselabs/cbdinocluster`
+ * repo; `repo` overrides to a fork (`owner/repo`).
+ */
+export interface CbdinoclusterSourceGit {
+  pr: number;
+  repo?: string;
+}
+
+/**
+ * Where to get the cbdinocluster binary. When absent the latest published GitHub
+ * release is used (default behaviour). When present, the binary is built from the
+ * PR's HEAD on the remote box itself — always the right OS/arch, no local binary needed.
+ */
+export interface CbdinoclusterSource {
+  git: CbdinoclusterSourceGit;
+}
+
 export interface CbdinoclusterSetup {
   config: CbdinoclusterDef;
   onClusterExists?: ClusterExistsPolicy;
@@ -54,7 +73,11 @@ export interface CbdinoclusterSetup {
  * instance then allocates against that same config.
  */
 export interface InstanceSetup {
-  cbdinocluster?: { init: CbdinoclusterInitSetup };
+  cbdinocluster?: {
+    /** Where to get the binary. Omit to use the latest published release. */
+    source?: CbdinoclusterSource;
+    init: CbdinoclusterInitSetup;
+  };
   /**
    * Capella environment this instance's clusters are created in (a key under
    * `capella` in environments.json5 — e.g. "dev", "stage"). Lives here because

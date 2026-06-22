@@ -445,7 +445,7 @@ export async function setupCluster(
   if (group.cbdinocluster) {
     const clusterDir = clusterRunDir(group.path.instanceIndex, group.path.clusterIndex ?? 0);
     const outcome = await setupDeclarativeClusterFn(
-      { ...group.cbdinocluster, cng: group.cng, githubCredentials },
+      { ...group.cbdinocluster, cng: group.cng, githubCredentials, source: group.cbdinoclusterSource },
       execution,
       clusterDir,
     );
@@ -1657,7 +1657,11 @@ export async function runFromDefinition(
           }
         } else {
           if (execution.kind === "remote") {
-            if (!(await execution.commandAvailable("cbdinocluster"))) {
+            // When a source is specified the binary will be built from the PR
+            // by prepareCbdinoclusterInit → resolveCbdinoclusterCommand; skip
+            // the pre-emptive release install so we don't waste time installing
+            // the latest release only to overwrite it immediately with a PR build.
+            if (!group.cbdinoclusterSource && !(await execution.commandAvailable("cbdinocluster"))) {
               await installCbdinoclusterRemote(execution);
             }
             // Forward Capella and AWS settings before init so `cbdinocluster init --auto`
@@ -1684,6 +1688,7 @@ export async function runFromDefinition(
             group.cbdinoclusterInit,
             githubCredentials,
             instanceRunDir(group.path.instanceIndex),
+            group.cbdinoclusterSource,
           );
         }
 

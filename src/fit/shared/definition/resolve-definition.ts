@@ -35,6 +35,7 @@ import type { CbdinoclusterDef } from "../../../cluster/cluster-create/build-clu
 import { loadDefinition } from "./parse-definition.js";
 import type {
   CbdinoclusterInitSetup,
+  CbdinoclusterSource,
   ClusterLifetime,
   ConnectionClusterSetup,
   FitConfigPiece,
@@ -113,6 +114,8 @@ export interface ResolvedInstancePlan {
   instance: ResolvedInstance;
   clusters: ResolvedClusterPlan[];
   cbdinoclusterInit?: CbdinoclusterInitSetup;
+  /** Where to get the cbdinocluster binary. Absent means latest release. */
+  cbdinoclusterSource?: CbdinoclusterSource;
   clusterlessSessions: ResolvedSessionPlan[];
   /** Resolved Capella environment for this instance (instance.setup.capellaEnvironment → "dev"). */
   capellaEnvironment: string;
@@ -151,6 +154,8 @@ export interface ResolvedFunctionalExecutionGroup {
   cng: boolean;
   cluster?: SelectedCluster;
   cbdinocluster?: ResolvedCbdinocluster;
+  /** Where to get the cbdinocluster binary. Absent means latest release. */
+  cbdinoclusterSource?: CbdinoclusterSource;
   capellaEnvironment: string;
   runs: ResolvedFunctionalExecutionRun[];
 }
@@ -160,6 +165,8 @@ export interface ResolvedSituationalExecutionGroup {
   path: DefinitionRunPath;
   instance: ResolvedInstance;
   cbdinoclusterInit: CbdinoclusterInitSetup;
+  /** Where to get the cbdinocluster binary. Absent means latest release. */
+  cbdinoclusterSource?: CbdinoclusterSource;
   capellaEnvironment: string;
   runs: ResolvedSituationalExecutionRun[];
 }
@@ -471,6 +478,7 @@ export function resolveInstancePlan(instance: InstanceLifetime, instanceIndex: n
   // An empty CbdinoclusterInitSetup ({}) signals "run default init" — the actual args
   // are generated at runtime (defaultCbdinoclusterInitArgs / situationalCbdinoclusterInitArgs).
   let cbdinoclusterInit: CbdinoclusterInitSetup | undefined;
+  const cbdinoclusterSource = instance.setup?.cbdinocluster?.source;
   if (instance.setup?.cbdinocluster !== undefined) {
     cbdinoclusterInit = { ...instance.setup.cbdinocluster.init };
   } else if (
@@ -485,6 +493,7 @@ export function resolveInstancePlan(instance: InstanceLifetime, instanceIndex: n
     instance: resolveInstance(instance),
     clusters: instance.clusters.map((cluster, clusterIndex) => resolveCluster(cluster, { instanceIndex, clusterIndex })),
     ...(cbdinoclusterInit !== undefined ? { cbdinoclusterInit } : {}),
+    ...(cbdinoclusterSource !== undefined ? { cbdinoclusterSource } : {}),
     clusterlessSessions: (instance.clusterlessSessions ?? []).map((session, sessionIndex) =>
       resolveSession(session, { instanceIndex, sessionIndex, clusterlessSession: true }, false)),
     capellaEnvironment: instance.setup?.capellaEnvironment ?? DEFAULT_CAPELLA_ENV,
@@ -521,6 +530,7 @@ export function buildExecutionGroups(instances: ResolvedInstancePlan[]): Resolve
             },
           }
         : {}),
+      ...(instance.cbdinoclusterSource ? { cbdinoclusterSource: instance.cbdinoclusterSource } : {}),
       capellaEnvironment: instance.capellaEnvironment,
       runs: cluster.sessions.flatMap((session) =>
         session.runs
@@ -547,6 +557,7 @@ export function buildExecutionGroups(instances: ResolvedInstancePlan[]): Resolve
             path: { instanceIndex: instance.path.instanceIndex, sessionIndex: instance.clusterlessSessions[0]?.path.sessionIndex, clusterlessSession: true },
             instance: instance.instance,
             cbdinoclusterInit: instance.cbdinoclusterInit,
+            ...(instance.cbdinoclusterSource ? { cbdinoclusterSource: instance.cbdinoclusterSource } : {}),
             capellaEnvironment: instance.capellaEnvironment,
             runs: instance.clusterlessSessions.flatMap((session) =>
               session.runs

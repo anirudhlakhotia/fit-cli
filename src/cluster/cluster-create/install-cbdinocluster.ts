@@ -1,23 +1,28 @@
 /**
- * Step: install cbdinocluster on a remote box by downloading the matching binary
- * straight from the couchbaselabs/cbdinocluster GitHub releases, rather than
- * scp-ing up whatever happens to be on *this* machine (which couples the remote
- * to the local OS/arch and to the operator having cbdinocluster installed at
- * all). It detects the remote's OS/arch, fetches the latest release asset, makes
- * it executable, and returns the absolute path it landed at — ready to hand to
- * `cbdinocluster <args>` over the same executor.
+ * Step: install cbdinocluster on a remote box — either by downloading the
+ * matching binary from the couchbaselabs/cbdinocluster GitHub releases (default),
+ * or by cloning a specific PR and building the binary from source on the box.
  *
- * The whole thing runs as one remote shell script so it works through any
- * executor that can `capture` a command (a {@link RemoteTarget} for the
- * standalone CLI below, or a remote FitExecutionContext for setup-cluster).
+ * The release-download path: detects the remote's OS/arch, fetches the latest
+ * release asset, makes it executable, and returns the absolute path — ready to
+ * hand to `cbdinocluster <args>` over the same executor.
  *
- * Run on its own against an existing EC2 instance (installs, does not allocate
- * anything):
- *   # Using a saved instance dir (reads ec2-instance.json + .pem automatically):
+ * The PR build path: clones the repo, fetches `refs/pull/<N>/head`, builds with
+ * `go build`, installs the same binary location. Go is auto-installed on the box
+ * if missing. The build is arch-correct by construction since it runs on the box.
+ *
+ * Both paths run as a single remote shell script so they work through any
+ * executor that can `capture` a command.
+ *
+ * Run on its own against an existing EC2 instance:
+ *   # Latest release (default):
  *   npx tsx src/cluster/cluster-create/install-cbdinocluster.ts --dir /tmp/fit-cli/<run>/instances/0
+ *   # From a PR (builds from source on the box):
+ *   npx tsx src/cluster/cluster-create/install-cbdinocluster.ts --dir /tmp/fit-cli/<run>/instances/0 --pr 123
+ *   npx tsx src/cluster/cluster-create/install-cbdinocluster.ts --dir /tmp/fit-cli/<run>/instances/0 --pr 123 --repo myfork/cbdinocluster
  *   # With explicit flags:
  *   npx tsx src/cluster/cluster-create/install-cbdinocluster.ts \
- *     --instance i-0123456789abcdef0 --key ~/.ssh/my-key.pem [--user ubuntu] [--region eu-west-1]
+ *     --instance i-0123456789abcdef0 --key ~/.ssh/my-key.pem [--user ubuntu] [--pr 123]
  */
 import { readFileSync } from "fs";
 import { join } from "path";
@@ -30,12 +35,21 @@ import { waitForSsh, type RemoteHost } from "../../util/non-fit/ssh.js";
 import type { RunOptions } from "../../util/non-fit/proc.js";
 import { fitCliError } from "../../util/non-fit/fit-cli-log.js";
 import { CBDINOCLUSTER_URL } from "../../fit/util/config.js";
+import type { CbdinoclusterSourceGit } from "../../fit/shared/definition/types.js";
 
 /** Default login user for the EC2 boxes fit-cli launches (stock Ubuntu AMI). */
 const DEFAULT_INSTANCE_USER = "ubuntu";
 
 /** Where the remote install drops the binary (a per-user dir that needs no sudo). */
 const DEFAULT_REMOTE_BIN_DIR = "$HOME/.local/bin";
+
+const CBDINOCLUSTER_CANONICAL_REPO = "couchbaselabs/cbdinocluster";
+
+/**
+ * Pinned Go version used when the box doesn't have Go installed. Kept here so
+ * we have one place to bump it when a new Go release is needed.
+ */
+export const PINNED_GO_VERSION = "1.23.4";
 
 /** The minimum an executor must offer for {@link installCbdinoclusterRemote}. */
 export type CaptureExecutor = {
@@ -72,6 +86,64 @@ export function remoteInstallScript(binDir: string = DEFAULT_REMOTE_BIN_DIR): st
 }
 
 /**
+ * The shell script that builds cbdinocluster from a PR on the remote box. It:
+ *   1. Ensures Go is available, auto-installing a pinned version if not.
+ *   2. Clones the repo and checks out `refs/pull/<pr>/head`.
+ *   3. Builds the binary with `go build` and installs it to `binDir`.
+ *   4. Prints the absolute installed path (same contract as {@link remoteInstallScript}).
+ *
+ * `set -e` aborts on any failure.
+ */
+export function remoteBuildFromPrScript(
+  source: CbdinoclusterSourceGit,
+  binDir: string = DEFAULT_REMOTE_BIN_DIR,
+  goVersion: string = PINNED_GO_VERSION,
+): string {
+  const repo = source.repo ?? CBDINOCLUSTER_CANONICAL_REPO;
+  const cloneUrl = `https://github.com/${repo}`;
+  const pr = source.pr;
+
+  return [
+    "set -e",
+    // Ensure Go. If `go` isn't on PATH, download and unpack the pinned version.
+    `if ! command -v go >/dev/null 2>&1; then`,
+    `  goarch=$(uname -m)`,
+    `  case "$goarch" in`,
+    `    x86_64|amd64) goarch=amd64 ;;`,
+    `    aarch64|arm64) goarch=arm64 ;;`,
+    `    *) echo "cbdinocluster build: unsupported architecture $goarch" >&2; exit 1 ;;`,
+    `  esac`,
+    `  goos=$(uname -s | tr '[:upper:]' '[:lower:]')`,
+    `  gotar="go${goVersion}.$goos-$goarch.tar.gz"`,
+    `  gourl="https://go.dev/dl/$gotar"`,
+    `  echo "→ Go not found; installing go${goVersion} from $gourl"`,
+    `  curl -fsSL "$gourl" -o "/tmp/$gotar"`,
+    `  mkdir -p "$HOME/.local/go-dist"`,
+    `  tar -C "$HOME/.local/go-dist" -xzf "/tmp/$gotar" --strip-components=1`,
+    `  rm -f "/tmp/$gotar"`,
+    `  export PATH="$HOME/.local/go-dist/bin:$PATH"`,
+    `fi`,
+    // Clone and check out the PR.
+    `clonedir="$(mktemp -d)/cbdinocluster"`,
+    `echo "→ Cloning ${cloneUrl} ..."`,
+    `git clone --depth=1 ${cloneUrl} "$clonedir"`,
+    `echo "→ Fetching PR #${pr} (refs/pull/${pr}/head) ..."`,
+    `git -C "$clonedir" fetch origin refs/pull/${pr}/head`,
+    `git -C "$clonedir" checkout FETCH_HEAD`,
+    // Build.
+    `bindir="${binDir}"`,
+    `mkdir -p "$bindir"`,
+    `target="$bindir/cbdinocluster"`,
+    `echo "→ Building cbdinocluster from PR #${pr} ..."`,
+    `cd "$clonedir" && go build -o "$target" .`,
+    `chmod 755 "$target"`,
+    `rm -rf "$clonedir"`,
+    // Same one-line stdout contract as remoteInstallScript.
+    `printf '%s\\n' "$target"`,
+  ].join("\n");
+}
+
+/**
  * Install the latest cbdinocluster release on the host `execution` runs on, and
  * resolve with the absolute path to the installed binary. Throws (via the
  * executor) if the download or install fails, or if nothing usable came back.
@@ -86,15 +158,39 @@ export async function installCbdinoclusterRemote(
   const output = await execution.capture("sh", ["-lc", remoteInstallScript(binDir)], undefined, {
     display: `install cbdinocluster from ${CBDINOCLUSTER_URL}`,
   });
+  return parseInstalledPath(output, "cbdinocluster install script didn't print where it installed the binary");
+}
+
+/**
+ * Build cbdinocluster from a PR on the remote box and return the absolute path
+ * to the installed binary. Go is auto-installed on the box if absent.
+ */
+export async function buildCbdinoclusterFromPr(
+  execution: CaptureExecutor,
+  source: CbdinoclusterSourceGit,
+  binDir: string = DEFAULT_REMOTE_BIN_DIR,
+): Promise<string> {
+  const repo = source.repo ?? CBDINOCLUSTER_CANONICAL_REPO;
+  console.log(
+    `→ Building cbdinocluster from PR #${source.pr} (${repo}) on ${execution.description}...`,
+  );
+  const output = await execution.capture("sh", ["-lc", remoteBuildFromPrScript(source, binDir)], undefined, {
+    display: `build cbdinocluster from PR #${source.pr} (${repo})`,
+  });
+  const installedPath = parseInstalledPath(output, "cbdinocluster build script didn't print where it installed the binary");
+  console.log(`✓ Built cbdinocluster (PR #${source.pr}) on ${execution.description} at ${installedPath}`);
+  return installedPath;
+}
+
+function parseInstalledPath(output: string, errorMsg: string): string {
   const installedPath = output
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean)
     .pop();
   if (!installedPath) {
-    throw new Error("cbdinocluster install script didn't print where it installed the binary");
+    throw new Error(errorMsg);
   }
-  console.log(`✓ Installed cbdinocluster on ${execution.description} at ${installedPath}`);
   return installedPath;
 }
 
@@ -115,10 +211,30 @@ function flag(argv: readonly string[], name: string): string | undefined {
 if (isMain(import.meta.url)) {
   runCli(async () => {
     const argv = process.argv.slice(2);
+
+    if (argv.includes("--help") || argv.includes("-h")) {
+      console.log(
+        "Usage:\n" +
+          "  install-cbdinocluster.ts --dir <instance-dir> [--user ubuntu] [--pr <N>] [--repo owner/repo]\n" +
+          "  install-cbdinocluster.ts --instance <ec2-id> --key <path.pem> [--user ubuntu] [--pr <N>] [--repo owner/repo]\n" +
+          "\n" +
+          "Options:\n" +
+          "  --dir        path to an instance dir (reads ec2-instance.json + .pem automatically)\n" +
+          "  --instance   EC2 instance ID (e.g. i-0123456789abcdef0)\n" +
+          "  --key        path to SSH private key (.pem)\n" +
+          "  --user       SSH user on the box (default: ubuntu)\n" +
+          "  --pr         PR number to build from source instead of using the latest release\n" +
+          "  --repo       GitHub repo for the PR, as owner/repo (default: couchbaselabs/cbdinocluster)\n",
+      );
+      process.exit(0);
+    }
+
     let instanceId = flag(argv, "instance");
     let identityFile = flag(argv, "key");
     let address: string | undefined;
     const user = flag(argv, "user") ?? DEFAULT_INSTANCE_USER;
+    const prStr = flag(argv, "pr");
+    const repo = flag(argv, "repo");
 
     const instanceDir = flag(argv, "dir");
     if (instanceDir) {
@@ -135,8 +251,8 @@ if (isMain(import.meta.url)) {
     if (!instanceId || !identityFile) {
       fitCliError(
         "Usage:\n" +
-          "  install-cbdinocluster.ts --dir <instance-dir> [--user ubuntu]\n" +
-          "  install-cbdinocluster.ts --instance <ec2-id> --key <path.pem> [--user ubuntu]",
+          "  install-cbdinocluster.ts --dir <instance-dir> [--user ubuntu] [--pr <N>]\n" +
+          "  install-cbdinocluster.ts --instance <ec2-id> --key <path.pem> [--user ubuntu] [--pr <N>]",
       );
       process.exit(1);
     }
@@ -163,10 +279,20 @@ if (isMain(import.meta.url)) {
     console.log(" ready");
 
     const target = new RemoteTarget(host);
-    const installedPath = await installCbdinoclusterRemote(target);
 
-    // Sanity-check the binary actually runs on this box (catches an OS/arch
-    // mismatch, which would otherwise only surface later as "Exec format error").
+    let installedPath: string;
+    if (prStr !== undefined) {
+      const pr = parseInt(prStr, 10);
+      if (isNaN(pr) || pr <= 0) {
+        fitCliError(`--pr must be a positive integer, got: ${prStr}`);
+        process.exit(1);
+      }
+      installedPath = await buildCbdinoclusterFromPr(target, { pr, repo });
+    } else {
+      installedPath = await installCbdinoclusterRemote(target);
+    }
+
+    // Sanity-check the binary actually runs on this box.
     await target.capture(installedPath, ["--help"]);
     console.log(`\n✓ cbdinocluster is ready on ${instanceId} (${user}@${address}) at ${installedPath}`);
 
@@ -175,6 +301,7 @@ if (isMain(import.meta.url)) {
         { label: "Instance", value: `${instanceId} (${user}@${address})` },
         { label: "cbdinocluster path", value: installedPath },
         { label: "SSH debug command", value: `ssh -i ${identityFile} ${user}@${address}` },
+        ...(prStr ? [{ label: "Built from PR", value: `${repo ?? CBDINOCLUSTER_CANONICAL_REPO}#${prStr}` }] : []),
       ],
     };
   });
