@@ -16,11 +16,11 @@
  * workspace, standing up a cluster and building a performer are all slow, so a
  * run can leave them up and a later invocation can `--resume-at` a point to
  * reuse everything up to it instead of redoing the work:
- *   bun run definition execute <file.yaml>                                          # everything
- *   bun run definition execute --resume-at=after-instance-creation <file>  # reuse instance
- *   bun run definition execute --resume-at=after-remote-preparation <file>  # reuse prepared box
- *   bun run definition execute --resume-at=after-cluster-creation <file>    # reuse cluster
- *   bun run definition execute --resume-at=after-performer <file>           # reuse cluster + performer
+ *   bun run run definition <file.yaml>                                          # everything
+ *   bun run run definition --resume-at=after-instance-creation <file>  # reuse instance
+ *   bun run run definition --resume-at=after-remote-preparation <file>  # reuse prepared box
+ *   bun run run definition --resume-at=after-cluster-creation <file>    # reuse cluster
+ *   bun run run definition --resume-at=after-performer <file>           # reuse cluster + performer
  *
  * Run on its own:
  *   npx tsx src/fit/functional/run-from-definition/run-from-definition.ts <file.yaml>
@@ -43,7 +43,7 @@ import {
   type RunOutput,
 } from "../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
-import { clearLogContext, definitionExecutePrefix, fitCliError, fitCliWarn, popLogContext, printWithoutTimestamps, setLogContext } from "../../../util/non-fit/fit-cli-log.js";
+import { clearLogContext, runDefinitionPrefix, fitCliError, fitCliWarn, popLogContext, printWithoutTimestamps, setLogContext } from "../../../util/non-fit/fit-cli-log.js";
 import { createLogFile } from "../../../util/non-fit/proc.js";
 import {
   defaultsToNonInteractive,
@@ -959,7 +959,7 @@ function formatResumeCommand(point: ResumePoint, definitionPath: string, selecto
   // Always include --interactive: a resume is a hands-on debugging step, and the
   // resumed run needs to be able to prompt (e.g. teardown choices) just like the
   // original interactive run did.
-  return `${definitionExecutePrefix()} --interactive --resume-at=${point} ${resumeSelectorFlags(selector).join(" ")} ${definitionPath}`.replace(/\s+/g, " ").trim();
+  return `${runDefinitionPrefix()} --interactive --resume-at=${point} ${resumeSelectorFlags(selector).join(" ")} ${definitionPath}`.replace(/\s+/g, " ").trim();
 }
 
 function resumeSelectorMatchesPath(selector: ResumeSelector, path: DefinitionRunPath): boolean {
@@ -1879,7 +1879,7 @@ if (isMain(import.meta.url)) {
     const [definitionPath, ...extra] = rest;
     if (!definitionPath || extra.length > 0) {
       console.error(
-        "Primary usage: bun run definition execute <file.yaml> [--resume-at=<point>] [--resume-instance=<n>] [--resume-cluster=<n>] [--resume-session=<n>] [--resume-clusterless-session=<n>] [--resume-run=<n>] [--cbcollect]\n" +
+        "Primary usage: bun run run definition <file.yaml> [--resume-at=<point>] [--resume-instance=<n>] [--resume-cluster=<n>] [--resume-session=<n>] [--resume-clusterless-session=<n>] [--resume-run=<n>] [--cbcollect]\n" +
           "Direct:        tsx src/fit/functional/run-from-definition/run-from-definition.ts <file.yaml> [--resume-at=<point>] [resume selectors]\n" +
           "  --resume-at: after-instance-creation | after-remote-preparation | after-cluster-creation | after-performer",
       );

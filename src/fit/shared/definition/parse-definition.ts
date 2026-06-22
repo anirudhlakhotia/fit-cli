@@ -806,7 +806,7 @@ export async function cacheDefinition(url: string): Promise<string> {
   return localPath;
 }
 
-function countRuns(definition: FitDefinition): number {
+export function countRuns(definition: FitDefinition): number {
   return definition.instances.reduce(
     (total, instance) =>
       total +
@@ -816,6 +816,27 @@ function countRuns(definition: FitDefinition): number {
       ) +
       (instance.clusterlessSessions?.reduce((sessionTotal, session) => sessionTotal + session.runs.length, 0) ?? 0),
     0,
+  );
+}
+
+/**
+ * Resolve a path-or-URL to a local definition file (fetching and caching URLs)
+ * and load it. Shared by `fit run` and `fit definition validate`.
+ */
+export async function resolveAndLoadDefinition(pathOrUrl: string): Promise<{ resolvedPath: string; definition: FitDefinition }> {
+  if (isDefinitionUrl(pathOrUrl)) {
+    console.log(`Fetching definition from ${pathOrUrl}...`);
+  }
+  const resolvedPath = isDefinitionUrl(pathOrUrl) ? await cacheDefinition(pathOrUrl) : pathOrUrl;
+  const definition = loadDefinition(resolvedPath);
+  return { resolvedPath, definition };
+}
+
+/** One-line "✓ Valid …" summary of a parsed definition, for run/validate output. */
+export function definitionSummary(definition: FitDefinition): string {
+  return (
+    `✓ Valid ${FIT_DEFINITION_TYPE} definition (version ${definition.version}, ` +
+    `${definition.instances.length} instance(s), ${countRuns(definition)} run(s)).`
   );
 }
 

@@ -1,6 +1,6 @@
 // Runs a single sanity FIT/SIT test against a single SDK, in a clean environment.
 // Run with:
-//   bun run definition execute --interactive examples/fit-situational-sanity-test.json5
+//   bun run run definition --interactive examples/fit-situational-sanity-test.json5
 {
   version: 1,
   type: 'fit',

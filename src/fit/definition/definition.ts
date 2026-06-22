@@ -1,82 +1,48 @@
 #!/usr/bin/env node
 /**
  * Top-level dispatcher for the `definition` bun script and for the compiled
- * `fit definition [...]` subcommand.
+ * `fit definition [...]` subcommand. This namespace is for authoring and
+ * inspecting definition files; to *run* one (or a preset), use `fit run`.
  *
- * bun run definition execute <file.yaml> [--resume-at=<point>] [resume selectors]
  * bun run definition validate <file.yaml>
- * bun run definition execute-preset --type <preset> --performer-image-name <image> [resume flags]
+ * bun run definition generate-desc <file.yaml>
+ * bun run definition generate-preset --type <preset> --performer-image-name <image>
+ * bun run definition list-presets
  */
-import { existsSync } from "node:fs";
 import { isMain, runCli } from "../../util/non-fit/cli.js";
 import { extractInteractiveFlag, extractReplayFlag, markNonInteractiveByDefault } from "../../util/non-fit/replay.js";
-import { runFromDefinition } from "../functional/run-from-definition/run-from-definition.js";
-import { cacheDefinition, isDefinitionUrl, loadDefinition } from "../shared/definition/parse-definition.js";
-import { FIT_DEFINITION_TYPE } from "../shared/definition/types.js";
-import {
-  extractResumeAt,
-  extractResumeSelector,
-  parseResumePoint,
-} from "../functional/run-from-definition/resume.js";
+import { cacheDefinition, definitionSummary, isDefinitionUrl, loadDefinition, resolveAndLoadDefinition } from "../shared/definition/parse-definition.js";
 import { describeDefinition } from "../shared/definition/generate-desc.js";
-import { generatePreset, listPresets, parseGeneratePresetArgs, parseExecutePresetArgs, PRESET_TYPES } from "./generate-preset/generate-preset.js";
+import { generatePreset, listPresets, parseGeneratePresetArgs, PRESET_TYPES } from "./generate-preset/generate-preset.js";
 import type { RunOutput } from "../../util/non-fit/artifacts.js";
 
-const SUBCOMMANDS = ["execute", "validate", "generate-desc", "generate-preset", "execute-preset", "list-presets"] as const;
+const SUBCOMMANDS = ["validate", "generate-desc", "generate-preset", "list-presets"] as const;
 type Subcommand = (typeof SUBCOMMANDS)[number];
 
-const HELP = `Manage FIT definition files.
+const HELP = `Author and inspect FIT definition files.
+
+To run a definition file or a preset, use \`fit run\` instead.
 
 Usage:
-  bun run definition execute <file.json5> [--resume-at=<point>] [resume selectors]
   bun run definition validate <file.json5>
   bun run definition generate-desc <file.json5>
   bun run definition generate-preset --type <preset> --performer-image-name <image> [--output <path>]
-  bun run definition execute-preset --type <preset> --performer-image-name <image> [resume flags]
   bun run definition list-presets
   bun run definition --help
 
 Both .json5 and .yaml definition files are accepted.
 
 Subcommands:
-  execute         Run FIT tests from a definition file.
   validate        Parse and validate a definition file without running it.
   generate-desc   Print a compact description of a definition file (useful for CI labels).
   generate-preset Emit a ready-to-run definition file from a preset template.
-  execute-preset  Generate a preset definition file and immediately execute it.
   list-presets    List all available preset types with descriptions.
 
-generate-preset / execute-preset options:
+generate-preset options:
   --type <preset>               Preset to generate. Known presets: ${PRESET_TYPES.join(", ")}
   --performer-image-name <image>  SDK-specific performer image ref (e.g. java-fit-performer:refs-changes-67-246067-3 or ghcr.io/couchbase/java-fit-performer:refs-changes-67-246067-3).
-  --output <path>               (generate-preset only) Write to an explicit path instead of the default run dir.
-  --push-gist [public|private]  (generate-preset only) Create a GitHub Gist after writing. Requires a GitHub token in the fit-cli config or GITHUB_TOKEN / GH_TOKEN.
-
-Resume points for execute / execute-preset:
-  --resume-at=after-instance-creation   Reuse a running instance.
-  --resume-at=after-remote-preparation  Reuse a prepared remote workspace.
-  --resume-at=after-cluster-creation    Reuse an allocated cluster.
-  --resume-at=after-performer           Reuse the cluster and a running performer.
-
-Resume selectors for execute / execute-preset (narrow a resume to one run; emitted by a left-up run):
-  --resume-instance=<n>             Which instance to resume.
-  --resume-cluster=<n>              Which cluster within the instance.
-  --resume-session=<n>              Which session within the cluster.
-  --resume-clusterless-session=<n>  Which clusterless (situational) session.
-  --resume-run=<n>                  Which run within the session.`;
-
-function countRuns(definition: ReturnType<typeof loadDefinition>): number {
-  return definition.instances.reduce(
-    (total, instance) =>
-      total +
-      instance.clusters.reduce(
-        (clusterTotal, cluster) => clusterTotal + cluster.sessions.reduce((sessionTotal, session) => sessionTotal + session.runs.length, 0),
-        0,
-      ) +
-      (instance.clusterlessSessions?.reduce((sessionTotal, session) => sessionTotal + session.runs.length, 0) ?? 0),
-    0,
-  );
-}
+  --output <path>               Write to an explicit path instead of the default run dir.
+  --push-gist [public|private]  Create a GitHub Gist after writing. Requires a GitHub token in the fit-cli config or GITHUB_TOKEN / GH_TOKEN.`;
 
 /**
  * Dispatcher for definition subcommands. Called either from the `bun run
@@ -103,8 +69,7 @@ export async function definitionDispatch(argv: string[]): Promise<RunOutput | vo
 
   // The global --interactive / --replay flags are read straight from
   // process.argv by the prompt session, so strip them here before we pick the
-  // subcommand off the front — otherwise `definition -- --interactive <file>`
-  // would treat "--interactive" as the subcommand and bail.
+  // subcommand off the front.
   const cleaned = extractInteractiveFlag(extractReplayFlag(argv).positionals).positionals;
   const [subcommand, ...rest] = cleaned;
 
@@ -115,14 +80,7 @@ export async function definitionDispatch(argv: string[]): Promise<RunOutput | vo
     return;
   }
 
-  // Be forgiving when no subcommand is given: `definition -- <file.yaml>`
-  // (and so `definition -- --interactive <file.yaml>`, once the flag is
-  // stripped above) is treated as an implicit `execute <file.yaml>`, which is
-  // what people reach for. Anything that's neither a subcommand nor a plausible
-  // definition file is a genuine mistake.
-  const isSubcommand = SUBCOMMANDS.includes(subcommand as Subcommand);
-  const looksLikeDefinitionPath = /\.(ya?ml|json5)$/i.test(subcommand) || existsSync(subcommand) || isDefinitionUrl(subcommand);
-  if (!isSubcommand && !looksLikeDefinitionPath) {
+  if (!SUBCOMMANDS.includes(subcommand as Subcommand)) {
     console.error(`Unknown subcommand: ${subcommand}\n`);
     console.error(HELP);
     process.exit(2);
@@ -145,97 +103,21 @@ export async function definitionDispatch(argv: string[]): Promise<RunOutput | vo
     return;
   }
 
-  if (subcommand === "execute-preset") {
-    let presetArgs: ReturnType<typeof parseExecutePresetArgs>["presetArgs"];
-    let presetPositionals: string[];
-    try {
-      ({ presetArgs, positionals: presetPositionals } = parseExecutePresetArgs(rest));
-    } catch (err) {
-      console.error((err as Error).message);
-      process.exit(2);
-    }
-    const { resumeAt, positionals: afterResume } = extractResumeAt(presetPositionals);
-    const { selector: resumeSelector, positionals: afterSelector } = extractResumeSelector(afterResume);
-    if (afterSelector.length > 0) {
-      console.error(`Unexpected arguments: ${afterSelector.join(" ")}`);
-      process.exit(2);
-    }
-    let resumePoint;
-    try {
-      resumePoint = parseResumePoint(resumeAt);
-    } catch (err) {
-      console.error((err as Error).message);
-      process.exit(2);
-    }
-    const { path: definitionPath } = await generatePreset({ ...presetArgs, skipGuidance: true });
-    return runFromDefinition(definitionPath, {
-      ...(resumePoint ? { resumeAt: resumePoint } : {}),
-      resumeSelector,
-    });
-  }
-
-  if (subcommand === "validate") {
-    const [path] = rest;
-    if (!path) {
-      console.error("Usage: bun run definition validate <file.json5>");
-      process.exit(2);
-    }
-    if (isDefinitionUrl(path)) {
-      console.log(`Fetching definition from ${path}...`);
-    }
-    const resolvedPath = isDefinitionUrl(path) ? await cacheDefinition(path) : path;
-    const definition = loadDefinition(resolvedPath);
-    console.log(
-      `✓ Valid ${FIT_DEFINITION_TYPE} definition (version ${definition.version}, ` +
-        `${definition.instances.length} instance(s), ${countRuns(definition)} run(s)).`,
-    );
-    return;
-  }
-
-  // execute — either an explicit `execute ...` or an implicit bare path, in
-  // which case the path itself is the first positional, so keep it.
-  const executeArgs = isSubcommand ? rest : cleaned;
-  const { resumeAt, positionals: afterResume } = extractResumeAt(executeArgs);
-  const { selector: resumeSelector, positionals: afterSelector } = extractResumeSelector(afterResume);
-  const [definitionPath, ...extra] = afterSelector;
-  if (!definitionPath || extra.length > 0) {
-    console.error(
-      "Usage: bun run definition execute <file.yaml> [--resume-at=<point>] [resume selectors]\n" +
-        "  --resume-at: after-instance-creation | after-remote-preparation | after-cluster-creation | after-performer\n" +
-        "  resume selectors: --resume-instance=<n> --resume-cluster=<n> --resume-session=<n> --resume-clusterless-session=<n> --resume-run=<n>",
-    );
+  // validate
+  const [path, ...extra] = rest;
+  if (!path || extra.length > 0) {
+    console.error("Usage: bun run definition validate <file.json5>");
     process.exit(2);
   }
-  let resumePoint;
-  try {
-    resumePoint = parseResumePoint(resumeAt);
-  } catch (err) {
-    console.error((err as Error).message);
-    process.exit(2);
-  }
-  if (isDefinitionUrl(definitionPath)) {
-    console.log(`Fetching definition from ${definitionPath}...`);
-  }
-  const resolvedDefinitionPath = isDefinitionUrl(definitionPath)
-    ? await cacheDefinition(definitionPath)
-    : definitionPath;
-  const definition = loadDefinition(resolvedDefinitionPath);
-  console.log(
-    `✓ Valid ${FIT_DEFINITION_TYPE} definition (version ${definition.version}, ` +
-      `${definition.instances.length} instance(s), ${countRuns(definition)} run(s)).`,
-  );
-  return runFromDefinition(resolvedDefinitionPath, {
-    ...(resumePoint ? { resumeAt: resumePoint } : {}),
-    resumeSelector,
-  });
+  const { definition } = await resolveAndLoadDefinition(path);
+  console.log(definitionSummary(definition));
 }
 
 export function runDefinitionMain(): void {
-  // The `definition` command (and its `execute-preset` flow) runs CI-style with
-  // default answers unless `--interactive` is passed. This is the single entrypoint
-  // for every launch form — `fit definition`, `fit run definition`, and
-  // `bun run definition` — so declaring it here covers them all, and it runs
-  // before runCli creates the prompt session below.
+  // The `definition` command runs CI-style with default answers unless
+  // `--interactive` is passed. This is the single entrypoint for every launch
+  // form — `fit definition` and `bun run definition` — so declaring it here
+  // covers them all, and it runs before runCli creates the prompt session below.
   markNonInteractiveByDefault();
   const argv = process.argv.slice(2);
   // Handle help before runCli creates the artifact directory.

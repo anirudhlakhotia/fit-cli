@@ -79,7 +79,7 @@ The AWS region and VPC are fixed (region `us-west-2`, VPC `cbqerunners-vpc`) and
 The output will guide you through how to resume where a failure happened, something like:
 
 ```
-fit definition execute --resume-at=after-cluster-creation examples/test.yaml
+fit run definition --resume-at=after-cluster-creation examples/test.yaml
 ```
 
 This can save valuable time when iterating a definition file.  It will try its best to resume, including checking that preceding steps such as cluster creation are resumable from.
@@ -104,7 +104,9 @@ If you find any are broken due to refactorings then please ask an AI to "sweep t
 User-facing (using the installed binary):
 - `fit help` — show help.
 - `fit wizard` — run the interactive wizard.
-- `fit definition execute <file>` — run a definition file (see Resuming for the resume flags).
+- `fit run preset <preset>` — generate a preset definition file and run it.
+- `fit run definition <file>` — run an existing definition file (see Resuming for the resume flags).
+- `fit definition validate | generate-preset | generate-desc | list-presets` — author or inspect a definition file.
 - `fit cloud-instances list | manage | delete | remove-all` — manage the EC2 instances fit-cli launched.
 
 For development (from source with Bun):
@@ -158,7 +160,7 @@ version: 1
 type: fit-functional-tests
 ```
 These allow us to drive repeatable workflows, much more reliably than replay files.
-See `examples/documented.yaml` for an annotated example; run one with `fit definition execute <file.yaml>`.
+See `examples/documented.yaml` for an annotated example; run one with `fit run definition <file.yaml>`.
 
 Definition file rules while generating:
 - If there are fields that are added later at runtime, add a very short comment saying that.  

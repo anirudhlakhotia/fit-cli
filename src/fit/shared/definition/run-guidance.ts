@@ -2,10 +2,10 @@
  * Shared guidance printed after any definition file is generated, telling the
  * user how to run it locally and how to push it to CI.
  */
-import { definitionExecutePrefix } from "../../../util/non-fit/fit-cli-log.js";
+import { runDefinitionPrefix } from "../../../util/non-fit/fit-cli-log.js";
 
 export function definitionRunGuidance(definitionPath: string): string {
-  const prefix = definitionExecutePrefix();
+  const prefix = runDefinitionPrefix();
   const ciInstructions =
     `\nTo run on CI via https://github.com/couchbaselabs/fit-cli, either:\n` +
     `\n` +
