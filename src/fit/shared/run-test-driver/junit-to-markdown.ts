@@ -150,7 +150,7 @@ function removePackage(name: string): string {
   return idx === -1 ? name : name.substring(idx + 1);
 }
 
-/** Render a JunitMarkdownData object to a GFM markdown string. */
+/** Render a JunitMarkdownData object to a GFM markdown string (for $GITHUB_STEP_SUMMARY). */
 export function renderJunitMarkdown(data: JunitMarkdownData): string {
   const { packages, failingCases, totalPassed, totalFailed, totalSkipped, totalTimeMs } = data;
   const lines: string[] = [];
@@ -173,9 +173,11 @@ export function renderJunitMarkdown(data: JunitMarkdownData): string {
       `| ${s.pkg} | ${s.passed > 0 ? `${s.passed} ✅` : ""} | ${s.failed > 0 ? `${s.failed} ❌` : ""} | ${s.skipped > 0 ? `${s.skipped} ⏭️` : ""} | ${formatTime(s.timeMs)} ⏱️ |`,
     );
   }
-  lines.push(
-    `| **TOTAL** | **${totalPassed > 0 ? `${totalPassed} ✅` : ""}** | **${totalFailed > 0 ? `${totalFailed} ❌` : ""}** | **${totalSkipped > 0 ? `${totalSkipped} ⏭️` : ""}** | **${formatTime(totalTimeMs)} ⏱️** |`,
-  );
+  // Use explicit 0 for zero totals so the cell isn't bold-empty (**<empty>** = ****).
+  const totalPassCell = totalPassed > 0 ? `${totalPassed} ✅` : "0";
+  const totalFailCell = totalFailed > 0 ? `${totalFailed} ❌` : "0";
+  const totalSkipCell = totalSkipped > 0 ? `${totalSkipped} ⏭️` : "0";
+  lines.push(`| **TOTAL** | **${totalPassCell}** | **${totalFailCell}** | **${totalSkipCell}** | **${formatTime(totalTimeMs)} ⏱️** |`);
   lines.push("");
   lines.push("</details>");
   lines.push("");
@@ -215,6 +217,63 @@ export function renderJunitMarkdown(data: JunitMarkdownData): string {
   return lines.join("\n");
 }
 
+const RED = "\x1b[31m";
+const RESET = "\x1b[0m";
+
+/** Render a JunitMarkdownData object as a plain-text table for terminal output. */
+export function renderJunitPlainText(data: JunitMarkdownData): string {
+  const { packages, failingCases, totalPassed, totalFailed, totalSkipped, totalTimeMs } = data;
+  const lines: string[] = [];
+
+  const pkgHeader = "Package";
+  const passHeader = "Pass";
+  const skipHeader = "Skip";
+  const failHeader = "Fail";
+  const timeHeader = "Time";
+
+  const pkgWidth = Math.max(pkgHeader.length, ...packages.map((s) => s.pkg.length), 5);
+  const passWidth = Math.max(passHeader.length, String(totalPassed).length);
+  const skipWidth = Math.max(skipHeader.length, String(totalSkipped).length);
+  const failWidth = Math.max(failHeader.length, String(totalFailed).length);
+  const timeWidth = Math.max(timeHeader.length, formatTime(totalTimeMs).length);
+
+  const sep = `${"-".repeat(pkgWidth)}-+-${"-".repeat(passWidth)}-+-${"-".repeat(skipWidth)}-+-${"-".repeat(failWidth)}-+-${"-".repeat(timeWidth)}`;
+
+  const row = (pkg: string, pass: string, skip: string, fail: string, time: string, highlight = false): string => {
+    const failStr = highlight && fail !== "0" ? `${RED}${fail.padStart(failWidth)}${RESET}` : fail.padStart(failWidth);
+    return `${pkg.padEnd(pkgWidth)} | ${pass.padStart(passWidth)} | ${skip.padStart(skipWidth)} | ${failStr} | ${time.padStart(timeWidth)}`;
+  };
+
+  lines.push(row(pkgHeader, passHeader, skipHeader, failHeader, timeHeader));
+  lines.push(sep);
+  for (const s of packages) {
+    lines.push(row(s.pkg, String(s.passed), String(s.skipped), String(s.failed), formatTime(s.timeMs), true));
+  }
+  lines.push(sep);
+  lines.push(row("TOTAL", String(totalPassed), String(totalSkipped), String(totalFailed), formatTime(totalTimeMs), true));
+
+  if (failingCases.length > 0) {
+    lines.push("");
+    lines.push("Failures:");
+    for (const tc of failingCases) {
+      const simpleClass = removePackage(tc.classname);
+      lines.push(`  ${RED}${simpleClass}.${tc.name}${RESET}`);
+      for (const issue of tc.issues) {
+        if (issue.message) {
+          lines.push(`    ${issue.message}`);
+        }
+        if (issue.body) {
+          for (const line of truncate(issue.body).split("\n").slice(0, 10)) {
+            lines.push(`      ${line}`);
+          }
+        }
+      }
+    }
+  }
+
+  return lines.join("\n") + "\n";
+}
+
 /** Recursively collect all TEST-*.xml files under `dir`. */
 function findXmlFiles(dir: string): Array<{ filename: string; xml: string }> {
   const results: Array<{ filename: string; xml: string }> = [];
@@ -231,14 +290,28 @@ function findXmlFiles(dir: string): Array<{ filename: string; xml: string }> {
   return results;
 }
 
+/** Parse all TEST-*.xml files recursively under `dir`. Returns undefined if none found. */
+export function parseJunitDataFromDir(dir: string): JunitMarkdownData | undefined {
+  const files = findXmlFiles(dir);
+  return files.length === 0 ? undefined : parseJunitData(files);
+}
+
 /**
  * Read all TEST-*.xml files recursively under `dir` and return a GFM
  * markdown string suitable for appending to $GITHUB_STEP_SUMMARY.
  */
 export function junitToMarkdownFromDir(dir: string): string {
-  const files = findXmlFiles(dir);
-  if (files.length === 0) return "_No JUnit reports found._\n";
-  return renderJunitMarkdown(parseJunitData(files));
+  const data = parseJunitDataFromDir(dir);
+  return data ? renderJunitMarkdown(data) : "_No JUnit reports found._\n";
+}
+
+/**
+ * Read all TEST-*.xml files recursively under `dir` and return a plain-text
+ * table suitable for printing to the terminal.
+ */
+export function junitToPlainTextFromDir(dir: string): string {
+  const data = parseJunitDataFromDir(dir);
+  return data ? renderJunitPlainText(data) : "No JUnit reports found.\n";
 }
 
 async function main(): Promise<void> {
@@ -258,12 +331,12 @@ async function main(): Promise<void> {
     const tmpDir = mkdtempSync(join(tmpdir(), "fit-junit-markdown-"));
     try {
       await run("tar", ["-xzf", input, "-C", tmpDir]);
-      process.stdout.write(junitToMarkdownFromDir(tmpDir));
+      process.stdout.write(junitToPlainTextFromDir(tmpDir));
     } finally {
       rmSync(tmpDir, { recursive: true, force: true });
     }
   } else {
-    process.stdout.write(junitToMarkdownFromDir(input));
+    process.stdout.write(junitToPlainTextFromDir(input));
   }
 }
 
