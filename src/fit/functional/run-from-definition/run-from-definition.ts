@@ -160,7 +160,7 @@ import {
   type ResumeTargetState,
   type RunState,
 } from "./resume-state.js";
-import { appendJunitStepSummary, appendRunSummaryToGhaSummary, updateGhaRunTitle } from "../../util/gha.js";
+import { appendJunitStepSummary, appendRunSummaryToGhaSummary } from "../../util/gha.js";
 
 /** True for a functional iteration that has resolved to a concrete cluster. */
 function functionalWithCluster(
@@ -1345,7 +1345,7 @@ export async function runFromDefinition(
   const executionGroups = buildExecutionGroups(resolved.instances);
   console.log(`\nRunning FIT tests from definition:\n  ${definitionPath}`);
   if (definition.description) {
-    await updateGhaRunTitle(definition.description);
+    console.log(`  Description: ${definition.description}`);
   }
 
   const preconditionCtx: FailureContext = { instanceIndex: 0 };

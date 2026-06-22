@@ -42,7 +42,6 @@ permissions:
   id-token: write   # required for GitHub OIDC
   contents: read
   checks: write     # required for action-junit-report to post the JUnit check run / annotations
-  actions: write    # required to update the workflow run display_title
 
 jobs:
   run-fit-cli:
@@ -125,12 +124,6 @@ jobs:
         run: echo "FIT_DEFINITION_FILE=${{ inputs.definitionFile }}" >> "$GITHUB_ENV"
 
       - name: Run fit-cli
-        env:
-          # todo don't think we need these anymore?
-#          GITHUB_TOKEN: ${{ secrets.FIT_CLI_GITHUB_PAT }}
-#          GITHUB_USER: ${{ secrets.FIT_CLI_GITHUB_USER }}
-          # The PAT above can't update GHA run titles; PATCH /actions/runs/{id} only works with the built-in run-scoped token.
-          GHA_RUN_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -o pipefail
           if [[ "${{ inputs.fitCliSource }}" == "source" ]]; then
