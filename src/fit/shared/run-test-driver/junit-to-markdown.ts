@@ -2,9 +2,17 @@
  * Generate GitHub-flavoured Markdown from JUnit surefire XML reports.
  * Produces a badge summary, a per-package results table, and detail blocks
  * for each failed test. Skipped tests are counted but not annotated.
+ *
+ * Usage:
+ *   bun run junit-to-markdown <surefire-reports-dir-or-archive.tar.gz>
+ *   bun run junit-to-markdown /tmp/fit-cli/20260622-122009/instances/0/clusters/0/sessions/0/runs/0/surefire-reports.tar.gz
+ *   bun run junit-to-markdown /tmp/fit-cli/20260622-122009
  */
-import { readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { extname, join } from "node:path";
+import { isMain } from "../../../util/non-fit/cli.js";
+import { run } from "../../../util/non-fit/proc.js";
 
 interface TestIssue {
   tag: "failure" | "error";
@@ -231,4 +239,37 @@ export function junitToMarkdownFromDir(dir: string): string {
   const files = findXmlFiles(dir);
   if (files.length === 0) return "_No JUnit reports found._\n";
   return renderJunitMarkdown(parseJunitData(files));
+}
+
+async function main(): Promise<void> {
+  const args = process.argv.slice(2).filter((a) => a !== "--");
+  if (args.length !== 1 || args[0] === "--help" || args[0] === "-h") {
+    console.log("Usage: bun run junit-to-markdown <surefire-reports-dir-or-archive.tar.gz>");
+    process.exit(args.length === 1 ? 0 : 2);
+  }
+
+  const input = args[0];
+  if (!existsSync(input)) {
+    console.error(`Not found: ${input}`);
+    process.exit(1);
+  }
+
+  if (extname(input) === ".gz") {
+    const tmpDir = mkdtempSync(join(tmpdir(), "fit-junit-markdown-"));
+    try {
+      await run("tar", ["-xzf", input, "-C", tmpDir]);
+      process.stdout.write(junitToMarkdownFromDir(tmpDir));
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  } else {
+    process.stdout.write(junitToMarkdownFromDir(input));
+  }
+}
+
+if (isMain(import.meta.url)) {
+  main().catch((err) => {
+    console.error(err instanceof Error ? err.message : err);
+    process.exit(1);
+  });
 }
