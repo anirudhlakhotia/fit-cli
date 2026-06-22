@@ -14,9 +14,9 @@
  *
  * Run on its own:
  *   # Check this machine's ~/.cbdinocluster is CNG-ready:
- *   npx tsx src/cluster/cluster-create/cng-kubernetes.ts check-local
+ *   bun src/cluster/cluster-create/cng-kubernetes.ts check-local
  *   # Print the k8s block fit-cli uploads to a remote box for a given home dir:
- *   npx tsx src/cluster/cluster-create/cng-kubernetes.ts remote-block /home/ubuntu
+ *   bun src/cluster/cluster-create/cng-kubernetes.ts remote-block /home/ubuntu
  */
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";

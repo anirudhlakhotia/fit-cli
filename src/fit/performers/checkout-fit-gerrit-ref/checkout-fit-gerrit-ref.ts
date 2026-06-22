@@ -2,7 +2,7 @@
  * Step: fetch and checkout transactions-fit-performer at a specific Gerrit ref.
  *
  * Run on its own:
- *   npx tsx src/fit/performers/checkout-fit-gerrit-ref/checkout-fit-gerrit-ref.ts refs/changes/29/246329/1
+ *   bun src/fit/performers/checkout-fit-gerrit-ref/checkout-fit-gerrit-ref.ts refs/changes/29/246329/1
  */
 import { captureValueSync } from "../../../util/non-fit/proc.js";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";

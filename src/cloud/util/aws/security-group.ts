@@ -9,8 +9,8 @@
  * omit it to use the account's default VPC.
  *
  * Run on its own:
- *   npx tsx src/cloud/util/aws/security-group.ts --name fit-cli --ports 22 [--vpc vpc-0123]
- *   npx tsx src/cloud/util/aws/security-group.ts --delete sg-0123456789abcdef0
+ *   bun src/cloud/util/aws/security-group.ts --name fit-cli --ports 22 [--vpc vpc-0123]
+ *   bun src/cloud/util/aws/security-group.ts --delete sg-0123456789abcdef0
  */
 import {
   AuthorizeSecurityGroupIngressCommand,

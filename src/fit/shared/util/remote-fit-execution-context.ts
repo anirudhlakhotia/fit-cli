@@ -261,11 +261,11 @@ export async function createRemoteFitExecutionContext(
  * Mini CLI: prepare a remote FIT execution context against an SSH host and,
  * optionally, run one operation against it. Run with --help for the flags, or:
  *
- *   npx tsx src/fit/shared/util/remote-fit-execution-context.ts --help
+ *   bun src/fit/shared/util/remote-fit-execution-context.ts --help
  *   # Prepare (full flow): install deps + clone repos on the box.
- *   npx tsx src/fit/shared/util/remote-fit-execution-context.ts --host 1.2.3.4 --sdk python --key ~/.ssh/id
+ *   bun src/fit/shared/util/remote-fit-execution-context.ts --host 1.2.3.4 --sdk python --key ~/.ssh/id
  *   # Reuse an already-prepared box, then run one command against the context.
- *   npx tsx src/fit/shared/util/remote-fit-execution-context.ts --host 1.2.3.4 --sdk python --skip-preparation capture -- ls
+ *   bun src/fit/shared/util/remote-fit-execution-context.ts --host 1.2.3.4 --sdk python --skip-preparation capture -- ls
  *
  * Needs an SSH host you can already reach (e.g. an EC2 box left running). This is
  * for debugging/development of createRemoteFitExecutionContext, not end-users.

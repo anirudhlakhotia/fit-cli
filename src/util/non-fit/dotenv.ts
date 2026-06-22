@@ -5,8 +5,8 @@
  * tested (see tests/dotenv.test.ts).
  *
  * Run on its own (loads ./.env and prints which keys it would set):
- *   npx tsx src/util/non-fit/dotenv.ts
- *   npx tsx src/util/non-fit/dotenv.ts path/to/.env
+ *   bun src/util/non-fit/dotenv.ts
+ *   bun src/util/non-fit/dotenv.ts path/to/.env
  */
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";

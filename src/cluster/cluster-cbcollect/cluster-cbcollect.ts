@@ -9,7 +9,7 @@
  *
  * Run on its own against an existing cluster (writes into the current run dir's
  * server-logs/ unless you pass a destination):
- *   npx tsx src/cluster/cluster-cbcollect/cluster-cbcollect.ts <cluster-id> [dest-dir]
+ *   bun src/cluster/cluster-cbcollect/cluster-cbcollect.ts <cluster-id> [dest-dir]
  */
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";

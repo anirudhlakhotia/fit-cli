@@ -5,7 +5,7 @@
  * Analytics, Protostellar/CNG) it explains and re-prompts.
  *
  * Run on its own:
- *   npx tsx src/cluster/cluster-select/ask-connection-string.ts
+ *   bun src/cluster/cluster-select/ask-connection-string.ts
  *
  * Prints the resulting supported classification as JSON.
  */

@@ -10,7 +10,7 @@
  * image — no IAM permissions are needed to read public SSM parameters.
  *
  * Run on its own:
- *   npx tsx src/cloud/util/aws/image.ts
+ *   bun src/cloud/util/aws/image.ts
  */
 import { DescribeImagesCommand } from "@aws-sdk/client-ec2";
 import { GetParametersCommand } from "@aws-sdk/client-ssm";

@@ -5,7 +5,7 @@
  * builds them from source.
  *
  * Run this flow on its own (skipping the top-level menu):
- *   npx tsx src/fit/performers/check-build-and-run-performer/check-build-and-run-performer.ts
+ *   bun src/fit/performers/check-build-and-run-performer/check-build-and-run-performer.ts
  */
 import { join } from "node:path";
 import { artifactFromPath, type RunOutput } from "../../../util/non-fit/artifacts.js";

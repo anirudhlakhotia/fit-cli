@@ -5,7 +5,7 @@
  * callers pick the bucket/key.
  *
  * Run on its own:
- *   npx tsx src/cloud/util/aws/upload-directory.ts ./local s3://my-bucket/prefix
+ *   bun src/cloud/util/aws/upload-directory.ts ./local s3://my-bucket/prefix
  */
 import { createReadStream, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";

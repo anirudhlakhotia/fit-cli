@@ -16,12 +16,12 @@
  *
  * Run on its own against an existing EC2 instance:
  *   # Latest release (default):
- *   npx tsx src/cluster/cluster-create/install-cbdinocluster.ts --dir /tmp/fit-cli/<run>/instances/0
+ *   bun src/cluster/cluster-create/install-cbdinocluster.ts --dir /tmp/fit-cli/<run>/instances/0
  *   # From a PR (builds from source on the box):
- *   npx tsx src/cluster/cluster-create/install-cbdinocluster.ts --dir /tmp/fit-cli/<run>/instances/0 --pr 123
- *   npx tsx src/cluster/cluster-create/install-cbdinocluster.ts --dir /tmp/fit-cli/<run>/instances/0 --pr 123 --repo myfork/cbdinocluster
+ *   bun src/cluster/cluster-create/install-cbdinocluster.ts --dir /tmp/fit-cli/<run>/instances/0 --pr 123
+ *   bun src/cluster/cluster-create/install-cbdinocluster.ts --dir /tmp/fit-cli/<run>/instances/0 --pr 123 --repo myfork/cbdinocluster
  *   # With explicit flags:
- *   npx tsx src/cluster/cluster-create/install-cbdinocluster.ts \
+ *   bun src/cluster/cluster-create/install-cbdinocluster.ts \
  *     --instance i-0123456789abcdef0 --key ~/.ssh/my-key.pem [--user ubuntu] [--pr 123]
  */
 import { readFileSync } from "fs";

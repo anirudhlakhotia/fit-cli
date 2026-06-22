@@ -2,7 +2,7 @@
  * Step: ask whether to use an existing Couchbase cluster or create a new one.
  *
  * Run on its own:
- *   npx tsx src/cluster/cluster-select/choose-cluster.ts
+ *   bun src/cluster/cluster-select/choose-cluster.ts
  *
  * Prints the choice ("existing" or "create").
  */

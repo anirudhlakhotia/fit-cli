@@ -9,7 +9,7 @@
  * Pure logic, no IO, so it's easy to unit test (see tests/config-pieces.test.ts).
  *
  * Run on its own (prints a small worked example):
- *   npx tsx src/util/non-fit/config-pieces.ts
+ *   bun src/util/non-fit/config-pieces.ts
  */
 import { isMain, runCli } from "./cli.js";
 

@@ -2,7 +2,7 @@
  * The "Stop performer" guided flow.
  *
  * Run this flow on its own:
- *   npx tsx src/fit/performers/stop-performer/stop-performer.ts
+ *   bun src/fit/performers/stop-performer/stop-performer.ts
  */
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { type Sdk } from "../../../util/sdk/sdks.js";

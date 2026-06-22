@@ -2,7 +2,7 @@
  * The "Check and pull performer" guided flow.
  *
  * Run this flow on its own:
- *   npx tsx src/fit/performers/check-and-pull-performer/check-and-pull-performer.ts
+ *   bun src/fit/performers/check-and-pull-performer/check-and-pull-performer.ts
  */
 import { rmSync, writeFileSync } from "node:fs";
 import { fitCliError, runScriptPrefix } from "../../../util/non-fit/fit-cli-log.js";

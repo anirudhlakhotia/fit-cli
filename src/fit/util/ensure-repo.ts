@@ -3,7 +3,7 @@
  * given directory, offering to clone it if it is missing.
  *
  * Run on its own:
- *   npx tsx src/fit/util/ensure-repo.ts /path/to/transactions-fit-performer
+ *   bun src/fit/util/ensure-repo.ts /path/to/transactions-fit-performer
  *
  * Exits 0 if the repo is ready, 1 if the user chose to bail or the clone failed.
  */

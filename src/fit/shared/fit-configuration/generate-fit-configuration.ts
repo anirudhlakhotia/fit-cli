@@ -7,7 +7,7 @@
  *
  * Run on its own (this picks a cluster via the cluster-select workflow, then
  * generates its config):
- *   npx tsx src/fit/shared/fit-configuration/generate-fit-configuration.ts
+ *   bun src/fit/shared/fit-configuration/generate-fit-configuration.ts
  */
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { type RunOutput } from "../../../util/non-fit/artifacts.js";

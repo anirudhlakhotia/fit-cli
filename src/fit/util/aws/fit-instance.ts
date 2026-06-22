@@ -8,7 +8,7 @@
  *
  * Run on its own (provisions a box and prints how to reach it — does NOT
  * terminate it, so you can poke at it; tear it down with the printed command):
- *   npx tsx src/fit/util/aws/fit-instance.ts
+ *   bun src/fit/util/aws/fit-instance.ts
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";

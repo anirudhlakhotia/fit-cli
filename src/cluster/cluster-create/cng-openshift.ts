@@ -17,14 +17,14 @@
  *
  * Run on its own:
  *   # Print the oc-install script it would run on the box (no SSH, no AWS):
- *   npx tsx src/cluster/cluster-create/cng-openshift.ts print-oc-install [--version 4.10.67]
+ *   bun src/cluster/cluster-create/cng-openshift.ts print-oc-install [--version 4.10.67]
  *   # Print the pre-flight cleanup script:
- *   npx tsx src/cluster/cluster-create/cng-openshift.ts print-preflight
+ *   bun src/cluster/cluster-create/cng-openshift.ts print-preflight
  *   # Print the k8s block fit-cli uploads, for a given home + context:
- *   npx tsx src/cluster/cluster-create/cng-openshift.ts k8s-block /home/ubuntu my-context
+ *   bun src/cluster/cluster-create/cng-openshift.ts k8s-block /home/ubuntu my-context
  *   # Provision oc + login + pre-flight + cao tools on a saved instance dir
  *   # (reads ROSA creds from AWS Secrets Manager):
- *   npx tsx src/cluster/cluster-create/cng-openshift.ts --dir /tmp/fit-cli/<run>/instances/0
+ *   bun src/cluster/cluster-create/cng-openshift.ts --dir /tmp/fit-cli/<run>/instances/0
  */
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";

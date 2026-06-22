@@ -5,7 +5,7 @@
  * through provisioning.
  *
  * Run on its own:
- *   npx tsx src/cloud/util/aws/identity.ts
+ *   bun src/cloud/util/aws/identity.ts
  *
  * Prints the caller identity, or the reason it couldn't be determined (exit 1).
  */

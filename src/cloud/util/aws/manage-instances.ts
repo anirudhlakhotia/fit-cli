@@ -12,9 +12,9 @@
  * about FIT.
  *
  * Run on its own:
- *   npx tsx src/cloud/util/aws/manage-instances.ts                       # fit-cli=owned
- *   npx tsx src/cloud/util/aws/manage-instances.ts --tag env=ci
- *   npx tsx src/cloud/util/aws/manage-instances.ts --key fit-cli-abc123
+ *   bun src/cloud/util/aws/manage-instances.ts                       # fit-cli=owned
+ *   bun src/cloud/util/aws/manage-instances.ts --tag env=ci
+ *   bun src/cloud/util/aws/manage-instances.ts --key fit-cli-abc123
  */
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { confirm, select } from "../../../util/non-fit/prompts.js";

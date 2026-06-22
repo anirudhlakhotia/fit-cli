@@ -23,7 +23,7 @@
  *   bun run run definition --resume-at=after-performer <file>           # reuse cluster + performer
  *
  * Run on its own:
- *   npx tsx src/fit/functional/run-from-definition/run-from-definition.ts <file.yaml>
+ *   bun src/fit/functional/run-from-definition/run-from-definition.ts <file.yaml>
  *
  * Existing-cluster modes (`setup.cluster.connection` and
  * `setup.cluster.useExisting`) are resolved directly from the file; a

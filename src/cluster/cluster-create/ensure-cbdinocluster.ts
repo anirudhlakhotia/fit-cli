@@ -7,7 +7,7 @@
  * rather than later inside `allocate`.
  *
  * Run on its own:
- *   npx tsx src/cluster/cluster-create/ensure-cbdinocluster.ts
+ *   bun src/cluster/cluster-create/ensure-cbdinocluster.ts
  *
  * Prints the resolved cbdinocluster command, or exits 1 if it isn't usable.
  */

@@ -2,7 +2,7 @@
  * Build a reusable `fit` definition file interactively.
  *
  * Run on its own (skipping the top-level menu):
- *   npx tsx src/fit/shared/create-definition/create-definition.ts
+ *   bun src/fit/shared/create-definition/create-definition.ts
  */
 import { type RunOutput } from "../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";

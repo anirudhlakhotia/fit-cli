@@ -8,8 +8,8 @@
  * "operational vs CNG" when adding functional testing) and passes it in.
  *
  * Run on its own (add --cng to build a CNG cluster def):
- *   npx tsx src/cluster/cluster-create/ask-cluster-def.ts
- *   npx tsx src/cluster/cluster-create/ask-cluster-def.ts --cng
+ *   bun src/cluster/cluster-create/ask-cluster-def.ts
+ *   bun src/cluster/cluster-create/ask-cluster-def.ts --cng
  *
  * Prints the gathered answers as JSON.
  */

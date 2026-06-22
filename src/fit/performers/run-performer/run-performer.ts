@@ -2,7 +2,7 @@
  * The "Run performer" guided flow.
  *
  * Run this flow on its own (skipping the top-level menu):
- *   npx tsx src/fit/performers/run-performer/run-performer.ts
+ *   bun src/fit/performers/run-performer/run-performer.ts
  */
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { type Sdk } from "../../../util/sdk/sdks.js";

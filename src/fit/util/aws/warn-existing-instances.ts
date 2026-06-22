@@ -11,7 +11,7 @@
  * lives in cloud/util/aws.
  *
  * Run on its own:
- *   npx tsx src/fit/util/aws/warn-existing-instances.ts
+ *   bun src/fit/util/aws/warn-existing-instances.ts
  */
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { logAwsAction, prepareAwsCli } from "../../../cloud/util/aws/aws-cli.js";

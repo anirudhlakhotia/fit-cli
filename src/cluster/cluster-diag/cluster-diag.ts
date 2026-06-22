@@ -3,7 +3,7 @@
  * endpoint with curl.
  *
  * Run on its own:
- *   npx tsx src/cluster/cluster-diag/cluster-diag.ts couchbase://127.0.0.1 Administrator password
+ *   bun src/cluster/cluster-diag/cluster-diag.ts couchbase://127.0.0.1 Administrator password
  */
 import { isMain, runCli } from "../../util/non-fit/cli.js";
 import { capture, type RunOptions } from "../../util/non-fit/proc.js";

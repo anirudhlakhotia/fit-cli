@@ -6,7 +6,7 @@
  * of the test-driver's tests they care about (functional vs situational, …).
  *
  * Run on its own (add --root <dir> to point elsewhere):
- *   npx tsx src/fit/shared/select-fit-tests/select-fit-tests.ts
+ *   bun src/fit/shared/select-fit-tests/select-fit-tests.ts
  */
 import { readFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";

@@ -4,7 +4,7 @@
  * `-Dfit.config=<path>`.
  *
  * Run on its own (dry run — reports where a fresh file would be written):
- *   npx tsx src/fit/shared/fit-configuration/write-fit-configuration.ts
+ *   bun src/fit/shared/fit-configuration/write-fit-configuration.ts
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";

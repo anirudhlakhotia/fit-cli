@@ -6,7 +6,7 @@
  * compatibility in case new requirements are added.
  *
  * Run on its own:
- *   npx tsx src/util/sdk/ensure-sdk-workspace.ts java
+ *   bun src/util/sdk/ensure-sdk-workspace.ts java
  *
  * Exits 0 always (no extra repos are required).
  */

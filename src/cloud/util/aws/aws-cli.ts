@@ -4,7 +4,7 @@
  * console logging conventions.
  *
  * Run on its own (checks the AWS config is ready):
- *   npx tsx src/cloud/util/aws/aws-cli.ts
+ *   bun src/cloud/util/aws/aws-cli.ts
  */
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { loadFitCliConfigEnv } from "../../../fit/util/config.js";

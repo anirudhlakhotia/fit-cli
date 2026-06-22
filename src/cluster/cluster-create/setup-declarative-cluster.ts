@@ -11,7 +11,7 @@
  * that an existing cluster matches the desired spec — `useExisting` trusts it.
  *
  * Run on its own (this can really allocate/remove clusters, so mean it):
- *   npx tsx src/cluster/cluster-create/setup-declarative-cluster.ts
+ *   bun src/cluster/cluster-create/setup-declarative-cluster.ts
  */
 import YAML from "yaml";
 import { mkdirSync, writeFileSync } from "node:fs";

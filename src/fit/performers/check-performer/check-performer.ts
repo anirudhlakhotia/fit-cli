@@ -5,7 +5,7 @@
  * there is no on-disk source to check.
  *
  * Run on its own:
- *   npx tsx src/fit/performers/check-performer/check-performer.ts java
+ *   bun src/fit/performers/check-performer/check-performer.ts java
  *
  * Exits 0 if the Docker image exists locally, 1 if it does not (or the SDK is unknown).
  */
