@@ -119,7 +119,7 @@
           nodes: [
             {
               count: 3,
-              version: '8.0-stable',
+              version: "8.0.2-5503",
               services: ['kv', 'n1ql', 'index', 'fts'],
             },
           ],
