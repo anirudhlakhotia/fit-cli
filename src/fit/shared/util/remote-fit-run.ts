@@ -3,9 +3,10 @@ import { basename, dirname, join } from "node:path";
 import { type Artifact, type Detail } from "../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { LocalTarget } from "../../../util/non-fit/local-target.js";
-import { HEARTBEAT_INTERVAL_SECS, streamToFile, type RunOptions } from "../../../util/non-fit/proc.js";
+import { HEARTBEAT_INTERVAL_SECS, run, streamToFile, type RunOptions } from "../../../util/non-fit/proc.js";
+import { formatCommandLine } from "../../../util/non-fit/fit-cli-log.js";
 import { createRunFilePath, runRunDir, type DefinitionRunPath } from "../../../util/non-fit/replay.js";
-import { posixQuote } from "../../../util/non-fit/remote-target.js";
+import { posixQuote, teeToFileCommand } from "../../../util/non-fit/remote-target.js";
 import type { ExecutionTarget } from "../../../util/non-fit/target.js";
 import { fitCliError, runScriptPrefix } from "../../../util/non-fit/fit-cli-log.js";
 import { FIT_INSTANCE_USER } from "../../util/aws/fit-instance.js";
@@ -56,8 +57,19 @@ export interface FitExecutionContext {
   capture(command: string, args: string[], cwd?: string, opts?: RunOptions): Promise<string>;
   /** HiddenUntilFailure process model (LogType2): output hidden as noise and only shown on failure (also kept in the session.debug.log artifact). */
   runHiddenUntilFailure(command: string, args: string[], cwd?: string, opts?: RunOptions): Promise<void>;
-  /** StreamToArtifact process model (LogType3): output sent to a separate artifact file, with the last line surfaced every N seconds for proof-of-life. */
-  runToFile(command: string, args: string[], targetPath: string, cwd?: string): Promise<void>;
+  /**
+   * StreamToTerminal + saved-to-file (LogType1 + artifact): stream output live to
+   * the terminal (and the session log) AND tee a copy to `targetPath`. For steps
+   * we want to watch live but whose output we also need on disk to parse/collect
+   * (cbdinocluster allocate).
+   */
+  streamToTerminalAndFile(command: string, args: string[], targetPath: string, cwd?: string): Promise<void>;
+  /**
+   * StreamToArtifact process model (LogType3): full output sent to `targetPath`
+   * only, with the last line surfaced every N seconds for proof-of-life. For
+   * genuinely huge logs (the FIT test-driver, performer docker logs).
+   */
+  streamToArtifactFile(command: string, args: string[], targetPath: string, cwd?: string): Promise<void>;
   targetFilePath(localPath: string): string;
   stageFile(localPath: string, targetPath?: string): Promise<string>;
   collectFile(targetPath: string, localPath: string): Promise<void>;
@@ -392,7 +404,13 @@ export function createLocalFitExecutionContext(): FitExecutionContext {
     run: (command, args, cwd, opts) => target.run(command, args, cwd, opts),
     capture: (command, args, cwd, opts) => target.capture(command, args, cwd, opts),
     runHiddenUntilFailure: (command, args, cwd, opts) => target.runHiddenUntilFailure(command, args, cwd, opts),
-    runToFile: (command, args, targetPath, cwd) => streamToFile(command, args, targetPath, cwd),
+    streamToTerminalAndFile: (command, args, targetPath, cwd) => {
+      mkdirSync(dirname(targetPath), { recursive: true, mode: 0o700 });
+      return run("bash", ["-lc", teeToFileCommand(shellCommand(command, args), targetPath)], cwd, {
+        display: formatCommandLine(command, args),
+      });
+    },
+    streamToArtifactFile: (command, args, targetPath, cwd) => streamToFile(command, args, targetPath, cwd),
     targetFilePath: (localPath) => localPath,
     stageFile: (localPath) => Promise.resolve(localPath),
     collectFile: (targetPath, localPath) => {

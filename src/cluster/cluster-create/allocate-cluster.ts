@@ -14,10 +14,10 @@ import { dirname, join } from "node:path";
 import { artifactFromPath, type RunOutput, type Artifact } from "../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../util/non-fit/cli.js";
 import { input } from "../../util/non-fit/prompts.js";
-import { formatCommandLine } from "../../util/non-fit/fit-cli-log.js";
-import { capture, run, writeToDebugLog, type RunOptions } from "../../util/non-fit/proc.js";
+import { formatCommandLine, printFileContent } from "../../util/non-fit/fit-cli-log.js";
+import { capture, run, type RunOptions } from "../../util/non-fit/proc.js";
 import { ensureRunDir } from "../../util/non-fit/replay.js";
-import { posixQuote } from "../../util/non-fit/remote-target.js";
+import { posixQuote, teeToFileCommand } from "../../util/non-fit/remote-target.js";
 import { findOnPath } from "../../util/non-fit/which.js";
 import { buildClusterDef, DEFAULT_CLUSTER_VERSION } from "./build-cluster-def.js";
 import { ensureCbdinocluster } from "./ensure-cbdinocluster.js";
@@ -45,7 +45,8 @@ export interface ClusterCommandExecutor {
   readonly description: string;
   run(command: string, args: string[], cwd?: string, opts?: RunOptions): Promise<void>;
   capture(command: string, args: string[], cwd?: string, opts?: RunOptions): Promise<string>;
-  runToFile(command: string, args: string[], targetPath: string, cwd?: string): Promise<void>;
+  /** L1 StreamToTerminal + saved-to-file — see {@link FitExecutionContext.streamToTerminalAndFile}. */
+  streamToTerminalAndFile(command: string, args: string[], targetPath: string, cwd?: string): Promise<void>;
   targetFilePath(localPath: string): string;
   stageFile(localPath: string, targetPath?: string): Promise<string>;
   collectFile(targetPath: string, localPath: string): Promise<void>;
@@ -57,11 +58,11 @@ export function localClusterCommandExecutor(): ClusterCommandExecutor {
     description: "this machine",
     run,
     capture,
-    runToFile: (command, args, targetPath, cwd) => {
+    streamToTerminalAndFile: (command, args, targetPath, cwd) => {
       mkdirSync(dirname(targetPath), { recursive: true, mode: 0o700 });
-      // Use tee + pipefail so output streams live to the terminal (type 1) AND
-      // is saved to the file for artifact collection and cluster-id parsing.
-      return run("bash", ["-lc", `set -o pipefail; ${[command, ...args].map(posixQuote).join(" ")} 2>&1 | tee ${posixQuote(targetPath)}`], cwd, {
+      // Stream live to the terminal (LogType1) AND save to the file for artifact
+      // collection and cluster-id parsing.
+      return run("bash", ["-lc", teeToFileCommand([command, ...args].map(posixQuote).join(" "), targetPath)], cwd, {
         display: formatCommandLine(command, args),
       });
     },
@@ -126,7 +127,8 @@ export async function allocateCluster(
 ): Promise<AllocatedCluster> {
   const runDir = ensureRunDir();
   const { path: localDefFile, artifact } = writeClusterDef(def, cycleDir, runDir);
-  console.log(`Wrote cbdinocluster def to ${localDefFile}:\n\n${def}`);
+  console.log(`Wrote cbdinocluster def to ${localDefFile}:\n`);
+  printFileContent(def);
   const defFile = await execution.stageFile(localDefFile, execution.targetFilePath(localDefFile));
 
   const args = ["--verbose", "allocate"];
@@ -140,25 +142,25 @@ export async function allocateCluster(
   const targetOutputFile = execution.targetFilePath(localOutputFile);
   let runError: unknown;
   try {
-    await execution.runToFile(cbdinocluster, args, targetOutputFile);
+    await execution.streamToTerminalAndFile(cbdinocluster, args, targetOutputFile);
   } catch (err) {
     runError = err;
   }
-  // Always try to collect and log the output, even on failure — cbdinocluster's
-  // redirected output is still written to the file before it exits non-zero, and
-  // that output is exactly what's needed to diagnose the failure.
+  // Collect the output file locally so we can parse the cluster id from it (on
+  // remote runs cbdinocluster's tee wrote it on the box). The output itself
+  // already streamed live to the terminal and the session/debug logs via
+  // streamToTerminalAndFile, so we deliberately don't re-log it here — doing so
+  // would duplicate the whole allocate transcript. Collect even on failure: the
+  // tee writes the output before the command exits non-zero, and a partial
+  // transcript is exactly what's needed to diagnose the failure.
   let localOutput = "";
   try {
     await execution.collectFile(targetOutputFile, localOutputFile);
     localOutput = readFileSync(localOutputFile, "utf8");
-    writeToDebugLog(localOutput);
   } catch {
     // best-effort: file may not exist if SSH itself never started
   }
   if (runError !== undefined) {
-    if (localOutput) {
-      process.stderr.write(localOutput.endsWith("\n") ? localOutput : `${localOutput}\n`);
-    }
     // Deferred rethrow of the original caught error after collecting output —
     // rethrow it verbatim so its type/stack are preserved.
     // eslint-disable-next-line @typescript-eslint/only-throw-error

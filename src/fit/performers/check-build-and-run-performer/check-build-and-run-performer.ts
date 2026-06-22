@@ -194,7 +194,7 @@ export async function stopManagedPerformer(
   if (performer.logFile) {
     const targetLogFile = execution.targetFilePath(performer.logFile);
     try {
-      await execution.runToFile("docker", ["logs", "--timestamps", performer.containerId], targetLogFile);
+      await execution.streamToArtifactFile("docker", ["logs", "--timestamps", performer.containerId], targetLogFile);
       await execution.collectFile(targetLogFile, performer.logFile);
       console.log(`\n✓ Saved performer logs to ${performer.logFile}`);
     } catch (err) {

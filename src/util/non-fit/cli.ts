@@ -23,6 +23,32 @@ import { emitGhaArtifactNotice } from "../../fit/util/gha.js";
  * block so it can be run on its own for debugging and development iteration.
  */
 
+/**
+ * Print the end-of-run summary: the artifact table (reconciled against the run
+ * dir, so files captured during the run show up even when we have no explicit
+ * artifact list), the details section, any call-to-action banners, the GHA
+ * notice and the S3-upload hint. Factored out so it renders on BOTH the success
+ * and failure paths — a thrown error (including one from teardown after a
+ * completed run) must not swallow the artifact table the user needs to debug.
+ */
+function renderRunSummary(runDir: string, runOutput: RunOutput): void {
+  const sections = [
+    formatArtifactsSection(runDir, reconcileArtifactsWithDir(runDir, runOutput.artifacts)),
+    formatDetailsSection(runOutput.details),
+  ].filter(Boolean);
+  const summaryOutput = sections.join("\n\n") || undefined;
+  if (summaryOutput) {
+    console.log(`\n${summaryOutput}`);
+  }
+  for (const detail of runOutput.details ?? []) {
+    if (detail.callToAction) {
+      console.log(`\n${formatCallToActionBanner(detail.label, detail.value)}`);
+    }
+  }
+  emitGhaArtifactNotice();
+  console.log(`\nTo upload run artifacts to S3 (optional):\n  ${runScriptPrefix("archive")} s3-upload --zip ${runDir} s3://fit-cli/runs/`);
+}
+
 /** True when the module at `metaUrl` is the script node/tsx was invoked with. */
 export function isMain(metaUrl: string): boolean {
   const entry = process.argv[1];
@@ -56,33 +82,16 @@ export function runCli(main: () => Promise<void | Partial<RunOutput>>): void {
     "Full command I/O log (includes captured stdout/stderr not shown in terminal)",
     promptSession.runDir,
   );
-  let summaryOutput: string | undefined;
+  const logArtifacts = [sessionLogArtifact, debugLogArtifact];
   let runOutput: RunOutput | undefined;
   Promise.resolve()
     .then(() => main())
     .then((result) => {
-      runOutput = combineRunOutputs(result ?? undefined, { artifacts: [sessionLogArtifact, debugLogArtifact] });
-      const sections = [
-        formatArtifactsSection(
-          promptSession.runDir,
-          reconcileArtifactsWithDir(promptSession.runDir, runOutput.artifacts),
-        ),
-        formatDetailsSection(runOutput.details),
-      ].filter(Boolean);
-      summaryOutput = sections.join("\n\n") || undefined;
+      runOutput = combineRunOutputs(result ?? undefined, { artifacts: logArtifacts });
       return promptSession.finishReplay();
     })
     .then(async () => {
-      if (summaryOutput) {
-        console.log(`\n${summaryOutput}`);
-      }
-      for (const detail of runOutput?.details ?? []) {
-        if (detail.callToAction) {
-          console.log(`\n${formatCallToActionBanner(detail.label, detail.value)}`);
-        }
-      }
-      emitGhaArtifactNotice();
-      console.log(`\nTo upload run artifacts to S3 (optional):\n  ${runScriptPrefix("archive")} s3-upload --zip ${promptSession.runDir} s3://fit-cli/runs/`);
+      renderRunSummary(promptSession.runDir, runOutput ?? { artifacts: logArtifacts, details: [] });
       if (runOutput?.worstFailure && worstFailureShouldExitNonZero(runOutput.worstFailure)) {
         fitCliError(formatFailureSummaryLine(runOutput.worstFailure, runOutput.failureCount ?? 1));
         await Promise.all([sessionLog.flush(), debugLog.flush()]);
@@ -95,6 +104,11 @@ export function runCli(main: () => Promise<void | Partial<RunOutput>>): void {
         await Promise.all([sessionLog.flush(), debugLog.flush()]);
         process.exit(0);
       }
+      // A thrown error skips the success branch, but the user still needs the
+      // artifact table (and S3 hint) to debug — so render the summary here too,
+      // falling back to whatever artifacts we have (at least the session/debug
+      // logs; reconcileArtifactsWithDir discovers the rest from the run dir).
+      renderRunSummary(promptSession.runDir, runOutput ?? { artifacts: logArtifacts, details: [] });
       console.error(err instanceof Error ? err.message : err);
       // Flush tee'd logs before exiting so the final error line is persisted.
       await Promise.all([sessionLog.flush(), debugLog.flush()]);

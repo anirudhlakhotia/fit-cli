@@ -28,8 +28,6 @@ const YELLOW = colourOn ? "[33m" : "";
 /** Pastel blue for echoed commands (`$ ...`). */
 const BLUE = colourOn ? "[94m" : "";
 
-const baseConsoleError = console.error.bind(console);
-const baseConsoleWarn = console.warn.bind(console);
 const baseStdoutWrite = process.stdout.write.bind(process.stdout);
 const baseStderrWrite = process.stderr.write.bind(process.stderr);
 
@@ -385,11 +383,16 @@ export function setFitCliTimestampProvider(provider: (() => string) | undefined)
 }
 
 export function fitCliError(...args: unknown[]): void {
-  baseConsoleError(formatFitCliError(...args));
+  // Route through process.stderr.write (looked up at call time) rather than the
+  // native console.error: Bun's console.error writes straight to fd 2, bypassing
+  // the session-log tee installed on process.stderr.write, so error lines would
+  // never reach session.info.log / session.debug.log. Same reasoning as the
+  // console.log reroute in installFitCliConsoleFormatting().
+  process.stderr.write(`${formatFitCliError(...args)}\n`);
 }
 
 export function fitCliWarn(...args: unknown[]): void {
-  baseConsoleWarn(formatFitCliWarn(...args));
+  process.stderr.write(`${formatFitCliWarn(...args)}\n`);
 }
 
 export function installFitCliConsoleFormatting(): void {
@@ -403,8 +406,10 @@ export function installFitCliConsoleFormatting(): void {
   // routed through process.stdout.write (looked up at call time, not install time,
   // so the session log tee installed later by startSessionLog() picks it up).
   console.log = (...args: unknown[]) => process.stdout.write(args.map(stringify).join(" ") + "\n");
-  console.error = (...args: unknown[]) => baseConsoleError(formatFitCliError(...args));
-  console.warn = (...args: unknown[]) => baseConsoleWarn(formatFitCliWarn(...args));
+  // console.error/console.warn must route through process.stderr.write for the
+  // same reason as console.log above — see fitCliError() for the full rationale.
+  console.error = (...args: unknown[]) => fitCliError(...args);
+  console.warn = (...args: unknown[]) => fitCliWarn(...args);
   consoleFormattingInstalled = true;
 }
 
