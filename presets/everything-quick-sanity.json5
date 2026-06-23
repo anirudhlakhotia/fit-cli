@@ -16,13 +16,13 @@
     },
   },
   instances: [
-    // Instance 1: operational functional SanityTest + situational sanity (shared Docker instance)
     {
       aws: {},
       setup: {
         capellaEnvironment: 'dev',
       },
       clusters: [
+        // Operational functional sanity test.
         {
           clusterConfig: 'cluster-operational',
           sessions: [
@@ -42,7 +42,30 @@
             },
           ],
         },
+        // CNG functional sanity test.
+        {
+          clusterConfig: 'cluster-cng',
+          sessions: [
+            {
+              performer: {
+                image: '{{PERFORMER_IMAGE}}',
+                onPortInUse: 'reuse',
+              },
+              runs: [
+                {
+                  type: 'functional',
+                  fitConfig: 'fit-config-cng',
+                  tests: {
+                    classes: ['com.couchbase.client.kv.SanityTest'],
+                    addToDefaultExcludedGroups: ['protostellarWillWorkLater'],
+                  },
+                },
+              ],
+            },
+          ],
+        }
       ],
+      // FIT/SIT SanityTest
       clusterlessSessions: [
         {
           performer: {
@@ -65,40 +88,7 @@
           ],
         },
       ],
-    },
-
-    // Instance 2: CNG functional SanityTest on OpenShift (ROSA)
-    // Will add back when CNG testing is stable.
-    /*
-    {
-      aws: {},
-      clusters: [
-        {
-          clusterConfig: 'cluster-cng',
-          sessions: [
-            {
-              performer: {
-                image: '{{PERFORMER_IMAGE}}',
-                onPortInUse: 'reuse',
-              },
-              runs: [
-                {
-                  type: 'functional',
-                  fitConfig: 'fit-config-cng',
-                  tests: {
-                    classes: ['com.couchbase.client.kv.SanityTest'],
-                    // protostellarWillWorkLater is a known-broken Maven group on CNG;
-                    // added on top of the default functional exclusions.
-                    addToDefaultExcludedGroups: ['protostellarWillWorkLater'],
-                  },
-                },
-              ],
-            },
-          ],
-        },
-      ],
-    },
-    */
+    }
   ],
   clusterConfigs: [
     {
@@ -140,4 +130,16 @@
       },
     },
   ],
+  fitConfigs: [
+    {
+      id: 'fit-config-cng',
+      connection: {
+        scheme: 'couchbase2',
+        tls: { insecure: true },
+      },
+      config: {
+        excludeTests: ['ssh', 'openshift'],
+      },
+    },
+  ]
 }
