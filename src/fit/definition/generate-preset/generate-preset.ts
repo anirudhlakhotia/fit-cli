@@ -22,31 +22,41 @@ import { printDefinitionRunGuidance } from "../../shared/definition/run-guidance
 import { pushGist, type GistVisibility } from "../../shared/definition/push-gist.js";
 
 /**
- * Returns a map of { "<name>.json5": "<contents>" } for every preset in `presets/`.
+ * Returns a map of { "<name>": "<contents>" } for every preset in `presets/`.
  *
- * In a compiled binary (`/$bunfs/`) the `import.meta.glob` call is resolved at bundle
- * time by `bun build --compile` — no runtime glob is needed.  When running from source
- * with `bun run`, `import.meta.glob` is not available, so we read from disk instead.
+ * Dev mode (bun run): reads `presets/` from disk — any .json5 file is picked up automatically.
+ *
+ * Compiled binary (/$bunfs/): `bun build --compile` embeds files referenced by static import()
+ * calls at bundle time; import.meta.glob is not supported in compiled binaries. Add one line
+ * here per preset so the compiler knows to include it.
  */
-function loadPresetMap(): Record<string, string> {
-  if (import.meta.url.includes("/$bunfs/")) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const globbed = (import.meta as any).glob("../../../../presets/*.json5", { as: "text", eager: true }) as Record<string, string>;
-    return Object.fromEntries(Object.entries(globbed).map(([k, v]) => [k.replace(/^.*\//, ""), v]));
+async function loadPresetMap(): Promise<Record<string, string>> {
+  if (!import.meta.url.includes("/$bunfs/")) {
+    const presetsDir = join(dirname(fileURLToPath(import.meta.url)), "../../../../presets");
+    return Object.fromEntries(
+      readdirSync(presetsDir)
+        .filter(f => f.endsWith(".json5"))
+        .map(f => [f.replace(/\.json5$/, ""), readFileSync(join(presetsDir, f), "utf8")]),
+    );
   }
-  const presetsDir = join(dirname(fileURLToPath(import.meta.url)), "../../../../presets");
-  return Object.fromEntries(
-    readdirSync(presetsDir)
-      .filter(f => f.endsWith(".json5"))
-      .map(f => [f, readFileSync(join(presetsDir, f), "utf8")]),
-  );
+  const load = async (path: string) =>
+    ((await import(path, { with: { type: "text" } })) as { default: string }).default;
+  return {
+    "cng-functional":              await load("../../../../presets/cng-functional.json5"),
+    "cng-functional-quick-sanity": await load("../../../../presets/cng-functional-quick-sanity.json5"),
+    "everything-quick-sanity":     await load("../../../../presets/everything-quick-sanity.json5"),
+    "functional":                  await load("../../../../presets/functional.json5"),
+    "functional-quick-sanity":     await load("../../../../presets/functional-quick-sanity.json5"),
+    "qe-set":                      await load("../../../../presets/qe-set.json5"),
+    "qe-set-mega-wip":             await load("../../../../presets/qe-set-mega-wip.json5"),
+    "situational-quick-sanity":    await load("../../../../presets/situational-quick-sanity.json5"),
+  };
 }
 
-const PRESET_MAP = loadPresetMap();
+const PRESET_MAP = await loadPresetMap();
 
 export const PRESET_TYPES: string[] = Object.entries(PRESET_MAP)
-  .map(([filename, content]) => {
-    const name = filename.replace(/\.json5$/, "");
+  .map(([name, content]) => {
     const { order } = extractPresetMeta(content);
     return { name, order };
   })
@@ -124,7 +134,7 @@ function resolvePresetOutputFormat(outputPath: string | undefined, format: Defin
 }
 
 function loadPresetTemplate(type: string): string {
-  const content = PRESET_MAP[`${type}.json5`];
+  const content = PRESET_MAP[type];
   if (content === undefined) throw new Error(`Unknown preset: ${type}\nKnown presets: ${PRESET_TYPES.join(", ")}`);
   return content;
 }
