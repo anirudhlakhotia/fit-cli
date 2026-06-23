@@ -132,6 +132,12 @@ export function parseJunitData(files: ReadonlyArray<{ filename: string; xml: str
   return { packages, failingCases, totalPassed, totalFailed, totalSkipped, totalTimeMs };
 }
 
+function pctSuccess(passed: number, failed: number): string {
+  const total = passed + failed;
+  if (total === 0) return "-";
+  return ((passed / total) * 100).toFixed(2) + "%";
+}
+
 function formatTime(ms: number): string {
   const minutes = Math.floor(ms / 60000);
   const seconds = Math.floor((ms % 60000) / 1000);
@@ -166,18 +172,18 @@ export function renderJunitMarkdown(data: JunitMarkdownData): string {
   lines.push("<details>");
   lines.push("<summary>Test results by package</summary>");
   lines.push("");
-  lines.push("| Package | Passed | Failed | Skipped | Time |");
-  lines.push("|:---|---:|---:|---:|---:|");
+  lines.push("| Package | Pass | Fail | Skip | % Success | Time |");
+  lines.push("|:---|---:|---:|---:|---:|---:|");
   for (const s of packages) {
     lines.push(
-      `| ${s.pkg} | ${s.passed > 0 ? `${s.passed} ✅` : ""} | ${s.failed > 0 ? `${s.failed} ❌` : ""} | ${s.skipped > 0 ? `${s.skipped} ⏭️` : ""} | ${formatTime(s.timeMs)} ⏱️ |`,
+      `| ${s.pkg} | ${s.passed > 0 ? `${s.passed} ✅` : ""} | ${s.failed > 0 ? `${s.failed} ❌` : ""} | ${s.skipped > 0 ? `${s.skipped} ⏭️` : ""} | ${pctSuccess(s.passed, s.failed)} | ${formatTime(s.timeMs)} ⏱️ |`,
     );
   }
   // Use explicit 0 for zero totals so the cell isn't bold-empty (**<empty>** = ****).
   const totalPassCell = totalPassed > 0 ? `${totalPassed} ✅` : "0";
   const totalFailCell = totalFailed > 0 ? `${totalFailed} ❌` : "0";
   const totalSkipCell = totalSkipped > 0 ? `${totalSkipped} ⏭️` : "0";
-  lines.push(`| **TOTAL** | **${totalPassCell}** | **${totalFailCell}** | **${totalSkipCell}** | **${formatTime(totalTimeMs)} ⏱️** |`);
+  lines.push(`| **TOTAL** | **${totalPassCell}** | **${totalFailCell}** | **${totalSkipCell}** | **${pctSuccess(totalPassed, totalFailed)}** | **${formatTime(totalTimeMs)} ⏱️** |`);
   lines.push("");
   lines.push("</details>");
   lines.push("");
@@ -229,28 +235,30 @@ export function renderJunitPlainText(data: JunitMarkdownData): string {
   const passHeader = "Pass";
   const skipHeader = "Skip";
   const failHeader = "Fail";
+  const pctHeader = "% Succ";
   const timeHeader = "Time";
 
   const pkgWidth = Math.max(pkgHeader.length, ...packages.map((s) => s.pkg.length), 5);
   const passWidth = Math.max(passHeader.length, String(totalPassed).length);
   const skipWidth = Math.max(skipHeader.length, String(totalSkipped).length);
   const failWidth = Math.max(failHeader.length, String(totalFailed).length);
+  const pctWidth = Math.max(pctHeader.length, "100.00%".length);
   const timeWidth = Math.max(timeHeader.length, formatTime(totalTimeMs).length);
 
-  const sep = `${"-".repeat(pkgWidth)}-+-${"-".repeat(passWidth)}-+-${"-".repeat(skipWidth)}-+-${"-".repeat(failWidth)}-+-${"-".repeat(timeWidth)}`;
+  const sep = `${"-".repeat(pkgWidth)}-+-${"-".repeat(passWidth)}-+-${"-".repeat(skipWidth)}-+-${"-".repeat(failWidth)}-+-${"-".repeat(pctWidth)}-+-${"-".repeat(timeWidth)}`;
 
-  const row = (pkg: string, pass: string, skip: string, fail: string, time: string, highlight = false): string => {
+  const row = (pkg: string, pass: string, skip: string, fail: string, pct: string, time: string, highlight = false): string => {
     const failStr = highlight && fail !== "0" ? `${RED}${fail.padStart(failWidth)}${RESET}` : fail.padStart(failWidth);
-    return `${pkg.padEnd(pkgWidth)} | ${pass.padStart(passWidth)} | ${skip.padStart(skipWidth)} | ${failStr} | ${time.padStart(timeWidth)}`;
+    return `${pkg.padEnd(pkgWidth)} | ${pass.padStart(passWidth)} | ${skip.padStart(skipWidth)} | ${failStr} | ${pct.padStart(pctWidth)} | ${time.padStart(timeWidth)}`;
   };
 
-  lines.push(row(pkgHeader, passHeader, skipHeader, failHeader, timeHeader));
+  lines.push(row(pkgHeader, passHeader, skipHeader, failHeader, pctHeader, timeHeader));
   lines.push(sep);
   for (const s of packages) {
-    lines.push(row(s.pkg, String(s.passed), String(s.skipped), String(s.failed), formatTime(s.timeMs), true));
+    lines.push(row(s.pkg, String(s.passed), String(s.skipped), String(s.failed), pctSuccess(s.passed, s.failed), formatTime(s.timeMs), true));
   }
   lines.push(sep);
-  lines.push(row("TOTAL", String(totalPassed), String(totalSkipped), String(totalFailed), formatTime(totalTimeMs), true));
+  lines.push(row("TOTAL", String(totalPassed), String(totalSkipped), String(totalFailed), pctSuccess(totalPassed, totalFailed), formatTime(totalTimeMs), true));
 
   if (failingCases.length > 0) {
     lines.push("");
