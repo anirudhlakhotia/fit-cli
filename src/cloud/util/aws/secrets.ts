@@ -4,9 +4,14 @@
  * fit-cli already needs to create instances. This is how per-environment Capella
  * and results-DB credentials are resolved at run time, so CI and laptops resolve
  * identically (see environments.json5 / resolveCapellaConfig / resolveResultsDbCredentials).
+ *
+ * Run on its own:
+ *   bun src/cloud/util/aws/secrets.ts <secret-id>
+ *   bun src/cloud/util/aws/secrets.ts fit-cli/gerrit/ssh-key
  */
 import { SecretsManagerClient, GetSecretValueCommand } from "@aws-sdk/client-secrets-manager";
 import { AWS_REGION } from "./aws-target.js";
+import { isMain } from "../../../util/non-fit/cli.js";
 
 /** Thrown when a secret can't be read (missing, access denied, or malformed). */
 export class AwsSecretError extends Error {}
@@ -48,4 +53,27 @@ export async function getJsonSecret(secretId: string): Promise<Record<string, st
   }
   cache.set(secretId, parsed);
   return parsed;
+}
+
+if (isMain(import.meta.url)) {
+  const secretId = process.argv[2];
+  if (!secretId) {
+    console.error("Usage: bun src/cloud/util/aws/secrets.ts <secret-id>");
+    process.exit(2);
+  }
+  try {
+    const secret = await getJsonSecret(secretId);
+    const keys = Object.keys(secret);
+    console.log(`\nSecret "${secretId}" (${keys.length} field(s)):\n`);
+    for (const key of keys) {
+      const val = secret[key];
+      const display = key.toLowerCase().includes("key") || key.toLowerCase().includes("token") || key.toLowerCase().includes("password")
+        ? `${val.slice(0, 8)}... (${val.length} chars)`
+        : val;
+      console.log(`  ${key}: ${display}`);
+    }
+  } catch (err) {
+    console.error((err as Error).message);
+    process.exit(1);
+  }
 }
