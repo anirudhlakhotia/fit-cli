@@ -39,17 +39,17 @@ async function loadPresetMap(): Promise<Record<string, string>> {
         .map(f => [f.replace(/\.json5$/, ""), readFileSync(join(presetsDir, f), "utf8")]),
     );
   }
-  const load = async (path: string) =>
-    ((await import(path, { with: { type: "text" } })) as { default: string }).default;
+  // Path AND import options must be literals — bun build --compile only embeds modules it can
+  // see as static references; passing either through a variable hides them from the bundler.
   return {
-    "cng-functional":              await load("../../../../presets/cng-functional.json5"),
-    "cng-functional-quick-sanity": await load("../../../../presets/cng-functional-quick-sanity.json5"),
-    "everything-quick-sanity":     await load("../../../../presets/everything-quick-sanity.json5"),
-    "functional":                  await load("../../../../presets/functional.json5"),
-    "functional-quick-sanity":     await load("../../../../presets/functional-quick-sanity.json5"),
-    "qe-set":                      await load("../../../../presets/qe-set.json5"),
-    "qe-set-mega-wip":             await load("../../../../presets/qe-set-mega-wip.json5"),
-    "situational-quick-sanity":    await load("../../../../presets/situational-quick-sanity.json5"),
+    "cng-functional":              ((await import("../../../../presets/cng-functional.json5",              { with: { type: "text" } })) as { default: string }).default,
+    "cng-functional-quick-sanity": ((await import("../../../../presets/cng-functional-quick-sanity.json5", { with: { type: "text" } })) as { default: string }).default,
+    "everything-quick-sanity":     ((await import("../../../../presets/everything-quick-sanity.json5",     { with: { type: "text" } })) as { default: string }).default,
+    "functional":                  ((await import("../../../../presets/functional.json5",                  { with: { type: "text" } })) as { default: string }).default,
+    "functional-quick-sanity":     ((await import("../../../../presets/functional-quick-sanity.json5",     { with: { type: "text" } })) as { default: string }).default,
+    "qe-set":                      ((await import("../../../../presets/qe-set.json5",                     { with: { type: "text" } })) as { default: string }).default,
+    "qe-set-mega-wip":             ((await import("../../../../presets/qe-set-mega-wip.json5",            { with: { type: "text" } })) as { default: string }).default,
+    "situational-quick-sanity":    ((await import("../../../../presets/situational-quick-sanity.json5",   { with: { type: "text" } })) as { default: string }).default,
   };
 }
 
