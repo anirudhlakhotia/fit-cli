@@ -132,6 +132,19 @@ test("fitTestLogStem places the driver log under instances/clusters/sessions/run
   );
 });
 
+test("fitTestLogStem uses dirSegments when present", () => {
+  assert.equal(
+    fitTestLogStem({
+      instanceIndex: 0,
+      clusterIndex: 0,
+      sessionIndex: 0,
+      runIndex: 0,
+      dirSegments: { instance: "aws1", cluster: "8.0.2-5503", session: "java:main", run: "func" },
+    }),
+    "instances/aws1/clusters/8.0.2-5503/sessions/java:main/runs/func/driver",
+  );
+});
+
 test("runTestDriverArgs omits -Dtest when all tests are selected", () => {
   const selection: FitTestSelection = {
     allTests: [],
