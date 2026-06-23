@@ -353,6 +353,39 @@ function announce(
     cng,
   );
   console.log(`\n=== ${formatRunLabel(run.path, parts)} (${group.instance.kind}, ${run.type}) ===`);
+  const instSeg = instanceLabel(run.path, parts.instanceKind);
+  const instDesc =
+    parts.instanceKind === "aws"
+      ? `Running on AWS EC2 instance ${run.path.instanceIndex + 1}`
+      : "Running locally on this machine";
+  console.log(`  ${instSeg}:  ${instDesc}`);
+  const clusterSeg = clusterSegmentLabel(run.path, parts.clusterMode, parts.clusterVersion);
+  if (clusterSeg) {
+    let clusterDesc: string;
+    if (parts.clusterVersion) {
+      clusterDesc = `Couchbase Server ${parts.clusterVersion} cluster, provisioned via cbdinocluster`;
+    } else if (parts.clusterMode === "connection" || parts.clusterMode === "useExisting") {
+      clusterDesc = `Pre-existing cluster`;
+    } else {
+      clusterDesc = `Cluster allocated via cbdinocluster`;
+    }
+    console.log(`  ${clusterSeg}:  ${clusterDesc}`);
+  }
+  const perfSeg = performerLabel(run.path, parts.sdkValue, parts.performerVersion);
+  const perfDesc = parts.performerVersion
+    ? `${run.sdk.name} SDK performer, git ref: ${parts.performerVersion}`
+    : `${run.sdk.name} SDK performer`;
+  console.log(`  ${perfSeg}:  ${perfDesc}`);
+  const runSeg = runLabel(run.path, parts.type, parts.presets, parts.cng);
+  if (runSeg) {
+    const typeStr = parts.type === "functional" ? "Functional" : "Situational";
+    const cngSuffix = parts.cng ? " (Cloud Native Gateway)" : "";
+    const runDesc =
+      parts.presets?.length === 1
+        ? `${typeStr} test run, preset: ${parts.presets[0]}${cngSuffix}`
+        : `${typeStr} test run${cngSuffix}`;
+    console.log(`  ${runSeg}:  ${runDesc}`);
+  }
   console.log(`  SDK:     ${run.sdk.name}`);
   console.log(`  Tests:   ${testsLabel}`);
   if (run.type === "situational") {
