@@ -23,6 +23,8 @@ export interface RunLabelParts {
   type?: "functional" | "situational";
   /** Named test presets for this run; a single preset names the run segment. */
   presets?: readonly string[];
+  /** Whether this is a CNG (Cloud Native Gateway / Protostellar) run. */
+  cng?: boolean;
 }
 
 /** `local` / `aws1` / (fallback) `instance1`. */
@@ -64,26 +66,28 @@ export function performerLabel(path: DefinitionRunPath, sdkValue?: string, versi
   return `s${(path.sessionIndex ?? 0) + 1}`;
 }
 
-/** The run type's short form: `func` / `sit`. */
-function typeAbbrev(type: NonNullable<RunLabelParts["type"]>): string {
-  return type === "functional" ? "func" : "sit";
+/** The run type's short form: `func` / `func:cng` / `sit`. */
+function typeAbbrev(type: NonNullable<RunLabelParts["type"]>, cng?: boolean): string {
+  if (type === "functional") return cng ? "func:cng" : "func";
+  return "sit";
 }
 
 /**
  * The run, named by its single preset (qualified by type, e.g. `sit:standard-qe`),
- * else its type (`func`/`sit`), else `r1`. A preset without a known type falls
+ * else its type (`func`/`func:cng`/`sit`), else `r1`. A preset without a known type falls
  * back to the bare preset name.
  */
 export function runLabel(
   path: DefinitionRunPath,
   type?: RunLabelParts["type"],
   presets?: readonly string[],
+  cng?: boolean,
 ): string | undefined {
   if (presets && presets.length === 1) {
-    return type ? `${typeAbbrev(type)}:${presets[0]}` : presets[0];
+    return type ? `${typeAbbrev(type, cng)}:${presets[0]}` : presets[0];
   }
   if (type) {
-    return typeAbbrev(type);
+    return typeAbbrev(type, cng);
   }
   return path.runIndex !== undefined ? `r${path.runIndex + 1}` : undefined;
 }
@@ -94,7 +98,7 @@ export function formatRunLabel(path: DefinitionRunPath, parts: RunLabelParts = {
     instanceLabel(path, parts.instanceKind),
     clusterLabel(path, parts.clusterMode, parts.clusterVersion),
     performerLabel(path, parts.sdkValue, parts.performerVersion),
-    runLabel(path, parts.type, parts.presets),
+    runLabel(path, parts.type, parts.presets, parts.cng),
   ]
     .filter((segment): segment is string => Boolean(segment))
     .join(" / ");
