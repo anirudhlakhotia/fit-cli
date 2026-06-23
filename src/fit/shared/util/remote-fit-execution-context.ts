@@ -6,7 +6,7 @@ import { createGunzip } from "node:zlib";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { commandOn, formatCommandLine, runScriptPrefix } from "../../../util/non-fit/fit-cli-log.js";
 import { instanceInternalRunDir } from "../../../util/non-fit/replay.js";
-import { announceArtifactStream } from "../../../util/non-fit/proc.js";
+import { announceArtifactStream, type BackgroundStream } from "../../../util/non-fit/proc.js";
 import { posixQuote, teeToFileCommand } from "../../../util/non-fit/remote-target.js";
 import { RemoteTarget } from "../../../util/non-fit/remote-target.js";
 import type { ExecutionTarget } from "../../../util/non-fit/target.js";
@@ -16,6 +16,7 @@ import { SDKS, sdkByValue, type Sdk } from "../../../util/sdk/sdks.js";
 import { DEFAULT_PERFORMER_PORT } from "../../performers/util/performer-port.js";
 import { collectJunitArtifactsFromTarget } from "../run-test-driver/collect-junit.js";
 import {
+  backgroundShellCommand,
   configureRemoteGitCredentials,
   ensureRemoteRepos,
   heartbeatShellCommand,
@@ -216,6 +217,22 @@ export async function createRemoteFitExecutionContext(
         display: commandOn(formatCommandLine(command, args), target.description),
         noGreyOutput: true,
       });
+    },
+    streamToArtifactFileInBackground: async (command, args, targetPath, cwd): Promise<BackgroundStream> => {
+      await target.run("mkdir", ["-p", dirname(targetPath)]);
+      const fullCommand = pathPrefixedCommand(binDir, command, args);
+      const pid = (await target.capture("bash", ["-lc", backgroundShellCommand(fullCommand, targetPath)], cwd, {
+        quiet: true,
+      })).trim();
+      process.stdout.write(`→ Performer logs streaming live to: ${targetPath}  (on ${target.description}, PID ${pid})\n`);
+      return {
+        drain: async () => {
+          // Wait for the background process to exit (docker logs --follow exits when its container stops).
+          await target.capture("bash", ["-lc",
+            `pid=${posixQuote(pid)}; while kill -0 "$pid" 2>/dev/null; do sleep 1; done`,
+          ], undefined, { quiet: true }).catch(() => {});
+        },
+      };
     },
     targetFilePath: (localPath) => join(rootDir, basename(localPath)),
     stageFile: async (localPath, targetPath) => {
