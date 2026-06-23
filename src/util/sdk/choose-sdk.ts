@@ -18,7 +18,7 @@ export async function chooseSdk(
   // runs performers from prebuilt images, so they're the only choices offered.
   const value = await select<SdkValue>({
     promptId: qualifyPromptId("sdk.choose", promptIdPrefix),
-    message: `${message} (only JVM and C++ SDKs currently publish prebuilt performer images)`,
+    message: `${message} (only JVM, .NET and C++ SDKs currently publish prebuilt performer images)`,
     choices: PREBUILT_PERFORMER_SDKS.map((sdk) => ({ name: sdk.name, value: sdk.value })),
   });
   // The selected value always comes from PREBUILT_PERFORMER_SDKS, so this is never undefined.
