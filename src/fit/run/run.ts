@@ -22,6 +22,7 @@ import {
 import { generatePreset, isPresetType, PRESET_TYPES } from "../definition/generate-preset/generate-preset.js";
 import { analysePerformerImage, performerImageShortName } from "../performers/util/performer-image.js";
 import type { RunOutput } from "../../util/non-fit/artifacts.js";
+import { printVersion } from "../version/version.js";
 
 const SUBCOMMANDS = ["preset", "definition"] as const;
 type Subcommand = (typeof SUBCOMMANDS)[number];
@@ -117,6 +118,9 @@ export async function runDispatch(argv: string[]): Promise<RunOutput | void> {
     console.error(HELP);
     process.exit(2);
   }
+
+  printVersion();
+  console.log();
 
   if (subcommand === "preset") {
     const { runOpts, positionals: afterRunOpts } = extractRunOptions(rest);
