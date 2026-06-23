@@ -10,6 +10,7 @@ import { fitCliError, runScriptPrefix } from "../../../util/non-fit/fit-cli-log.
 import { posixQuote } from "../../../util/non-fit/remote-target.js";
 import { resolveGerritUser } from "../../util/config.js";
 import { createLocalFitExecutionContext, type FitExecutionContext } from "../../shared/util/remote-fit-run.js";
+import { getJsonSecret, AwsSecretError } from "../../../cloud/util/aws/secrets.js";
 
 export const FIT_GERRIT_HOST = "review.couchbase.org";
 export const FIT_GERRIT_PORT = 29418;
@@ -57,9 +58,11 @@ export function requireFitGerritUser(env: NodeJS.ProcessEnv = process.env): stri
 
 /**
  * Resolve the Gerrit username using all sources: config file, env vars, git
- * config, and gh CLI. Throws with a helpful message if nothing is found.
+ * config, gh CLI, and (last resort) the `username` field of the
+ * `fit-cli/gerrit/ssh-key` AWS Secrets Manager secret. Throws with a helpful
+ * message if nothing is found.
  */
-export function requireGerritUser(): string {
+export async function requireGerritUser(): Promise<string> {
   const fromConfig = resolveGerritUser();
   if (fromConfig) {
     return fromConfig;
@@ -71,6 +74,16 @@ export function requireGerritUser(): string {
   const fromGhCli = resolveGerritUserFromGhCli();
   if (fromGhCli) {
     return fromGhCli;
+  }
+  try {
+    const secret = await getJsonSecret("fit-cli/gerrit/ssh-key");
+    const fromAws = (secret.username as string | undefined)?.trim();
+    if (fromAws) {
+      console.log(`\n→ Loaded Gerrit username from AWS Secrets Manager (fit-cli/gerrit/ssh-key)`);
+      return fromAws;
+    }
+  } catch (err) {
+    if (!(err instanceof AwsSecretError)) throw err;
   }
   throw new Error(
     `Cannot determine Gerrit username. Set gerrit.user in ~/.fit-cli/config.json5 (${runScriptPrefix("config")} edit), or set FIT_GERRIT_USER / GERRIT_USER.`,
@@ -105,7 +118,7 @@ export async function checkoutFitGerritRef(
 
   let gerritUser: string;
   try {
-    gerritUser = requireGerritUser();
+    gerritUser = await requireGerritUser();
   } catch (err) {
     fitCliError((err as Error).message);
     return false;
