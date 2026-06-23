@@ -41,6 +41,7 @@ import { cngServerImageRef, DEFAULT_CLUSTER_VERSION, type CbdinoclusterDef } fro
 import { isAlias, resolveAlias } from "./cb-alias.js";
 import type { CbdinoclusterInitSetup, CbdinoclusterSource } from "../../fit/shared/definition/types.js";
 import { defaultCbdinoclusterInitArgs, situationalCbdinoclusterInitArgs } from "./default-cbdinocluster-init-config.js";
+import { throwFatalToCluster } from "../../fit/shared/failure-classification.js";
 
 /** The bare command name we look for on the PATH. */
 const CBDINOCLUSTER = "cbdinocluster";
@@ -711,11 +712,11 @@ export async function setupDeclarativeCluster(plan: {
     const serverVersion = plan.config.nodes[0]?.version;
     if (serverVersion) {
       const imageRef = cngServerImageRef(serverVersion);
-      console.log(`→ setup-cluster: pre-flight docker pull ${imageRef} (non-fatal)…`);
+      console.log(`→ setup-cluster: pre-flight docker pull ${imageRef}…`);
       try {
         await execution.run("docker", ["pull", imageRef]);
       } catch {
-        console.warn(`→ setup-cluster: docker pull ${imageRef} failed (non-fatal — cbdinocluster will try again)`);
+        throwFatalToCluster(`docker pull ${imageRef} failed`);
       }
     }
   }
