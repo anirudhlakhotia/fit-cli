@@ -126,7 +126,7 @@ export async function checkoutFitGerritRef(
 
   let status: string;
   try {
-    status = await execution.capture("git", ["status", "--porcelain"], execution.fitPerformerDir);
+    status = await execution.capture("git", ["status", "--porcelain", "--untracked-files=no"], execution.fitPerformerDir);
   } catch (err) {
     fitCliError(
       `Could not inspect ${execution.fitPerformerDir} before checking out Gerrit ref ${trimmedRef}: ${(err as Error).message}`,
