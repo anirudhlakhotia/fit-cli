@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { inspect } from "node:util";
+import { runScriptPrefix } from "./fit-cli-log.js";
 
 /**
  * Absolute path to the fit-cli repo root, derived from this file's location
@@ -317,7 +318,7 @@ export class PromptSession {
     const runDir = createRunDir();
     if (replayRequested && !replayFile) {
       throw new Error(
-        "Missing replay log file. Usage: bun run replay <logfile> or bun run replay --defaults <logfile>",
+        `Missing replay log file. Usage: ${runScriptPrefix("replay")} <logfile> or ${runScriptPrefix("replay")} --defaults <logfile>`,
       );
     }
     if (replayFile) {

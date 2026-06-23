@@ -16,20 +16,24 @@ import { describeDefinition } from "../shared/definition/generate-desc.js";
 import { generatePreset, listPresets, parseGeneratePresetArgs, PRESET_TYPES } from "./generate-preset/generate-preset.js";
 import { runDispatch } from "../run/run.js";
 import type { RunOutput } from "../../util/non-fit/artifacts.js";
+import { runScriptPrefix } from "../../util/non-fit/fit-cli-log.js";
 
 const SUBCOMMANDS = ["validate", "generate-desc", "generate-preset", "list-presets"] as const;
 type Subcommand = (typeof SUBCOMMANDS)[number];
 
-const HELP = `Author and inspect FIT definition files.
+function buildHelp(): string {
+  const def = runScriptPrefix("definition");
+  const run = runScriptPrefix("run");
+  return `Author and inspect FIT definition files.
 
-To run a definition file or a preset, use \`fit run\` instead.
+To run a definition file or a preset, use \`${run}\` instead.
 
 Usage:
-  bun run definition validate <file.json5>
-  bun run definition generate-desc <file.json5>
-  bun run definition generate-preset --type <preset> --performer-image-name <image> [--output <path>]
-  bun run definition list-presets
-  bun run definition --help
+  ${def} validate <file.json5>
+  ${def} generate-desc <file.json5>
+  ${def} generate-preset --type <preset> --performer-image-name <image> [--output <path>]
+  ${def} list-presets
+  ${def} --help
 
 Both .json5 and .yaml definition files are accepted.
 
@@ -44,6 +48,7 @@ generate-preset options:
   --performer-image-name <image>  SDK-specific performer image ref (e.g. java-fit-performer:refs-changes-67-246067-3 or ghcr.io/couchbase/java-fit-performer:refs-changes-67-246067-3).
   --output <path>               Write to an explicit path instead of the default run dir.
   --push-gist [public|private]  Create a GitHub Gist after writing. Requires a GitHub token in the fit-cli config or GITHUB_TOKEN / GH_TOKEN.`;
+}
 
 /**
  * Translate legacy `execute-preset` args (preset chosen via `--type <preset>`)
@@ -81,7 +86,7 @@ export async function definitionDispatch(argv: string[]): Promise<RunOutput | vo
   if (argv[0] === "generate-desc") {
     const path = argv[1];
     if (!path) {
-      process.stderr.write("Usage: bun run definition generate-desc <file.json5>\n");
+      process.stderr.write(`Usage: ${runScriptPrefix("definition")} generate-desc <file.json5>\n`);
       process.exit(2);
     }
     const resolvedPath = isDefinitionUrl(path) ? await cacheDefinition(path) : path;
@@ -98,7 +103,7 @@ export async function definitionDispatch(argv: string[]): Promise<RunOutput | vo
 
   const HELP_FLAGS = new Set(["-h", "--help", "help"]);
   if (!subcommand || HELP_FLAGS.has(subcommand) || rest.some(a => HELP_FLAGS.has(a))) {
-    console.log(HELP);
+    console.log(buildHelp());
     if (!subcommand) process.exit(2);
     return;
   }
@@ -115,7 +120,7 @@ export async function definitionDispatch(argv: string[]): Promise<RunOutput | vo
 
   if (!SUBCOMMANDS.includes(subcommand as Subcommand)) {
     console.error(`Unknown subcommand: ${subcommand}\n`);
-    console.error(HELP);
+    console.error(buildHelp());
     process.exit(2);
   }
 
@@ -139,7 +144,7 @@ export async function definitionDispatch(argv: string[]): Promise<RunOutput | vo
   // validate
   const [path, ...extra] = rest;
   if (!path || extra.length > 0) {
-    console.error("Usage: bun run definition validate <file.json5>");
+    console.error(`Usage: ${runScriptPrefix("definition")} validate <file.json5>`);
     process.exit(2);
   }
   const { definition } = await resolveAndLoadDefinition(path);
@@ -157,7 +162,7 @@ export function runDefinitionMain(): void {
   const positionals = extractInteractiveFlag(extractReplayFlag(argv).positionals).positionals;
   const helpFlags = new Set(["-h", "--help", "help"]);
   if (positionals.length === 0 || helpFlags.has(positionals[0]) || positionals.some(a => helpFlags.has(a))) {
-    console.log(HELP);
+    console.log(buildHelp());
     process.exit(positionals.length === 0 ? 2 : 0);
   }
   runCli(() => definitionDispatch(argv));

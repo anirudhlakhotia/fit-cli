@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { accessSync, constants } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
-import { installFitCliConsoleFormatting } from "./fit-cli-log.js";
+import { installFitCliConsoleFormatting, runScriptPrefix } from "./fit-cli-log.js";
 import { reexecInherit } from "./proc.js";
 import { readPromptLog, extractReplayFlag, REPO_ROOT } from "./replay.js";
 import { isMain } from "./cli.js";
@@ -23,7 +23,7 @@ export function buildReplayDispatch(
   const { replayRequested, replayDefaults, replayFile, positionals } = extractReplayFlag(argv);
   if (!replayRequested || !replayFile) {
     throw new Error(
-      "Missing replay log file. Usage: bun run replay <logfile> or bun run replay --defaults <logfile>",
+      `Missing replay log file. Usage: ${runScriptPrefix("replay")} <logfile> or ${runScriptPrefix("replay")} --defaults <logfile>`,
     );
   }
 

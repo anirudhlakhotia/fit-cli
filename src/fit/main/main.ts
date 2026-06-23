@@ -26,6 +26,7 @@ import { runCloudInstancesMain } from "../../cloud/cloud-instances/cloud-instanc
 import { runSecretsMain } from "../../cloud/util/aws/secrets-cli.js";
 import { printVersion } from "../version/version.js";
 import { main as replayMain } from "../../util/non-fit/replay-entry.js";
+import { isFitBinary, runScriptPrefix } from "../../util/non-fit/fit-cli-log.js";
 import { printLogo } from "./logo.js";
 
 const WORKFLOW_PROMPT_MESSAGE = "What would you like to do?";
@@ -192,7 +193,7 @@ async function runWizard(): Promise<RunOutput> {
     return true;
   });
   if (positionals.length > 0) {
-    throw new Error("Usage: fit wizard [--output yaml|json5] [--push-gist [public|private]]");
+    throw new Error(`Usage: ${runScriptPrefix("wizard")} [--output yaml|json5] [--push-gist [public|private]]`);
   }
   const choice = await chooseWorkflow();
   return runWorkflow(choice, undefined, format, pushGistVisibility);
@@ -226,7 +227,8 @@ function printHelp(): void {
   const lines = Object.entries(COMMANDS)
     .map(([name, { description }]) => `  ${name.padEnd(maxLen)}  ${description}`)
     .join("\n");
-  console.log(`fit — FIT CLI\n\nUsage: fit [command] [...args]\n\nCommands:\n${lines}\n`);
+  const bin = isFitBinary() ? "fit" : "bun run";
+  console.log(`${bin} — FIT CLI\n\nUsage: ${bin} [command] [...args]\n\nCommands:\n${lines}\n`);
 }
 
 // import.meta.main is true in compiled Bun binaries where isMain() can't
@@ -243,7 +245,7 @@ if (isMain(import.meta.url) || import.meta.main) {
     // bare `fit` or flags only → wizard
     runCli(runWizard);
   } else {
-    console.error(`Unknown command: ${cmd}\nRun 'fit help' for usage.`);
+    console.error(`Unknown command: ${cmd}\nRun '${runScriptPrefix("help")}' for usage.`);
     process.exit(1);
   }
 }

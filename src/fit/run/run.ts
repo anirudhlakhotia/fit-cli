@@ -23,16 +23,20 @@ import { generatePreset, isPresetType, PRESET_TYPES } from "../definition/genera
 import { analysePerformerImage, performerImageShortName } from "../performers/util/performer-image.js";
 import type { RunOutput } from "../../util/non-fit/artifacts.js";
 import { printVersion } from "../version/version.js";
+import { runScriptPrefix } from "../../util/non-fit/fit-cli-log.js";
 
 const SUBCOMMANDS = ["preset", "definition"] as const;
 type Subcommand = (typeof SUBCOMMANDS)[number];
 
-const HELP = `Run FIT tests from a preset or a definition file.
+function buildHelp(): string {
+  const run = runScriptPrefix("run");
+  const def = runScriptPrefix("definition");
+  return `Run FIT tests from a preset or a definition file.
 
 Usage:
-  bun run run preset <preset> --performer-image-name <image> [resume flags] [--cbcollect]
-  bun run run definition <file.json5> [--resume-at=<point>] [resume selectors] [--cbcollect]
-  bun run run --help
+  ${run} preset <preset> --performer-image-name <image> [resume flags] [--cbcollect]
+  ${run} definition <file.json5> [--resume-at=<point>] [resume selectors] [--cbcollect]
+  ${run} --help
 
 Subcommands:
   preset      Generate a preset definition file and run it immediately.
@@ -57,7 +61,8 @@ Resume selectors (narrow a resume to one run; emitted by a left-up run):
   --resume-clusterless-session=<n>  Which clusterless (situational) session.
   --resume-run=<n>                  Which run within the session.
 
-See available presets in detail with: bun run definition list-presets`;
+See available presets in detail with: ${def} list-presets`;
+}
 
 /** Pull `--performer-image-name[=<image>]` out of an argv list. */
 function extractPerformerImageName(argv: readonly string[]): { performerImageName?: string; positionals: string[] } {
@@ -108,14 +113,14 @@ export async function runDispatch(argv: string[]): Promise<RunOutput | void> {
 
   const HELP_FLAGS = new Set(["-h", "--help", "help"]);
   if (!subcommand || HELP_FLAGS.has(subcommand) || rest.some((a) => HELP_FLAGS.has(a))) {
-    console.log(HELP);
+    console.log(buildHelp());
     if (!subcommand) process.exit(2);
     return;
   }
 
   if (!SUBCOMMANDS.includes(subcommand as Subcommand)) {
     console.error(`Unknown subcommand: ${subcommand}\n`);
-    console.error(HELP);
+    console.error(buildHelp());
     process.exit(2);
   }
 
@@ -127,7 +132,7 @@ export async function runDispatch(argv: string[]): Promise<RunOutput | void> {
     const { performerImageName, positionals } = extractPerformerImageName(afterRunOpts);
     const [type, ...extra] = positionals;
     if (!type || extra.length > 0) {
-      console.error(`Usage: bun run run preset <preset> --performer-image-name <image>\nKnown presets: ${PRESET_TYPES.join(", ")}`);
+      console.error(`Usage: ${runScriptPrefix("run")} preset <preset> --performer-image-name <image>\nKnown presets: ${PRESET_TYPES.join(", ")}`);
       process.exit(2);
     }
     if (!isPresetType(type)) {
@@ -156,7 +161,7 @@ export async function runDispatch(argv: string[]): Promise<RunOutput | void> {
   const [definitionPath, ...extra] = positionals;
   if (!definitionPath || extra.length > 0) {
     console.error(
-      "Usage: bun run run definition <file.json5> [--resume-at=<point>] [resume selectors]\n" +
+      `Usage: ${runScriptPrefix("run")} definition <file.json5> [--resume-at=<point>] [resume selectors]\n` +
         "  --resume-at: after-instance-creation | after-remote-preparation | after-cluster-creation | after-performer\n" +
         "  resume selectors: --resume-instance=<n> --resume-cluster=<n> --resume-session=<n> --resume-clusterless-session=<n> --resume-run=<n>",
     );
@@ -176,7 +181,7 @@ export function runRunMain(): void {
   const positionals = extractInteractiveFlag(extractReplayFlag(argv).positionals).positionals;
   const helpFlags = new Set(["-h", "--help", "help"]);
   if (positionals.length === 0 || helpFlags.has(positionals[0]) || positionals.some((a) => helpFlags.has(a))) {
-    console.log(HELP);
+    console.log(buildHelp());
     process.exit(positionals.length === 0 ? 2 : 0);
   }
   runCli(() => runDispatch(argv));
