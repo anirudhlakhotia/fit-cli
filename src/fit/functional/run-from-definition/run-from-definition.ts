@@ -296,6 +296,7 @@ function runLabelParts(
   clusterMode: RunLabelParts["clusterMode"],
   run: ResolvedExecutionRun,
   clusterVersion?: string,
+  cng?: boolean,
 ): RunLabelParts {
   return {
     instanceKind,
@@ -305,6 +306,7 @@ function runLabelParts(
     ...(run.performerVersion ? { performerVersion: run.performerVersion } : {}),
     type: run.type,
     ...(run.testSelection.presets ? { presets: run.testSelection.presets } : {}),
+    ...(cng ? { cng } : {}),
   };
 }
 
@@ -329,9 +331,10 @@ function announce(
   run: ResolvedExecutionRun,
   fitPerformerGerritRef: string | undefined,
 ): void {
+  const cng = group.type === "functional" ? group.cng : undefined;
   setLogContext({
     performer: performerLabel(run.path, run.sdk.value, run.performerVersion),
-    run: runLabel(run.path, run.type, run.testSelection.presets),
+    run: runLabel(run.path, run.type, run.testSelection.presets, cng),
   });
   const { testSelection } = run;
   const presetLabels = (testSelection.presets ?? []).map((p) =>
@@ -347,6 +350,7 @@ function announce(
     group.type === "functional" ? group.clusterMode : undefined,
     run,
     clusterVersionLabel(group),
+    cng,
   );
   console.log(`\n=== ${formatRunLabel(run.path, parts)} (${group.instance.kind}, ${run.type}) ===`);
   console.log(`  SDK:     ${run.sdk.name}`);
@@ -603,7 +607,7 @@ export async function runTests(
   artifacts.push(...testRun.artifacts);
   const pathLabel = formatRunLabel(
     run.path,
-    runLabelParts(execution.kind === "remote" ? "aws" : "localhost", clusterMode, run, clusterVersion),
+    runLabelParts(execution.kind === "remote" ? "aws" : "localhost", clusterMode, run, clusterVersion, run.cluster?.cng !== undefined),
   );
   const iterationLabel = (label: string) => `Run ${run.path.runIndex ?? 0} ${label}`;
   details.push(
@@ -1013,8 +1017,9 @@ function failureLabel(group: ResolvedExecutionGroup, run?: ResolvedExecutionRun)
   const instanceKind = group.instance.kind;
   const clusterMode = group.type === "functional" ? group.clusterMode : undefined;
   const clusterVersion = clusterVersionLabel(group);
+  const cng = group.type === "functional" ? group.cng : undefined;
   if (run) {
-    return formatRunLabel(run.path, runLabelParts(instanceKind, clusterMode, run, clusterVersion));
+    return formatRunLabel(run.path, runLabelParts(instanceKind, clusterMode, run, clusterVersion, cng));
   }
   return [instanceLabel(group.path, instanceKind), clusterSegmentLabel(group.path, clusterMode, clusterVersion)]
     .filter((segment): segment is string => Boolean(segment))

@@ -42,6 +42,13 @@ test("runLabel qualifies a single preset with its type, then the type, then rN",
   assert.equal(runLabel({ instanceIndex: 0 }), undefined);
 });
 
+test("runLabel appends :cng for CNG functional runs", () => {
+  assert.equal(runLabel(path, "functional", undefined, true), "func:cng");
+  assert.equal(runLabel(path, "functional", ["all-transactions"], true), "func:cng:all-transactions");
+  // cng has no effect on situational runs
+  assert.equal(runLabel(path, "situational", undefined, true), "sit");
+});
+
 test("formatRunLabel joins the four segments, dropping absent ones", () => {
   assert.equal(
     formatRunLabel(path, { instanceKind: "aws", clusterMode: "cbdinocluster", sdkValue: "java", performerVersion: "main", type: "functional" }),
@@ -64,6 +71,18 @@ test("formatRunLabel joins the four segments, dropping absent ones", () => {
       type: "functional",
     }),
     "aws1 / 8.1.0 / java:main / func",
+  );
+  assert.equal(
+    formatRunLabel(path, {
+      instanceKind: "aws",
+      clusterMode: "cbdinocluster",
+      clusterVersion: "8.0.2-5503",
+      sdkValue: "java",
+      performerVersion: "main",
+      type: "functional",
+      cng: true,
+    }),
+    "aws1 / 8.0.2-5503 / java:main / func:cng",
   );
   assert.equal(formatRunLabel(path), "instance1 / cbdino1 / s1 / r1");
 });
