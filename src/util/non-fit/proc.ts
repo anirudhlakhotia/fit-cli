@@ -25,6 +25,14 @@ export enum LogType {
   HiddenUntilFailure = 2,
   /** L3: sent to its own artifact file; the last line is echoed every N seconds as proof-of-life. */
   Artifact = 3,
+  /**
+   * L4: sent to its own artifact file in the background; the process runs
+   * concurrently and self-terminates when its subject (e.g. a Docker container)
+   * exits. The caller receives a {@link BackgroundStream} handle and calls
+   * {@link BackgroundStream.drain} to wait for the final bytes to flush after
+   * stopping the subject.
+   */
+  BackgroundArtifact = 4,
 }
 
 /**
@@ -32,14 +40,15 @@ export enum LogType {
  * codebase should go through exactly one of these — there should be no raw
  * spawn/exec/spawnSync outside this file. Each model maps 1:1 to a function here:
  *
- *   Model              | function              | LogType | output is…
- *   -------------------|-----------------------|---------|------------------------------
- *   StreamToTerminal   | run                   | L1      | logged, live on the terminal
- *   HiddenUntilFailure | runHiddenUntilFailure | L2      | logged, hidden unless it fails
- *   StreamToArtifact   | streamToFile          | L3      | logged, to its own artifact file
- *   CaptureValue       | capture               | —       | a value we parse (mirrored to debug log)
- *   CaptureValueSync   | captureValueSync      | —       | a value we parse, synchronously
- *   ReexecInherit      | reexecInherit         | —       | the child owns the tty + signals
+ *   Model                      | function                  | LogType | output is…
+ *   ---------------------------|---------------------------|---------|------------------------------
+ *   StreamToTerminal           | run                       | L1      | logged, live on the terminal
+ *   HiddenUntilFailure         | runHiddenUntilFailure     | L2      | logged, hidden unless it fails
+ *   StreamToArtifact           | streamToFile              | L3      | logged, to its own artifact file
+ *   BackgroundStreamToArtifact | streamToFileInBackground  | L4      | logged, to artifact, non-blocking
+ *   CaptureValue               | capture                   | —       | a value we parse (mirrored to debug log)
+ *   CaptureValueSync           | captureValueSync          | —       | a value we parse, synchronously
+ *   ReexecInherit              | reexecInherit             | —       | the child owns the tty + signals
  *
  * The two CaptureValue models and ReexecInherit are deliberately *not* logged
  * steps: the first two run a process to obtain a value (a SHA, a username, a
@@ -50,6 +59,7 @@ export enum ProcessExecModel {
   StreamToTerminal = "StreamToTerminal",
   HiddenUntilFailure = "HiddenUntilFailure",
   StreamToArtifact = "StreamToArtifact",
+  BackgroundStreamToArtifact = "BackgroundStreamToArtifact",
   CaptureValue = "CaptureValue",
   CaptureValueSync = "CaptureValueSync",
   ReexecInherit = "ReexecInherit",
@@ -465,6 +475,46 @@ export function streamToFile(
       );
     });
   });
+}
+
+/** A handle returned by {@link streamToFileInBackground} to wait for the background log stream to finish. */
+export interface BackgroundStream {
+  /** Wait for the background process to exit and all bytes to be flushed to the log file. */
+  drain(): Promise<void>;
+}
+
+/**
+ * Spawn a process in the background, streaming its stdout+stderr to `logFile`
+ * without blocking. Returns a {@link BackgroundStream} handle immediately.
+ * Call {@link BackgroundStream.drain} after the subject process has been stopped
+ * to wait for the final bytes to flush (typically a `docker logs --follow` that
+ * exits once its container stops).
+ *
+ * @execModel ProcessExecModel.BackgroundStreamToArtifact (LogType.BackgroundArtifact / L4)
+ */
+export function streamToFileInBackground(
+  command: string,
+  args: string[],
+  logFile: string,
+  cwd: string = process.cwd(),
+): BackgroundStream {
+  announce(command, args);
+  mkdirSync(dirname(logFile), { recursive: true, mode: 0o700 });
+
+  const log = createWriteStream(logFile, { flags: "a", mode: 0o600 });
+  log.write(`# ${new Date().toISOString()} ${command} ${args.join(" ")}\n`);
+  process.stdout.write(`→ Performer logs streaming live to: ${logFile}\n`);
+
+  const child = spawn(command, args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
+  child.stdout.on("data", (chunk: Buffer) => log.write(chunk));
+  child.stderr.on("data", (chunk: Buffer) => log.write(chunk));
+
+  const drainPromise = new Promise<void>((resolve) => {
+    child.on("close", () => log.end(() => resolve()));
+    child.on("error", () => log.end(() => resolve()));
+  });
+
+  return { drain: () => drainPromise };
 }
 
 /**

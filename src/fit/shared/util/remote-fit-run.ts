@@ -3,7 +3,7 @@ import { basename, dirname, join } from "node:path";
 import { type Artifact, type Detail } from "../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { LocalTarget } from "../../../util/non-fit/local-target.js";
-import { HEARTBEAT_INTERVAL_SECS, run, streamToFile, type RunOptions } from "../../../util/non-fit/proc.js";
+import { HEARTBEAT_INTERVAL_SECS, run, streamToFile, streamToFileInBackground, type BackgroundStream, type RunOptions } from "../../../util/non-fit/proc.js";
 import { formatCommandLine } from "../../../util/non-fit/fit-cli-log.js";
 import { createRunFilePath, runRunDir, type DefinitionRunPath } from "../../../util/non-fit/replay.js";
 import { posixQuote, teeToFileCommand } from "../../../util/non-fit/remote-target.js";
@@ -70,6 +70,14 @@ export interface FitExecutionContext {
    * genuinely huge logs (the FIT test-driver, performer docker logs).
    */
   streamToArtifactFile(command: string, args: string[], targetPath: string, cwd?: string): Promise<void>;
+  /**
+   * BackgroundStreamToArtifact process model (LogType4): start a background
+   * process that streams to `targetPath` without blocking. Call
+   * {@link BackgroundStream.drain} after stopping the subject process (e.g. the
+   * performer container) to wait for the final bytes to flush before collecting
+   * the file.
+   */
+  streamToArtifactFileInBackground(command: string, args: string[], targetPath: string, cwd?: string): Promise<BackgroundStream>;
   targetFilePath(localPath: string): string;
   stageFile(localPath: string, targetPath?: string): Promise<string>;
   collectFile(targetPath: string, localPath: string): Promise<void>;
@@ -349,6 +357,17 @@ export function heartbeatShellCommand(
   ].join("\n");
 }
 
+/**
+ * Start a command in the background on the remote shell, redirect its
+ * stdout+stderr to `path`, and print the background process PID on stdout so
+ * the caller can wait for it later. `disown` removes the job from the shell's
+ * job table so it survives when the SSH session that launched it ends.
+ */
+export function backgroundShellCommand(command: string, path: string): string {
+  const quotedPath = posixQuote(path);
+  return `( ${command} ) >> ${quotedPath} 2>&1 & bg_pid=$! && disown $bg_pid && printf '%s\\n' "$bg_pid"`;
+}
+
 export function remotePerformerArgs(
   imageName: string,
   hostPort: number = DEFAULT_PERFORMER_PORT,
@@ -411,6 +430,8 @@ export function createLocalFitExecutionContext(): FitExecutionContext {
       });
     },
     streamToArtifactFile: (command, args, targetPath, cwd) => streamToFile(command, args, targetPath, cwd),
+    streamToArtifactFileInBackground: (command, args, targetPath, cwd) =>
+      Promise.resolve(streamToFileInBackground(command, args, targetPath, cwd)),
     targetFilePath: (localPath) => localPath,
     stageFile: (localPath) => Promise.resolve(localPath),
     collectFile: (targetPath, localPath) => {

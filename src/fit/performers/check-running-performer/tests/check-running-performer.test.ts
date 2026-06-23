@@ -33,6 +33,7 @@ function fakeExecutionContext(): FitExecutionContext {
     capture: () => Promise.resolve(""),
     streamToTerminalAndFile: () => Promise.resolve(),
     streamToArtifactFile: () => Promise.resolve(),
+    streamToArtifactFileInBackground: () => Promise.resolve({ drain: () => Promise.resolve() }),
     targetFilePath: (path) => path,
     stageFile: (path) => Promise.resolve(path),
     collectFile: () => Promise.resolve(),

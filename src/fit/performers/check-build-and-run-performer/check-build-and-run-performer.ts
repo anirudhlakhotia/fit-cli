@@ -10,7 +10,7 @@
 import { join } from "node:path";
 import { artifactFromPath, type RunOutput } from "../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
-import { createLogFile } from "../../../util/non-fit/proc.js";
+import { createLogFile, type BackgroundStream } from "../../../util/non-fit/proc.js";
 import type { DefinitionRunPath } from "../../../util/non-fit/replay.js";
 import { type Sdk } from "../../../util/sdk/sdks.js";
 import { chooseSdk } from "../../../util/sdk/choose-sdk.js";
@@ -42,6 +42,10 @@ export interface RunningPerformer extends RunOutput {
   // port), in which case there's no container for us to manage or log.
   containerId?: string;
   logFile?: string;
+  // Active background log stream (docker logs --follow) started at container
+  // startup. drain() is called in stopManagedPerformer after docker stop so the
+  // final bytes flush before we collect the file.
+  logStream?: BackgroundStream;
   // True when we're testing against a performer that was already running rather
   // than one we started, so we should leave it alone instead of stopping it.
   reused?: boolean;
@@ -162,9 +166,16 @@ export async function checkBuildAndRunPerformer(
     const containerId = (await execution.capture(execution.dockerCommand, args)).trim();
     console.log(`\n✓ Started the ${sdk.name} performer in container ${containerId}`);
     const logFile = performerLogFile(path, sdk, version);
+    const targetLogFile = execution.targetFilePath(logFile);
+    const logStream = await execution.streamToArtifactFileInBackground(
+      execution.dockerCommand,
+      ["logs", "--follow", "--timestamps", containerId],
+      targetLogFile,
+    );
     return {
       containerId,
       logFile,
+      logStream,
       artifacts: [artifactFromPath(logFile, `${sdk.name} performer logs captured for this FIT run`)],
       details: [],
     };
@@ -193,17 +204,7 @@ export async function stopManagedPerformer(
     return;
   }
 
-  if (performer.logFile) {
-    const targetLogFile = execution.targetFilePath(performer.logFile);
-    try {
-      await execution.streamToArtifactFile("docker", ["logs", "--timestamps", performer.containerId], targetLogFile);
-      await execution.collectFile(targetLogFile, performer.logFile);
-      console.log(`\n✓ Saved performer logs to ${performer.logFile}`);
-    } catch (err) {
-      console.warn(`\nCould not collect performer logs from ${execution.description}: ${(err as Error).message}`);
-    }
-  }
-
+  // Stop the container first — this causes docker logs --follow to see EOF and exit.
   console.log(`\nStopping performer container with:\n  docker stop ${performer.containerId}\n`);
   try {
     await execution.run(execution.dockerCommand, ["stop", performer.containerId]);
@@ -213,6 +214,15 @@ export async function stopManagedPerformer(
   }
 
   if (performer.logFile) {
+    // Wait for the live log stream to finish flushing now that the container has stopped.
+    await performer.logStream?.drain();
+    const targetLogFile = execution.targetFilePath(performer.logFile);
+    try {
+      await execution.collectFile(targetLogFile, performer.logFile);
+      console.log(`\n✓ Saved performer logs to ${performer.logFile}`);
+    } catch (err) {
+      console.warn(`\nCould not collect performer logs from ${execution.description}: ${(err as Error).message}`);
+    }
     console.log(`\nPerformer logs:\n  ${performer.logFile}`);
   }
 }
