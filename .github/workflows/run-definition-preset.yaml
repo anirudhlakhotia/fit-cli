@@ -7,11 +7,14 @@ on:
         description: Preset definition template to use
         type: choice
         options:
-          - preset-functional-tests
-          - preset-functional-quick-sanity
-          - preset-situational-quick-sanity
-          - preset-qe-set
-        default: preset-functional-tests
+          - functional
+          - functional-quick-sanity
+          - situational-quick-sanity
+          - qe-set
+          - everything-quick-sanity
+          - cng-functional
+          - cng-functional-quick-sanity
+        default: functional
       performerImageName:
         description: Performer Docker image name including tag (e.g. java-fit-performer:main, ghcr.io/couchbaselabs/java-fit-performer:1.2.3)
         type: string
