@@ -48,9 +48,11 @@ export interface RunningPerformer extends RunOutput {
 }
 
 export function performerLogStem(path: DefinitionRunPath, sdk: Sdk, version?: string): string {
+  const instanceSeg = path.dirSegments?.instance ?? String(path.instanceIndex);
+  const sessionSeg = path.dirSegments?.session ?? String(path.sessionIndex);
   const base = path.clusterlessSession
-    ? join("instances", String(path.instanceIndex), "clusterless-sessions", String(path.sessionIndex))
-    : join("instances", String(path.instanceIndex), "clusters", String(path.clusterIndex), "sessions", String(path.sessionIndex));
+    ? join("instances", instanceSeg, "clusterless-sessions", sessionSeg)
+    : join("instances", instanceSeg, "clusters", path.dirSegments?.cluster ?? String(path.clusterIndex), "sessions", sessionSeg);
   return join(base, `${sdk.value}-${tagLogComponent(version)}-performer`);
 }
 
