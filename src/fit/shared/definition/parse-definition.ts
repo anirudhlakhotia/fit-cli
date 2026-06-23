@@ -8,6 +8,7 @@ import { dirname, join } from "node:path";
 import JSON5 from "json5";
 import YAML from "yaml";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
+import { runScriptPrefix } from "../../../util/non-fit/fit-cli-log.js";
 import { PORT_IN_USE_POLICIES, type PortInUsePolicy } from "../../performers/util/performer-port.js";
 import {
   CLUSTER_EXISTS_POLICIES,
@@ -839,10 +840,11 @@ export function definitionSummary(definition: FitDefinition): string {
   );
 }
 
-const HELP = `Validate a fit definition file and print the parsed result.
+function buildHelp(): string {
+  return `Validate a fit definition file and print the parsed result.
 
 Primary usage:
-  bun run definition validate <file.json5>
+  ${runScriptPrefix("definition")} validate <file.json5>
 
 Direct invocation (for debugging):
   bun src/fit/shared/definition/parse-definition.ts <file.json5>
@@ -851,12 +853,13 @@ Direct invocation (for debugging):
 Both .json5 and .yaml definition files are accepted.
 Exits 0 and prints the normalised definition as JSON if the file is valid;
 exits 1 with an explanation otherwise.`;
+}
 
 if (isMain(import.meta.url)) {
   runCli(() => {
     const path = process.argv[2];
     if (!path || path === "--help" || path === "-h") {
-      console.log(HELP);
+      console.log(buildHelp());
       if (!path) process.exit(2);
       return Promise.resolve();
     }
