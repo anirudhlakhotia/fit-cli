@@ -1,11 +1,11 @@
 import { createReadStream, createWriteStream, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, relative } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { createGunzip } from "node:zlib";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { commandOn, formatCommandLine, runScriptPrefix } from "../../../util/non-fit/fit-cli-log.js";
-import { instanceInternalRunDir } from "../../../util/non-fit/replay.js";
+import { ensureRunDir, instanceInternalRunDir } from "../../../util/non-fit/replay.js";
 import { announceArtifactStream, type BackgroundStream } from "../../../util/non-fit/proc.js";
 import { posixQuote, teeToFileCommand } from "../../../util/non-fit/remote-target.js";
 import { RemoteTarget } from "../../../util/non-fit/remote-target.js";
@@ -21,6 +21,7 @@ import {
   ensureRemoteRepos,
   heartbeatShellCommand,
   pathPrefixedCommand,
+  remoteArtifactsDir,
   remoteDockerWrapperPath,
   remoteDockerWrapperScript,
   remoteFitBinDir,
@@ -224,7 +225,7 @@ export async function createRemoteFitExecutionContext(
       const pid = (await target.capture("bash", ["-lc", backgroundShellCommand(fullCommand, targetPath)], cwd, {
         quiet: true,
       })).trim();
-      process.stdout.write(`→ Performer logs streaming live to: ${targetPath}  (on ${target.description}, PID ${pid})\n`);
+      console.log(`Streaming performer logs to:\n  ${targetPath}  (on ${target.description})`);
       return {
         drain: async () => {
           // Wait for the background process to exit (docker logs --follow exits when its container stops).
@@ -234,7 +235,7 @@ export async function createRemoteFitExecutionContext(
         },
       };
     },
-    targetFilePath: (localPath) => join(rootDir, basename(localPath)),
+    targetFilePath: (localPath) => join(remoteArtifactsDir(rootDir), relative(ensureRunDir(), localPath)),
     stageFile: async (localPath, targetPath) => {
       const destination = targetPath ?? join(rootDir, basename(localPath));
       // scp won't create intermediate dirs; per-run targets nest, so ensure the dir.

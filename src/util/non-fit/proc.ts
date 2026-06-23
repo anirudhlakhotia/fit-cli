@@ -503,7 +503,7 @@ export function streamToFileInBackground(
 
   const log = createWriteStream(logFile, { flags: "a", mode: 0o600 });
   log.write(`# ${new Date().toISOString()} ${command} ${args.join(" ")}\n`);
-  process.stdout.write(`→ Performer logs streaming live to: ${logFile}\n`);
+  console.log(`Streaming performer logs to:\n  ${logFile}`);
 
   const child = spawn(command, args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
   child.stdout.on("data", (chunk: Buffer) => log.write(chunk));
