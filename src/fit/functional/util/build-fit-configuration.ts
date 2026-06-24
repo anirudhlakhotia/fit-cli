@@ -104,6 +104,7 @@ function cngClusterAccess(cluster: SelectedCluster & { cng: NonNullable<Selected
 export function generatedFitConfigurationPiece(
   cluster: SelectedCluster,
   performerPort: number = DEFAULT_PERFORMER_PORT,
+  analytics = false,
 ): ConfigPiece {
   if (cluster.cng) {
     return {
@@ -115,6 +116,35 @@ export function generatedFitConfigurationPiece(
         excludeTests: ["situational"],
         // The bucket is pre-created in the CouchbaseCluster spec; the driver must not try to
         // create it via classic management (there is no external KV or mgmt port on OpenShift).
+        skipBucketCreation: true,
+      },
+    };
+  }
+
+  if (analytics) {
+    // Analytics (Enterprise Analytics / Capella Analytics): the driver connects
+    // classically for admin, but the connection specifics (load balancer, the
+    // SDK's analytics endpoint, proxy) come from the definition's
+    // fitConfig.config.clusterAccess, which merges over these defaults. We emit
+    // only the baseline here, and skip bucket creation — Analytics manages its own
+    // data; there is no KV bucket to create.
+    return {
+      label: "fit-cli generated Analytics defaults",
+      data: {
+        "//": AUTO_GENERATED_MARKER,
+        clusterAccess: {
+          defaultHostname: cluster.defaultHostname,
+          connectionString: `${cluster.scheme}://\${defaultHostname}`,
+          username: cluster.credentials.username,
+          password: cluster.credentials.password,
+          tls: cluster.tls,
+          rest: { hostname: firstHostname(cluster.defaultHostname), resolveDnsSrv: false },
+          // Columnar / Analytics does not support direct SSH access.
+          ssh: null,
+          proxy: { hostname: "localhost" },
+        },
+        performerPorts: [performerPort],
+        excludeTests: ["situational"],
         skipBucketCreation: true,
       },
     };
@@ -259,10 +289,11 @@ export function buildFitConfiguration(
   fitConfigPiece?: PieceData,
   connection?: FitConnectionSpec,
   patchPiece?: PieceData,
+  analytics = false,
 ): Record<string, unknown> {
   const hasConfig = fitConfigPiece !== undefined || connection !== undefined;
   return mergeConfigPieces([
-    generatedFitConfigurationPiece(cluster, performerPort),
+    generatedFitConfigurationPiece(cluster, performerPort, analytics),
     ...(fitConfigPiece ? [{ label: "definition fitConfig piece", data: fitConfigPiece }] : []),
     ...(hasConfig ? [runtimeFitConfigurationPiece(cluster)] : []),
     ...(connection ? [connectionSpecPiece(connection, cluster)] : []),

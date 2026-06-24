@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyDotPathOverride, generatePreset, parseGeneratePresetArgs } from "../generate-preset.js";
+import { applyDotPathOverride, generatePreset, parseGeneratePresetArgs, presetUsesAnalyticsDriver } from "../generate-preset.js";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -152,4 +152,9 @@ test("generatePreset applies overrides to the written file", async () => {
 
   const written = readFileSync(outputPath, "utf8");
   assert.match(written, /gerritRef: refs\/changes\/32\/247532\/1/);
+});
+
+test("presetUsesAnalyticsDriver detects analytics presets but not operational ones", () => {
+  assert.equal(presetUsesAnalyticsDriver("enterprise-analytics-functional"), true);
+  assert.equal(presetUsesAnalyticsDriver("functional"), false);
 });

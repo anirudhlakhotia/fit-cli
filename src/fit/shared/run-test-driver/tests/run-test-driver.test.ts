@@ -4,6 +4,8 @@ import assert from "node:assert/strict";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  ANALYTICS_MAVEN_TEST_ARGS,
+  ANALYTICS_TEST_DRIVER_MODULE,
   didFitTestDriverPass,
   extractFitTestDriverSummaryFromJunit,
   extractFitTestDriverSummaryFromJunitReports,
@@ -206,4 +208,31 @@ test("runTestDriverArgs adds the generated FIT config path", () => {
     "test",
     "-DexcludedGroups=situational,openshift,syncgateway",
   ]);
+});
+
+test("runTestDriverArgs targets the Analytics test-driver module with Analytics excluded groups", () => {
+  const selection: FitTestSelection = { allTests: [], selectedTests: [] };
+
+  assert.deepEqual(
+    runTestDriverArgs(selection, undefined, ANALYTICS_MAVEN_TEST_ARGS, ANALYTICS_TEST_DRIVER_MODULE),
+    [
+      "-q",
+      "--no-transfer-progress",
+      "--batch-mode",
+      "--projects",
+      "columnar-test-driver",
+      "--also-make",
+      "-Dmaven.test.failure.ignore=true",
+      "-Dsurefire.failIfNoSpecifiedTests=false",
+      "test",
+      "-DexcludedGroups=situational,openshift,syncgateway,columnarDDL",
+    ],
+  );
+});
+
+test("surefireReportsDir points at the given module's surefire output", () => {
+  assert.equal(
+    surefireReportsDir("/work/root/transactions-fit-performer", ANALYTICS_TEST_DRIVER_MODULE),
+    "/work/root/transactions-fit-performer/columnar-test-driver/target/surefire-reports",
+  );
 });

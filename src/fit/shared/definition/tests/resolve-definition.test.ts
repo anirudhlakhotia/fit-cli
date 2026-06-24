@@ -12,6 +12,7 @@ import {
   resolveSituationalMavenArgs,
 } from "../resolve-definition.js";
 import {
+  ANALYTICS_MAVEN_TEST_ARGS,
   DEFAULT_MAVEN_TEST_ARGS,
   SITUATIONAL_MAVEN_TEST_ARGS,
 } from "../../run-test-driver/run-test-driver.js";
@@ -82,6 +83,43 @@ test("resolveDefinition preserves instance, cluster, session, and run nesting", 
   assert.equal(resolved.instances[0]?.clusters.length, 1);
   assert.equal(resolved.instances[0]?.clusters[0]?.sessions.length, 1);
   assert.equal(resolved.instances[0]?.clusters[0]?.sessions[0]?.runs.length, 1);
+});
+
+test("an analytics-functional run resolves into the functional group carrying the analytics marker + analytics maven args", () => {
+  const def: FitDefinition = {
+    version: 1,
+    type: "fit",
+    instances: [
+      {
+        localhost: {},
+        clusters: [
+          {
+            // cbdino wire flag `columnar: true` = a self-managed Enterprise Analytics cluster.
+            cbdinocluster: {
+              config: { columnar: true, nodes: [{ count: 2, version: "2.2.0-1166" }] },
+            },
+            sessions: [
+              {
+                performer: { image: "analytics-go-fit-performer:main" },
+                runs: [{ type: "analytics-functional", tests: {} }],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+  const groups = buildExecutionGroups(resolveDefinition(def).instances);
+  assert.equal(groups.length, 1);
+  const group = groups[0];
+  assert.equal(group?.type, "functional");
+  if (group?.type !== "functional") return;
+  assert.equal(group.clusterMode, "cbdinocluster");
+  const run = group.runs[0];
+  assert.equal(run?.type, "functional");
+  assert.equal(run?.analytics, true);
+  assert.equal(run?.sdk.value, "analytics-go");
+  assert.deepEqual(run?.extraMavenArgs, [...ANALYTICS_MAVEN_TEST_ARGS]);
 });
 
 test("resolveSession applies performer defaults and strips redundant clusterAccess for connection mode", () => {

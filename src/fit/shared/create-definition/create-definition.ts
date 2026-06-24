@@ -281,8 +281,10 @@ function functionalDefinitionCluster(instance: InstanceLifetime, clusterConfigs:
       def: {
         nodeCount: firstNode.count,
         version: firstNode.version,
-        services: firstNode.services,
+        services: firstNode.services ?? [],
         cng: clusterData.cbdinocluster.config.cao !== undefined,
+        // cbdino's wire `columnar: true` means a self-managed Enterprise Analytics cluster.
+        ...(clusterData.cbdinocluster.config.columnar === true ? { enterpriseAnalytics: true } : {}),
       },
     };
   }

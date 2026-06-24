@@ -230,3 +230,38 @@ test("resourceCreationPiece enables cluster-creating tests with both mandatory k
   assert.deepEqual(cluster.cbdinocluster, { path: "/home/ubuntu/.local/bin/cbdinocluster" });
   assert.deepEqual(cluster.preferredCluster, { version: "8.0.1-4654" });
 });
+
+test("an analytics config skips bucket creation and lets the definition's clusterAccess merge over", () => {
+  const config = buildFitConfiguration(
+    {
+      scheme: "couchbase",
+      defaultHostname: "localhost",
+      flavour: "self-managed",
+      credentials,
+      tls: null,
+    },
+    8060,
+    // The definition's fitConfig.config: the analytics endpoint + load balancer.
+    {
+      clusterAccess: {
+        clusterParams: { loadBalancedCluster: { ports: [8095, 18095] } },
+        performer: { connectionString: "http://${defaultHostname}:8095", tls: null },
+      },
+    },
+    undefined,
+    undefined,
+    true,
+  );
+
+  // Analytics manages its own data — no KV bucket to create.
+  assert.equal(config.skipBucketCreation, true);
+  assert.equal("bucketConfig" in config, false);
+  assert.deepEqual(config.excludeTests, ["situational"]);
+
+  const access = config.clusterAccess as Record<string, unknown>;
+  assert.deepEqual(access.clusterParams, { loadBalancedCluster: { ports: [8095, 18095] } });
+  assert.deepEqual(access.performer, { connectionString: "http://${defaultHostname}:8095", tls: null });
+  // The generated baseline is still present (and not overwritten by the merge).
+  assert.equal(access.ssh, null);
+  assert.deepEqual(access.proxy, { hostname: "localhost" });
+});

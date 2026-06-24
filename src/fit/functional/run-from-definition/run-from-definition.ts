@@ -108,7 +108,12 @@ import {
   type ResolvedFunctionalExecutionRun,
   type ResolvedSituationalExecutionRun,
 } from "../../shared/definition/resolve-definition.js";
-import { runTestDriver, type FitTestDriverSummary } from "../../shared/run-test-driver/run-test-driver.js";
+import {
+  ANALYTICS_TEST_DRIVER_MODULE,
+  DEFAULT_TEST_DRIVER_MODULE,
+  runTestDriver,
+  type FitTestDriverSummary,
+} from "../../shared/run-test-driver/run-test-driver.js";
 import {
   buildFitTestSelection,
   buildFitTestSelectionFromClassNames,
@@ -597,7 +602,10 @@ export async function runTests(
   // Existing/connection clusters carry neither, so they're left off (the
   // preferredCluster.version the performer requires would be unknown).
   let effectiveFitConfig = run.fitConfig;
-  if (clusterMode === "cbdinocluster" && clusterVersion) {
+  // Analytics runs use the Analytics test-driver, whose cluster-creating tests are
+  // gated on resourceCreation differently (@RequiresAnalyticsClusterCreating); the
+  // operational resourceCreation block below doesn't apply, so leave it off.
+  if (clusterMode === "cbdinocluster" && clusterVersion && !run.analytics) {
     const cbdinoclusterPath = await resolveCbdinoclusterPathOnExecution(execution);
     // clusterVersion is a label that may join multiple node versions with "+";
     // preferredCluster wants a single concrete version, so take the first and
@@ -616,6 +624,7 @@ export async function runTests(
     run.path,
     run.performerPort,
     effectiveFitConfig,
+    run.analytics ?? false,
   );
   artifacts.push(...fitConfig.artifacts);
   details.push(...fitConfig.details);
@@ -636,6 +645,7 @@ export async function runTests(
     run.path,
     fitConfig.path,
     run.extraMavenArgs,
+    run.analytics ? ANALYTICS_TEST_DRIVER_MODULE : DEFAULT_TEST_DRIVER_MODULE,
   );
   artifacts.push(...testRun.artifacts);
   const pathLabel = formatRunLabel(

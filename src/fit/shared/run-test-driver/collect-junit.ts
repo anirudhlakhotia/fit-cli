@@ -33,8 +33,8 @@ import { throwFatalToRun } from "../failure-classification.js";
  * has no command-line property (only a `default-value`), so `-Dsurefire.reportsDirectory`
  * is silently ignored — reports always land in the project's default location.
  */
-export function surefireReportsDir(fitPerformerDir: string): string {
-  return join(fitPerformerDir, "test-driver", "target", "surefire-reports");
+export function surefireReportsDir(fitPerformerDir: string, testDriverModule: string = "test-driver"): string {
+  return join(fitPerformerDir, testDriverModule, "target", "surefire-reports");
 }
 
 /** The surefire XML report files (TEST-*.xml) found in `sourceDir`. */

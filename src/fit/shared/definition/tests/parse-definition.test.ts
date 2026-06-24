@@ -680,3 +680,62 @@ test("rejects unknown field on a performer", () => {
     (err: unknown) => err instanceof InvalidDefinitionError && /oops/.test(err.message),
   );
 });
+
+const ANALYTICS_FUNCTIONAL = `
+version: 1
+type: fit
+instances:
+  - localhost: {}
+    clusters:
+      - clusterConfig: cluster-0
+        sessions:
+          - performer:
+              image: analytics-go-fit-performer:main
+            runs:
+              - type: analytics-functional
+                fitConfig: fit-config-0
+                tests:
+                  presets: [all]
+clusterConfigs:
+  - id: cluster-0
+    cbdinocluster:
+      config:
+        columnar: true
+        nodes:
+          - count: 2
+            version: 2.2.0-1166
+fitConfigs:
+  - id: fit-config-0
+    config:
+      clusterAccess:
+        performer:
+          connectionString: http://\${defaultHostname}:8095
+`;
+
+test("parses an analytics-functional definition", () => {
+  const def = parseDefinition(ANALYTICS_FUNCTIONAL);
+  const run = def.instances[0]?.clusters[0]?.sessions[0]?.runs[0];
+  assert.equal(run?.type, "analytics-functional");
+});
+
+test("rejects an analytics-functional run under clusterlessSessions", () => {
+  const bad = `
+version: 1
+type: fit
+instances:
+  - localhost: {}
+    clusters: []
+    clusterlessSessions:
+      - performer:
+          image: analytics-go-fit-performer:main
+        runs:
+          - type: analytics-functional
+            tests:
+              presets: [all]
+`;
+  assert.throws(
+    () => parseDefinition(bad),
+    (err: unknown) =>
+      err instanceof InvalidDefinitionError && /cannot be "analytics-functional" under clusterlessSessions/.test(err.message),
+  );
+});

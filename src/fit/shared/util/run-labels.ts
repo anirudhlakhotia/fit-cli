@@ -20,7 +20,7 @@ export interface RunLabelParts {
   sdkValue?: string;
   /** Performer image version / ref, e.g. `main`. */
   performerVersion?: string;
-  type?: "functional" | "situational";
+  type?: "functional" | "situational" | "analytics-functional";
   /** Named test presets for this run; a single preset names the run segment. */
   presets?: readonly string[];
   /** Whether this is a CNG (Cloud Native Gateway / Protostellar) run. */
@@ -66,8 +66,9 @@ export function performerLabel(path: DefinitionRunPath, sdkValue?: string, versi
   return `s${(path.sessionIndex ?? 0) + 1}`;
 }
 
-/** The run type label: `functional` / `functional:cng` / `situational`. */
+/** The run type label: `functional` / `functional:cng` / `functional:analytics` / `situational`. */
 function typeLabel(type: NonNullable<RunLabelParts["type"]>, cng?: boolean): string {
+  if (type === "analytics-functional") return "functional:analytics";
   if (type === "functional") return cng ? "functional:cng" : "functional";
   return "situational";
 }

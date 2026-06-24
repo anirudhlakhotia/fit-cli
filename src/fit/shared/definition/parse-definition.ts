@@ -488,13 +488,13 @@ function validateRun(value: unknown, path: string, clusterless: boolean): FitRun
     throw new InvalidDefinitionError(`Missing required field: ${path}.tests`);
   }
   const repeat = validateRepeat(record, path);
-  if (type === "functional") {
+  if (type === "functional" || type === "analytics-functional") {
     rejectUnknown(record, ["type", "tests", "fitConfig", "repeat"], path);
     if (clusterless) {
-      throw new InvalidDefinitionError(`"${path}.type" cannot be "functional" under clusterlessSessions.`);
+      throw new InvalidDefinitionError(`"${path}.type" cannot be "${type}" under clusterlessSessions.`);
     }
     return {
-      type: "functional",
+      type,
       tests: validateTestsSection(record.tests, `${path}.tests`),
       ...(record.fitConfig !== undefined ? { fitConfig: validateRunFitConfig(record.fitConfig, `${path}.fitConfig`) } : {}),
       ...(repeat !== undefined ? { repeat } : {}),

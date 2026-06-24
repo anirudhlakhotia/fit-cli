@@ -69,8 +69,11 @@ export interface ParsedPerformerImage {
 // Accepts the short form `<sdk>-fit-performer:<tag>` and the fully-qualified
 // `ghcr.io/<owner>/<sdk>-fit-performer:<tag>` (the owner prefix is fit-cli's to
 // derive, so it's accepted but discarded).
+// The SDK basename may itself contain hyphens (e.g. `columnar-go`), so match one
+// or more hyphen-separated lowercase/digit segments before the `-fit-performer`
+// literal suffix.
 const PERFORMER_IMAGE_PATTERN =
-  /^(?:ghcr\.io\/[^/]+\/)?(?<sdk>[a-z0-9]+)-fit-performer:(?<tag>[A-Za-z0-9_][A-Za-z0-9._-]{0,127})$/;
+  /^(?:ghcr\.io\/[^/]+\/)?(?<sdk>[a-z0-9]+(?:-[a-z0-9]+)*)-fit-performer:(?<tag>[A-Za-z0-9_][A-Za-z0-9._-]{0,127})$/;
 
 /** Parse a performer image into its SDK and tag, or return why it isn't valid. */
 export function analysePerformerImage(image: string): ParsedPerformerImage | { error: string } {
@@ -98,8 +101,10 @@ export function analysePerformerImage(image: string): ParsedPerformerImage | { e
   if (!sdkPublishesPerformerImage(sdk)) {
     return {
       error:
-        `Only the JVM SDKs (java, scala, kotlin), C++ (cxx) and .NET (dotnet) publish prebuilt performer` +
-        ` images, and ${sdk.name} (${sdk.value}) does not. Pick one of those SDKs.`,
+        `Only the JVM SDKs (java, scala, kotlin), C++ (cxx), .NET (dotnet) and the Analytics SDKs` +
+        ` — Columnar SDK (columnar-go/node/python) and Enterprise Analytics SDK` +
+        ` (analytics-go/node/python) — publish prebuilt performer images, and ${sdk.name}` +
+        ` (${sdk.value}) does not. Pick one of those SDKs.`,
     };
   }
   return { sdk, tag: match.groups.tag };
