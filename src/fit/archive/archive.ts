@@ -113,10 +113,12 @@ async function cmdS3Upload(argv: string[]): Promise<void> {
     console.log(`Uploading ${zipPath} → ${zipKey} ...`);
     await uploadFileToS3(zipPath, zipKey);
     console.log(`✓ Uploaded to ${zipKey}`);
+    console.log(`  Download:  aws s3 cp ${zipKey} .`);
   } else {
     console.log(`Uploading ${absDir} → ${destination} ...`);
     await uploadDirectoryToS3(absDir, destination);
     console.log(`✓ Uploaded to ${destination}`);
+    console.log(`  Download:  aws s3 cp --recursive ${destination} ${dirName}/`);
   }
 }
 
