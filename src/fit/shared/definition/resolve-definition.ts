@@ -430,14 +430,26 @@ export function resolveSession(
   const { sdk, tag } = parsePerformerImage(session.performer.image);
   const sessionSeg = performerLabel(path, sdk.value, tag);
   const pathWithSession: DefinitionRunPath = { ...path, dirSegments: { ...path.dirSegments, session: sessionSeg } };
+  let runIndex = 0;
+  const runs = session.runs.flatMap((run) => {
+    const count = run.repeat ?? 1;
+    return Array.from({ length: count }, (_, repeatIndex) => {
+      const ri = runIndex++;
+      return resolveRunWithPath(
+        run,
+        { ...pathWithSession, runIndex: ri },
+        stripClusterAccess,
+        count > 1 ? repeatIndex : undefined,
+      );
+    });
+  });
   return {
     path: pathWithSession,
     sdk,
     performerPort: session.performer.port ?? DEFAULT_PERFORMER_PORT,
     performerVersion: tag,
     onPortInUse: session.performer.onPortInUse ?? DEFAULT_PORT_IN_USE_POLICY,
-    runs: session.runs.map((run, runIndex) =>
-      resolveRunWithPath(run, { ...pathWithSession, runIndex }, stripClusterAccess)),
+    runs,
   };
 }
 
@@ -445,9 +457,13 @@ function resolveRunWithPath(
   run: FitRun,
   path: DefinitionRunPath,
   stripClusterAccess: boolean,
+  repeatIndex?: number,
 ): ResolvedRun {
   const resolved = resolveRun(run, stripClusterAccess);
-  const runSeg = runLabel(path, run.type, resolved.testSelection.presets);
+  let runSeg = runLabel(path, run.type, resolved.testSelection.presets);
+  if (repeatIndex !== undefined) {
+    runSeg = runSeg !== undefined ? `${runSeg}:r${repeatIndex + 1}` : `r${repeatIndex + 1}`;
+  }
   const pathWithRun: DefinitionRunPath = {
     ...path,
     dirSegments: { ...path.dirSegments, ...(runSeg !== undefined ? { run: runSeg } : {}) },

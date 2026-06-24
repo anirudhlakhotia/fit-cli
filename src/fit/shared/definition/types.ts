@@ -178,6 +178,8 @@ export interface FunctionalRun {
   type: "functional";
   fitConfig?: ResolvedFitConfig | string;
   tests: TestsSection;
+  /** Run this entry N times in sequence against the same cluster. */
+  repeat?: number;
 }
 
 export interface SituationalRun {
@@ -185,6 +187,8 @@ export interface SituationalRun {
   fitConfig?: ResolvedFitConfig | string;
   situational: SituationalSection;
   tests: TestsSection;
+  /** Run this entry N times in sequence. */
+  repeat?: number;
 }
 
 export type FitRun = FunctionalRun | SituationalRun;
