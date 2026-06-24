@@ -612,3 +612,22 @@ test("rejects the legacy tests.run key", () => {
     (err: unknown) => err instanceof InvalidDefinitionError && /run.*no longer supported/.test(err.message),
   );
 });
+
+test("parses repeat on a functional run", () => {
+  const def = parseDefinition(FUNCTIONAL.replace("presets: [all]", "presets: [all]\n                repeat: 5"));
+  assert.equal(def.instances[0]?.clusters[0]?.sessions[0]?.runs[0]?.repeat, 5);
+});
+
+test("rejects repeat: 0", () => {
+  assert.throws(
+    () => parseDefinition(FUNCTIONAL.replace("presets: [all]", "presets: [all]\n                repeat: 0")),
+    (err: unknown) => err instanceof InvalidDefinitionError && /repeat/.test(err.message),
+  );
+});
+
+test("rejects non-integer repeat", () => {
+  assert.throws(
+    () => parseDefinition(FUNCTIONAL.replace("presets: [all]", "presets: [all]\n                repeat: 1.5")),
+    (err: unknown) => err instanceof InvalidDefinitionError && /repeat/.test(err.message),
+  );
+});

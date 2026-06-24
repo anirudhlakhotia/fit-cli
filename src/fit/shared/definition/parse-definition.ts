@@ -444,6 +444,15 @@ function validateRunFitConfig(value: unknown, path: string): ResolvedFitConfig |
   };
 }
 
+function validateRepeat(record: Record<string, unknown>, path: string): number | undefined {
+  if (record.repeat === undefined) return undefined;
+  const value = record.repeat;
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
+    throw new InvalidDefinitionError(`"${path}.repeat" must be a positive integer when present; got ${JSON.stringify(value)}`);
+  }
+  return value;
+}
+
 function validateRun(value: unknown, path: string, clusterless: boolean): FitRun {
   const record = requireRecord(value, path);
   const type = record.type;
@@ -453,6 +462,7 @@ function validateRun(value: unknown, path: string, clusterless: boolean): FitRun
   if (record.tests === undefined) {
     throw new InvalidDefinitionError(`Missing required field: ${path}.tests`);
   }
+  const repeat = validateRepeat(record, path);
   if (type === "functional") {
     if (clusterless) {
       throw new InvalidDefinitionError(`"${path}.type" cannot be "functional" under clusterlessSessions.`);
@@ -461,6 +471,7 @@ function validateRun(value: unknown, path: string, clusterless: boolean): FitRun
       type: "functional",
       tests: validateTestsSection(record.tests, `${path}.tests`),
       ...(record.fitConfig !== undefined ? { fitConfig: validateRunFitConfig(record.fitConfig, `${path}.fitConfig`) } : {}),
+      ...(repeat !== undefined ? { repeat } : {}),
     };
   }
   if (record.situational === undefined) {
@@ -471,6 +482,7 @@ function validateRun(value: unknown, path: string, clusterless: boolean): FitRun
     tests: validateTestsSection(record.tests, `${path}.tests`),
     situational: validateSituationalSection(record.situational, `${path}.situational`),
     ...(record.fitConfig !== undefined ? { fitConfig: validateRunFitConfig(record.fitConfig, `${path}.fitConfig`) } : {}),
+    ...(repeat !== undefined ? { repeat } : {}),
   };
 }
 
@@ -806,15 +818,19 @@ export async function cacheDefinition(url: string): Promise<string> {
   return localPath;
 }
 
+function countSessionRuns(session: { runs: { repeat?: number }[] }): number {
+  return session.runs.reduce((total, run) => total + (run.repeat ?? 1), 0);
+}
+
 export function countRuns(definition: FitDefinition): number {
   return definition.instances.reduce(
     (total, instance) =>
       total +
       instance.clusters.reduce(
-        (clusterTotal, cluster) => clusterTotal + cluster.sessions.reduce((sessionTotal, session) => sessionTotal + session.runs.length, 0),
+        (clusterTotal, cluster) => clusterTotal + cluster.sessions.reduce((sessionTotal, session) => sessionTotal + countSessionRuns(session), 0),
         0,
       ) +
-      (instance.clusterlessSessions?.reduce((sessionTotal, session) => sessionTotal + session.runs.length, 0) ?? 0),
+      (instance.clusterlessSessions?.reduce((sessionTotal, session) => sessionTotal + countSessionRuns(session), 0) ?? 0),
     0,
   );
 }
