@@ -36,6 +36,8 @@ let timestampProvider = (): string => new Date().toTimeString().slice(0, 8);
 let rawTerminalWriteDepth = 0;
 /** When > 0, lines are rendered in soft grey with the prefix replaced by spaces. */
 let greyIndentDepth = 0;
+/** When > 0, lines keep the `[HH:MM:SS·ctx]` prefix but content is rendered in soft grey. */
+let greyTextDepth = 0;
 
 /** Soft grey (ANSI 90), for the unobtrusive separators in the log-line prefix. */
 const DIM = colourOn ? "[90m" : "";
@@ -247,6 +249,48 @@ function formatGreyIndentedChunk(
   return { text: formatted, atLineStart: nextLineStart };
 }
 
+/**
+ * Format a chunk keeping the `[HH:MM:SS·ctx]` timestamp prefix intact but
+ * rendering the content text in DIM grey. Used for proof-of-life / heartbeat
+ * lines that should stay clearly timestamped but visually secondary.
+ *
+ * Only called on the terminal path — log files use the normal timestamp formatter.
+ */
+function formatDimTextChunk(
+  text: string,
+  atLineStart: boolean,
+  getTimestamp: () => string = () => timestampProvider(),
+  getContext: () => LogContext = () => logContext,
+): TimestampedChunk {
+  const separator = `${DIM}${PREFIX_SEPARATOR}${RESET}`;
+  let formatted = "";
+  let nextLineStart = atLineStart;
+  let inDimContent = false;
+  for (const char of text) {
+    if (nextLineStart && char !== "\n") {
+      const ctx = getContext();
+      const segments = [ctx.env, ctx.cluster, ctx.performer, ctx.run].filter(
+        (s): s is string => Boolean(s),
+      );
+      formatted += `[${[getTimestamp(), ...segments].join(separator)}] ${DIM}`;
+      inDimContent = true;
+      nextLineStart = false;
+    }
+    if (char === "\n") {
+      if (inDimContent) {
+        formatted += RESET;
+        inDimContent = false;
+      }
+      formatted += "\n";
+      nextLineStart = true;
+    } else {
+      formatted += char;
+    }
+  }
+  if (inDimContent) formatted += RESET;
+  return { text: formatted, atLineStart: nextLineStart };
+}
+
 function installTimestampedStreamWrite(stream: NodeJS.WriteStream, original: StreamWrite): void {
   let atLineStart = true;
   stream.write = function (
@@ -273,6 +317,10 @@ function installTimestampedStreamWrite(stream: NodeJS.WriteStream, original: Str
       return original(chunk);
     } else if (greyIndentDepth > 0) {
       const formatted = formatGreyIndentedChunk(text, atLineStart);
+      atLineStart = formatted.atLineStart;
+      textToEmit = formatted.text;
+    } else if (greyTextDepth > 0) {
+      const formatted = formatDimTextChunk(text, atLineStart);
       atLineStart = formatted.atLineStart;
       textToEmit = formatted.text;
     } else {
@@ -344,6 +392,20 @@ export function startGreyIndentedOutput(): void {
 /** Leave grey-indented output mode (counterpart to startGreyIndentedOutput). */
 export function stopGreyIndentedOutput(): void {
   greyIndentDepth = Math.max(0, greyIndentDepth - 1);
+}
+
+/**
+ * Enter grey-text output mode. While active, lines keep the full `[HH:MM:SS·ctx]`
+ * prefix but the content is rendered in soft grey — for proof-of-life / heartbeat
+ * lines that should stay clearly timestamped but visually secondary.
+ */
+export function startGreyTextOutput(): void {
+  greyTextDepth++;
+}
+
+/** Leave grey-text output mode (counterpart to startGreyTextOutput). */
+export function stopGreyTextOutput(): void {
+  greyTextDepth = Math.max(0, greyTextDepth - 1);
 }
 
 /**

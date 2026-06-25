@@ -1,7 +1,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import { createWriteStream, mkdirSync, type WriteStream } from "node:fs";
 import { dirname } from "node:path";
-import { echoCommand, formatCommandLine, formatTimestampedChunk, startGreyIndentedOutput, stopGreyIndentedOutput } from "./fit-cli-log.js";
+import { echoCommand, formatCommandLine, formatTimestampedChunk, startGreyIndentedOutput, startGreyTextOutput, stopGreyIndentedOutput, stopGreyTextOutput } from "./fit-cli-log.js";
 import { createRunFilePath } from "./replay.js";
 
 // Log files are plain-text artifacts, so strip the ANSI SGR (colour) sequences
@@ -101,11 +101,17 @@ export interface RunOptions {
   /** Skip the pre-run echo entirely — for noisy probes/polls (e.g. ssh-wait, `command -v`). */
   quiet?: boolean;
   /**
-   * Opt out of grey-indented output mode for this command's stdout/stderr. Use
-   * for proof-of-life / heartbeat output that should keep the full
-   * `[HH:MM:SS ctx]` timestamp prefix so it's clearly timestamped.
+   * Opt out of grey-indented output mode for this command's stdout/stderr —
+   * output appears with the full `[HH:MM:SS·ctx]` prefix at normal brightness.
    */
   noGreyOutput?: boolean;
+  /**
+   * Use grey-text output mode instead of grey-indented: lines keep the full
+   * `[HH:MM:SS·ctx]` prefix but content is rendered in soft grey. For
+   * proof-of-life / heartbeat output that should stay clearly timestamped but
+   * visually secondary.
+   */
+  greyTextOutput?: boolean;
 }
 
 /** Knobs for the CaptureValue models (capture / captureValueSync). */
@@ -148,15 +154,22 @@ function teeChildOutput(stream: NodeJS.ReadableStream | null, target: NodeJS.Wri
  */
 export function run(command: string, args: string[], cwd: string = process.cwd(), opts?: RunOptions): Promise<void> {
   announce(command, args, opts);
-  const grey = !opts?.noGreyOutput;
+  const greyIndent = !opts?.noGreyOutput && !opts?.greyTextOutput;
+  const greyText = opts?.greyTextOutput ?? false;
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
-    if (grey) startGreyIndentedOutput();
+    if (greyIndent) startGreyIndentedOutput();
+    if (greyText) startGreyTextOutput();
     teeChildOutput(child.stdout, process.stdout);
     teeChildOutput(child.stderr, process.stderr);
-    child.on("error", (err) => { if (grey) stopGreyIndentedOutput(); reject(err); });
+    child.on("error", (err) => {
+      if (greyIndent) stopGreyIndentedOutput();
+      if (greyText) stopGreyTextOutput();
+      reject(err);
+    });
     child.on("close", (code) => {
-      if (grey) stopGreyIndentedOutput();
+      if (greyIndent) stopGreyIndentedOutput();
+      if (greyText) stopGreyTextOutput();
       if (code === 0) {
         resolve();
       } else {
@@ -452,7 +465,11 @@ export function streamToFile(
 
     const heartbeat = setInterval(() => {
       const line = lastLine || partial.trim();
-      if (line) process.stdout.write(`[${new Date().toISOString()}] ${line}\n`);
+      if (line) {
+        startGreyTextOutput();
+        process.stdout.write(`[${new Date().toISOString()}] ${line}\n`);
+        stopGreyTextOutput();
+      }
     }, HEARTBEAT_INTERVAL_SECS * 1000);
 
     const finish = (fn: () => void) => {

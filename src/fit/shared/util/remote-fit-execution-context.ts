@@ -216,7 +216,7 @@ export async function createRemoteFitExecutionContext(
       });
       return target.run("bash", ["-lc", heartbeatShellCommand(pathPrefixedCommand(binDir, command, args), targetPath)], cwd, {
         display: commandOn(formatCommandLine(command, args), target.description),
-        noGreyOutput: true,
+        greyTextOutput: true,
       });
     },
     streamToArtifactFileInBackground: async (command, args, targetPath, cwd): Promise<BackgroundStream> => {
