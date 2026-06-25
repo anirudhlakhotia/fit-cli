@@ -21,6 +21,7 @@ import {
 import { askPerformerTag } from "../util/ask-performer-image.js";
 import { checkoutFitGerritRef } from "../checkout-fit-gerrit-ref/checkout-fit-gerrit-ref.js";
 import { checkAndPullPerformer } from "../check-and-pull-performer/check-and-pull-performer.js";
+import { logPerformerImageMetadata } from "../check-performer/check-performer.js";
 import { performerImageName } from "../util/performer-image.js";
 import { checkRunningPerformer, stopRunningPerformer } from "../check-running-performer/check-running-performer.js";
 export { DEFAULT_PERFORMER_PORT } from "../util/performer-port.js";
@@ -135,6 +136,8 @@ export async function checkBuildAndRunPerformer(
     if (!containerId) {
       return undefined;
     }
+    const imageName = performerImageName(sdk, version);
+    await logPerformerImageMetadata(execution, imageName);
     const logFile = performerLogFile(path, sdk, version);
     return {
       containerId,
