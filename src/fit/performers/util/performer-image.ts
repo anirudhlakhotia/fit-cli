@@ -1,4 +1,5 @@
 import {
+  PREBUILT_PERFORMER_SDKS,
   sdkByPerformerImageBasename,
   sdkPerformerImageBasename,
   sdkPublishesPerformerImage,
@@ -87,7 +88,12 @@ export function analysePerformerImage(image: string): ParsedPerformerImage | { e
   }
   const sdk = sdkByPerformerImageBasename(match.groups.sdk);
   if (!sdk) {
-    return { error: `Unknown SDK "${match.groups.sdk}" in performer image ${JSON.stringify(image)}.` };
+    const supported = PREBUILT_PERFORMER_SDKS.map((s) => `${sdkPerformerImageBasename(s)} (${s.name})`).join(", ");
+    return {
+      error:
+        `Unknown SDK "${match.groups.sdk}" in performer image ${JSON.stringify(image)}.` +
+        ` Supported image prefixes: ${supported}.`,
+    };
   }
   if (!sdkPublishesPerformerImage(sdk)) {
     return {
