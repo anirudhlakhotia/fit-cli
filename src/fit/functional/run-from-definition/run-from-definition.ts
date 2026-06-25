@@ -900,19 +900,29 @@ async function runIteration(
   definitionPath: string,
   recordResult: RecordRunResult,
   functionalClusterVersion?: string,
+  existingPerformer?: RunningPerformer,
 ): Promise<{ output: RunOutput; performer?: RunningPerformer }> {
   const artifacts: Artifact[] = [];
   const details: Detail[] = [];
 
-  const performer = setupPerformerPhase
-    ? await setupPerformer(execution, fitPerformerGerritRef, run)
-    : await resumePerformer(execution, run, savedState, globalIterationIndex);
+  let performer: RunningPerformer | undefined;
+  if (existingPerformer) {
+    // Reuse a performer that is already running for this session — no setup needed.
+    performer = existingPerformer;
+  } else {
+    performer = setupPerformerPhase
+      ? await setupPerformer(execution, fitPerformerGerritRef, run)
+      : await resumePerformer(execution, run, savedState, globalIterationIndex);
+    if (!performer) {
+      throwFatalToSession("The performer isn't ready to run; stopping this iteration.");
+    }
+    artifacts.push(...performer.artifacts);
+    if (setupPerformerPhase && performer.containerId) {
+      printResumeHint("after-performer", definitionPath, run.path, true);
+    }
+  }
   if (!performer) {
     throwFatalToSession("The performer isn't ready to run; stopping this iteration.");
-  }
-  artifacts.push(...performer.artifacts);
-  if (setupPerformerPhase && performer.containerId) {
-    printResumeHint("after-performer", definitionPath, run.path, true);
   }
 
   let output: RunOutput;
@@ -1492,6 +1502,15 @@ export async function runFromDefinition(
   const runResults: RunResultSummary[] = [];
   const recordResult: RecordRunResult = (result) => {
     runResults.push(result);
+    // Show results immediately so users see each run's outcome as it completes
+    // rather than waiting for all runs to finish.
+    const heading = `${result.pathLabel} (${result.sdk})`;
+    console.log(`\n── ${heading} ──`);
+    if (result.surefireDir) {
+      process.stdout.write(junitToPlainTextFromDir(result.surefireDir));
+    } else {
+      console.log(`${result.ok ? "PASS" : "FAIL"} — no test report available`);
+    }
     // Fire-and-forget, but surface failures: a void'd rejection here is invisible,
     // and @actions/core's summary writer can fail differently in the compiled binary.
     void appendRunSummaryToGhaSummary(result).catch((err: unknown) =>
@@ -1758,6 +1777,8 @@ export async function runFromDefinition(
           }
         }
 
+        // The performer lives for the whole session (all runs share one container).
+        let sessionPerformer: RunningPerformer | undefined;
         for (const [cycleIterationIndex, iteration] of activeCycle.runs.entries()) {
           if (cycleIndex === startCycleIndex && cycleIterationIndex < startIterationIndex) {
             globalIterationIndex++;
@@ -1781,10 +1802,12 @@ export async function runFromDefinition(
               definitionPath,
               recordResult,
               clusterVersionLabel(activeCycle),
+              sessionPerformer,
             );
             artifacts.push(...output.artifacts);
             details.push(...output.details);
             if (performer) {
+              sessionPerformer = performer;
               if (isLastIteration) {
                 cyclePerformers.push(performer);
                 if (performer.containerId) {
@@ -1796,8 +1819,6 @@ export async function runFromDefinition(
                     ...(iteration.performerVersion ? { version: iteration.performerVersion } : {}),
                   });
                 }
-              } else {
-                await stopManagedPerformer(execution, performer);
               }
             }
           } catch (err) {
