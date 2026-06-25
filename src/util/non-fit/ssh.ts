@@ -89,31 +89,59 @@ export function buildScpArgs(
   return direction === "up" ? [...options, localPath, remote] : [...options, remote, localPath];
 }
 
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Returns true if `err` is a transient SSH transport failure. SSH uses exit
+ * code 255 exclusively for its own transport-level errors (TCP reset, connection
+ * refused, key-exchange failure) — it is never the remote command's exit code.
+ * Exported so callers that catch SSH errors higher up can apply the same test.
+ */
+export function isTransientSshError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  return /^(ssh|scp) exited with code 255/.test(err.message);
+}
+
+const SSH_RETRY_ATTEMPTS = 3;
+const SSH_RETRY_DELAY_MS = 3_000;
+
+async function withSshRetry<T>(fn: () => Promise<T>): Promise<T> {
+  for (let attempt = 1; attempt <= SSH_RETRY_ATTEMPTS; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (!isTransientSshError(err) || attempt === SSH_RETRY_ATTEMPTS) throw err;
+      console.error(`[ssh] transient connection error (attempt ${attempt}/${SSH_RETRY_ATTEMPTS}), retrying in ${SSH_RETRY_DELAY_MS / 1000}s…`);
+      await sleep(SSH_RETRY_DELAY_MS);
+    }
+  }
+  // Unreachable — the loop always throws or returns first.
+  throw new Error("withSshRetry: unreachable");
+}
+
 /** Run a command on `host`, streaming its output to the terminal. */
 export function sshRun(host: RemoteHost, command: string, args: readonly string[] = [], opts?: RunOptions): Promise<void> {
-  return run("ssh", buildSshArgs(host, command, [...args]), undefined, opts);
+  return withSshRetry(() => run("ssh", buildSshArgs(host, command, [...args]), undefined, opts));
 }
 
 /** Run a command on `host` and resolve with its captured stdout. */
 export function sshCapture(host: RemoteHost, command: string, args: readonly string[] = [], opts?: RunOptions): Promise<string> {
-  return capture("ssh", buildSshArgs(host, command, [...args]), undefined, opts);
+  return withSshRetry(() => capture("ssh", buildSshArgs(host, command, [...args]), undefined, opts));
 }
 
 /** Copy a local file up to `remotePath` on `host`. */
 export function scpUp(host: RemoteHost, localPath: string, remotePath: string): Promise<void> {
-  return run("scp", buildScpArgs(host, localPath, remotePath, "up"), undefined, {
+  return withSshRetry(() => run("scp", buildScpArgs(host, localPath, remotePath, "up"), undefined, {
     display: `scp ${localPath} -> ${loginTarget(host)}:${remotePath}`,
-  });
+  }));
 }
 
 /** Copy `remotePath` on `host` down to a local file. */
 export function scpDown(host: RemoteHost, remotePath: string, localPath: string): Promise<void> {
-  return run("scp", buildScpArgs(host, localPath, remotePath, "down"), undefined, {
+  return withSshRetry(() => run("scp", buildScpArgs(host, localPath, remotePath, "down"), undefined, {
     display: `scp ${loginTarget(host)}:${remotePath} -> ${localPath}`,
-  });
+  }));
 }
-
-const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * Poll until `host` accepts an SSH connection (by running `true` on it), or
