@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REPO="couchbaselabs/fit-cli"
-INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
+INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 BINARY_NAME="fit"
 # ci = manually promoted, infrequent; latest (default) = tip of main (every push)
 CHANNEL="${CHANNEL:-latest}"
@@ -33,6 +33,16 @@ detect_target() {
   echo "fit-${os}-${arch}"
 }
 
+detect_shell_rc() {
+  local shell
+  shell="$(basename "${SHELL:-bash}")"
+  case "$shell" in
+    zsh)  echo "$HOME/.zshrc" ;;
+    bash) echo "$HOME/.bashrc" ;;
+    *)    echo "$HOME/.profile" ;;
+  esac
+}
+
 main() {
   local target
   target="$(detect_target)"
@@ -59,6 +69,7 @@ main() {
   fi
   chmod +x "$tmp"
 
+  mkdir -p "$INSTALL_DIR"
   if [[ -w "$INSTALL_DIR" ]]; then
     mv "$tmp" "${INSTALL_DIR}/${BINARY_NAME}"
   else
@@ -66,8 +77,20 @@ main() {
     sudo mv "$tmp" "${INSTALL_DIR}/${BINARY_NAME}"
   fi
 
-  echo "Installed: $(which fit)"
-  fit version
+  echo "Installed to ${INSTALL_DIR}/${BINARY_NAME}"
+  "${INSTALL_DIR}/${BINARY_NAME}" version
+
+  # Warn if INSTALL_DIR is not on PATH
+  if ! echo ":${PATH}:" | grep -q ":${INSTALL_DIR}:"; then
+    local rc
+    rc="$(detect_shell_rc)"
+    echo ""
+    echo "NOTE: ${INSTALL_DIR} is not in your PATH."
+    echo "Add it by running:"
+    echo ""
+    echo "  echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ${rc}"
+    echo "  source ${rc}"
+  fi
 
   echo ""
   echo "Next steps:"
