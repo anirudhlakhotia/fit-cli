@@ -14,7 +14,8 @@
  *   bun src/cluster/cluster-create/setup-declarative-cluster.ts
  */
 import YAML from "yaml";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { type RunOutput } from "../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../util/non-fit/cli.js";
@@ -88,6 +89,36 @@ export function cbdinoclusterNeedsInit(message: string): boolean {
 /** Whether the executor runs on a remote box (vs. this machine). */
 function isRemoteExecution(execution: ClusterCommandExecutor): boolean {
   return "kind" in execution && (execution as { kind?: string }).kind === "remote";
+}
+
+/**
+ * Warn (but continue) if `~/.cbdinocluster` doesn't have the docker deployer enabled.
+ * Only checks on local execution — remote boxes get their config written by cbdinocluster init.
+ */
+function warnIfDockerNotEnabled(execution: ClusterCommandExecutor): void {
+  if (isRemoteExecution(execution)) {
+    return;
+  }
+  const configPath = join(homedir(), CBDINOCLUSTER_CONFIG_FILENAME);
+  let config: unknown;
+  try {
+    config = YAML.parse(readFileSync(configPath, "utf8"));
+  } catch {
+    return;
+  }
+  const dockerEnabled =
+    config !== null &&
+    typeof config === "object" &&
+    "docker" in config &&
+    typeof (config as Record<string, unknown>).docker === "object" &&
+    (config as Record<string, unknown>).docker !== null &&
+    (config as { docker: Record<string, unknown> }).docker.enabled === "true";
+  if (!dockerEnabled) {
+    console.warn(
+      `⚠ setup-cluster: ${configPath} does not have docker enabled (docker.enabled: "true"). ` +
+        `The docker deployer may fail — run \`cbdinocluster init\` to configure it.`,
+    );
+  }
 }
 
 function dockerNetworkFromInitConfig(config: PieceData): string | undefined {
@@ -721,7 +752,11 @@ export async function setupDeclarativeCluster(plan: {
     }
   }
 
-  return allocate(cbdinocluster, plan.config, plan.deployer ?? (cng ? "cao" : "docker"), execution, cycleDir, cng);
+  const effectiveDeployer = plan.deployer ?? (cng ? "cao" : "docker");
+  if (effectiveDeployer === "docker") {
+    warnIfDockerNotEnabled(execution);
+  }
+  return allocate(cbdinocluster, plan.config, effectiveDeployer, execution, cycleDir, cng);
 }
 
 if (isMain(import.meta.url)) {
