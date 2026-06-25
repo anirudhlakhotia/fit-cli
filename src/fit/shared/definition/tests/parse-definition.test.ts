@@ -631,3 +631,52 @@ test("rejects non-integer repeat", () => {
     (err: unknown) => err instanceof InvalidDefinitionError && /repeat/.test(err.message),
   );
 });
+
+test("rejects unknown top-level field", () => {
+  assert.throws(
+    () => parseDefinition(FUNCTIONAL.replace("version: 1", "version: 1\nbad: ignored")),
+    (err: unknown) => err instanceof InvalidDefinitionError && /bad/.test(err.message),
+  );
+});
+
+test("rejects unknown field on an instance", () => {
+  assert.throws(
+    () => parseDefinition(FUNCTIONAL.replace("    clusters:", "    typo: oops\n    clusters:")),
+    (err: unknown) => err instanceof InvalidDefinitionError && /typo/.test(err.message),
+  );
+});
+
+test("rejects unknown field on a cluster", () => {
+  assert.throws(
+    () => parseDefinition(FUNCTIONAL.replace("        sessions:", "        oops: true\n        sessions:")),
+    (err: unknown) => err instanceof InvalidDefinitionError && /oops/.test(err.message),
+  );
+});
+
+test("rejects unknown field on a session", () => {
+  assert.throws(
+    () => parseDefinition(FUNCTIONAL.replace("            runs:", "            oops: true\n            runs:")),
+    (err: unknown) => err instanceof InvalidDefinitionError && /oops/.test(err.message),
+  );
+});
+
+test("rejects unknown field on a run", () => {
+  assert.throws(
+    () => parseDefinition(FUNCTIONAL.replace("                presets: [all]", "                presets: [all]\n                oops: true")),
+    (err: unknown) => err instanceof InvalidDefinitionError && /oops/.test(err.message),
+  );
+});
+
+test("rejects unknown field on a tests section", () => {
+  assert.throws(
+    () => parseDefinition(FUNCTIONAL.replace("                presets: [all]", "                presets: [all]\n                badfield: true")),
+    (err: unknown) => err instanceof InvalidDefinitionError && /badfield/.test(err.message),
+  );
+});
+
+test("rejects unknown field on a performer", () => {
+  assert.throws(
+    () => parseDefinition(FUNCTIONAL.replace("              image: java-fit-performer:main", "              image: java-fit-performer:main\n              oops: true")),
+    (err: unknown) => err instanceof InvalidDefinitionError && /oops/.test(err.message),
+  );
+});
