@@ -295,9 +295,9 @@ export function formatDetailsSection(details: readonly Detail[]): string | undef
 
 /**
  * Wrap a URL with an OSC 8 terminal hyperlink so it's clickable in supporting
- * terminals (iTerm2, GNOME Terminal, VS Code). Falls back to the plain URL
- * string in terminals that don't handle OSC 8 — the escape sequences are
- * invisible there rather than printed as garbage.
+ * terminals (iTerm2, GNOME Terminal, VS Code). GitHub Actions renders OSC 8
+ * sequences as literal garbage rather than stripping them, so callers must
+ * skip this on GHA.
  */
 function terminalHyperlink(url: string): string {
   return `\x1b]8;;${url}\x07${url}\x1b]8;;\x07`;
@@ -305,7 +305,9 @@ function terminalHyperlink(url: string): string {
 
 /**
  * Render a call-to-action detail as a highlighted box with a terminal hyperlink
- * (OSC 8) for the value when it looks like a URL.
+ * (OSC 8) for the value when it looks like a URL. The hyperlink is suppressed on
+ * GitHub Actions, which renders OSC 8 sequences as literal text rather than
+ * stripping them.
  *
  * Example output:
  *   ╔══════════════════════════════════════════════════╗
@@ -313,7 +315,11 @@ function terminalHyperlink(url: string): string {
  *   ║  https://faas.couchbase.com/results/situational  ║
  *   ╚══════════════════════════════════════════════════╝
  */
-export function formatCallToActionBanner(label: string, value: string): string {
+export function formatCallToActionBanner(
+  label: string,
+  value: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
   const header = `${label}:`;
   // innerWidth = 2 (left pad) + content + 2 (right pad)
   const innerWidth = Math.max(header.length, value.length) + 4;
@@ -322,6 +328,7 @@ export function formatCallToActionBanner(label: string, value: string): string {
   const padLine = (text: string, visibleLength: number) =>
     `║  ${text}${" ".repeat(innerWidth - visibleLength - 2)}║`;
   const isUrl = /^https?:\/\//.test(value);
-  const displayValue = isUrl ? terminalHyperlink(value) : value;
+  const isGha = env.GITHUB_ACTIONS === "true";
+  const displayValue = isUrl && !isGha ? terminalHyperlink(value) : value;
   return [top, padLine(header, header.length), padLine(displayValue, value.length), bottom].join("\n");
 }

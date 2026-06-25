@@ -9,6 +9,7 @@ import {
   combineDetails,
   combineRunOutputs,
   formatArtifactsSection,
+  formatCallToActionBanner,
   formatDetailsSection,
   reconcileArtifactsWithDir,
 } from "../artifacts.js";
@@ -152,6 +153,20 @@ test("formatArtifactsSection skips missing file sizes without throwing", () => {
       `${missingPath.padEnd(filenameWidth)} | ${"".padEnd(sizeWidth)} | Missing logs`,
     ].join("\n"),
   );
+});
+
+test("formatCallToActionBanner wraps URL in OSC 8 hyperlink outside GHA", () => {
+  const url = "https://faas.couchbase.com/results/situational";
+  const banner = formatCallToActionBanner("Results UI", url, {});
+  assert.ok(banner.includes("\x1b]8;;"), "should contain OSC 8 opener");
+  assert.ok(banner.includes(url), "should contain the URL");
+});
+
+test("formatCallToActionBanner uses plain URL on GitHub Actions", () => {
+  const url = "https://faas.couchbase.com/results/situational";
+  const banner = formatCallToActionBanner("Results UI", url, { GITHUB_ACTIONS: "true" });
+  assert.ok(!banner.includes("\x1b]8;;"), "should not contain OSC 8 sequences");
+  assert.ok(banner.includes(url), "should still contain the URL");
 });
 
 test("formatDetailsSection renders a table", () => {
