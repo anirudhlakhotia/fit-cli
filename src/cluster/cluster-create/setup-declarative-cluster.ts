@@ -14,7 +14,7 @@
  *   bun src/cluster/cluster-create/setup-declarative-cluster.ts
  */
 import YAML from "yaml";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { type RunOutput } from "../../util/non-fit/artifacts.js";
@@ -155,6 +155,28 @@ async function ensureDockerNetwork(execution: ClusterCommandExecutor, network: s
       display: `docker network create ${network}`,
     });
   }
+}
+
+/**
+ * Log Docker into GHCR so the pre-flight pull (and cbdinocluster itself) can access
+ * private images.  Writes the token to a temp file so it never appears on argv,
+ * matching the display-override pattern used elsewhere for credentials.
+ */
+async function loginToGhcr(
+  execution: ClusterCommandExecutor,
+  githubCredentials: { user: string; token: string },
+  cycleDir: string,
+): Promise<void> {
+  const localTokenPath = join(cycleDir, "ghcr-token.txt");
+  writeFileSync(localTokenPath, `${githubCredentials.token}\n`, { mode: 0o600 });
+  const targetTokenPath = await execution.stageFile(localTokenPath);
+  rmSync(localTokenPath, { force: true });
+  await execution.run(
+    "sh",
+    ["-lc", `cat ${posixQuote(targetTokenPath)} | docker login ghcr.io --username x-access-token --password-stdin && rm -f ${posixQuote(targetTokenPath)}`],
+    undefined,
+    { display: "docker login ghcr.io" },
+  );
 }
 
 /** Parse `--docker-network <name>` (or `--docker-network=<name>`) out of an init args string. */
@@ -742,6 +764,9 @@ export async function setupDeclarativeCluster(plan: {
   if (cng && isRemoteExecution(execution)) {
     const serverVersion = plan.config.nodes[0]?.version;
     if (serverVersion) {
+      if (plan.githubCredentials) {
+        await loginToGhcr(execution, plan.githubCredentials, cycleDir);
+      }
       const imageRef = cngServerImageRef(serverVersion);
       console.log(`→ setup-cluster: pre-flight docker pull ${imageRef}…`);
       try {
