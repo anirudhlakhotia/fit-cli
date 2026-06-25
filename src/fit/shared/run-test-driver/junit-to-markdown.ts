@@ -156,10 +156,14 @@ function pctSuccess(passed: number, failed: number): string {
 }
 
 function formatTime(ms: number): string {
-  const minutes = Math.floor(ms / 60000);
-  const seconds = Math.floor((ms % 60000) / 1000);
-  const millis = ms % 1000;
-  return `${minutes}:${String(seconds).padStart(2, "0")}.${String(millis).padStart(3, "0")}`;
+  const totalSeconds = Math.floor(ms / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  }
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
 function truncate(s: string, max = 8 * 1024): string {
@@ -260,7 +264,7 @@ export function renderJunitPlainText(data: JunitMarkdownData): string {
   const skipWidth = Math.max(skipHeader.length, String(totalSkipped).length);
   const failWidth = Math.max(failHeader.length, String(totalFailed).length);
   const pctWidth = Math.max(pctHeader.length, "100.00%".length);
-  const timeWidth = Math.max(timeHeader.length, formatTime(totalTimeMs).length);
+  const timeWidth = Math.max(timeHeader.length, "H:MM:SS".length, formatTime(totalTimeMs).length);
 
   const sep = `${"-".repeat(pkgWidth)}-+-${"-".repeat(passWidth)}-+-${"-".repeat(skipWidth)}-+-${"-".repeat(failWidth)}-+-${"-".repeat(pctWidth)}-+-${"-".repeat(timeWidth)}`;
 
