@@ -4,7 +4,7 @@
  * entrypoint; authoring and inspecting definition files lives under
  * `fit definition`.
  *
- *   bun run run preset <preset> --performer-image-name <image> [resume flags] [--cbcollect]
+ *   bun run run preset <preset> --performer <image> [resume flags] [--cbcollect]
  *   bun run run definition <file.json5> [--resume-at=<point>] [resume selectors] [--cbcollect]
  *
  * The subcommand says what kind of thing is being run: a named `preset`
@@ -34,7 +34,7 @@ function buildHelp(): string {
   return `Run FIT tests from a preset or a definition file.
 
 Usage:
-  ${run} preset <preset> --performer-image-name <image> [resume flags] [--cbcollect]
+  ${run} preset <preset> --performer <image> [resume flags] [--cbcollect]
   ${run} definition <file.json5> [--resume-at=<point>] [resume selectors] [--cbcollect]
   ${run} --help
 
@@ -46,7 +46,7 @@ Known presets:
   ${PRESET_TYPES.join("\n  ")}
 
 preset options:
-  --performer-image-name <image>  SDK-specific performer image ref (e.g. java-fit-performer:refs-changes-67-246067-3 or ghcr.io/couchbase/java-fit-performer:refs-changes-67-246067-3).
+  --performer <image>             SDK-specific performer image ref (e.g. java-fit-performer:refs-changes-67-246067-3 or ghcr.io/couchbase/java-fit-performer:refs-changes-67-246067-3). Alias: --performer-image-name.
   --override <dotpath>=<value>    Override a field in the generated definition (repeatable).
                                   e.g. --override setup.repos.transactions-fit-performer.gerritRef=refs/changes/32/247532/1
 
@@ -89,16 +89,18 @@ function extractOverrides(argv: readonly string[]): { overrides: Record<string, 
   return { overrides, positionals };
 }
 
-/** Pull `--performer-image-name[=<image>]` out of an argv list. */
+/** Pull `--performer-image-name[=<image>]` (or the `--performer` alias) out of an argv list. */
 function extractPerformerImageName(argv: readonly string[]): { performerImageName?: string; positionals: string[] } {
   const positionals: string[] = [];
   let performerImageName: string | undefined;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg === "--performer-image-name") {
+    if (arg === "--performer-image-name" || arg === "--performer") {
       performerImageName = argv[++i];
     } else if (arg.startsWith("--performer-image-name=")) {
       performerImageName = arg.slice("--performer-image-name=".length);
+    } else if (arg.startsWith("--performer=")) {
+      performerImageName = arg.slice("--performer=".length);
     } else {
       positionals.push(arg);
     }
@@ -158,7 +160,7 @@ export async function runDispatch(argv: string[]): Promise<RunOutput | void> {
     const { performerImageName, positionals } = extractPerformerImageName(afterOverrides);
     const [type, ...extra] = positionals;
     if (!type || extra.length > 0) {
-      console.error(`Usage: ${runScriptPrefix("run")} preset <preset> --performer-image-name <image>\nKnown presets: ${PRESET_TYPES.join(", ")}`);
+      console.error(`Usage: ${runScriptPrefix("run")} preset <preset> --performer <image>\nKnown presets: ${PRESET_TYPES.join(", ")}`);
       process.exit(2);
     }
     if (!isPresetType(type)) {
@@ -166,7 +168,7 @@ export async function runDispatch(argv: string[]): Promise<RunOutput | void> {
       process.exit(2);
     }
     if (!performerImageName) {
-      console.error("--performer-image-name is required, e.g. java-fit-performer:main");
+      console.error("--performer is required, e.g. java-fit-performer:main");
       process.exit(2);
     }
     const parsed = analysePerformerImage(performerImageName);
