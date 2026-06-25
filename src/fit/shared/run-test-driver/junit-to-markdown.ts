@@ -288,7 +288,8 @@ export function renderJunitPlainText(data: JunitMarkdownData): string {
           lines.push(`    ${issue.message}`);
         }
         if (issue.body) {
-          for (const line of truncate(issue.body).split("\n").slice(0, 10)) {
+          // 10 sometimes isn't quite enough to reach the relevant frame.
+          for (const line of truncate(issue.body).split("\n").slice(0, 13)) {
             lines.push(`      ${line}`);
           }
         }
