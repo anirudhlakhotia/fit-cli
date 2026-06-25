@@ -31,6 +31,7 @@ import {
 import { describeDefinition } from "./generate-desc.js";
 
 const CLUSTER_CONFIG_ID = "cluster-0";
+const FIT_CONFIG_ID = "fit-config-0";
 
 export type DefinitionFormat = "json5" | "yaml";
 
@@ -53,6 +54,13 @@ export interface DefinitionInputs {
   onPortInUse?: PortInUsePolicy;
   selection: FitTestSelection;
   instance?: InstanceMode;
+  /**
+   * Build an `analytics-functional` run (Analytics tests via the columnar-test-driver)
+   * rather than a plain operational `functional` run. The run gets a starter
+   * Analytics connection fitConfig (load balancer + the SDK's analytics endpoint),
+   * which the user can tune; see the enterprise-analytics-functional preset.
+   */
+  analytics?: boolean;
 }
 
 export interface SituationalDefinitionInputs {
@@ -87,6 +95,48 @@ function buildTests(selection: FitTestSelection): TestsSection {
   return { presets: ["all"] };
 }
 
+/**
+ * The performer (SDK) connection block for an Analytics run, chosen by SDK family —
+ * the two SDK families speak different schemes and the cluster rejects a mismatch:
+ *
+ *  - **Enterprise Analytics SDK** (`enterprise-analytics`): an http(s) URL to the
+ *    load balancer's Analytics query port. It only accepts `http`/`https` (it throws
+ *    "Expected URL scheme 'http' or 'https' but was 'couchbases'" otherwise). We use
+ *    plain `http://${defaultHostname}:8095`, matching FITConfiguration.analytics.loadbalancer.example.json.
+ *  - **Columnar SDK** (`columnar`): a `couchbase(s)://` connection string with TLS.
+ *    It rejects http(s) and NonTls, so we use `couchbases://` + insecure TLS (trusting
+ *    the cbdinocluster "dino" certs), matching FITConfiguration.columnar.example.json.
+ */
+export function analyticsPerformerConnection(sdk: Sdk): { connectionString: string; tls: { insecure: true } | null } {
+  if (sdk.family === "columnar") {
+    return { connectionString: "couchbases://${defaultHostname}", tls: { insecure: true } };
+  }
+  // Enterprise Analytics SDK (the standard for the self-managed clusters we allocate).
+  return { connectionString: "http://${defaultHostname}:8095", tls: null };
+}
+
+/**
+ * A starter Analytics connection fitConfig for an `analytics-functional` run
+ * against a self-managed Enterprise Analytics cluster: the driver connects
+ * classically for admin (filled in at run time), while the SDK/performer reaches
+ * Analytics through the load balancer's query port. The performer scheme depends
+ * on the SDK family (see {@link analyticsPerformerConnection}). Mirrors the
+ * enterprise-analytics-functional preset. Returned as a top-level
+ * {@link FitConfigRef} (relocated out of the run and referenced by id) so the
+ * generated file stays readable.
+ */
+function analyticsFitConfigRef(sdk: Sdk): FitConfigRef {
+  return {
+    id: FIT_CONFIG_ID,
+    config: {
+      clusterAccess: {
+        clusterParams: { loadBalancedCluster: { ports: [8095, 18095] } },
+        performer: analyticsPerformerConnection(sdk),
+      },
+    },
+  };
+}
+
 function buildPerformerSession(
   sdk: Sdk,
   version: string | undefined,
@@ -103,6 +153,8 @@ function buildPerformerSession(
 interface BuiltFunctionalInstance {
   instance: InstanceLifetime;
   clusterConfigRef: ClusterConfigRef;
+  /** Present for analytics runs: the relocated, id-referenced connection fitConfig. */
+  fitConfigRef?: FitConfigRef;
 }
 
 function buildFunctionalInstance(inputs: DefinitionInputs): BuiltFunctionalInstance {
@@ -132,17 +184,24 @@ function buildFunctionalInstance(inputs: DefinitionInputs): BuiltFunctionalInsta
           {
             ...buildPerformerSession(inputs.sdk, inputs.version, inputs.onPortInUse),
             runs: [
-              {
-                type: "functional",
-                tests: buildTests(inputs.selection),
-              },
+              inputs.analytics
+                ? {
+                    type: "analytics-functional",
+                    // Referenced by id; the config itself is relocated to top-level fitConfigs.
+                    fitConfig: FIT_CONFIG_ID,
+                    tests: buildTests(inputs.selection),
+                  }
+                : {
+                    type: "functional",
+                    tests: buildTests(inputs.selection),
+                  },
             ],
           },
         ],
       },
     ],
   };
-  return { instance, clusterConfigRef };
+  return { instance, clusterConfigRef, ...(inputs.analytics ? { fitConfigRef: analyticsFitConfigRef(inputs.sdk) } : {}) };
 }
 
 function buildSituationalInstance(inputs: SituationalDefinitionInputs): InstanceLifetime {
@@ -206,11 +265,12 @@ export function buildFitDefinition(inputs: {
 }
 
 export function buildFitFunctionalDefinitionFrom(inputs: DefinitionInputs): FitDefinition {
-  const { instance, clusterConfigRef } = buildFunctionalInstance(inputs);
+  const { instance, clusterConfigRef, fitConfigRef } = buildFunctionalInstance(inputs);
   return buildFitDefinition({
     ...(inputs.gerritRef ? { gerritRef: inputs.gerritRef } : {}),
     instances: [instance],
     clusterConfigs: [clusterConfigRef],
+    ...(fitConfigRef ? { fitConfigs: [fitConfigRef] } : {}),
   });
 }
 

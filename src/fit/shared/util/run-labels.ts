@@ -25,6 +25,8 @@ export interface RunLabelParts {
   presets?: readonly string[];
   /** Whether this is a CNG (Cloud Native Gateway / Protostellar) run. */
   cng?: boolean;
+  /** Whether the cluster is a self-managed Enterprise Analytics cluster (prefixes the cluster segment with `EA:`). */
+  enterpriseAnalytics?: boolean;
 }
 
 /** `local` / `aws1` / (fallback) `instance1`. */
@@ -47,6 +49,7 @@ export function clusterLabel(
   path: DefinitionRunPath,
   mode?: RunLabelParts["clusterMode"],
   version?: string,
+  enterpriseAnalytics = false,
 ): string | undefined {
   if (path.clusterlessSession) {
     return undefined;
@@ -55,7 +58,9 @@ export function clusterLabel(
   if (mode === "connection" || mode === "useExisting") {
     return `existing${n}`;
   }
-  return version ? version : `cbdino${n}`;
+  const base = version ? version : `cbdino${n}`;
+  // A self-managed Enterprise Analytics cbdino cluster reads as e.g. `EA:2.2.0-1166`.
+  return enterpriseAnalytics ? `EA:${base}` : base;
 }
 
 /** The session, named by its performer: `java:main` (or just `java`), falling back to `s1`. */
@@ -97,7 +102,7 @@ export function runLabel(
 export function formatRunLabel(path: DefinitionRunPath, parts: RunLabelParts = {}): string {
   return [
     instanceLabel(path, parts.instanceKind),
-    clusterLabel(path, parts.clusterMode, parts.clusterVersion),
+    clusterLabel(path, parts.clusterMode, parts.clusterVersion, parts.enterpriseAnalytics),
     performerLabel(path, parts.sdkValue, parts.performerVersion),
     runLabel(path, parts.type, parts.presets, parts.cng),
   ]

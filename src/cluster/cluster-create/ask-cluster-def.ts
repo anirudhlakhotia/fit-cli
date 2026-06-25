@@ -16,7 +16,12 @@
 import { isMain, runCli } from "../../util/non-fit/cli.js";
 import { printWithoutTimestamps } from "../../util/non-fit/fit-cli-log.js";
 import { checkbox, input, number } from "../../util/non-fit/prompts.js";
-import { DEFAULT_CLUSTER_VERSION, DEFAULT_CNG_CLUSTER_VERSION, type ClusterDef } from "./build-cluster-def.js";
+import {
+  DEFAULT_CLUSTER_VERSION,
+  DEFAULT_CNG_CLUSTER_VERSION,
+  DEFAULT_ENTERPRISE_ANALYTICS_VERSION,
+  type ClusterDef,
+} from "./build-cluster-def.js";
 
 /** Services offered, with the FIT-typical set selected by default. */
 const SERVICES = [
@@ -38,12 +43,33 @@ export interface AskClusterDefOptions {
    * rather than asked here.
    */
   cng?: boolean;
+  /**
+   * Build a self-managed Enterprise Analytics cluster — emits cbdinocluster's
+   * `columnar: true` flag (cbdino's historical name) plus an nginx load balancer.
+   * Decided one level up (the "what to test against" prompt), so it's passed in.
+   * cbdino derives the Analytics topology, so no service list is asked.
+   */
+  enterpriseAnalytics?: boolean;
 }
 
 /** Ask the questions that describe the cluster to allocate. */
 export async function askClusterDef(options: AskClusterDefOptions = {}): Promise<ClusterDef> {
   if (options.cng) {
     console.log("\nNote: CNG (Cloud Native Gateway) will be automatically installed as CNG testing was requested.\n");
+  }
+
+  if (options.enterpriseAnalytics) {
+    console.log("\nNote: building a self-managed Enterprise Analytics cluster (cbdinocluster, fronted by an nginx load balancer).\n");
+    const nodeCount =
+      (await number({ promptId: "cluster.create.node-count", message: "How many nodes?", default: 3, min: 1 })) ?? 1;
+    printWithoutTimestamps("  Enterprise Analytics builds: e.g. 2.2.0-1166");
+    const version = await input({
+      promptId: "cluster.create.server-version",
+      message: "Which Enterprise Analytics version?",
+      default: DEFAULT_ENTERPRISE_ANALYTICS_VERSION,
+    });
+    // cbdinocluster derives the Analytics topology from `columnar: true`, so no service list.
+    return { nodeCount, version, services: [], cng: false, enterpriseAnalytics: true };
   }
 
   const nodeCount =

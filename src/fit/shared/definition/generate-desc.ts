@@ -7,6 +7,7 @@
 import type { ClusterLifetime, FitDefinition, FitRun, InstanceLifetime, SessionLifetime } from "./types.js";
 import { resolveDefinitionRefs } from "./resolve-definition.js";
 import { analysePerformerImage } from "../../performers/util/performer-image.js";
+import { sdkPerformerImageBasename } from "../../../util/sdk/sdks.js";
 
 function describeClusterSource(cluster: ClusterLifetime): string {
   if (cluster.cbdinocluster) {
@@ -14,7 +15,9 @@ function describeClusterSource(cluster: ClusterLifetime): string {
       .map((n) => `${n.count}n@${n.version}`)
       .join("+");
     const cng = cluster.cbdinocluster.config.cao ? "+CNG" : "";
-    return `cbdino(${nodes}${cng})`;
+    // `columnar: true` allocates a self-managed Enterprise Analytics cluster.
+    const ea = cluster.cbdinocluster.config.columnar ? "EA," : "";
+    return `cbdino(${ea}${nodes}${cng})`;
   }
   if (cluster.connection) {
     return "connection";
@@ -39,7 +42,9 @@ function describeRunTests(run: FitRun): string {
 
 function describeSession(session: SessionLifetime): string {
   const parsed = analysePerformerImage(session.performer.image);
-  const sdk = "error" in parsed ? session.performer.image : parsed.sdk.name;
+  // Use the performer image basename (e.g. `java`, `analytics-java`, `cxx`) rather than
+  // the SDK's friendly name, so the description reads as what's actually run.
+  const sdk = "error" in parsed ? session.performer.image : sdkPerformerImageBasename(parsed.sdk);
   const version = "error" in parsed ? "?" : parsed.tag;
   const runTypes = [...new Set(session.runs.map((r) => r.type))].join(",");
   const testSuffix = session.runs.length === 1 ? describeRunTests(session.runs[0]) : "";

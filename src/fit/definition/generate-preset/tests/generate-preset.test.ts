@@ -156,5 +156,6 @@ test("generatePreset applies overrides to the written file", async () => {
 
 test("presetUsesAnalyticsDriver detects analytics presets but not operational ones", () => {
   assert.equal(presetUsesAnalyticsDriver("enterprise-analytics-functional"), true);
+  assert.equal(presetUsesAnalyticsDriver("enterprise-analytics-functional-quick-sanity"), true);
   assert.equal(presetUsesAnalyticsDriver("functional"), false);
 });

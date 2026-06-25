@@ -48,6 +48,9 @@ export const DEFAULT_CLUSTER_VERSION = "8.0-stable";
  */
 export const DEFAULT_CNG_CLUSTER_VERSION = "8.0.2-5503"; // should be DEFAULT_CLUSTER_VERSION, but that version does not exist on cb-rhcc currently.
 
+/** Default self-managed Enterprise Analytics build passed to cbdinocluster. */
+export const DEFAULT_ENTERPRISE_ANALYTICS_VERSION = "2.2.0-1166";
+
 /** GHCR image reference for a CNG server build: `ghcr.io/cb-rhcc/server:<version>`. */
 export function cngServerImageRef(version: string): string {
   return `ghcr.io/cb-rhcc/server:${version}`;

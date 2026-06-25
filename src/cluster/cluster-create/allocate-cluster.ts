@@ -124,6 +124,7 @@ export async function allocateCluster(
   deployer?: string,
   execution: ClusterCommandExecutor = localClusterCommandExecutor(),
   cycleDir: string = ensureRunDir(),
+  cng = false,
 ): Promise<AllocatedCluster> {
   const runDir = ensureRunDir();
   const { path: localDefFile, artifact } = writeClusterDef(def, cycleDir, runDir);
@@ -170,25 +171,31 @@ export async function allocateCluster(
   if (!clusterId) {
     throw new Error("cbdinocluster allocate didn't print a cluster id");
   }
+   // Only CNG/CAO clusters expose a couchbase2 gateway + management-UI route that we
+  // need to fetch here; a non-CNG cluster (e.g. a self-managed Enterprise Analytics
+  // one) has no couchbase2 endpoint, so skip the probe — running it anyway just emits
+  // a confusing "get CNG gateway host" line and a caught failure.
   let caoHosts: { uiHost: string; cngHost: string } | undefined;
-  try {
-    const [couchbase2Connstr, mgmtUrl] = await Promise.all([
-      execution.capture(cbdinocluster, ["connstr", "--couchbase2", clusterId], undefined, {
-        display: "cbdinocluster connstr --couchbase2 (get CNG gateway host)",
-      }),
-      execution.capture(cbdinocluster, ["mgmt", clusterId], undefined, {
-        display: "cbdinocluster mgmt (get management UI host)",
-      }),
-    ]);
-    // "couchbase2://cng-host[:port]" → "cng-host[:port]"
-    const cngHost = couchbase2Connstr.trim().replace(/^couchbase2:\/\//, "");
-    // "https://ui-host:443" or "http://ip:port" → "ui-host" (strip scheme and port)
-    const uiHost = mgmtUrl.trim().replace(/^https?:\/\//, "").replace(/:\d+$/, "");
-    if (cngHost && uiHost) {
-      caoHosts = { uiHost, cngHost };
+  if (cng) {
+    try {
+      const [couchbase2Connstr, mgmtUrl] = await Promise.all([
+        execution.capture(cbdinocluster, ["connstr", "--couchbase2", clusterId], undefined, {
+          display: "cbdinocluster connstr --couchbase2 (get CNG gateway host)",
+        }),
+        execution.capture(cbdinocluster, ["mgmt", clusterId], undefined, {
+          display: "cbdinocluster mgmt (get management UI host)",
+        }),
+      ]);
+      // "couchbase2://cng-host[:port]" → "cng-host[:port]"
+      const cngHost = couchbase2Connstr.trim().replace(/^couchbase2:\/\//, "");
+      // "https://ui-host:443" or "http://ip:port" → "ui-host" (strip scheme and port)
+      const uiHost = mgmtUrl.trim().replace(/^https?:\/\//, "").replace(/:\d+$/, "");
+      if (cngHost && uiHost) {
+        caoHosts = { uiHost, cngHost };
+      }
+    } catch {
+      // Non-CAO deployer or commands not supported — caoHosts stays undefined.
     }
-  } catch {
-    // Non-CAO deployer or commands not supported — caoHosts stays undefined.
   }
   return { artifacts: [artifact], details: [], clusterId, ...(caoHosts ? { caoHosts } : {}) };
 }

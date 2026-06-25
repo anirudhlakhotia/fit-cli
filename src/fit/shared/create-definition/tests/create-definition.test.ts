@@ -28,6 +28,27 @@ test("a cbdinocluster instance without a cao block is operational", () => {
   assert.equal(functionalInstanceConnectivity(instance), "operational");
 });
 
+test("a cbdinocluster instance with columnar:true is Enterprise Analytics", () => {
+  const instance: InstanceLifetime = {
+    localhost: {},
+    clusters: [{ cbdinocluster: { config: { nodes: NODES, columnar: true } }, sessions: [] }],
+  };
+  assert.equal(functionalInstanceConnectivity(instance), "enterprise-analytics");
+});
+
+test("connectivity is resolved through a clusterConfig reference", () => {
+  const instance: InstanceLifetime = {
+    localhost: {},
+    clusters: [{ clusterConfig: "cluster-0", sessions: [] }],
+  };
+  assert.equal(
+    functionalInstanceConnectivity(instance, [
+      { id: "cluster-0", cbdinocluster: { config: { nodes: NODES, columnar: true } } },
+    ]),
+    "enterprise-analytics",
+  );
+});
+
 test("a connection instance is operational", () => {
   const instance: InstanceLifetime = {
     localhost: {},

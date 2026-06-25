@@ -100,7 +100,7 @@ test("an analytics-functional run resolves into the functional group carrying th
             },
             sessions: [
               {
-                performer: { image: "analytics-go-fit-performer:main" },
+                performer: { image: "columnar-java-fit-performer:main" },
                 runs: [{ type: "analytics-functional", tests: {} }],
               },
             ],
@@ -118,7 +118,7 @@ test("an analytics-functional run resolves into the functional group carrying th
   const run = group.runs[0];
   assert.equal(run?.type, "functional");
   assert.equal(run?.analytics, true);
-  assert.equal(run?.sdk.value, "analytics-go");
+  assert.equal(run?.sdk.value, "columnar-java");
   assert.deepEqual(run?.extraMavenArgs, [...ANALYTICS_MAVEN_TEST_ARGS]);
 });
 

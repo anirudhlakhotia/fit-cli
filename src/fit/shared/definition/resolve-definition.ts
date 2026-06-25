@@ -518,7 +518,9 @@ export function resolveCluster(cluster: ClusterLifetime, path: DefinitionRunPath
     clusterMode === "cbdinocluster" && cbdinocluster
       ? [...new Set(cbdinocluster.config.nodes.map((n) => n.version))].filter(Boolean).join("+") || undefined
       : undefined;
-  const clusterSeg = clusterLabel(path, clusterMode, cbdinoclusterVersion) ?? String(path.clusterIndex ?? 0);
+  const clusterSeg =
+    clusterLabel(path, clusterMode, cbdinoclusterVersion, cbdinocluster?.config.columnar === true) ??
+    String(path.clusterIndex ?? 0);
   const pathWithCluster: DefinitionRunPath = { ...path, dirSegments: { ...path.dirSegments, cluster: clusterSeg } };
   return {
     path: pathWithCluster,

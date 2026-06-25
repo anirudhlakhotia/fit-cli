@@ -303,10 +303,13 @@ function runLabelParts(
   clusterVersion?: string,
   cng?: boolean,
 ): RunLabelParts {
+  // An analytics run on a cbdino cluster is a self-managed Enterprise Analytics cluster.
+  const enterpriseAnalytics = clusterMode === "cbdinocluster" && run.type === "functional" && run.analytics === true;
   return {
     instanceKind,
     ...(clusterMode ? { clusterMode } : {}),
     ...(clusterVersion ? { clusterVersion } : {}),
+    ...(enterpriseAnalytics ? { enterpriseAnalytics: true } : {}),
     sdkValue: run.sdk.value,
     ...(run.performerVersion ? { performerVersion: run.performerVersion } : {}),
     type: run.type,
@@ -328,6 +331,11 @@ function clusterVersionLabel(group: ResolvedExecutionGroup): string | undefined 
   const versions = group.cbdinocluster?.config.nodes.map((node) => node.version) ?? [];
   const distinct = [...new Set(versions)];
   return distinct.length ? distinct.join("+") : undefined;
+}
+
+/** True for a self-managed Enterprise Analytics cbdino cluster group (cbdino `columnar: true`). */
+function isEnterpriseAnalyticsGroup(group: ResolvedExecutionGroup): boolean {
+  return group.type === "functional" && group.cbdinocluster?.config.columnar === true;
 }
 
 /** Print what an iteration resolved to, so a CI log shows the run's inputs. */
@@ -364,10 +372,12 @@ function announce(
       ? `Running on AWS EC2 instance ${run.path.instanceIndex + 1}`
       : "Running locally on this machine";
   console.log(`  ${instSeg}:  ${instDesc}`);
-  const clusterSeg = clusterSegmentLabel(run.path, parts.clusterMode, parts.clusterVersion);
+  const clusterSeg = clusterSegmentLabel(run.path, parts.clusterMode, parts.clusterVersion, parts.enterpriseAnalytics);
   if (clusterSeg) {
     let clusterDesc: string;
-    if (parts.clusterVersion) {
+    if (parts.enterpriseAnalytics) {
+      clusterDesc = `Self-managed Enterprise Analytics ${parts.clusterVersion ?? ""} cluster, provisioned via cbdinocluster`.replace(/\s+/g, " ").trim();
+    } else if (parts.clusterVersion) {
       clusterDesc = `Couchbase Server ${parts.clusterVersion} cluster, provisioned via cbdinocluster`;
     } else if (parts.clusterMode === "connection" || parts.clusterMode === "useExisting") {
       clusterDesc = `Pre-existing cluster`;
@@ -1074,7 +1084,7 @@ function failureLabel(group: ResolvedExecutionGroup, run?: ResolvedExecutionRun)
   if (run) {
     return formatRunLabel(run.path, runLabelParts(instanceKind, clusterMode, run, clusterVersion, cng));
   }
-  return [instanceLabel(group.path, instanceKind), clusterSegmentLabel(group.path, clusterMode, clusterVersion)]
+  return [instanceLabel(group.path, instanceKind), clusterSegmentLabel(group.path, clusterMode, clusterVersion, isEnterpriseAnalyticsGroup(group))]
     .filter((segment): segment is string => Boolean(segment))
     .join(" / ");
 }
@@ -1735,7 +1745,7 @@ export async function runFromDefinition(
           }
           if (clusterState) {
             setLogContext({
-              cluster: clusterSegmentLabel(activeCycle.path, activeCycle.clusterMode, clusterVersionLabel(activeCycle)),
+              cluster: clusterSegmentLabel(activeCycle.path, activeCycle.clusterMode, clusterVersionLabel(activeCycle), isEnterpriseAnalyticsGroup(activeCycle)),
             });
           }
         } else {

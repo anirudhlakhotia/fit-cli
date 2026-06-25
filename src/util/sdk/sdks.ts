@@ -19,20 +19,21 @@ export const SDKS = [
   { name: "Ruby", value: "ruby", jvm: false, performer: "ruby", family: "operational" },
   { name: "Rust", value: "rust", jvm: false, performer: "rust", family: "operational" },
   // Analytics SDKs — tested via the columnar-test-driver (`analytics-functional`
-  // runs). There are two families:
-  //   - "Columnar SDK"            (gocbcolumnar / couchbase-columnar, …) — recommended
-  //                               for Capella Analytics. Performer under performers/columnar/<sdk>.
-  //   - "Enterprise Analytics SDK" (gocbanalytics / couchbase-analytics, …) — recommended
-  //                               for Enterprise Analytics (with a load balancer).
-  // NOTE: the GHCR package basenames below (`columnar-<sdk>-fit-performer`,
-  // `analytics-<sdk>-fit-performer`) are the convention fit-cli expects; confirm
-  // against what jenkins-sdk actually publishes and adjust value/basename if different.
-  { name: "Columnar SDK — Go", value: "columnar-go", jvm: false, performer: "columnar/go", family: "columnar" },
-  { name: "Columnar SDK — Node.js", value: "columnar-node", jvm: false, performer: "columnar/node", family: "columnar" },
-  { name: "Columnar SDK — Python", value: "columnar-python", jvm: false, performer: "columnar/python", family: "columnar" },
-  { name: "Enterprise Analytics SDK — Go", value: "analytics-go", jvm: false, performer: "analytics/go", family: "enterprise-analytics" },
-  { name: "Enterprise Analytics SDK — Node.js", value: "analytics-node", jvm: false, performer: "analytics/node", family: "enterprise-analytics" },
-  { name: "Enterprise Analytics SDK — Python", value: "analytics-python", jvm: false, performer: "analytics/python", family: "enterprise-analytics" },
+  // runs). Two families exist: "Columnar SDK" (recommended for Capella Analytics) and
+  // "Enterprise Analytics SDK" (recommended for Enterprise Analytics + a load balancer).
+  // Two prebuilt performer images are published, both JVM-style under
+  // couchbase/couchbase-jvm-clients:
+  //   - columnar-java (family "columnar"):
+  //     https://github.com/couchbase/couchbase-jvm-clients/pkgs/container/columnar-java-fit-performer
+  //   - analytics-java (family "enterprise-analytics"):
+  //     https://github.com/couchbase/couchbase-jvm-clients/pkgs/container/analytics-java-fit-performer
+  // The Go/Node/Python columnar+analytics performers in transactions-fit-performer are
+  // not published. Add entries here as more images ship.
+  // Enterprise Analytics SDK first — it's the standard/recommended choice for the
+  // (self-managed Enterprise Analytics) clusters fit-cli allocates; the Columnar SDK
+  // is mainly for Capella Analytics or the odd cross-combination.
+  { name: "Enterprise Analytics SDK — Java", value: "analytics-java", jvm: true, performer: "analytics/java", family: "enterprise-analytics" },
+  { name: "Columnar SDK — Java", value: "columnar-java", jvm: true, performer: "columnar/java", family: "columnar" },
 ] as const;
 
 export type Sdk = (typeof SDKS)[number];
@@ -44,9 +45,13 @@ export function sdkByValue(value: string): Sdk | undefined {
   return SDKS.find((sdk) => sdk.value === value);
 }
 
-/** True for the two Analytics SDK families (Columnar SDK + Enterprise Analytics SDK). */
+/**
+ * True for any Analytics SDK (Columnar SDK or, once published, Enterprise Analytics
+ * SDK) — i.e. anything that isn't an operational SDK. These run via the Analytics
+ * test-driver.
+ */
 export function isAnalyticsSdk(sdk: Sdk): boolean {
-  return sdk.family === "columnar" || sdk.family === "enterprise-analytics";
+  return sdk.family !== "operational";
 }
 
 /**

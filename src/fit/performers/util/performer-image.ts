@@ -18,8 +18,6 @@ export function sdkDefaultPerformerTag(sdk: Sdk): string {
   return sdk.jvm ? JVM_DEFAULT_PERFORMER_IMAGE_TAG : DEFAULT_PERFORMER_IMAGE_TAG;
 }
 
-const JVM_SDK_VALUES = new Set(["java", "kotlin", "scala"]);
-
 /** The GHCR package name that holds the prebuilt performer image for this SDK. */
 export function performerPackageName(sdk: Sdk): string {
   return `${sdkPerformerImageBasename(sdk)}-fit-performer`;
@@ -28,7 +26,9 @@ export function performerPackageName(sdk: Sdk): string {
 /** The GitHub Packages URL for this SDK's prebuilt performer image. */
 export function performerPackageUrl(sdk: Sdk): string {
   const pkg = performerPackageName(sdk);
-  if (JVM_SDK_VALUES.has(sdk.value)) {
+  // JVM performers (java/scala/kotlin and columnar-java/analytics-java) are published from the
+  // couchbase-jvm-clients repo; everything else from the org-level package list.
+  if (sdk.jvm) {
     return `https://github.com/${JVM_PERFORMER_IMAGE_OWNER}/${JVM_PERFORMER_PACKAGES_REPOSITORY}/pkgs/container/${pkg}`;
   }
   return `https://github.com/orgs/${FIT_PERFORMER_IMAGE_OWNER}/packages/container/package/${pkg}`;
@@ -48,7 +48,7 @@ function performerImageTag(sdk: Sdk, version?: string): string {
 
 /** The fully-qualified GHCR image reference fit-cli pulls and runs for this performer. */
 export function performerImageName(sdk: Sdk, version?: string): string {
-  const owner = JVM_SDK_VALUES.has(sdk.value) ? JVM_PERFORMER_IMAGE_OWNER : FIT_PERFORMER_IMAGE_OWNER;
+  const owner = sdk.jvm ? JVM_PERFORMER_IMAGE_OWNER : FIT_PERFORMER_IMAGE_OWNER;
   return `${GHCR_REGISTRY}/${owner}/${performerPackageName(sdk)}:${performerImageTag(sdk, version)}`;
 }
 
@@ -102,8 +102,7 @@ export function analysePerformerImage(image: string): ParsedPerformerImage | { e
     return {
       error:
         `Only the JVM SDKs (java, scala, kotlin), C++ (cxx), .NET (dotnet) and the Analytics SDKs` +
-        ` — Columnar SDK (columnar-go/node/python) and Enterprise Analytics SDK` +
-        ` (analytics-go/node/python) — publish prebuilt performer images, and ${sdk.name}` +
+        ` for Java (columnar-java, analytics-java) publish prebuilt performer images, and ${sdk.name}` +
         ` (${sdk.value}) does not. Pick one of those SDKs.`,
     };
   }

@@ -517,12 +517,36 @@ async function connstrFor(
  * For CAO/OpenShift CNG clusters `cbdinocluster connstr` does not return
  * endpoints; we use the `caoHosts` parsed from the allocate output instead.
  */
+/**
+ * Fetch the nginx load-balancer host for a load-balanced Enterprise Analytics
+ * cluster via `cbdinocluster mgmt <id>` (e.g. "http://172.18.0.3:8091" →
+ * "172.18.0.3"). The Analytics SDK performer must reach the cluster through this
+ * single host; the driver's multi-seed node list isn't a valid HTTP/SDK host.
+ * Returns undefined if it can't be read.
+ */
+async function analyticsLoadBalancerHostFor(
+  cbdinocluster: string,
+  id: string,
+  execution: ClusterCommandExecutor,
+): Promise<string | undefined> {
+  try {
+    const mgmtUrl = await execution.capture(cbdinocluster, ["mgmt", id], undefined, {
+      display: "cbdinocluster mgmt (get Analytics load-balancer host)",
+    });
+    const host = mgmtUrl.trim().replace(/^https?:\/\//, "").replace(/:\d+$/, "");
+    return host || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 async function selectedClusterFor(
   cbdinocluster: string,
   id: string,
   execution: ClusterCommandExecutor,
   cng = false,
   caoHosts?: { uiHost: string; cngHost: string },
+  loadBalanced = false,
 ): Promise<SelectedCluster | undefined> {
   // CAO/OpenShift clusters: build connstrs from the parsed route hostnames
   // instead of calling `cbdinocluster connstr` (which returns "no endpoint available").
@@ -547,7 +571,25 @@ async function selectedClusterFor(
   }
   console.log(`→ setup-cluster: cluster ${id} is at ${connectionString}`);
   const cluster = buildSelectedClusterFromConnstr(connectionString);
-  if (!cluster || !cng) {
+  if (!cluster) {
+    return undefined;
+  }
+  if (!cng) {
+    // A load-balanced Enterprise Analytics cluster: the Analytics SDK performer
+    // connects through the nginx load balancer (a single host), not the driver's
+    // multi-seed node list. Capture that host so build-fit-configuration can point
+    // the performer at it.
+    if (loadBalanced) {
+      const lbHost = await analyticsLoadBalancerHostFor(cbdinocluster, id, execution);
+      if (lbHost) {
+        console.log(`→ setup-cluster: Analytics performer connects via load balancer ${lbHost}`);
+        return { ...cluster, analyticsLoadBalancerHost: lbHost };
+      }
+      console.error(
+        `⚠ setup-cluster: couldn't determine the Analytics load-balancer host for ${id}; ` +
+          `the performer will fall back to the node list and likely fail to connect.`,
+      );
+    }
     return cluster;
   }
 
@@ -630,6 +672,7 @@ async function allocate(
   execution: ClusterCommandExecutor,
   cycleDir: string,
   cng: boolean,
+  loadBalanced: boolean,
 ): Promise<SetupDeclarativeClusterResult> {
   const resolvedConfig = {
     ...config,
@@ -643,7 +686,7 @@ async function allocate(
 
   let allocated;
   try {
-    allocated = await allocateCluster(cbdinocluster, YAML.stringify(resolvedConfig), deployer, execution, cycleDir);
+    allocated = await allocateCluster(cbdinocluster, YAML.stringify(resolvedConfig), deployer, execution, cycleDir, cng);
     console.log("\n✓ setup-cluster: cbdinocluster allocated the cluster");
   } catch (err) {
     console.error(`\n✗ setup-cluster: cbdinocluster failed to allocate the cluster: ${(err as Error).message}`);
@@ -656,7 +699,7 @@ async function allocate(
     await enableIngresses(cbdinocluster, allocated.clusterId, execution);
   }
 
-  const cluster = await selectedClusterFor(cbdinocluster, allocated.clusterId, execution, cng, allocated.caoHosts);
+  const cluster = await selectedClusterFor(cbdinocluster, allocated.clusterId, execution, cng, allocated.caoHosts, loadBalanced);
 
   if (cng && allocated.caoHosts) {
     const { username, password } = cluster?.credentials ?? { username: "Administrator", password: "password" };
@@ -698,6 +741,10 @@ export async function setupDeclarativeCluster(plan: {
   source?: CbdinoclusterSource;
 }, execution: ClusterCommandExecutor = localClusterCommandExecutor(), cycleDir: string = ensureRunDir()): Promise<SetupDeclarativeClusterResult> {
   const cng = plan.cng ?? false;
+  // A self-managed Enterprise Analytics cluster is fronted by an nginx load
+  // balancer (docker `passive-load-balancer`); its Analytics SDK performer must
+  // connect through that single LB host, not the driver's multi-seed node list.
+  const loadBalanced = plan.config.docker?.["passive-load-balancer"] === true;
   const cbdinocluster = await resolveCbdinoclusterCommand(execution, plan.source);
   if (!cbdinocluster) {
     console.error(
@@ -745,7 +792,7 @@ export async function setupDeclarativeCluster(plan: {
       `→ setup-cluster: onClusterExists is "useExisting" — trusting the running cluster ` +
         `${decision.cluster.id} [${decision.cluster.details}].`,
     );
-    const cluster = await selectedClusterFor(cbdinocluster, decision.cluster.id, execution, cng);
+    const cluster = await selectedClusterFor(cbdinocluster, decision.cluster.id, execution, cng, undefined, loadBalanced);
     return { ...(cluster ? { cluster } : {}), allocated: false, cbdinocluster, artifacts: [], details: [] };
   }
 
@@ -781,7 +828,7 @@ export async function setupDeclarativeCluster(plan: {
   if (effectiveDeployer === "docker") {
     warnIfDockerNotEnabled(execution);
   }
-  return allocate(cbdinocluster, plan.config, effectiveDeployer, execution, cycleDir, cng);
+  return allocate(cbdinocluster, plan.config, effectiveDeployer, execution, cycleDir, cng, loadBalanced);
 }
 
 if (isMain(import.meta.url)) {

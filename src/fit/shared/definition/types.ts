@@ -205,6 +205,8 @@ export interface AnalyticsFunctionalRun {
   type: "analytics-functional";
   fitConfig?: ResolvedFitConfig | string;
   tests: TestsSection;
+  /** Run this entry N times in sequence against the same cluster. */
+  repeat?: number;
 }
 
 export type FitRun = FunctionalRun | SituationalRun | AnalyticsFunctionalRun;

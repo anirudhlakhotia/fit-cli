@@ -690,7 +690,7 @@ instances:
       - clusterConfig: cluster-0
         sessions:
           - performer:
-              image: analytics-go-fit-performer:main
+              image: columnar-java-fit-performer:main
             runs:
               - type: analytics-functional
                 fitConfig: fit-config-0
@@ -718,6 +718,24 @@ test("parses an analytics-functional definition", () => {
   assert.equal(run?.type, "analytics-functional");
 });
 
+test("rejects an analytics-functional run paired with an operational performer", () => {
+  const bad = ANALYTICS_FUNCTIONAL.replace("image: analytics-go-fit-performer:main", "image: java-fit-performer:main")
+    .replace("image: columnar-java-fit-performer:main", "image: java-fit-performer:main");
+  assert.throws(
+    () => parseDefinition(bad),
+    (err: unknown) =>
+      err instanceof InvalidDefinitionError && /analytics-functional.*operational SDK|operational SDK.*analytics/i.test(err.message),
+  );
+});
+
+test("rejects an operational functional run paired with an Analytics SDK performer", () => {
+  const bad = FUNCTIONAL.replace("image: java-fit-performer:main", "image: columnar-java-fit-performer:main");
+  assert.throws(
+    () => parseDefinition(bad),
+    (err: unknown) => err instanceof InvalidDefinitionError && /Analytics SDK.*only run "analytics-functional"/.test(err.message),
+  );
+});
+
 test("rejects an analytics-functional run under clusterlessSessions", () => {
   const bad = `
 version: 1
@@ -727,7 +745,7 @@ instances:
     clusters: []
     clusterlessSessions:
       - performer:
-          image: analytics-go-fit-performer:main
+          image: columnar-java-fit-performer:main
         runs:
           - type: analytics-functional
             tests:
