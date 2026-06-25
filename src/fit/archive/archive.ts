@@ -4,36 +4,45 @@
  *
  *   fit archive zip <dir>
  *   fit archive s3-upload [--zip] <dir> [<s3-uri>]
+ *   fit archive fetch <s3-zip-uri> [<output-dir>]
  *
  * zip:        Creates <dir>.zip next to the source directory.
  * s3-upload:  Uploads the directory to S3, either as individual files (default)
  *             or as a single zip archive (--zip). <s3-uri> defaults to
  *             s3://fit-cli/runs/.
+ * fetch:      Downloads a .zip from S3 and extracts it locally. Output dir
+ *             defaults to /tmp/fetched/<name-without-.zip>.
  */
-import { createReadStream, createWriteStream, existsSync } from "node:fs";
-import { basename, resolve } from "node:path";
+import { createReadStream, createWriteStream, existsSync, mkdirSync } from "node:fs";
+import { basename, dirname, resolve } from "node:path";
+import { pipeline } from "node:stream/promises";
+import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { ZipArchive } from "archiver";
 import { Upload } from "@aws-sdk/lib-storage";
 import { s3Client } from "../../cloud/util/aws/aws-clients.js";
 import { uploadDirectoryToS3 } from "../../cloud/util/aws/upload-directory.js";
 import { isMain, runCli } from "../../util/non-fit/cli.js";
 import { runScriptPrefix } from "../../util/non-fit/fit-cli-log.js";
+import { run } from "../../util/non-fit/proc.js";
 import { ARTIFACTS_BUCKET, ARTIFACTS_PREFIX } from "../util/aws/upload-run-artifacts.js";
 
 function helpText(): string {
   const p = runScriptPrefix("archive");
-  return `Archive (zip / S3-upload) a fit-cli run artifact directory.
+  return `Archive (zip / S3-upload / fetch) a fit-cli run artifact directory.
 
 Usage:
   ${p} zip <dir>
   ${p} s3-upload [--zip] <dir> [<s3-uri>]
+  ${p} fetch <s3-zip-uri> [<output-dir>]
   ${p} --help
 
 Subcommands:
   zip         Create <dir>.zip next to the source directory.
   s3-upload   Upload <dir> to S3. Without --zip, uploads each file individually;
               with --zip, zips first and uploads the single archive.
-              <s3-uri> defaults to s3://${ARTIFACTS_BUCKET}/${ARTIFACTS_PREFIX}/.`;
+              <s3-uri> defaults to s3://${ARTIFACTS_BUCKET}/${ARTIFACTS_PREFIX}/.
+  fetch       Download a .zip from S3 and extract it locally.
+              <output-dir> defaults to /tmp/fetched/<name-without-.zip>.`;
 }
 
 /** Zip the contents of sourceDir into a new file at outputPath. */
@@ -122,6 +131,42 @@ async function cmdS3Upload(argv: string[]): Promise<void> {
   }
 }
 
+/** Download a single S3 URI (s3://bucket/key) to a local file path. */
+export async function downloadFileFromS3(s3Uri: string, localPath: string): Promise<void> {
+  const match = s3Uri.match(/^s3:\/\/([^/]+)\/(.+)$/);
+  if (!match) throw new Error(`Invalid S3 URI: ${s3Uri}`);
+  const [, bucket, key] = match;
+  mkdirSync(dirname(localPath), { recursive: true });
+  const resp = await s3Client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+  if (!resp.Body) throw new Error(`Empty response body for ${s3Uri}`);
+  await pipeline(resp.Body as NodeJS.ReadableStream, createWriteStream(localPath));
+}
+
+async function cmdFetch(argv: string[]): Promise<void> {
+  const [s3Uri, outputDirArg, ...extra] = argv;
+  if (!s3Uri || extra.length > 0) {
+    console.error(`Usage: ${runScriptPrefix("archive")} fetch <s3-zip-uri> [<output-dir>]`);
+    process.exit(2);
+  }
+  if (!s3Uri.endsWith(".zip")) {
+    console.error(`Expected a .zip S3 URI, got: ${s3Uri}`);
+    process.exit(1);
+  }
+  const zipName = basename(s3Uri);
+  const runName = zipName.replace(/\.zip$/, "");
+  const outputDir = outputDirArg ?? `/tmp/fetched/${runName}`;
+  const zipPath = `${outputDir}.zip`;
+
+  console.log(`Downloading ${s3Uri} → ${zipPath} ...`);
+  await downloadFileFromS3(s3Uri, zipPath);
+  console.log(`✓ Downloaded to ${zipPath}`);
+
+  mkdirSync(outputDir, { recursive: true });
+  console.log(`Extracting ${zipPath} → ${outputDir} ...`);
+  await run("unzip", ["-o", zipPath, "-d", outputDir]);
+  console.log(`✓ Extracted to ${outputDir}`);
+}
+
 export function runArchiveMain(): void {
   const [subcommand, ...rest] = process.argv.slice(2);
 
@@ -139,6 +184,11 @@ export function runArchiveMain(): void {
 
     if (subcommand === "s3-upload") {
       await cmdS3Upload(rest);
+      return;
+    }
+
+    if (subcommand === "fetch") {
+      await cmdFetch(rest);
       return;
     }
 
