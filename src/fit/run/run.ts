@@ -47,6 +47,8 @@ Known presets:
 
 preset options:
   --performer-image-name <image>  SDK-specific performer image ref (e.g. java-fit-performer:refs-changes-67-246067-3 or ghcr.io/couchbase/java-fit-performer:refs-changes-67-246067-3).
+  --override <dotpath>=<value>    Override a field in the generated definition (repeatable).
+                                  e.g. --override setup.repos.transactions-fit-performer.gerritRef=refs/changes/32/247532/1
 
 Resume points:
   --resume-at=after-instance-creation   Reuse a running instance.
@@ -62,6 +64,29 @@ Resume selectors (narrow a resume to one run; emitted by a left-up run):
   --resume-run=<n>                  Which run within the session.
 
 See available presets in detail with: ${def} list-presets`;
+}
+
+/** Pull `--override key=value` entries out of an argv list (repeatable). */
+function extractOverrides(argv: readonly string[]): { overrides: Record<string, string>; positionals: string[] } {
+  const overrides: Record<string, string> = {};
+  const positionals: string[] = [];
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === "--override") {
+      const kv = argv[++i];
+      const eq = kv.indexOf("=");
+      if (eq === -1) { console.error(`--override value must be in key=value form, got: ${kv}`); process.exit(2); }
+      overrides[kv.slice(0, eq)] = kv.slice(eq + 1);
+    } else if (arg.startsWith("--override=")) {
+      const kv = arg.slice("--override=".length);
+      const eq = kv.indexOf("=");
+      if (eq === -1) { console.error(`--override value must be in key=value form, got: ${kv}`); process.exit(2); }
+      overrides[kv.slice(0, eq)] = kv.slice(eq + 1);
+    } else {
+      positionals.push(arg);
+    }
+  }
+  return { overrides, positionals };
 }
 
 /** Pull `--performer-image-name[=<image>]` out of an argv list. */
@@ -129,7 +154,8 @@ export async function runDispatch(argv: string[]): Promise<RunOutput | void> {
 
   if (subcommand === "preset") {
     const { runOpts, positionals: afterRunOpts } = extractRunOptions(rest);
-    const { performerImageName, positionals } = extractPerformerImageName(afterRunOpts);
+    const { overrides, positionals: afterOverrides } = extractOverrides(afterRunOpts);
+    const { performerImageName, positionals } = extractPerformerImageName(afterOverrides);
     const [type, ...extra] = positionals;
     if (!type || extra.length > 0) {
       console.error(`Usage: ${runScriptPrefix("run")} preset <preset> --performer-image-name <image>\nKnown presets: ${PRESET_TYPES.join(", ")}`);
@@ -152,6 +178,7 @@ export async function runDispatch(argv: string[]): Promise<RunOutput | void> {
       type,
       image: performerImageShortName(parsed.sdk, parsed.tag),
       skipGuidance: true,
+      ...(Object.keys(overrides).length > 0 ? { overrides } : {}),
     });
     return runFromDefinition(definitionPath, runOpts);
   }
