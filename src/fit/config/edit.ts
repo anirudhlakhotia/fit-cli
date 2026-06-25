@@ -22,7 +22,7 @@ import {
 } from "../util/config.js";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { confirm, input, password, select } from "../../util/non-fit/prompts.js";
+import { confirm, input, password, pathInput, select } from "../../util/non-fit/prompts.js";
 import { findOnPath } from "../../util/non-fit/which.js";
 import type { AutoInitCliArgs } from "./config.js";
 import {
@@ -272,7 +272,7 @@ async function promptForCbdinoclusterPath(existing?: FitCliConfig): Promise<stri
     console.log(`  cbdinocluster: not found on PATH — get it from: ${CBDINOCLUSTER_URL}`);
   }
 
-  const entered = await input({
+  const entered = await pathInput({
     promptId: "init.cbdinocluster.path",
     message: existingPath
       ? `Path to cbdinocluster binary (leave blank to keep "${existingPath}"):`
@@ -295,7 +295,7 @@ async function promptForFitPerformerDir(existing?: FitCliConfig): Promise<string
   );
   const sibling = resolve(process.cwd(), "..", "transactions-fit-performer");
   const suggested = existingDir ?? (existsSync(sibling) ? sibling : "");
-  const entered = await input({
+  const entered = await pathInput({
     promptId: "init.localhost.fit-performer-dir",
     message: existingDir
       ? `Path to your transactions-fit-performer checkout (leave blank to keep "${existingDir}"):`
