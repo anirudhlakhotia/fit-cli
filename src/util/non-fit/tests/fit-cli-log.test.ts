@@ -88,11 +88,11 @@ test("formatTimestampedChunk prefixes each non-empty line", () => {
 });
 
 test("formatTimestampedChunk joins context fields with a dot separator", () => {
-  const ctx = { env: "aws1", cluster: "cbdino1", performer: "java:main", run: "func" };
+  const ctx = { env: "aws1", cluster: "cbdino1", performer: "java:main", run: "functional" };
   assert.deepEqual(
     formatTimestampedChunk("hello\nworld", true, () => "12:34:56", () => ctx),
     {
-      text: "[12:34:56·aws1·cbdino1·java:main·func] hello\n[12:34:56·aws1·cbdino1·java:main·func] world",
+      text: "[12:34:56·aws1·cbdino1·java:main·functional] hello\n[12:34:56·aws1·cbdino1·java:main·functional] world",
       atLineStart: false,
     },
   );
