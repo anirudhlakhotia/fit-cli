@@ -98,6 +98,35 @@ test("renderJunitMarkdown: failure details present, skipped not annotated", () =
   assert.ok(!md.includes("testSkipped"), "should not annotate skipped test");
 });
 
+const SUREFIRE_SUITE = `<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.example.FtsTest" tests="1" failures="1" errors="0" skipped="0" time="1.0">
+  <testcase name="vectorSearch" classname="com.example.FtsTest" time="1.0">
+    <failure message="Did not get back expected result on FTS operation.  Instead got: elapsedNanos: 119600&#10;initiated {&#10;  seconds: 1782324157&#10;  nanos: 555788200&#10;}&#10;"><![CDATA[org.opentest4j.AssertionFailedError: Did not get back expected result on FTS operation.  Instead got: elapsedNanos: 119600
+initiated {
+  seconds: 1782324157
+  nanos: 555788200
+}
+	at com.example.FtsTest.vectorSearch(FtsTest.java:99)]]></failure>
+  </testcase>
+</testsuite>`;
+
+test("parseFailingTestCases: decodes &#10; entities in message attribute", () => {
+  const cases = parseFailingTestCases(SUREFIRE_SUITE);
+  assert.equal(cases.length, 1);
+  const msg = cases[0].issues[0].message;
+  assert.ok(!msg.includes("&#10;"), "message should not contain raw &#10; entities");
+  assert.ok(msg.includes("\n"), "message should contain real newlines");
+  assert.ok(msg.startsWith("Did not get back"), "message text should be preserved");
+});
+
+test("parseFailingTestCases: strips CDATA wrappers from body", () => {
+  const cases = parseFailingTestCases(SUREFIRE_SUITE);
+  const body = cases[0].issues[0].body;
+  assert.ok(!body.includes("<![CDATA["), "body should not contain CDATA open marker");
+  assert.ok(!body.includes("]]>"), "body should not contain CDATA close marker");
+  assert.ok(body.includes("AssertionFailedError"), "body content should be preserved");
+});
+
 test("renderJunitMarkdown: all-passing run produces no failure blocks", () => {
   const data = parseJunitData([
     { filename: "TEST-com.example.FooTest.xml", xml: PASSING_SUITE },

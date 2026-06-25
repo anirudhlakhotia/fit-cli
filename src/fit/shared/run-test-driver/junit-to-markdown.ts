@@ -46,7 +46,24 @@ export interface JunitMarkdownData {
 
 function getAttr(attrs: string, name: string): string {
   const m = attrs.match(new RegExp(`\\b${name}="([^"]*)"`, "i"));
-  return m ? m[1] : "";
+  return m ? decodeXmlEntities(m[1]) : "";
+}
+
+/** Decode the five predefined XML entities and numeric character references (e.g. &#10;). */
+function decodeXmlEntities(s: string): string {
+  return s
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'");
+}
+
+/** Strip CDATA section wrappers, returning the unwrapped content. */
+function unwrapCdata(s: string): string {
+  return s.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1");
 }
 
 /** Parse failing/erroring <testcase> elements from a single TEST-*.xml file. */
@@ -63,7 +80,7 @@ export function parseFailingTestCases(xml: string): FailingTestCase[] {
     while ((cm = childRe.exec(inner)) !== null) {
       const tag = (cm[1] ?? cm[4]) as "failure" | "error";
       const childAttrs = cm[2] ?? cm[5] ?? "";
-      const body = (cm[3] ?? "").trim();
+      const body = unwrapCdata((cm[3] ?? "").trim()).trim();
       const message = getAttr(childAttrs, "message") || body.split("\n")[0]?.trim() || "";
       issues.push({ tag, message, body });
     }
