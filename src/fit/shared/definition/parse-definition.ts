@@ -81,6 +81,16 @@ function requireRecord(value: unknown, path: string): Record<string, unknown> {
   return value;
 }
 
+function rejectUnknown(record: Record<string, unknown>, known: string[], path: string): void {
+  const unknownKeys = Object.keys(record).filter(k => !known.includes(k));
+  if (unknownKeys.length > 0) {
+    throw new InvalidDefinitionError(
+      `Unknown field(s) at "${path}": ${unknownKeys.map(k => JSON.stringify(k)).join(", ")}. ` +
+      `fit-cli intentionally rejects unknown fields: this could mean a typo, or a field from a newer version of fit-cli that this older build does not support. Either way it should not be silently ignored.`,
+    );
+  }
+}
+
 function requireString(record: Record<string, unknown>, key: string, path: string): string {
   if (!(key in record)) {
     throw new InvalidDefinitionError(`Missing required field: ${path}`);
@@ -118,9 +128,11 @@ function validateTls(value: unknown, path: string): ClusterTls {
   }
   const record = requireRecord(value, path);
   if (record.insecure === true) {
+    rejectUnknown(record, ["insecure"], path);
     return { insecure: true };
   }
   if (isString(record.certPath)) {
+    rejectUnknown(record, ["certPath"], path);
     return { certPath: record.certPath };
   }
   throw new InvalidDefinitionError(
@@ -130,6 +142,7 @@ function validateTls(value: unknown, path: string): ClusterTls {
 
 function validateConnection(value: unknown, path: string): ConnectionClusterSetup {
   const record = requireRecord(value, path);
+  rejectUnknown(record, ["connectionString", "username", "password", "tls"], path);
   return {
     connectionString: requireString(record, "connectionString", `${path}.connectionString`),
     username: requireString(record, "username", `${path}.username`),
@@ -179,6 +192,7 @@ function validateCbdinoclusterDef(value: unknown, path: string): CbdinoclusterDe
 
 function validateCbdinoclusterInit(value: unknown, path: string): CbdinoclusterInitSetup {
   const record = requireRecord(value, path);
+  rejectUnknown(record, ["args", "config", "configPatch"], path);
   const hasArgs = record.args !== undefined;
   const hasConfig = record.config !== undefined;
   if (hasArgs && hasConfig) {
@@ -202,6 +216,7 @@ function validateCbdinoclusterInit(value: unknown, path: string): CbdinoclusterI
 
 function validateCbdinocluster(value: unknown, path: string): CbdinoclusterSetup {
   const record = requireRecord(value, path);
+  rejectUnknown(record, ["config", "onClusterExists", "deployer", "init"], path);
   if (record.config === undefined) {
     throw new InvalidDefinitionError(`Missing required field: ${path}.config`);
   }
@@ -231,6 +246,7 @@ function validateOptionalString(record: Record<string, unknown>, key: string, pa
 
 function validateAwsInstance(value: unknown, path: string): AwsInstanceSetup {
   const record = value === null ? {} : requireRecord(value, path);
+  rejectUnknown(record, ["instanceType"], path);
   const aws: AwsInstanceSetup = {};
   const instanceType = validateOptionalString(record, "instanceType", `${path}.instanceType`);
   if (instanceType !== undefined) {
@@ -255,9 +271,11 @@ function validateRepos(value: unknown): SharedSetup["repos"] {
     return {};
   }
   const record = requireRecord(value, "setup.repos");
+  rejectUnknown(record, ["transactions-fit-performer"], "setup.repos");
   const repos: NonNullable<SharedSetup["repos"]> = {};
   if (record["transactions-fit-performer"] !== undefined) {
     const fitPerformer = requireRecord(record["transactions-fit-performer"], "setup.repos.transactions-fit-performer");
+    rejectUnknown(fitPerformer, ["gerritRef"], "setup.repos.transactions-fit-performer");
     repos["transactions-fit-performer"] = {
       ...(fitPerformer.gerritRef !== undefined
         ? { gerritRef: requireString(fitPerformer, "gerritRef", "setup.repos.transactions-fit-performer.gerritRef") }
@@ -269,6 +287,7 @@ function validateRepos(value: unknown): SharedSetup["repos"] {
 
 function validateSharedSetup(value: unknown): SharedSetup {
   const record = requireRecord(value, "setup");
+  rejectUnknown(record, ["repos", "cluster"], "setup");
   const setup: SharedSetup = {};
   if (record.cluster !== undefined) {
     throw new InvalidDefinitionError(`"setup.cluster" is no longer supported.`);
@@ -285,6 +304,7 @@ function isPortInUsePolicy(value: unknown): value is PortInUsePolicy {
 
 function validatePerformer(value: unknown, path: string): PerformerSetup {
   const record = requireRecord(value, path);
+  rejectUnknown(record, ["image", "port", "onPortInUse", "sdk", "version"], path);
   if (record.sdk !== undefined || record.version !== undefined) {
     throw new InvalidDefinitionError(
       `"${path}" no longer takes "sdk"/"version"; use a single "image" like java-fit-performer:main` +
@@ -333,6 +353,7 @@ function validateTestPresets(value: unknown, path: string): TestPreset[] {
 
 function validateMaven(value: unknown, path: string): MavenOptions {
   const record = requireRecord(value, path);
+  rejectUnknown(record, ["args", "runDisabledTests"], path);
   const maven: MavenOptions = {};
   if (record.args !== undefined) {
     if (!isStringArray(record.args)) {
@@ -351,6 +372,7 @@ function validateMaven(value: unknown, path: string): MavenOptions {
 
 function validateTestsSection(value: unknown, path: string): TestsSection {
   const record = requireRecord(value, path);
+  rejectUnknown(record, ["presets", "packages", "classes", "excludedGroups", "addToDefaultExcludedGroups", "maven", "run"], path);
   if (record.run !== undefined) {
     throw new InvalidDefinitionError(
       `"${path}.run" is no longer supported; use "${path}.presets" (a list of ${TEST_PRESETS.join("/")}) and/or "${path}.classes" (a list of test class names).`,
@@ -417,6 +439,7 @@ function optionalEnvironmentName(record: Record<string, unknown>, key: string, p
 
 function validateSituationalDatabase(value: unknown, path: string): SituationalDatabaseSetup {
   const record = requireRecord(value, path);
+  rejectUnknown(record, ["mode", "resultsEnvironment"], path);
   if (!isSituationalDatabaseMode(record.mode)) {
     throw new InvalidDefinitionError(`"${path}.mode" must be one of ${SITUATIONAL_DATABASE_MODES.join(", ")}; got ${JSON.stringify(record.mode)}`);
   }
@@ -426,6 +449,7 @@ function validateSituationalDatabase(value: unknown, path: string): SituationalD
 
 function validateSituationalSection(value: unknown, path: string): SituationalSection {
   const record = requireRecord(value, path);
+  rejectUnknown(record, ["database"], path);
   if (record.database === undefined) {
     throw new InvalidDefinitionError(`Missing required field: ${path}.database`);
   }
@@ -437,6 +461,7 @@ function validateRunFitConfig(value: unknown, path: string): ResolvedFitConfig |
     return value;
   }
   const record = requireRecord(value, path);
+  rejectUnknown(record, ["config", "connection", "patch"], path);
   return {
     ...(record.config !== undefined ? { config: validateFitConfig(record.config, `${path}.config`) } : {}),
     ...(record.connection !== undefined ? { connection: validateFitConnectionSpec(record.connection, `${path}.connection`) } : {}),
@@ -464,6 +489,7 @@ function validateRun(value: unknown, path: string, clusterless: boolean): FitRun
   }
   const repeat = validateRepeat(record, path);
   if (type === "functional") {
+    rejectUnknown(record, ["type", "tests", "fitConfig", "repeat"], path);
     if (clusterless) {
       throw new InvalidDefinitionError(`"${path}.type" cannot be "functional" under clusterlessSessions.`);
     }
@@ -474,6 +500,7 @@ function validateRun(value: unknown, path: string, clusterless: boolean): FitRun
       ...(repeat !== undefined ? { repeat } : {}),
     };
   }
+  rejectUnknown(record, ["type", "tests", "fitConfig", "repeat", "situational"], path);
   if (record.situational === undefined) {
     throw new InvalidDefinitionError(`Missing required field: ${path}.situational`);
   }
@@ -488,6 +515,7 @@ function validateRun(value: unknown, path: string, clusterless: boolean): FitRun
 
 function validateSession(value: unknown, path: string, clusterless: boolean): SessionLifetime {
   const record = requireRecord(value, path);
+  rejectUnknown(record, ["performer", "runs"], path);
   if (record.performer === undefined) {
     throw new InvalidDefinitionError(`Missing required field: ${path}.performer`);
   }
@@ -502,6 +530,7 @@ function validateSession(value: unknown, path: string, clusterless: boolean): Se
 
 function validateCluster(value: unknown, path: string): ClusterLifetime {
   const record = requireRecord(value, path);
+  rejectUnknown(record, ["sessions", "clusterConfig", "connection", "useExisting", "cbdinocluster"], path);
   if (!Array.isArray(record.sessions) || record.sessions.length === 0) {
     throw new InvalidDefinitionError(`"${path}.sessions" must contain at least one session.`);
   }
@@ -547,6 +576,7 @@ function validateClusterConfigs(value: unknown): ClusterConfigRef[] {
       throw new InvalidDefinitionError(`Duplicate clusterConfigs id: "${id}"`);
     }
     ids.add(id);
+    rejectUnknown(record, ["id", "connection", "useExisting", "cbdinocluster"], path);
     const ref: ClusterConfigRef = { id };
     if (record.connection !== undefined) {
       ref.connection = validateConnection(record.connection, `${path}.connection`);
@@ -576,6 +606,7 @@ function validateConnectionScheme(value: unknown, path: string): ConnectionSchem
 
 function validateSchemeAndTls(value: unknown, path: string): SchemeAndTls {
   const record = requireRecord(value, path);
+  rejectUnknown(record, ["scheme", "tls"], path);
   return {
     ...(record.scheme !== undefined ? { scheme: validateConnectionScheme(record.scheme, `${path}.scheme`) } : {}),
     ...(record.tls !== undefined ? { tls: record.tls as SchemeAndTls["tls"] } : {}),
@@ -584,6 +615,7 @@ function validateSchemeAndTls(value: unknown, path: string): SchemeAndTls {
 
 function validateFitConnectionSpec(value: unknown, path: string): FitConnectionSpec {
   const record = requireRecord(value, path);
+  rejectUnknown(record, ["scheme", "tls", "driver", "performer"], path);
   return {
     ...(record.scheme !== undefined ? { scheme: validateConnectionScheme(record.scheme, `${path}.scheme`) } : {}),
     ...(record.tls !== undefined ? { tls: record.tls as FitConnectionSpec["tls"] } : {}),
@@ -600,6 +632,7 @@ function validateFitConfigs(value: unknown): FitConfigRef[] {
   return value.map((entry, index) => {
     const path = `fitConfigs[${index}]`;
     const record = requireRecord(entry, path);
+    rejectUnknown(record, ["id", "config", "connection", "patch"], path);
     const id = requireString(record, "id", `${path}.id`);
     if (ids.has(id)) {
       throw new InvalidDefinitionError(`Duplicate fitConfigs id: "${id}"`);
@@ -619,12 +652,27 @@ function validateInstanceSetup(value: unknown, path: string): InstanceSetup | un
     return undefined;
   }
   const record = requireRecord(value, path);
+  rejectUnknown(record, ["cbdinocluster", "capellaEnvironment"], path);
   const setup: InstanceSetup = {};
   if (record.cbdinocluster !== undefined) {
     const cbdinocluster = requireRecord(record.cbdinocluster, `${path}.cbdinocluster`);
-    setup.cbdinocluster = cbdinocluster.init !== undefined
-      ? { init: validateCbdinoclusterInit(cbdinocluster.init, `${path}.cbdinocluster.init`) }
-      : {};
+    rejectUnknown(cbdinocluster, ["source", "init"], `${path}.cbdinocluster`);
+    const cbdinoclusterSetup: InstanceSetup["cbdinocluster"] = {};
+    if (cbdinocluster.source !== undefined) {
+      const src = requireRecord(cbdinocluster.source, `${path}.cbdinocluster.source`);
+      rejectUnknown(src, ["git"], `${path}.cbdinocluster.source`);
+      const git = requireRecord(src.git, `${path}.cbdinocluster.source.git`);
+      rejectUnknown(git, ["pr", "repo"], `${path}.cbdinocluster.source.git`);
+      if (typeof git.pr !== "number" || !Number.isInteger(git.pr) || git.pr <= 0) {
+        throw new InvalidDefinitionError(`"${path}.cbdinocluster.source.git.pr" must be a positive integer; got ${JSON.stringify(git.pr)}`);
+      }
+      const repo = validateOptionalString(git, "repo", `${path}.cbdinocluster.source.git.repo`);
+      cbdinoclusterSetup.source = { git: { pr: git.pr, ...(repo !== undefined ? { repo } : {}) } };
+    }
+    if (cbdinocluster.init !== undefined) {
+      cbdinoclusterSetup.init = validateCbdinoclusterInit(cbdinocluster.init, `${path}.cbdinocluster.init`);
+    }
+    setup.cbdinocluster = cbdinoclusterSetup;
   }
   const capellaEnvironment = optionalEnvironmentName(record, "capellaEnvironment", path);
   if (capellaEnvironment !== undefined) {
@@ -636,6 +684,7 @@ function validateInstanceSetup(value: unknown, path: string): InstanceSetup | un
 function validateInstance(value: unknown, index: number): InstanceLifetime {
   const path = `instances[${index}]`;
   const record = requireRecord(value, path);
+  rejectUnknown(record, ["aws", "localhost", "setup", "clusters", "clusterlessSessions", "cbdinocluster"], path);
   const hasAws = record.aws !== undefined;
   const hasLocalhost = record.localhost !== undefined;
   if (hasAws === hasLocalhost) {
@@ -703,6 +752,7 @@ export function validateDefinition(raw: unknown): FitDefinition {
   if (!isRecord(raw)) {
     throw new InvalidDefinitionError("Definition file must be an object at the top level.");
   }
+  rejectUnknown(raw, ["version", "type", "description", "setup", "instances", "clusterConfigs", "fitConfigs", "cycles", "iterations"], "(top level)");
   validateVersion(raw.version);
   if (raw.type !== FIT_DEFINITION_TYPE) {
     throw new InvalidDefinitionError(`Expected "type: ${FIT_DEFINITION_TYPE}"; got ${JSON.stringify(raw.type)}`);
