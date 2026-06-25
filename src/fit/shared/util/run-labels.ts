@@ -2,7 +2,7 @@ import type { DefinitionRunPath } from "../../../util/non-fit/replay.js";
 
 /**
  * Inputs for rendering a run's position as human-readable labels (e.g.
- * `aws1 / cbdino1 / java:main / func`). Every field is optional: callers pass
+ * `aws1 / cbdino1 / java:main / functional`). Every field is optional: callers pass
  * whatever they know at the point of formatting, and each missing piece falls
  * back to an index-based word form (`instance1`, `cbdino1`, `s1`, `r1`) so the
  * label is always complete. The same segment builders feed both the
@@ -66,15 +66,15 @@ export function performerLabel(path: DefinitionRunPath, sdkValue?: string, versi
   return `s${(path.sessionIndex ?? 0) + 1}`;
 }
 
-/** The run type's short form: `func` / `func:cng` / `sit`. */
-function typeAbbrev(type: NonNullable<RunLabelParts["type"]>, cng?: boolean): string {
-  if (type === "functional") return cng ? "func:cng" : "func";
-  return "sit";
+/** The run type label: `functional` / `functional:cng` / `situational`. */
+function typeLabel(type: NonNullable<RunLabelParts["type"]>, cng?: boolean): string {
+  if (type === "functional") return cng ? "functional:cng" : "functional";
+  return "situational";
 }
 
 /**
- * The run, named by its single preset (qualified by type, e.g. `sit:standard-qe`),
- * else its type (`func`/`func:cng`/`sit`), else `r1`. A preset without a known type falls
+ * The run, named by its single preset (qualified by type, e.g. `situational:standard-qe`),
+ * else its type (`functional`/`functional:cng`/`situational`), else `r1`. A preset without a known type falls
  * back to the bare preset name.
  */
 export function runLabel(
@@ -84,10 +84,10 @@ export function runLabel(
   cng?: boolean,
 ): string | undefined {
   if (presets && presets.length === 1) {
-    return type ? `${typeAbbrev(type, cng)}:${presets[0]}` : presets[0];
+    return type ? `${typeLabel(type, cng)}:${presets[0]}` : presets[0];
   }
   if (type) {
-    return typeAbbrev(type, cng);
+    return typeLabel(type, cng);
   }
   return path.runIndex !== undefined ? `r${path.runIndex + 1}` : undefined;
 }

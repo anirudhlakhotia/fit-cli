@@ -51,7 +51,7 @@ export interface LogContext {
   cluster?: string;
   /** Performer (session) label, e.g. "java:main". Set at the start of each iteration. */
   performer?: string;
-  /** Run label, e.g. "func" or a preset name. Set at the start of each iteration. */
+  /** Run label, e.g. "functional" or a preset name. Set at the start of each iteration. */
   run?: string;
 }
 

@@ -375,7 +375,7 @@ test("run without repeat produces no :rN suffix and a single entry", () => {
   };
   const resolved = resolveSession(session, { instanceIndex: 0, clusterIndex: 0, sessionIndex: 0 }, false);
   assert.equal(resolved.runs.length, 1);
-  assert.equal(resolved.runs[0]?.path.dirSegments?.run, "func");
+  assert.equal(resolved.runs[0]?.path.dirSegments?.run, "functional");
 });
 
 test("repeat mixes correctly with non-repeated runs in the same session", () => {
@@ -389,9 +389,9 @@ test("repeat mixes correctly with non-repeated runs in the same session", () => 
   const resolved = resolveSession(session, { instanceIndex: 0, clusterIndex: 0, sessionIndex: 0 }, false);
   assert.equal(resolved.runs.length, 3);
   assert.equal(resolved.runs[0]?.path.runIndex, 0);
-  assert.equal(resolved.runs[0]?.path.dirSegments?.run, "func");
+  assert.equal(resolved.runs[0]?.path.dirSegments?.run, "functional");
   assert.equal(resolved.runs[1]?.path.runIndex, 1);
-  assert.equal(resolved.runs[1]?.path.dirSegments?.run, "func:r1");
+  assert.equal(resolved.runs[1]?.path.dirSegments?.run, "functional:r1");
   assert.equal(resolved.runs[2]?.path.runIndex, 2);
-  assert.equal(resolved.runs[2]?.path.dirSegments?.run, "func:r2");
+  assert.equal(resolved.runs[2]?.path.dirSegments?.run, "functional:r2");
 });
