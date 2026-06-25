@@ -209,13 +209,13 @@ function runReplayMain(): void {
 
 // Single source of truth for all top-level commands.
 // Anything listed here is available as both `fit <cmd>` and `bun run <cmd>`.
-const COMMANDS: Record<string, { fn: () => void; description: string }> = {
+const COMMANDS: Record<string, { fn: () => void; description: string; hidden?: boolean }> = {
   "wizard":          { fn: runWizardMain,          description: "Interactive walkthrough (default when no command given)" },
   "run":             { fn: runRunMain,             description: "Run FIT tests from a preset or a definition file" },
   "definition":      { fn: runDefinitionMain,      description: "Author or inspect a FIT definition file" },
   "config":          { fn: runConfigMain,           description: "Manage fit-cli configuration" },
   "cloud-instances": { fn: runCloudInstancesMain,  description: "Manage cloud (EC2) instances" },
-  "secrets":         { fn: runSecretsMain,          description: "Manage AWS secrets" },
+  "secrets":         { fn: runSecretsMain,          description: "Manage AWS secrets", hidden: true },
   "archive":         { fn: runArchiveMain,          description: "Archive run artifacts" },
   "replay":          { fn: runReplayMain,           description: "Replay a recorded session" },
   "version":         { fn: printVersion,            description: "Print the fit-cli version" },
@@ -223,8 +223,9 @@ const COMMANDS: Record<string, { fn: () => void; description: string }> = {
 };
 
 function printHelp(): void {
-  const maxLen = Math.max(...Object.keys(COMMANDS).map((k) => k.length));
-  const lines = Object.entries(COMMANDS)
+  const visible = Object.entries(COMMANDS).filter(([, { hidden }]) => !hidden);
+  const maxLen = Math.max(...visible.map(([k]) => k.length));
+  const lines = visible
     .map(([name, { description }]) => `  ${name.padEnd(maxLen)}  ${description}`)
     .join("\n");
   const bin = isFitBinary() ? "fit" : "bun run";

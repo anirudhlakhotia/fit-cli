@@ -278,7 +278,6 @@ function commentLinesFor(key: string, value: unknown, parentKey: string | undefi
       return ["numReplicas >= 1 is required for FTS tests to pass."];
     case "fitConfigs":
       return [
-        "Optional overrides for the generated FITConfiguration.json.  fit-cli generates sensible defaults; add a fitConfig here only to override specific fields.",
       ];
     case "setup":
       return [];
