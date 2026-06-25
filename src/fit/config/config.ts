@@ -200,6 +200,8 @@ export function runConfigMain(): void {
           console.error(`No config found at ${configPath}`);
           process.exit(1);
         }
+        console.log(`Config file: ${configPath}`);
+        console.log();
         console.log(formatConfigForDisplay(config));
         console.log();
         const { log } = buildAutoConfig({
