@@ -11,7 +11,7 @@
 import { isMain, runCli } from "../../util/non-fit/cli.js";
 import { logAwsAction, prepareAwsCli } from "../../cloud/util/aws/aws-cli.js";
 import { AWS_REGION } from "../../cloud/util/aws/aws-target.js";
-import { checkCredentials, logAwsIdentity } from "../../cloud/util/aws/identity.js";
+import { checkAccountAlias, checkCredentials, logAwsIdentity, warnIfNotCbSdkAccount } from "../../cloud/util/aws/identity.js";
 import { listInstances, LIVE_STATES } from "../../cloud/util/aws/list-instances.js";
 import { terminateInstance } from "../../cloud/util/aws/terminate-instance.js";
 import { describeInstance } from "../../cloud/util/aws/describe-instance.js";
@@ -64,6 +64,7 @@ async function cmdList(argv: string[]): Promise<void> {
 
   const creds = await checkCredentials();
   logAwsIdentity(creds);
+  warnIfNotCbSdkAccount(await checkAccountAlias());
   const context: InstanceListContext | undefined = creds.ok
     ? { account: creds.identity.account, creator: creds.identity.arn.split("/").at(-1) ?? creds.identity.userId }
     : undefined;
@@ -134,6 +135,7 @@ async function cmdManage(argv: string[]): Promise<void> {
       : { tag: query.tag ? `${query.tag.key}=${query.tag.value}` : "fit-cli=owned", states: LIVE_STATES, scope: allUsers ? "all users" : "current user" },
   );
   logAwsIdentity(await checkCredentials());
+  warnIfNotCbSdkAccount(await checkAccountAlias());
 
   await manageInstances(query, allUsers ? undefined : creator);
 }
@@ -149,6 +151,7 @@ async function cmdRemove(argv: string[]): Promise<void> {
 
   logAwsAction("Terminating EC2 instance", { instanceId });
   logAwsIdentity(await checkCredentials());
+  warnIfNotCbSdkAccount(await checkAccountAlias());
 
   const info = await describeInstance(instanceId);
   if (!info) {
@@ -204,6 +207,7 @@ async function cmdRemoveAll(argv: string[]): Promise<void> {
 
   const creds = await checkCredentials();
   logAwsIdentity(creds);
+  warnIfNotCbSdkAccount(await checkAccountAlias());
   const context: InstanceListContext | undefined = creds.ok
     ? { account: creds.identity.account, creator: callerCreator(creds.identity) }
     : undefined;
