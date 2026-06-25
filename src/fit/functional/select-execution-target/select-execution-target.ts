@@ -24,7 +24,7 @@ import { loadFitCliConfigEnv, resolveCloudInstanceType, type CloudInstancePurpos
 import { fitCliError, fitCliWarn } from "../../../util/non-fit/fit-cli-log.js";
 import { input, select } from "../../../util/non-fit/prompts.js";
 import { LocalTarget } from "../../../util/non-fit/local-target.js";
-import { checkCredentials, printCredentialsDiagnostic } from "../../../cloud/util/aws/identity.js";
+import { checkAccountAlias, checkCredentials, printCredentialsDiagnostic, warnIfNotCbSdkAccount } from "../../../cloud/util/aws/identity.js";
 import { listInstances } from "../../../cloud/util/aws/list-instances.js";
 import { terminateInstance } from "../../../cloud/util/aws/terminate-instance.js";
 import { type InstanceInfo } from "../../../cloud/util/aws/parse-instance.js";
@@ -176,6 +176,7 @@ export async function resolveExecutionGroupTarget(
     return { ready: false, artifacts: [], details: [] };
   }
   console.log(`\n✓ Using AWS account ${creds.identity.account} (${creds.identity.arn})`);
+  warnIfNotCbSdkAccount(await checkAccountAlias());
 
   try {
     // The definition's explicit instanceType wins; otherwise use the configured
@@ -235,6 +236,7 @@ export async function selectExecutionTarget(): Promise<ExecutionTargetOutcome> {
       continue; // back to the target prompt
     }
     console.log(`\n✓ Using AWS account ${creds.identity.account} (${creds.identity.arn})`);
+    warnIfNotCbSdkAccount(await checkAccountAlias());
 
     if (choice === "existing") {
       const outcome = await connectExistingInstance(attempt);
@@ -360,6 +362,7 @@ export async function selectExistingInstanceForOverride(
     return "back";
   }
   console.log(`\n✓ Using AWS account ${creds.identity.account} (${creds.identity.arn})`);
+  warnIfNotCbSdkAccount(await checkAccountAlias());
 
   const outcome = await connectExistingInstance(attempt);
   if (outcome === "back" || !outcome.ready) {

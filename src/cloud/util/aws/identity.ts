@@ -12,11 +12,12 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { ListAccountAliasesCommand } from "@aws-sdk/client-iam";
 import { GetCallerIdentityCommand } from "@aws-sdk/client-sts";
 import { fromNodeProviderChain } from "@aws-sdk/credential-providers";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { logAwsAction, prepareAwsCli } from "./aws-cli.js";
-import { stsClient } from "./aws-clients.js";
+import { iamClient, stsClient } from "./aws-clients.js";
 
 /** Who the current credentials belong to. */
 export interface CallerIdentity {
@@ -165,6 +166,34 @@ export function logAwsIdentity(creds: CredentialsCheck): void {
   }
 }
 
+/**
+ * Fetch the IAM account alias for the current credentials. Returns the first
+ * alias if one exists, undefined otherwise. Silently returns undefined on
+ * permission errors — not all roles have iam:ListAccountAliases.
+ */
+export async function checkAccountAlias(): Promise<string | undefined> {
+  try {
+    const response = await iamClient.send(new ListAccountAliasesCommand({}));
+    return response.AccountAliases?.[0];
+  } catch {
+    return undefined;
+  }
+}
+
+const EXPECTED_ACCOUNT_ALIAS = "cb-sdk";
+
+/**
+ * Warn if the current account alias doesn't match the expected cb-sdk tenant.
+ * Prints nothing if the alias couldn't be determined (e.g. missing IAM permission).
+ */
+export function warnIfNotCbSdkAccount(alias: string | undefined): void {
+  if (alias === undefined || alias === EXPECTED_ACCOUNT_ALIAS) return;
+  console.warn(`⚠  You appear to be authenticated to AWS account "${alias}", not "${EXPECTED_ACCOUNT_ALIAS}".`);
+  console.warn(`   fit-cli expects the cb-sdk account.  To switch:`);
+  console.warn(`     export AWS_PROFILE=cb-sdk`);
+  console.warn(`     aws sso login --profile cb-sdk   # if your session has expired`);
+}
+
 if (isMain(import.meta.url)) {
   runCli(async () => {
     await prepareAwsCli();
@@ -176,5 +205,10 @@ if (isMain(import.meta.url)) {
     }
     const profilePart = result.identity.profile ? `  profile: ${result.identity.profile}` : "";
     console.log(`✓ Authenticated as ${result.identity.arn} (account ${result.identity.account}${profilePart})`);
+    const alias = await checkAccountAlias();
+    if (alias !== undefined) {
+      console.log(`  account alias: ${alias}`);
+    }
+    warnIfNotCbSdkAccount(alias);
   });
 }
