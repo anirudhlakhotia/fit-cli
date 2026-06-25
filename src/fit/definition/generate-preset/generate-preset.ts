@@ -159,13 +159,50 @@ export interface GeneratePresetArgs {
   pushGistVisibility?: GistVisibility;
   /** When true, skip printing the "Run it later with…" guidance (used by `fit run <preset>` which runs it immediately). */
   skipGuidance?: boolean;
+  /**
+   * Dot-path overrides applied after template substitution, e.g.
+   * `{ "setup.repos.transactions-fit-performer.gerritRef": "refs/changes/32/247532/1" }`.
+   * Values are JSON-parsed where possible so booleans and numbers work naturally.
+   */
+  overrides?: Record<string, string>;
+}
+
+/**
+ * Apply a dot-path override to an object in place.
+ * `"setup.repos.transactions-fit-performer.gerritRef"` splits on `.` and creates
+ * any missing intermediate objects. The value string is JSON-parsed where possible
+ * so `true`/`false` and numbers work naturally; falls back to a raw string.
+ */
+export function applyDotPathOverride(obj: Record<string, unknown>, dotPath: string, rawValue: string): void {
+  const parts = dotPath.split(".");
+  let cursor: Record<string, unknown> = obj;
+  for (let i = 0; i < parts.length - 1; i++) {
+    const key = parts[i];
+    if (cursor[key] === undefined || cursor[key] === null || typeof cursor[key] !== "object") {
+      cursor[key] = {};
+    }
+    cursor = cursor[key] as Record<string, unknown>;
+  }
+  const leaf = parts[parts.length - 1];
+  let value: unknown;
+  try {
+    value = JSON.parse(rawValue);
+  } catch {
+    value = rawValue;
+  }
+  cursor[leaf] = value;
 }
 
 export async function generatePreset(args: GeneratePresetArgs): Promise<{ path: string }> {
-  const { type, image, outputPath, format, pushGistVisibility, skipGuidance } = args;
+  const { type, image, outputPath, format, pushGistVisibility, skipGuidance, overrides } = args;
 
   const template = loadPresetTemplate(type);
   const definition = applyPresetParams(template, image);
+  if (overrides) {
+    for (const [dotPath, rawValue] of Object.entries(overrides)) {
+      applyDotPathOverride(definition as unknown as Record<string, unknown>, dotPath, rawValue);
+    }
+  }
   const outputFormat = resolvePresetOutputFormat(outputPath, format);
   const formatted = formatFitDefinition(definition, outputFormat);
   const result = outputPath
@@ -200,6 +237,7 @@ export function parseGeneratePresetArgs(argv: string[]): GeneratePresetArgs {
   let performerImageName: string | undefined;
   let outputPath: string | undefined;
   let pushGistVisibility: GistVisibility | undefined;
+  const overrides: Record<string, string> = {};
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -215,6 +253,16 @@ export function parseGeneratePresetArgs(argv: string[]): GeneratePresetArgs {
       outputPath = argv[++i];
     } else if (arg.startsWith("--output=")) {
       outputPath = arg.slice("--output=".length);
+    } else if (arg === "--override") {
+      const kv = argv[++i];
+      const eq = kv.indexOf("=");
+      if (eq === -1) throw new Error(`--override value must be in key=value form, got: ${kv}`);
+      overrides[kv.slice(0, eq)] = kv.slice(eq + 1);
+    } else if (arg.startsWith("--override=")) {
+      const kv = arg.slice("--override=".length);
+      const eq = kv.indexOf("=");
+      if (eq === -1) throw new Error(`--override value must be in key=value form, got: ${kv}`);
+      overrides[kv.slice(0, eq)] = kv.slice(eq + 1);
     } else if (arg === "--push-gist") {
       // Optional value: --push-gist [public|private]; default public.
       const next = argv[i + 1];
@@ -252,5 +300,6 @@ export function parseGeneratePresetArgs(argv: string[]): GeneratePresetArgs {
     image: performerImageShortName(parsed.sdk, parsed.tag),
     outputPath,
     pushGistVisibility,
+    ...(Object.keys(overrides).length > 0 ? { overrides } : {}),
   };
 }

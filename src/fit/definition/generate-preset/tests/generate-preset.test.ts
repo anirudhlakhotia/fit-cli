@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { generatePreset, parseGeneratePresetArgs } from "../generate-preset.js";
+import { applyDotPathOverride, generatePreset, parseGeneratePresetArgs } from "../generate-preset.js";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -80,6 +80,49 @@ test("parseGeneratePresetArgs rejects the removed cluster-version flag", () => {
   );
 });
 
+test("applyDotPathOverride sets a nested string value", () => {
+  const obj: Record<string, unknown> = {};
+  applyDotPathOverride(obj, "setup.repos.transactions-fit-performer.gerritRef", "refs/changes/32/247532/1");
+  assert.deepEqual(obj, {
+    setup: { repos: { "transactions-fit-performer": { gerritRef: "refs/changes/32/247532/1" } } },
+  });
+});
+
+test("applyDotPathOverride coerces boolean and numeric strings", () => {
+  const obj: Record<string, unknown> = {};
+  applyDotPathOverride(obj, "a.b", "true");
+  applyDotPathOverride(obj, "a.c", "42");
+  assert.equal((obj.a as Record<string, unknown>).b, true);
+  assert.equal((obj.a as Record<string, unknown>).c, 42);
+});
+
+test("applyDotPathOverride overwrites an existing leaf", () => {
+  const obj = { setup: { repos: { "transactions-fit-performer": { gerritRef: "old" } } } };
+  applyDotPathOverride(obj as unknown as Record<string, unknown>, "setup.repos.transactions-fit-performer.gerritRef", "new");
+  assert.equal(obj.setup.repos["transactions-fit-performer"].gerritRef, "new");
+});
+
+test("applyDotPathOverride handles a single-segment path", () => {
+  const obj: Record<string, unknown> = { existing: 1 };
+  applyDotPathOverride(obj, "version", "2");
+  assert.equal(obj.version, 2);
+  assert.equal(obj.existing, 1);
+});
+
+test("parseGeneratePresetArgs collects --override flags", () => {
+  const args = parseGeneratePresetArgs([
+    "--type=functional",
+    "--performer-image-name=java-fit-performer:main",
+    "--override",
+    "setup.repos.transactions-fit-performer.gerritRef=refs/changes/32/247532/1",
+    "--override=setup.repos.transactions-fit-performer.otherField=hello",
+  ]);
+  assert.deepEqual(args.overrides, {
+    "setup.repos.transactions-fit-performer.gerritRef": "refs/changes/32/247532/1",
+    "setup.repos.transactions-fit-performer.otherField": "hello",
+  });
+});
+
 test("generatePreset writes YAML when the output path ends in .yaml", async () => {
   const dir = mkdtempSync(join(tmpdir(), "fit-generate-preset-"));
   const outputPath = join(dir, "generated.yaml");
@@ -94,4 +137,19 @@ test("generatePreset writes YAML when the output path ends in .yaml", async () =
   assert.match(written, /^version: 1$/m);
   assert.match(written, /^type: fit$/m);
   assert.doesNotMatch(written, /^\{$/m);
+});
+
+test("generatePreset applies overrides to the written file", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "fit-generate-preset-"));
+  const outputPath = join(dir, "generated.yaml");
+
+  await generatePreset({
+    type: "functional",
+    image: "java-fit-performer:refs-changes-67-246067-3",
+    outputPath,
+    overrides: { "setup.repos.transactions-fit-performer.gerritRef": "refs/changes/32/247532/1" },
+  });
+
+  const written = readFileSync(outputPath, "utf8");
+  assert.match(written, /gerritRef: refs\/changes\/32\/247532\/1/);
 });
