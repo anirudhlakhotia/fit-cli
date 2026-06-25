@@ -1,5 +1,6 @@
 import * as prompts from "@inquirer/prompts";
 import { withRawTerminalWrites } from "./fit-cli-log.js";
+import { pathInputPrompt, type PathInputConfig } from "./path-input.js";
 import { ensurePromptSession, type PromptKind, type PromptResolveOptions } from "./replay.js";
 
 type PromptContext = Parameters<typeof prompts.input>[1];
@@ -281,6 +282,19 @@ export function checkbox<Value>(
           ? ensureNonInteractiveValue(promptId, selected, promptConfig.validate)
           : missingNonInteractiveDefault(promptId);
       },
+    },
+  );
+}
+
+export function pathInput(
+  config: PathInputConfig & { promptId: string; message: string },
+  context?: PromptContext,
+): Promise<string> {
+  const { promptId, ...promptConfig } = config;
+  return runPrompt(promptId, "input", config.message, (replayDefault) =>
+    pathInputPrompt({ ...promptConfig, default: replayDefault ?? promptConfig.default }, context), {
+      nonInteractiveDefault: () =>
+        ensureNonInteractiveValue(promptId, String(promptConfig.default ?? ""), promptConfig.validate),
     },
   );
 }
