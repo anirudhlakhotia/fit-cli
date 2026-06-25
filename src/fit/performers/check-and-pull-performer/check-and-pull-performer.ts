@@ -15,7 +15,7 @@ import { type Sdk } from "../../../util/sdk/sdks.js";
 import { createLocalFitExecutionContext, type FitExecutionContext } from "../../shared/util/remote-fit-run.js";
 import { choosePerformerVersion } from "../list-docker-containers/list-docker-containers.js";
 import { GHCR_REGISTRY, performerImageName } from "../util/performer-image.js";
-import { performerImageInspectArgs, performerStatus } from "../check-performer/check-performer.js";
+import { logPerformerImageMetadata, performerImageInspectArgs, performerStatus } from "../check-performer/check-performer.js";
 
 /** Build the `docker login` args used for GHCR. */
 export function dockerLoginArgs(registry: string = GHCR_REGISTRY): string[] {
@@ -74,6 +74,7 @@ export async function checkAndPullPerformer(
 
   if (await ghcrImageExists(execution, imageName)) {
     console.log(`✓ Found the ${sdk.name} performer Docker image ${imageName}`);
+    await logPerformerImageMetadata(execution, imageName);
     return true;
   }
 
@@ -103,6 +104,7 @@ export async function checkAndPullPerformer(
   }
 
   console.log(`\n✓ Pulled the ${sdk.name} performer Docker image ${imageName}`);
+  await logPerformerImageMetadata(execution, imageName);
   return true;
 }
 

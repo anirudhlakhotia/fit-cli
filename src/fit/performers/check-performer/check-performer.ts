@@ -27,6 +27,39 @@ export function performerImageInspectArgs(imageName: string): string[] {
   return ["image", "inspect", "--format={{.Id}}", imageName];
 }
 
+/** Docker inspect args to fetch all labels from a local image as JSON. */
+export function performerImageLabelsArgs(imageName: string): string[] {
+  return ["image", "inspect", "--format={{json .Config.Labels}}", imageName];
+}
+
+const USEFUL_IMAGE_LABELS = [
+  { key: "org.opencontainers.image.created", label: "Image built" },
+  { key: "org.opencontainers.image.revision", label: "Revision" },
+  { key: "org.opencontainers.image.source", label: "Source" },
+  { key: "org.opencontainers.image.version", label: "Version" },
+  { key: "com.couchbase.pr", label: "PR" },
+  { key: "com.couchbase.github.actions.run", label: "CI run" },
+] as const;
+
+/** Log the most useful OCI/Couchbase labels baked into a performer image. Silently skips if the image has no labels. */
+export async function logPerformerImageMetadata(execution: FitExecutionContext, imageName: string): Promise<void> {
+  try {
+    const raw = await execution.capture(execution.dockerCommand, performerImageLabelsArgs(imageName));
+    const labels = JSON.parse(raw.trim()) as Record<string, string> | null;
+    if (!labels) return;
+    const entries = USEFUL_IMAGE_LABELS.map(({ key, label }) => ({ label, value: labels[key] })).filter(
+      ({ value }) => value,
+    );
+    if (entries.length === 0) return;
+    const padTo = Math.max(...entries.map((e) => e.label.length));
+    for (const { label, value } of entries) {
+      console.log(`  ${label.padEnd(padTo)}  ${value}`);
+    }
+  } catch {
+    // Labels unavailable (older images without them) — don't fail the run.
+  }
+}
+
 /** Inspect whether the prebuilt performer Docker image is present locally. */
 export async function performerStatus(
   execution: FitExecutionContext,
