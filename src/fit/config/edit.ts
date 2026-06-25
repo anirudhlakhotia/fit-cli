@@ -24,6 +24,7 @@ import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { confirm, input, password, pathInput, select } from "../../util/non-fit/prompts.js";
 import { findOnPath } from "../../util/non-fit/which.js";
+import { runScriptPrefix } from "../../util/non-fit/fit-cli-log.js";
 import type { AutoInitCliArgs } from "./config.js";
 import {
   resolveGerritUserFromGhCli,
@@ -486,6 +487,7 @@ export async function runEditWorkflow(path: string = defaultFitCliConfigPath()):
   const savedPath = saveFitCliConfig(config, existing.path);
   console.log(`Saved fit-cli config to ${savedPath}`);
   console.log(`\nConfig (secrets elided):\n\n${formatConfigForDisplay(config)}\n`);
+  console.log(`Next steps:\n  ${runScriptPrefix("wizard")}   # interactive walkthrough\n  ${runScriptPrefix("help")}     # all commands`);
   return savedPath;
 }
 
