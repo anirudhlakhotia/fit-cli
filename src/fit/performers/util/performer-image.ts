@@ -8,14 +8,11 @@ import {
 
 export const GHCR_REGISTRY = "ghcr.io";
 export const FIT_PERFORMER_IMAGE_OWNER = "couchbase";
-export const JVM_PERFORMER_IMAGE_OWNER = "couchbase";
-export const JVM_PERFORMER_PACKAGES_REPOSITORY = "couchbase-jvm-clients";
 export const DEFAULT_PERFORMER_IMAGE_TAG = "main";
-export const JVM_DEFAULT_PERFORMER_IMAGE_TAG = "main";
 
 /** The default Docker tag used for a given SDK's prebuilt GHCR image. */
-export function sdkDefaultPerformerTag(sdk: Sdk): string {
-  return sdk.jvm ? JVM_DEFAULT_PERFORMER_IMAGE_TAG : DEFAULT_PERFORMER_IMAGE_TAG;
+export function sdkDefaultPerformerTag(_sdk: Sdk): string {
+  return DEFAULT_PERFORMER_IMAGE_TAG;
 }
 
 /** The GHCR package name that holds the prebuilt performer image for this SDK. */
@@ -25,13 +22,7 @@ export function performerPackageName(sdk: Sdk): string {
 
 /** The GitHub Packages URL for this SDK's prebuilt performer image. */
 export function performerPackageUrl(sdk: Sdk): string {
-  const pkg = performerPackageName(sdk);
-  // JVM performers (java/scala/kotlin and columnar-java/analytics-java) are published from the
-  // couchbase-jvm-clients repo; everything else from the org-level package list.
-  if (sdk.jvm) {
-    return `https://github.com/${JVM_PERFORMER_IMAGE_OWNER}/${JVM_PERFORMER_PACKAGES_REPOSITORY}/pkgs/container/${pkg}`;
-  }
-  return `https://github.com/orgs/${FIT_PERFORMER_IMAGE_OWNER}/packages/container/package/${pkg}`;
+  return `https://github.com/orgs/${FIT_PERFORMER_IMAGE_OWNER}/packages/container/package/${performerPackageName(sdk)}`;
 }
 
 /** Normalize a user-supplied tag; blank or the SDK's default tag means "use default". */
@@ -48,8 +39,7 @@ function performerImageTag(sdk: Sdk, version?: string): string {
 
 /** The fully-qualified GHCR image reference fit-cli pulls and runs for this performer. */
 export function performerImageName(sdk: Sdk, version?: string): string {
-  const owner = sdk.jvm ? JVM_PERFORMER_IMAGE_OWNER : FIT_PERFORMER_IMAGE_OWNER;
-  return `${GHCR_REGISTRY}/${owner}/${performerPackageName(sdk)}:${performerImageTag(sdk, version)}`;
+  return `${GHCR_REGISTRY}/${FIT_PERFORMER_IMAGE_OWNER}/${performerPackageName(sdk)}:${performerImageTag(sdk, version)}`;
 }
 
 /**
