@@ -93,3 +93,17 @@ test("validatePerformerVersion rejects full image references", () => {
   assert.equal(validatePerformerVersion("ghcr.io/couchbase/node-fit-performer:main"), "Enter only the image tag, not a full image reference.");
   assert.equal(validatePerformerVersion("4.2.0"), true);
 });
+
+test("analysePerformerImage parses the hyphenated columnar-java SDK basename", () => {
+  const parsed = analysePerformerImage("columnar-java-fit-performer:main");
+  assert.ok(!("error" in parsed));
+  if ("error" in parsed) return;
+  assert.equal(parsed.sdk.value, "columnar-java");
+  assert.equal(parsed.tag, "main");
+});
+
+test("performerImageName builds a JVM-style GHCR reference for columnar-java", () => {
+  const sdk = sdkByValue("columnar-java");
+  assert.ok(sdk);
+  assert.equal(performerImageName(sdk, "main"), "ghcr.io/couchbase/columnar-java-fit-performer:main");
+});

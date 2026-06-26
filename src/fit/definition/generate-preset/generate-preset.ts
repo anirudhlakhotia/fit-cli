@@ -44,6 +44,8 @@ async function loadPresetMap(): Promise<Record<string, string>> {
   return {
     "cng-functional":              ((await import("../../../../presets/cng-functional.json5",              { with: { type: "text" } })) as { default: string }).default,
     "cng-functional-quick-sanity": ((await import("../../../../presets/cng-functional-quick-sanity.json5", { with: { type: "text" } })) as { default: string }).default,
+    "enterprise-analytics-functional": ((await import("../../../../presets/enterprise-analytics-functional.json5", { with: { type: "text" } })) as { default: string }).default,
+    "enterprise-analytics-functional-quick-sanity": ((await import("../../../../presets/enterprise-analytics-functional-quick-sanity.json5", { with: { type: "text" } })) as { default: string }).default,
     "everything-quick-sanity":     ((await import("../../../../presets/everything-quick-sanity.json5",     { with: { type: "text" } })) as { default: string }).default,
     "functional":                  ((await import("../../../../presets/functional.json5",                  { with: { type: "text" } })) as { default: string }).default,
     "functional-quick-sanity":     ((await import("../../../../presets/functional-quick-sanity.json5",     { with: { type: "text" } })) as { default: string }).default,
@@ -87,6 +89,26 @@ function extractPresetMeta(raw: string): PresetMeta {
     };
   } catch {
     return { order: 50, description: "(no description)" };
+  }
+}
+
+/**
+ * Whether a preset has any `analytics-functional` run (Analytics tests via the
+ * Analytics test-driver). Such presets need an Analytics SDK performer image
+ * (Columnar SDK or Enterprise Analytics SDK), so the interactive flow offers
+ * those rather than the operational SDKs.
+ */
+export function presetUsesAnalyticsDriver(type: PresetType): boolean {
+  try {
+    const filled = loadPresetTemplate(type).replace(/\{\{PERFORMER_IMAGE\}\}/g, "placeholder");
+    const parsed = JSON5.parse(filled) as FitDefinition;
+    return (parsed.instances ?? []).some((instance) =>
+      [...(instance.clusterlessSessions ?? []), ...(instance.clusters ?? []).flatMap((c) => c.sessions)]
+        .flatMap((s) => s.runs)
+        .some((run) => run.type === "analytics-functional"),
+    );
+  } catch {
+    return false;
   }
 }
 

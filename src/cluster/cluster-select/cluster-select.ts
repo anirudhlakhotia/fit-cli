@@ -43,6 +43,15 @@ export interface SelectedCluster {
     /** TLS for the performer's couchbase2 connection (cbdino gateways are insecure). */
     tls: TlsConfig;
   };
+  /**
+   * Present for a load-balanced Enterprise Analytics cluster: the nginx
+   * load-balancer host (e.g. "172.18.0.3"), fetched via `cbdinocluster mgmt <id>`.
+   * The Analytics SDK performer must connect through this single host — its
+   * connection string is an HTTP/SDK URL, which can't take the comma-separated
+   * multi-seed node list the driver (couchbase://) and REST (first node) use.
+   * See build-fit-configuration's performer-host rewrite.
+   */
+  analyticsLoadBalancerHost?: string;
 }
 
 /** The outcome of the cluster-select workflow. */

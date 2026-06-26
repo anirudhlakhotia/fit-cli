@@ -104,6 +104,7 @@ function cngClusterAccess(cluster: SelectedCluster & { cng: NonNullable<Selected
 export function generatedFitConfigurationPiece(
   cluster: SelectedCluster,
   performerPort: number = DEFAULT_PERFORMER_PORT,
+  analytics = false,
 ): ConfigPiece {
   if (cluster.cng) {
     return {
@@ -115,6 +116,56 @@ export function generatedFitConfigurationPiece(
         excludeTests: ["situational"],
         // The bucket is pre-created in the CouchbaseCluster spec; the driver must not try to
         // create it via classic management (there is no external KV or mgmt port on OpenShift).
+        skipBucketCreation: true,
+      },
+    };
+  }
+
+  if (analytics) {
+    // Analytics (Enterprise Analytics / Capella Analytics): the driver connects
+    // classically for admin, but the connection specifics (load balancer, the
+    // SDK's analytics endpoint, proxy) come from the definition's
+    // fitConfig.config.clusterAccess, which merges over these defaults. We emit
+    // only the baseline here, and skip bucket creation — Analytics manages its own
+    // data; there is no KV bucket to create.
+    return {
+      label: "fit-cli generated Analytics defaults",
+      data: {
+        "//": AUTO_GENERATED_MARKER,
+        clusterAccess: {
+          defaultHostname: cluster.defaultHostname,
+          connectionString: `${cluster.scheme}://\${defaultHostname}`,
+          username: cluster.credentials.username,
+          password: cluster.credentials.password,
+          tls: cluster.tls,
+          rest: { hostname: firstHostname(cluster.defaultHostname), resolveDnsSrv: false },
+          // Columnar / Analytics does not support direct SSH access.
+          ssh: null,
+          // proxy.hostname: where the performer reaches the FIT proxy. The performer
+          // runs in Docker, so it must use host.docker.internal — not localhost, which
+          // inside the container is the container itself (every query would then fail
+          // with "Failed to connect to localhost:<mapped-port>"). Matches the
+          // operational self-managed proxy. (The analytics reference example uses
+          // localhost only because there the performer runs on the host, not in Docker.)
+          //
+          // proxy.clusterHostname: where the FIT proxy forwards TO. It defaults to
+          // defaultHostname, which here is the driver's comma-joined node list — and
+          // the proxy can't dial a comma-separated string (DNS lookup fails, it falls
+          // back to the literal string as one host → "unexpected end of stream"). For a
+          // load-balanced Enterprise Analytics cluster the proxy must forward to the
+          // single nginx LB host, so pin it explicitly when we know it.
+          //
+          // TODO when Capella Analytics is wired up: like the operational branch, that
+          // case wants proxy: null (no host-side proxy for a cloud cluster) — split here.
+          proxy: {
+            hostname: "host.docker.internal",
+            ...(cluster.analyticsLoadBalancerHost
+              ? { clusterHostname: cluster.analyticsLoadBalancerHost }
+              : {}),
+          },
+        },
+        performerPorts: [performerPort],
+        excludeTests: ["situational"],
         skipBucketCreation: true,
       },
     };
@@ -259,15 +310,40 @@ export function buildFitConfiguration(
   fitConfigPiece?: PieceData,
   connection?: FitConnectionSpec,
   patchPiece?: PieceData,
+  analytics = false,
 ): Record<string, unknown> {
   const hasConfig = fitConfigPiece !== undefined || connection !== undefined;
-  return mergeConfigPieces([
-    generatedFitConfigurationPiece(cluster, performerPort),
+  const merged = mergeConfigPieces([
+    generatedFitConfigurationPiece(cluster, performerPort, analytics),
     ...(fitConfigPiece ? [{ label: "definition fitConfig piece", data: fitConfigPiece }] : []),
     ...(hasConfig ? [runtimeFitConfigurationPiece(cluster)] : []),
     ...(connection ? [connectionSpecPiece(connection, cluster)] : []),
     ...(patchPiece ? [{ label: "definition patch piece", data: patchPiece }] : []),
   ]);
+  if (analytics && cluster.analyticsLoadBalancerHost) {
+    pointAnalyticsPerformerAtLoadBalancer(merged, cluster.analyticsLoadBalancerHost);
+  }
+  return merged;
+}
+
+/**
+ * Point the Analytics SDK performer at the nginx load balancer. The performer's
+ * connection string is authored (in the preset or by the wizard) with the
+ * `${defaultHostname}` token, which FIT resolves to the driver's multi-seed node
+ * list — fine for the driver's couchbase:// string, but an HTTP/SDK URL needs a
+ * single host, so okhttp throws UnknownHostException on the comma-separated list.
+ * Rewrite just the performer's host to the concrete load-balancer address,
+ * preserving the scheme/port the author chose (http://…:8095 for the Enterprise
+ * Analytics SDK; couchbases:// for a Columnar SDK). The driver and REST keep the
+ * node list / first node, which they want. Mutates `config` in place.
+ */
+function pointAnalyticsPerformerAtLoadBalancer(config: Record<string, unknown>, loadBalancerHost: string): void {
+  const clusterAccess = config.clusterAccess as Record<string, unknown> | undefined;
+  const performer = clusterAccess?.performer as Record<string, unknown> | undefined;
+  const connectionString = performer?.connectionString;
+  if (typeof connectionString === "string" && connectionString.includes("${defaultHostname}")) {
+    performer!.connectionString = connectionString.replaceAll("${defaultHostname}", loadBalancerHost);
+  }
 }
 
 if (isMain(import.meta.url)) {

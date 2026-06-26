@@ -9,7 +9,7 @@ import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { printFileContent } from "../../../util/non-fit/fit-cli-log.js";
 import { qualifyPromptId, select, confirm, input } from "../../../util/non-fit/prompts.js";
 import { loadFitCliConfig, resolveOutputFormat } from "../../util/config.js";
-import { chooseSdk } from "../../../util/sdk/choose-sdk.js";
+import { chooseAnalyticsFunctionalSdk, chooseSdk } from "../../../util/sdk/choose-sdk.js";
 import { askClusterDef } from "../../../cluster/cluster-create/ask-cluster-def.js";
 import { askClusterExistsPolicy } from "../../../cluster/cluster-create/ask-cluster-exists-policy.js";
 import { selectCluster } from "../../../cluster/cluster-select/cluster-select.js";
@@ -34,7 +34,9 @@ import {
 import type {
   ClusterConfigRef,
   ClusterLifetime,
+  FitConfigRef,
   FitDefinition,
+  FitRun,
   InstanceLifetime,
   InstanceMode,
   SessionLifetime,
@@ -43,6 +45,7 @@ import {
   FUNCTIONAL_TEST_DOMAIN,
   SITUATIONAL_TEST_DOMAIN,
   selectFitTests,
+  type FitTestSelection,
 } from "../select-fit-tests/select-fit-tests.js";
 import { createLocalFitExecutionContext } from "../util/remote-fit-run.js";
 
@@ -74,13 +77,14 @@ export async function askFitGerritRef(promptIdPrefix?: string): Promise<string |
 }
 
 type DefinitionBuilderAction = "functional" | "situational" | "performance" | "done";
-type FunctionalConnectivity = "operational" | "cng";
+type FunctionalConnectivity = "operational" | "cng" | "enterprise-analytics";
 
 interface DefinitionBuilderState {
   gerritRefAsked: boolean;
   gerritRef?: string;
   instances: InstanceLifetime[];
   clusterConfigs: ClusterConfigRef[];
+  fitConfigs: FitConfigRef[];
 }
 
 async function chooseDefinitionBuilderAction(index: number): Promise<DefinitionBuilderAction> {
@@ -100,22 +104,37 @@ async function chooseDefinitionBuilderAction(index: number): Promise<DefinitionB
 async function chooseFunctionalConnectivity(promptIdPrefix: string): Promise<FunctionalConnectivity> {
   return select<FunctionalConnectivity>({
     promptId: qualifyPromptId("connectivity", promptIdPrefix),
-    message: "What do you want to FIT functional test against?  (Analytics to come)",
+    message: "What do you want to FIT functional test against?  (Capella Analytics and more to come)",
     choices: [
       { name: "Operational", value: "operational" },
       { name: "Cloud Native Gateway (couchbase2://)", value: "cng" },
+      { name: "Enterprise Analytics (self-hosted)", value: "enterprise-analytics" },
     ],
   });
 }
 
-export function functionalInstanceConnectivity(instance: InstanceLifetime): FunctionalConnectivity {
+export function functionalInstanceConnectivity(
+  instance: InstanceLifetime,
+  clusterConfigs: ClusterConfigRef[] = [],
+): FunctionalConnectivity {
   const cluster = instance.clusters[0];
-  return cluster?.cbdinocluster?.config.cao !== undefined ? "cng" : "operational";
+  // The cluster's cbdino config may be inline or referenced via clusterConfig id.
+  const config =
+    cluster?.cbdinocluster?.config ??
+    (typeof cluster?.clusterConfig === "string"
+      ? clusterConfigs.find((cc) => cc.id === cluster.clusterConfig)?.cbdinocluster?.config
+      : undefined);
+  if (config?.columnar === true) return "enterprise-analytics";
+  if (config?.cao !== undefined) return "cng";
+  return "operational";
 }
 
 async function chooseFunctionalDefinitionCluster(connectivity: FunctionalConnectivity): Promise<DefinitionCluster> {
   if (connectivity === "cng") {
     return { kind: "cbdinocluster", def: await askClusterDef({ cng: true }) };
+  }
+  if (connectivity === "enterprise-analytics") {
+    return { kind: "cbdinocluster", def: await askClusterDef({ enterpriseAnalytics: true }) };
   }
   return chooseDefinitionCluster();
 }
@@ -172,10 +191,41 @@ function remapClusterRefs(cluster: ClusterLifetime, clusterMap: Map<string, stri
 }
 
 /**
- * Collect a sub-definition's cluster configs into state with unique IDs and return
- * the remapped instance. Sub-definitions from buildFit*DefinitionFrom always use the
- * same constant IDs ("cluster-0"), so each new instance gets its IDs offset by the
- * current count in state to avoid collisions.
+ * Collect a sub-definition's fitConfigs into state with unique IDs and return a
+ * map from the sub-definition's (constant) IDs to the assigned ones. Like cluster
+ * configs, sub-definitions always emit the same constant id ("fit-config-0"), so
+ * each gets offset by the current count in state to avoid collisions.
+ */
+function collectSubDefFitConfigs(state: DefinitionBuilderState, subDef: FitDefinition): Map<string, string> {
+  const fitConfigMap = new Map<string, string>();
+  for (const fc of subDef.fitConfigs ?? []) {
+    const newId = `fit-config-${state.fitConfigs.length}`;
+    fitConfigMap.set(fc.id, newId);
+    state.fitConfigs.push({ ...fc, id: newId });
+  }
+  return fitConfigMap;
+}
+
+/** Rewrite a run's string fitConfig reference to its collected (offset) id. */
+function remapRunFitConfig(run: FitRun, fitConfigMap: Map<string, string>): FitRun {
+  if (typeof run.fitConfig === "string") {
+    const newId = fitConfigMap.get(run.fitConfig);
+    if (newId !== undefined) return { ...run, fitConfig: newId };
+  }
+  return run;
+}
+
+/** Rewrite every fitConfig reference in a session's runs to the collected ids. */
+function remapSessionFitConfigRefs(session: SessionLifetime, fitConfigMap: Map<string, string>): SessionLifetime {
+  if (fitConfigMap.size === 0) return session;
+  return { ...session, runs: session.runs.map((run) => remapRunFitConfig(run, fitConfigMap)) };
+}
+
+/**
+ * Collect a sub-definition's cluster configs and fitConfigs into state with unique
+ * IDs and return the remapped instance. Sub-definitions from buildFit*DefinitionFrom
+ * always use the same constant IDs ("cluster-0"/"fit-config-0"), so each new instance
+ * gets its IDs offset by the current count in state to avoid collisions.
  */
 function collectSubDefInstance(state: DefinitionBuilderState, subDef: FitDefinition): InstanceLifetime {
   const clusterMap = new Map<string, string>();
@@ -184,13 +234,17 @@ function collectSubDefInstance(state: DefinitionBuilderState, subDef: FitDefinit
     clusterMap.set(cc.id, newId);
     state.clusterConfigs.push({ ...cc, id: newId });
   }
+  const fitConfigMap = collectSubDefFitConfigs(state, subDef);
   const instance = subDef.instances[0];
   if (!instance) {
     throw new Error("Expected sub-definition to contain one instance.");
   }
   return {
     ...instance,
-    clusters: instance.clusters.map((c) => remapClusterRefs(c, clusterMap)),
+    clusters: instance.clusters.map((c) => {
+      const remapped = remapClusterRefs(c, clusterMap);
+      return { ...remapped, sessions: remapped.sessions.map((s) => remapSessionFitConfigRefs(s, fitConfigMap)) };
+    }),
   };
 }
 
@@ -220,28 +274,39 @@ async function addFunctionalRun(
   const promptIdPrefix = `fit.definition.run.${runIndex + 1}.functional`;
   const execution = createLocalFitExecutionContext();
   const connectivity = await chooseFunctionalConnectivity(promptIdPrefix);
-  const sdk = await chooseSdk("Which SDK do you want to test with FIT functional?", promptIdPrefix);
+  const analytics = connectivity === "enterprise-analytics";
+  const sdk = analytics
+    ? await chooseAnalyticsFunctionalSdk("Which Analytics SDK do you want to test?", promptIdPrefix)
+    : await chooseSdk("Which SDK do you want to test with FIT functional?", promptIdPrefix);
   const version = await askPerformerTag(sdk, promptIdPrefix);
   const onPortInUse = await askPortInUsePolicy(promptIdPrefix);
-  const selection = await selectFitTests(execution, FUNCTIONAL_TEST_DOMAIN, promptIdPrefix);
+  // The Analytics tests run via the columnar-test-driver, whose test list we can't
+  // enumerate through the operational test domain, so default to running them all.
+  const selection = analytics
+    ? ({ allTests: [], selectedTests: [] } satisfies FitTestSelection)
+    : await selectFitTests(execution, FUNCTIONAL_TEST_DOMAIN, promptIdPrefix);
 
   const currentInstance = lastFunctionalInstance(state);
-  if (currentInstance && functionalInstanceConnectivity(currentInstance) === connectivity) {
+  if (currentInstance && functionalInstanceConnectivity(currentInstance, state.clusterConfigs) === connectivity) {
     const subDef = buildFitFunctionalDefinitionFrom({
       cluster: functionalDefinitionCluster(currentInstance, state.clusterConfigs),
       sdk,
       ...(version ? { version } : {}),
       onPortInUse,
       selection,
+      ...(analytics ? { analytics: true } : {}),
     });
-    currentInstance.clusters[0]?.sessions.push(collectSubDefSession(subDef));
+    const fitConfigMap = collectSubDefFitConfigs(state, subDef);
+    currentInstance.clusters[0]?.sessions.push(remapSessionFitConfigRefs(collectSubDefSession(subDef), fitConfigMap));
     return;
   }
 
   console.log(
     connectivity === "cng"
       ? "\nStarting a new FIT functional CNG instance. cbdinocluster installs the gateway via the Couchbase Kubernetes Operator, so this needs Kubernetes."
-      : "\nStarting a new FIT functional instance. Runs added now will share one cluster lifetime on that instance.",
+      : connectivity === "enterprise-analytics"
+        ? "\nStarting a new FIT Analytics instance. cbdinocluster builds a self-managed Enterprise Analytics cluster (fronted by an nginx load balancer)."
+        : "\nStarting a new FIT functional instance. Runs added now will share one cluster lifetime on that instance.",
   );
   const instance = await chooseInstanceExecution(promptIdPrefix);
   const cluster = await chooseFunctionalDefinitionCluster(connectivity);
@@ -254,6 +319,7 @@ async function addFunctionalRun(
     ...(version ? { version } : {}),
     onPortInUse,
     selection,
+    ...(analytics ? { analytics: true } : {}),
   });
   const generatedInstance = collectSubDefInstance(state, subDef);
   if (!generatedInstance) {
@@ -281,8 +347,10 @@ function functionalDefinitionCluster(instance: InstanceLifetime, clusterConfigs:
       def: {
         nodeCount: firstNode.count,
         version: firstNode.version,
-        services: firstNode.services,
+        services: firstNode.services ?? [],
         cng: clusterData.cbdinocluster.config.cao !== undefined,
+        // cbdino's wire `columnar: true` means a self-managed Enterprise Analytics cluster.
+        ...(clusterData.cbdinocluster.config.columnar === true ? { enterpriseAnalytics: true } : {}),
       },
     };
   }
@@ -372,7 +440,7 @@ export async function createFitDefinition(options?: { format?: DefinitionFormat;
     "\nThis builds a reusable fit definition file. Nothing is set up — no cluster is allocated, no performer built, no tests run.\n",
   );
 
-  const state: DefinitionBuilderState = { gerritRefAsked: false, instances: [], clusterConfigs: [] };
+  const state: DefinitionBuilderState = { gerritRefAsked: false, instances: [], clusterConfigs: [], fitConfigs: [] };
   let actionIndex = 1;
 
   while (true) {
@@ -401,6 +469,7 @@ export async function createFitDefinition(options?: { format?: DefinitionFormat;
     ...(state.gerritRef ? { gerritRef: state.gerritRef } : {}),
     instances: state.instances,
     clusterConfigs: state.clusterConfigs,
+    fitConfigs: state.fitConfigs,
   });
 
   const allRuns = definition.instances.flatMap((i) =>

@@ -13,13 +13,13 @@
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { type RunOutput } from "../../../util/non-fit/artifacts.js";
 import { select } from "../../../util/non-fit/prompts.js";
-import { chooseSdk } from "../../../util/sdk/choose-sdk.js";
+import { chooseAnalyticsFunctionalSdk, chooseSdk } from "../../../util/sdk/choose-sdk.js";
 import { askPerformerTag } from "../../performers/util/ask-performer-image.js";
 import { performerImageShortName } from "../../performers/util/performer-image.js";
 import { runFromDefinition } from "../../functional/run-from-definition/run-from-definition.js";
 import type { DefinitionFormat } from "../../shared/definition/generate-definition.js";
 import type { GistVisibility } from "../../shared/definition/push-gist.js";
-import { generatePreset, presetDescriptions, type PresetType } from "../generate-preset/generate-preset.js";
+import { generatePreset, presetDescriptions, presetUsesAnalyticsDriver, type PresetType } from "../generate-preset/generate-preset.js";
 
 const PROMPT_PREFIX = "preset";
 const ACTION_PROMPT_ID = `${PROMPT_PREFIX}.action`;
@@ -64,7 +64,9 @@ async function choosePresetType(): Promise<PresetType> {
 export async function runPresetWizard(options: RunPresetWizardOptions = {}): Promise<RunOutput> {
   const action = await choosePresetAction();
   const type = await choosePresetType();
-  const sdk = await chooseSdk("Which SDK's performer should the preset run against?", PROMPT_PREFIX);
+  const sdk = presetUsesAnalyticsDriver(type)
+    ? await chooseAnalyticsFunctionalSdk("Which Analytics SDK's performer should the preset run against?", PROMPT_PREFIX)
+    : await chooseSdk("Which SDK's performer should the preset run against?", PROMPT_PREFIX);
   const tag = await askPerformerTag(sdk, PROMPT_PREFIX);
   const image = performerImageShortName(sdk, tag);
 

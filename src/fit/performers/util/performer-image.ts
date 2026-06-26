@@ -18,8 +18,6 @@ export function sdkDefaultPerformerTag(sdk: Sdk): string {
   return sdk.jvm ? JVM_DEFAULT_PERFORMER_IMAGE_TAG : DEFAULT_PERFORMER_IMAGE_TAG;
 }
 
-const JVM_SDK_VALUES = new Set(["java", "kotlin", "scala"]);
-
 /** The GHCR package name that holds the prebuilt performer image for this SDK. */
 export function performerPackageName(sdk: Sdk): string {
   return `${sdkPerformerImageBasename(sdk)}-fit-performer`;
@@ -28,7 +26,9 @@ export function performerPackageName(sdk: Sdk): string {
 /** The GitHub Packages URL for this SDK's prebuilt performer image. */
 export function performerPackageUrl(sdk: Sdk): string {
   const pkg = performerPackageName(sdk);
-  if (JVM_SDK_VALUES.has(sdk.value)) {
+  // JVM performers (java/scala/kotlin and columnar-java/analytics-java) are published from the
+  // couchbase-jvm-clients repo; everything else from the org-level package list.
+  if (sdk.jvm) {
     return `https://github.com/${JVM_PERFORMER_IMAGE_OWNER}/${JVM_PERFORMER_PACKAGES_REPOSITORY}/pkgs/container/${pkg}`;
   }
   return `https://github.com/orgs/${FIT_PERFORMER_IMAGE_OWNER}/packages/container/package/${pkg}`;
@@ -48,7 +48,7 @@ function performerImageTag(sdk: Sdk, version?: string): string {
 
 /** The fully-qualified GHCR image reference fit-cli pulls and runs for this performer. */
 export function performerImageName(sdk: Sdk, version?: string): string {
-  const owner = JVM_SDK_VALUES.has(sdk.value) ? JVM_PERFORMER_IMAGE_OWNER : FIT_PERFORMER_IMAGE_OWNER;
+  const owner = sdk.jvm ? JVM_PERFORMER_IMAGE_OWNER : FIT_PERFORMER_IMAGE_OWNER;
   return `${GHCR_REGISTRY}/${owner}/${performerPackageName(sdk)}:${performerImageTag(sdk, version)}`;
 }
 
@@ -69,8 +69,11 @@ export interface ParsedPerformerImage {
 // Accepts the short form `<sdk>-fit-performer:<tag>` and the fully-qualified
 // `ghcr.io/<owner>/<sdk>-fit-performer:<tag>` (the owner prefix is fit-cli's to
 // derive, so it's accepted but discarded).
+// The SDK basename may itself contain hyphens (e.g. `columnar-go`), so match one
+// or more hyphen-separated lowercase/digit segments before the `-fit-performer`
+// literal suffix.
 const PERFORMER_IMAGE_PATTERN =
-  /^(?:ghcr\.io\/[^/]+\/)?(?<sdk>[a-z0-9]+)-fit-performer:(?<tag>[A-Za-z0-9_][A-Za-z0-9._-]{0,127})$/;
+  /^(?:ghcr\.io\/[^/]+\/)?(?<sdk>[a-z0-9]+(?:-[a-z0-9]+)*)-fit-performer:(?<tag>[A-Za-z0-9_][A-Za-z0-9._-]{0,127})$/;
 
 /** Parse a performer image into its SDK and tag, or return why it isn't valid. */
 export function analysePerformerImage(image: string): ParsedPerformerImage | { error: string } {
@@ -98,8 +101,9 @@ export function analysePerformerImage(image: string): ParsedPerformerImage | { e
   if (!sdkPublishesPerformerImage(sdk)) {
     return {
       error:
-        `Only the JVM SDKs (java, scala, kotlin), C++ (cxx) and .NET (dotnet) publish prebuilt performer` +
-        ` images, and ${sdk.name} (${sdk.value}) does not. Pick one of those SDKs.`,
+        `Only the JVM SDKs (java, scala, kotlin), C++ (cxx), .NET (dotnet) and the Analytics SDKs` +
+        ` for Java (columnar-java, analytics-java) publish prebuilt performer images, and ${sdk.name}` +
+        ` (${sdk.value}) does not. Pick one of those SDKs.`,
     };
   }
   return { sdk, tag: match.groups.tag };

@@ -25,6 +25,11 @@ test("clusterLabel prefers the cbdino cluster version when known", () => {
   assert.equal(clusterLabel({ ...path, clusterlessSession: true }, "cbdinocluster", "8.1.0"), undefined);
 });
 
+test("clusterLabel prefixes EA: for a self-managed Enterprise Analytics cluster", () => {
+  assert.equal(clusterLabel(path, "cbdinocluster", "2.2.0-1166", true), "EA:2.2.0-1166");
+  assert.equal(clusterLabel(path, "cbdinocluster", undefined, true), "EA:cbdino1");
+});
+
 test("performerLabel names the session by performer, falling back to sN", () => {
   assert.equal(performerLabel(path, "java", "main"), "java:main");
   assert.equal(performerLabel(path, "java"), "java");

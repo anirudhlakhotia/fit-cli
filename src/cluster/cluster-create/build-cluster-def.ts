@@ -48,6 +48,9 @@ export const DEFAULT_CLUSTER_VERSION = "8.0-stable";
  */
 export const DEFAULT_CNG_CLUSTER_VERSION = "8.0.2-5503"; // should be DEFAULT_CLUSTER_VERSION, but that version does not exist on cb-rhcc currently.
 
+/** Default self-managed Enterprise Analytics build passed to cbdinocluster. */
+export const DEFAULT_ENTERPRISE_ANALYTICS_VERSION = "2.2.0-1166";
+
 /** GHCR image reference for a CNG server build: `ghcr.io/cb-rhcc/server:<version>`. */
 export function cngServerImageRef(version: string): string {
   return `ghcr.io/cb-rhcc/server:${version}`;
@@ -63,6 +66,27 @@ export interface ClusterDef {
   services: string[];
   /** Whether to add CNG/Protostellar (Cloud Native Gateway) support. */
   cng: boolean;
+  /** Whether to build a self-managed Enterprise Analytics cluster. */
+  enterpriseAnalytics?: boolean;
+}
+
+/**
+ * The Analytics cluster products FIT can test. "Enterprise Analytics" is
+ * self-managed (cbdinocluster `columnar: true` + a load balancer); "Capella
+ * Analytics" is the managed cloud product (formerly "Columnar" / "Capella
+ * Columnar"). Use these names — not "columnar" — everywhere except the cbdino
+ * wire format. Names are current as of 2026 and may change.
+ */
+export const ANALYTICS_CLUSTER_PRODUCTS = ["enterprise-analytics", "capella-analytics"] as const;
+export type AnalyticsClusterProduct = (typeof ANALYTICS_CLUSTER_PRODUCTS)[number];
+
+/**
+ * The single place that interprets cbdinocluster's `columnar: true` wire flag:
+ * a cbdino cluster def with `columnar: true` is a self-managed Enterprise
+ * Analytics cluster. Returns undefined for a non-Analytics cbdino cluster.
+ */
+export function cbdinoAnalyticsClusterProduct(config: CbdinoclusterDef): AnalyticsClusterProduct | undefined {
+  return config.columnar === true ? "enterprise-analytics" : undefined;
 }
 
 export interface CbdinoclusterDockerDef {
@@ -71,6 +95,10 @@ export interface CbdinoclusterDockerDef {
   "fts-memory"?: number;
   "cbas-memory"?: number;
   "eventing-memory"?: number;
+  /** Columnar docker deployer: front the cluster with an nginx load balancer. */
+  "passive-load-balancer"?: boolean;
+  /** Columnar docker deployer: use cbdinocluster-generated certs. */
+  "use-dino-certs"?: boolean;
 }
 
 /**
@@ -104,9 +132,11 @@ function dockerMemoryForServices(services: string[]): CbdinoclusterDockerDef | u
  * and pick the default deployer, `docker` for the generated RAM quotas.
  */
 export interface CbdinoclusterDef {
-  nodes: { count: number; version: string; services: string[] }[];
+  nodes: { count: number; version: string; services?: string[] }[];
   /** Present only when CNG/Protostellar support is wanted. */
   cao?: { "operator-version": string; "gateway-version": string };
+  /** Present only for a Enterprise Analytics cluster. */
+  columnar?: boolean;
   /** Per-service RAM quotas for the docker deployer; omitted for other deployers. */
   docker?: CbdinoclusterDockerDef;
   /** Pass-through: any other cbdinocluster cluster-def keys are forwarded as-is. */
@@ -125,6 +155,17 @@ export interface CbdinoclusterDef {
  * tests. Hand-edit the `docker` block to tune them.
  */
 export function buildClusterDefObject(def: ClusterDef): CbdinoclusterDef {
+  if (def.enterpriseAnalytics) {
+    // A self-managed Enterprise Analytics cluster. On the cbdino wire this is the
+    // `columnar: true` flag (cbdino's historical name); nodes carry no service
+    // list (cbdino derives the Analytics topology from it), and the docker
+    // deployer fronts it with an nginx load balancer using dino certs.
+    return {
+      columnar: true,
+      nodes: [{ count: def.nodeCount, version: def.version }],
+      docker: { "passive-load-balancer": true, "use-dino-certs": true },
+    };
+  }
   const docker = def.cng ? undefined : dockerMemoryForServices(def.services);
   return {
     nodes: [{ count: def.nodeCount, version: def.version, services: def.services }],

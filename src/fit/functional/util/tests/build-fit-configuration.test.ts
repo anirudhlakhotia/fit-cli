@@ -230,3 +230,105 @@ test("resourceCreationPiece enables cluster-creating tests with both mandatory k
   assert.deepEqual(cluster.cbdinocluster, { path: "/home/ubuntu/.local/bin/cbdinocluster" });
   assert.deepEqual(cluster.preferredCluster, { version: "8.0.1-4654" });
 });
+
+test("an analytics config skips bucket creation and lets the definition's clusterAccess merge over", () => {
+  const config = buildFitConfiguration(
+    {
+      scheme: "couchbase",
+      defaultHostname: "localhost",
+      flavour: "self-managed",
+      credentials,
+      tls: null,
+    },
+    8060,
+    // The definition's fitConfig.config: the analytics endpoint + load balancer (TLS).
+    {
+      clusterAccess: {
+        clusterParams: { loadBalancedCluster: { ports: [8095, 18095] } },
+        performer: { connectionString: "couchbases://${defaultHostname}", tls: { insecure: true } },
+      },
+    },
+    undefined,
+    undefined,
+    true,
+  );
+
+  // Analytics manages its own data — no KV bucket to create.
+  assert.equal(config.skipBucketCreation, true);
+  assert.equal("bucketConfig" in config, false);
+  assert.deepEqual(config.excludeTests, ["situational"]);
+
+  const access = config.clusterAccess as Record<string, unknown>;
+  assert.deepEqual(access.clusterParams, { loadBalancedCluster: { ports: [8095, 18095] } });
+  assert.deepEqual(access.performer, { connectionString: "couchbases://${defaultHostname}", tls: { insecure: true } });
+  // The generated baseline is still present (and not overwritten by the merge).
+  assert.equal(access.ssh, null);
+  // The performer runs in Docker, so it reaches the host's FIT proxy via
+  // host.docker.internal (localhost would resolve to the container itself).
+  assert.deepEqual(access.proxy, { hostname: "host.docker.internal" });
+});
+
+test("an Analytics load-balancer host rewrites the performer host (not the driver's), preserving scheme/port", () => {
+  // The EA SDK over http://...:8095 — FIT would resolve ${defaultHostname} to the
+  // multi-seed node list, which an HTTP URL can't take; the LB host fixes it.
+  const eaConfig = buildFitConfiguration(
+    {
+      scheme: "couchbase",
+      defaultHostname: "172.18.0.5,172.18.0.4,172.18.0.6",
+      flavour: "self-managed",
+      credentials,
+      tls: null,
+      analyticsLoadBalancerHost: "172.18.0.3",
+    },
+    8060,
+    { clusterAccess: { performer: { connectionString: "http://${defaultHostname}:8095", tls: null } } },
+    undefined,
+    undefined,
+    true,
+  );
+  const eaAccess = eaConfig.clusterAccess as Record<string, unknown>;
+  assert.deepEqual(eaAccess.performer, { connectionString: "http://172.18.0.3:8095", tls: null });
+  // The driver keeps the multi-seed node list (couchbase:// handles it).
+  assert.equal(eaAccess.connectionString, "couchbase://${defaultHostname}");
+  // The FIT proxy must forward to the single LB host, not the node list (which it
+  // can't dial as a comma-separated string).
+  assert.deepEqual(eaAccess.proxy, { hostname: "host.docker.internal", clusterHostname: "172.18.0.3" });
+
+  // A Columnar SDK's couchbases:// scheme is preserved — only the host is rewritten.
+  const columnarConfig = buildFitConfiguration(
+    {
+      scheme: "couchbase",
+      defaultHostname: "172.18.0.5,172.18.0.4,172.18.0.6",
+      flavour: "self-managed",
+      credentials,
+      tls: null,
+      analyticsLoadBalancerHost: "172.18.0.3",
+    },
+    8060,
+    { clusterAccess: { performer: { connectionString: "couchbases://${defaultHostname}", tls: { insecure: true } } } },
+    undefined,
+    undefined,
+    true,
+  );
+  const columnarAccess = columnarConfig.clusterAccess as Record<string, unknown>;
+  assert.deepEqual(columnarAccess.performer, { connectionString: "couchbases://172.18.0.3", tls: { insecure: true } });
+});
+
+test("no Analytics load-balancer host leaves the performer's ${defaultHostname} token untouched", () => {
+  const config = buildFitConfiguration(
+    {
+      scheme: "couchbase",
+      defaultHostname: "172.18.0.5,172.18.0.4,172.18.0.6",
+      flavour: "self-managed",
+      credentials,
+      tls: null,
+    },
+    8060,
+    { clusterAccess: { performer: { connectionString: "http://${defaultHostname}:8095", tls: null } } },
+    undefined,
+    undefined,
+    true,
+  );
+  const access = config.clusterAccess as Record<string, unknown>;
+  assert.deepEqual(access.performer, { connectionString: "http://${defaultHostname}:8095", tls: null });
+});

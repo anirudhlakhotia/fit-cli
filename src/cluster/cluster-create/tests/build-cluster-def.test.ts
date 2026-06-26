@@ -13,6 +13,7 @@ import {
   DOCKER_SERVICE_MEMORY_MB,
   buildClusterDef,
   buildClusterDefObject,
+  cbdinoAnalyticsClusterProduct,
 } from "../build-cluster-def.js";
 
 test("a basic single-node def renders the nodes block", () => {
@@ -98,4 +99,22 @@ test("buildClusterDefObject uses cao (not docker) for CNG clusters", () => {
   });
   assert.equal(def.docker, undefined);
   assert.equal(def.cao?.["operator-version"], CAO_OPERATOR_VERSION);
+});
+
+test("buildClusterDefObject emits cbdino columnar:true + an nginx load balancer for a self-managed Enterprise Analytics cluster", () => {
+  const def = buildClusterDefObject({
+    nodeCount: 2,
+    version: "2.2.0-1166",
+    services: [],
+    cng: false,
+    enterpriseAnalytics: true,
+  });
+  // On the cbdino wire this is `columnar: true`.
+  assert.equal(def.columnar, true);
+  assert.equal(cbdinoAnalyticsClusterProduct(def), "enterprise-analytics");
+  // No per-node service list and no cao block.
+  assert.deepEqual(def.nodes, [{ count: 2, version: "2.2.0-1166" }]);
+  assert.equal(def.cao, undefined);
+  assert.equal(def.docker?.["passive-load-balancer"], true);
+  assert.equal(def.docker?.["use-dino-certs"], true);
 });

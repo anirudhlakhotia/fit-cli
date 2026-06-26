@@ -12,6 +12,7 @@ import {
   resolveSituationalMavenArgs,
 } from "../resolve-definition.js";
 import {
+  ANALYTICS_MAVEN_TEST_ARGS,
   DEFAULT_MAVEN_TEST_ARGS,
   SITUATIONAL_MAVEN_TEST_ARGS,
 } from "../../run-test-driver/run-test-driver.js";
@@ -82,6 +83,43 @@ test("resolveDefinition preserves instance, cluster, session, and run nesting", 
   assert.equal(resolved.instances[0]?.clusters.length, 1);
   assert.equal(resolved.instances[0]?.clusters[0]?.sessions.length, 1);
   assert.equal(resolved.instances[0]?.clusters[0]?.sessions[0]?.runs.length, 1);
+});
+
+test("an analytics-functional run resolves into the functional group carrying the analytics marker + analytics maven args", () => {
+  const def: FitDefinition = {
+    version: 1,
+    type: "fit",
+    instances: [
+      {
+        localhost: {},
+        clusters: [
+          {
+            // cbdino wire flag `columnar: true` = a self-managed Enterprise Analytics cluster.
+            cbdinocluster: {
+              config: { columnar: true, nodes: [{ count: 2, version: "2.2.0-1166" }] },
+            },
+            sessions: [
+              {
+                performer: { image: "columnar-java-fit-performer:main" },
+                runs: [{ type: "analytics-functional", tests: {} }],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+  const groups = buildExecutionGroups(resolveDefinition(def).instances);
+  assert.equal(groups.length, 1);
+  const group = groups[0];
+  assert.equal(group?.type, "functional");
+  if (group?.type !== "functional") return;
+  assert.equal(group.clusterMode, "cbdinocluster");
+  const run = group.runs[0];
+  assert.equal(run?.type, "functional");
+  assert.equal(run?.analytics, true);
+  assert.equal(run?.sdk.value, "columnar-java");
+  assert.deepEqual(run?.extraMavenArgs, [...ANALYTICS_MAVEN_TEST_ARGS]);
 });
 
 test("resolveSession applies performer defaults and strips redundant clusterAccess for connection mode", () => {
@@ -342,7 +380,7 @@ test("dirSegments are populated through instance → cluster → session → run
   assert.equal(run.path.dirSegments?.instance, "aws1");
   assert.equal(run.path.dirSegments?.cluster, "8.0-stable");
   assert.equal(run.path.dirSegments?.session, "java:main");
-  assert.equal(run.path.dirSegments?.run, "func:standard-qe");
+  assert.equal(run.path.dirSegments?.run, "functional:standard-qe");
 });
 
 test("repeat expands a run into N sequential copies with distinct runIndex values", () => {
@@ -363,9 +401,9 @@ test("repeat appends :r1/:r2/... to the run dir segment to avoid collisions", ()
     runs: [{ type: "functional", tests: { classes: ["com.example.MyTest"] }, repeat: 3 }],
   };
   const resolved = resolveSession(session, { instanceIndex: 0, clusterIndex: 0, sessionIndex: 0 }, false);
-  assert.equal(resolved.runs[0]?.path.dirSegments?.run, "func:r1");
-  assert.equal(resolved.runs[1]?.path.dirSegments?.run, "func:r2");
-  assert.equal(resolved.runs[2]?.path.dirSegments?.run, "func:r3");
+  assert.equal(resolved.runs[0]?.path.dirSegments?.run, "functional:r1");
+  assert.equal(resolved.runs[1]?.path.dirSegments?.run, "functional:r2");
+  assert.equal(resolved.runs[2]?.path.dirSegments?.run, "functional:r3");
 });
 
 test("run without repeat produces no :rN suffix and a single entry", () => {

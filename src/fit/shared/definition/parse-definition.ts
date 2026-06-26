@@ -16,6 +16,7 @@ import {
 } from "../../../cluster/cluster-create/cluster-exists-policy.js";
 import type { CbdinoclusterDef } from "../../../cluster/cluster-create/build-cluster-def.js";
 import { analysePerformerImage } from "../../performers/util/performer-image.js";
+import { isAnalyticsSdk } from "../../../util/sdk/sdks.js";
 import {
   CURRENT_FIT_DEFINITION_VERSION,
   FIT_DEFINITION_TYPE,
@@ -488,13 +489,13 @@ function validateRun(value: unknown, path: string, clusterless: boolean): FitRun
     throw new InvalidDefinitionError(`Missing required field: ${path}.tests`);
   }
   const repeat = validateRepeat(record, path);
-  if (type === "functional") {
+  if (type === "functional" || type === "analytics-functional") {
     rejectUnknown(record, ["type", "tests", "fitConfig", "repeat"], path);
     if (clusterless) {
-      throw new InvalidDefinitionError(`"${path}.type" cannot be "functional" under clusterlessSessions.`);
+      throw new InvalidDefinitionError(`"${path}.type" cannot be "${type}" under clusterlessSessions.`);
     }
     return {
-      type: "functional",
+      type,
       tests: validateTestsSection(record.tests, `${path}.tests`),
       ...(record.fitConfig !== undefined ? { fitConfig: validateRunFitConfig(record.fitConfig, `${path}.fitConfig`) } : {}),
       ...(repeat !== undefined ? { repeat } : {}),
@@ -522,10 +523,42 @@ function validateSession(value: unknown, path: string, clusterless: boolean): Se
   if (!Array.isArray(record.runs) || record.runs.length === 0) {
     throw new InvalidDefinitionError(`"${path}.runs" must contain at least one run.`);
   }
-  return {
-    performer: validatePerformer(record.performer, `${path}.performer`),
-    runs: record.runs.map((run, index) => validateRun(run, `${path}.runs[${index}]`, clusterless)),
-  };
+  const performer = validatePerformer(record.performer, `${path}.performer`);
+  const runs = record.runs.map((run, index) => validateRun(run, `${path}.runs[${index}]`, clusterless));
+  validatePerformerMatchesRuns(performer, runs, path);
+  return { performer, runs };
+}
+
+/**
+ * Catch a mismatched performer + run-type pairing up front (instead of an opaque
+ * gRPC "UNIMPLEMENTED" failure at test time): `analytics-functional` runs go
+ * through the Analytics test-driver and need an Analytics SDK performer (Columnar
+ * SDK or Enterprise Analytics SDK), while operational `functional`/`situational`
+ * runs need an operational SDK performer. The performer image was already validated
+ * by validatePerformer, so analysePerformerImage here always succeeds.
+ */
+function validatePerformerMatchesRuns(performer: PerformerSetup, runs: FitRun[], path: string): void {
+  const parsed = analysePerformerImage(performer.image);
+  if ("error" in parsed) {
+    return;
+  }
+  const performerIsAnalytics = isAnalyticsSdk(parsed.sdk);
+  runs.forEach((run, index) => {
+    const runIsAnalytics = run.type === "analytics-functional";
+    if (runIsAnalytics && !performerIsAnalytics) {
+      throw new InvalidDefinitionError(
+        `"${path}.runs[${index}]" is an "analytics-functional" run but the performer image "${performer.image}"` +
+          ` is an operational SDK (${parsed.sdk.name}). Use an Analytics SDK performer — a Columnar SDK or` +
+          ` Enterprise Analytics SDK (e.g. columnar-java-fit-performer or analytics-java-fit-performer).`,
+      );
+    }
+    if (!runIsAnalytics && performerIsAnalytics) {
+      throw new InvalidDefinitionError(
+        `"${path}.runs[${index}]" is a "${run.type}" run but the performer image "${performer.image}" is an` +
+          ` Analytics SDK (${parsed.sdk.name}). Analytics SDKs only run "analytics-functional" tests.`,
+      );
+    }
+  });
 }
 
 function validateCluster(value: unknown, path: string): ClusterLifetime {

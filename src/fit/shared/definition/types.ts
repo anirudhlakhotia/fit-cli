@@ -8,7 +8,7 @@ import type { PieceData } from "../../../util/non-fit/config-pieces.js";
 
 export const FIT_DEFINITION_TYPE = "fit";
 export const CURRENT_FIT_DEFINITION_VERSION = 1;
-export const FIT_RUN_TYPES = ["functional", "situational"] as const;
+export const FIT_RUN_TYPES = ["functional", "situational", "analytics-functional"] as const;
 
 export type FitRunType = (typeof FIT_RUN_TYPES)[number];
 export type FitConfigPiece = PieceData;
@@ -191,7 +191,25 @@ export interface SituationalRun {
   repeat?: number;
 }
 
-export type FitRun = FunctionalRun | SituationalRun;
+/**
+ * A functional run that tests an Analytics product — Enterprise Analytics or
+ * Capella Analytics — via the `columnar-test-driver` Maven module (query,
+ * connection and auth tests) rather than the operational `test-driver`. Like
+ * {@link FunctionalRun} it is cluster-bound; what is being tested is expressed by:
+ *   - the cluster: a cbdinocluster `columnar: true` block (a self-managed
+ *     Enterprise Analytics cluster), or a connection to a Capella Analytics cluster;
+ *   - the performer image: a Columnar SDK or an Enterprise Analytics SDK;
+ *   - the connection details on the fitConfig (driver vs performer), as for CNG.
+ */
+export interface AnalyticsFunctionalRun {
+  type: "analytics-functional";
+  fitConfig?: ResolvedFitConfig | string;
+  tests: TestsSection;
+  /** Run this entry N times in sequence against the same cluster. */
+  repeat?: number;
+}
+
+export type FitRun = FunctionalRun | SituationalRun | AnalyticsFunctionalRun;
 
 export interface SessionLifetime {
   performer: PerformerSetup;

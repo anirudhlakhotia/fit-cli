@@ -19,11 +19,32 @@ import { surefireReportsDir } from "./collect-junit.js";
 import { createLocalFitExecutionContext, type FitExecutionContext } from "../util/remote-fit-run.js";
 import { selectFitTests, type FitTestSelection } from "../select-fit-tests/select-fit-tests.js";
 
+/** The Maven module that runs operational functional + situational tests. */
+export const DEFAULT_TEST_DRIVER_MODULE = "test-driver";
+/**
+ * The Maven module that runs Analytics functional tests (Enterprise Analytics and
+ * Capella Analytics). Its name is `columnar-test-driver` in transactions-fit-performer
+ * for historical reasons (Capella Analytics was formerly "Columnar"); this constant is
+ * the single place that external literal lives.
+ */
+export const ANALYTICS_TEST_DRIVER_MODULE = "columnar-test-driver";
+
 /** The Maven groups excluded by default on a functional run. */
 export const DEFAULT_EXCLUDED_GROUPS = ["situational", "openshift", "syncgateway"] as const;
 
 export const DEFAULT_MAVEN_TEST_ARGS = [
   `-DexcludedGroups=${DEFAULT_EXCLUDED_GROUPS.join(",")}`,
+] as const;
+
+/**
+ * The Maven groups excluded by default on an analytics-functional run, matching
+ * fit-app-deployment's run-columnar-fit.yml (columnarDDL is excluded so a plain
+ * run doesn't attempt DDL-mutating tests).
+ */
+export const ANALYTICS_DEFAULT_EXCLUDED_GROUPS = ["situational", "openshift", "syncgateway", "columnarDDL"] as const;
+
+export const ANALYTICS_MAVEN_TEST_ARGS = [
+  `-DexcludedGroups=${ANALYTICS_DEFAULT_EXCLUDED_GROUPS.join(",")}`,
 ] as const;
 
 /** The `-Dgroups` filter that selects the cbdino-managed situational tests. */
@@ -177,17 +198,18 @@ export function runTestDriverArgs(
   selection: FitTestSelection,
   fitConfigPath?: string,
   extraMavenArgs: readonly string[] = DEFAULT_MAVEN_TEST_ARGS,
+  testDriverModule: string = DEFAULT_TEST_DRIVER_MODULE,
 ): string[] {
   // Note: we don't try to relocate surefire's report dir. Its `reportsDirectory`
   // parameter has no command-line property, so `-Dsurefire.reportsDirectory` is a
-  // no-op — reports always land in test-driver/target/surefire-reports. We purge
+  // no-op — reports always land in <module>/target/surefire-reports. We purge
   // that dir before each run and collect from it afterwards (see runTestDriver).
   return [
     "-q",
     "--no-transfer-progress",
     "--batch-mode",
     "--projects",
-    "test-driver",
+    testDriverModule,
     "--also-make",
     // =true is explicit on purpose: Maven must run *every* test rather than
     // bailing on the first failure, and fit-cli decides pass/fail afterwards from
@@ -210,6 +232,7 @@ export async function runTestDriver(
   path: DefinitionRunPath,
   fitConfigPath?: string,
   extraMavenArgs: readonly string[] = DEFAULT_MAVEN_TEST_ARGS,
+  testDriverModule: string = DEFAULT_TEST_DRIVER_MODULE,
 ): Promise<TestRunResult> {
   // The Maven test-driver runs from the performer checkout, so make sure it's
   // present first — cloning it locally if missing (idempotent on a remote box).
@@ -225,13 +248,13 @@ export async function runTestDriver(
   // purge that before the run to avoid picking up a previous run's reports, then
   // collect from it afterwards.
   const runArtifactsDir = execution.runArtifactsDir(path);
-  const sourceSurefireDir = surefireReportsDir(execution.fitPerformerDir);
+  const sourceSurefireDir = surefireReportsDir(execution.fitPerformerDir, testDriverModule);
   await execution.removeTree(sourceSurefireDir);
 
   const targetFitConfigPath = fitConfigPath
     ? await execution.stageFile(fitConfigPath, join(runArtifactsDir, basename(fitConfigPath)))
     : undefined;
-  const args = runTestDriverArgs(selection, targetFitConfigPath, extraMavenArgs);
+  const args = runTestDriverArgs(selection, targetFitConfigPath, extraMavenArgs, testDriverModule);
 
   const logFile = fitTestLogFile(path);
   const targetLogFile = join(runArtifactsDir, basename(logFile));

@@ -8,20 +8,37 @@
  * transactions-fit-performer is the old one and is no longer used.
  */
 export const SDKS = [
-  { name: "Java", value: "java", jvm: true, performer: "java" },
-  { name: "Scala", value: "scala", jvm: true, performer: "scala" },
-  { name: "Kotlin", value: "kotlin", jvm: true, performer: "kotlin" },
-  { name: "C++", value: "cpp", jvm: false, performer: "cpp" },
-  { name: ".NET", value: "dotnet", jvm: false, performer: "dotnet" },
-  { name: "Go", value: "go", jvm: false, performer: "go" },
-  { name: "Node.js", value: "node", jvm: false, performer: "node" },
-  { name: "Python", value: "python", jvm: false, performer: "python" },
-  { name: "Ruby", value: "ruby", jvm: false, performer: "ruby" },
-  { name: "Rust", value: "rust", jvm: false, performer: "rust" },
+  { name: "Java", value: "java", jvm: true, performer: "java", family: "operational" },
+  { name: "Scala", value: "scala", jvm: true, performer: "scala", family: "operational" },
+  { name: "Kotlin", value: "kotlin", jvm: true, performer: "kotlin", family: "operational" },
+  { name: "C++", value: "cpp", jvm: false, performer: "cpp", family: "operational" },
+  { name: ".NET", value: "dotnet", jvm: false, performer: "dotnet", family: "operational" },
+  { name: "Go", value: "go", jvm: false, performer: "go", family: "operational" },
+  { name: "Node.js", value: "node", jvm: false, performer: "node", family: "operational" },
+  { name: "Python", value: "python", jvm: false, performer: "python", family: "operational" },
+  { name: "Ruby", value: "ruby", jvm: false, performer: "ruby", family: "operational" },
+  { name: "Rust", value: "rust", jvm: false, performer: "rust", family: "operational" },
+  // Analytics SDKs — tested via the columnar-test-driver (`analytics-functional`
+  // runs). Two families exist: "Columnar SDK" (recommended for Capella Analytics) and
+  // "Enterprise Analytics SDK" (recommended for Enterprise Analytics + a load balancer).
+  // Two prebuilt performer images are published, both JVM-style under
+  // couchbase/couchbase-jvm-clients:
+  //   - columnar-java (family "columnar"):
+  //     https://github.com/couchbase/couchbase-jvm-clients/pkgs/container/columnar-java-fit-performer
+  //   - analytics-java (family "enterprise-analytics"):
+  //     https://github.com/couchbase/couchbase-jvm-clients/pkgs/container/analytics-java-fit-performer
+  // The Go/Node/Python columnar+analytics performers in transactions-fit-performer are
+  // not published. Add entries here as more images ship.
+  // Enterprise Analytics SDK first — it's the standard/recommended choice for the
+  // (self-managed Enterprise Analytics) clusters fit-cli allocates; the Columnar SDK
+  // is mainly for Capella Analytics or the odd cross-combination.
+  { name: "Enterprise Analytics SDK — Java", value: "analytics-java", jvm: true, performer: "analytics/java", family: "enterprise-analytics" },
+  { name: "Columnar SDK — Java", value: "columnar-java", jvm: true, performer: "columnar/java", family: "columnar" },
 ] as const;
 
 export type Sdk = (typeof SDKS)[number];
 export type SdkValue = Sdk["value"];
+export type SdkFamily = Sdk["family"];
 
 /** Look up an SDK by its `value`, or undefined if there is no such SDK. */
 export function sdkByValue(value: string): Sdk | undefined {
@@ -29,17 +46,37 @@ export function sdkByValue(value: string): Sdk | undefined {
 }
 
 /**
- * True if this SDK currently publishes a prebuilt performer Docker image to
- * GHCR. Only the JVM SDKs (Java, Scala, Kotlin), C++ and .NET do today, and
- * fit-cli only runs performers from prebuilt images, so these are the only SDKs
- * it can test.
+ * True for any Analytics SDK (Columnar SDK or, once published, Enterprise Analytics
+ * SDK) — i.e. anything that isn't an operational SDK. These run via the Analytics
+ * test-driver.
  */
-export function sdkPublishesPerformerImage(sdk: Sdk): boolean {
-  return sdk.jvm || sdk.value === "cpp" || sdk.value === "dotnet";
+export function isAnalyticsSdk(sdk: Sdk): boolean {
+  return sdk.family !== "operational";
 }
 
-/** The SDKs fit-cli can test — those with prebuilt performer images (JVM + C++ + .NET). */
+/**
+ * True if this SDK currently publishes a prebuilt performer Docker image to
+ * GHCR. The operational JVM SDKs (Java, Scala, Kotlin), C++ and .NET do, as do
+ * the Analytics SDKs (Columnar + Enterprise Analytics); fit-cli only runs
+ * performers from prebuilt images, so these are the only SDKs it can test.
+ */
+export function sdkPublishesPerformerImage(sdk: Sdk): boolean {
+  return isAnalyticsSdk(sdk) || sdk.jvm || sdk.value === "cpp" || sdk.value === "dotnet";
+}
+
+/** All SDKs fit-cli can test — those with prebuilt performer images. */
 export const PREBUILT_PERFORMER_SDKS = SDKS.filter(sdkPublishesPerformerImage);
+
+/** Operational (non-Analytics) prebuilt SDKs — the choices for a functional/situational run. */
+export const OPERATIONAL_PREBUILT_SDKS = PREBUILT_PERFORMER_SDKS.filter((sdk) => sdk.family === "operational");
+
+/**
+ * The SDKs an `analytics-functional` run can use — both the Columnar SDKs and the
+ * Enterprise Analytics SDKs. (Which is recommended depends on the cluster:
+ * Enterprise Analytics + load balancer → Enterprise Analytics SDK; Capella
+ * Analytics → Columnar SDK.)
+ */
+export const ANALYTICS_FUNCTIONAL_SDKS = SDKS.filter(isAnalyticsSdk);
 
 /**
  * The GHCR package basename for an SDK's performer image is usually its `value`

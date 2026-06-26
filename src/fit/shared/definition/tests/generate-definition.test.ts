@@ -193,3 +193,49 @@ test("formatFitDefinition includes the nested instances key (YAML)", () => {
   assert.match(rendered, /instances:/);
   assert.doesNotMatch(rendered, /fitConfigs:/);
 });
+
+test("an analytics-functional definition relocates the fitConfig to top-level fitConfigs and references it by id", () => {
+  const analyticsSdk = sdkByValue("columnar-java");
+  if (!analyticsSdk) throw new Error("Expected the columnar-java SDK to exist.");
+  const definition = buildFitFunctionalDefinitionFrom({
+    cluster: {
+      kind: "cbdinocluster",
+      def: { nodeCount: 2, version: "2.2.0-1166", services: [], cng: false, enterpriseAnalytics: true },
+    },
+    sdk: analyticsSdk,
+    selection: buildDefaultFitTestSelection(),
+    analytics: true,
+  });
+
+  const run = definition.instances[0]?.clusters[0]?.sessions[0]?.runs[0];
+  assert.equal(run?.type, "analytics-functional");
+  // The run references the fitConfig by id rather than inlining it.
+  assert.equal(run?.fitConfig, "fit-config-0");
+  assert.equal(definition.fitConfigs?.length, 1);
+  assert.equal(definition.fitConfigs?.[0]?.id, "fit-config-0");
+  // A Columnar SDK reaches Analytics over couchbases:// with insecure TLS.
+  const columnarPerformer = (definition.fitConfigs?.[0]?.config?.clusterAccess as Record<string, unknown> | undefined)
+    ?.performer as Record<string, unknown> | undefined;
+  assert.deepEqual(columnarPerformer, { connectionString: "couchbases://${defaultHostname}", tls: { insecure: true } });
+  // Round-trips through the parser cleanly.
+  assert.deepEqual(parseDefinition(formatFitDefinition(definition, "json5")), definition);
+});
+
+test("an Enterprise Analytics SDK performer connects over http(s), not couchbases", () => {
+  const eaSdk = sdkByValue("analytics-java");
+  if (!eaSdk) throw new Error("Expected the analytics-java SDK to exist.");
+  const definition = buildFitFunctionalDefinitionFrom({
+    cluster: {
+      kind: "cbdinocluster",
+      def: { nodeCount: 2, version: "2.2.0-1166", services: [], cng: false, enterpriseAnalytics: true },
+    },
+    sdk: eaSdk,
+    selection: buildDefaultFitTestSelection(),
+    analytics: true,
+  });
+
+  const performer = (definition.fitConfigs?.[0]?.config?.clusterAccess as Record<string, unknown> | undefined)
+    ?.performer as Record<string, unknown> | undefined;
+  // The EA SDK rejects couchbases:// ("Expected URL scheme 'http' or 'https'") — use http://...:8095.
+  assert.deepEqual(performer, { connectionString: "http://${defaultHostname}:8095", tls: null });
+});

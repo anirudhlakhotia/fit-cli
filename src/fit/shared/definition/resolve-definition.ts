@@ -15,6 +15,8 @@ import {
 import { type Sdk } from "../../../util/sdk/sdks.js";
 import { parsePerformerImage } from "../../performers/util/performer-image.js";
 import {
+  ANALYTICS_DEFAULT_EXCLUDED_GROUPS,
+  ANALYTICS_MAVEN_TEST_ARGS,
   DEFAULT_EXCLUDED_GROUPS,
   DEFAULT_MAVEN_TEST_ARGS,
   SITUATIONAL_DEFAULT_EXCLUDED_GROUPS,
@@ -70,6 +72,14 @@ export interface ResolvedRunCommon {
   fitConfig?: ResolvedFitConfig;
   testSelection: FitTestSelection;
   extraMavenArgs: string[];
+  /**
+   * An `analytics-functional` def run resolves to a functional run carrying this
+   * marker. It flows through the same cluster/performer/run machinery as a
+   * functional run, but is executed against the Analytics test-driver module
+   * ({@link ANALYTICS_TEST_DRIVER_MODULE}) and gets an Analytics-shaped
+   * FITConfiguration (see run-from-definition).
+   */
+  analytics?: boolean;
 }
 
 export interface ResolvedFunctionalRun extends ResolvedRunCommon {
@@ -300,6 +310,14 @@ export function resolveSituationalMavenArgs(tests: TestsSection): string[] {
   return [...base, ...resolveMavenSuffix(tests)];
 }
 
+export function resolveAnalyticsMavenArgs(tests: TestsSection): string[] {
+  const excluded = resolveExcludedGroups(tests, ANALYTICS_DEFAULT_EXCLUDED_GROUPS);
+  const base = excluded === undefined
+    ? [...ANALYTICS_MAVEN_TEST_ARGS]
+    : [`-DexcludedGroups=${excluded.join(",")}`];
+  return [...base, ...resolveMavenSuffix(tests)];
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -414,6 +432,18 @@ function resolveRun(run: FitRun, stripClusterAccess: boolean): ResolvedRunWithou
       resultsEnvironment: run.situational.database.resultsEnvironment ?? DEFAULT_RESULTS_ENV,
     };
   }
+  if (run.type === "analytics-functional") {
+    // Collapses to a functional run carrying the analytics marker: it shares the
+    // whole functional cluster/performer/run path, but is run against the
+    // Analytics test-driver module with the Analytics excluded-groups defaults.
+    return {
+      type: "functional",
+      analytics: true,
+      ...(fitConfig !== undefined ? { fitConfig } : {}),
+      testSelection: resolveTestsSelection(run.tests),
+      extraMavenArgs: resolveAnalyticsMavenArgs(run.tests),
+    };
+  }
   return {
     type: "functional",
     ...(fitConfig !== undefined ? { fitConfig } : {}),
@@ -488,7 +518,9 @@ export function resolveCluster(cluster: ClusterLifetime, path: DefinitionRunPath
     clusterMode === "cbdinocluster" && cbdinocluster
       ? [...new Set(cbdinocluster.config.nodes.map((n) => n.version))].filter(Boolean).join("+") || undefined
       : undefined;
-  const clusterSeg = clusterLabel(path, clusterMode, cbdinoclusterVersion) ?? String(path.clusterIndex ?? 0);
+  const clusterSeg =
+    clusterLabel(path, clusterMode, cbdinoclusterVersion, cbdinocluster?.config.columnar === true) ??
+    String(path.clusterIndex ?? 0);
   const pathWithCluster: DefinitionRunPath = { ...path, dirSegments: { ...path.dirSegments, cluster: clusterSeg } };
   return {
     path: pathWithCluster,
@@ -579,6 +611,7 @@ export function buildExecutionGroups(instances: ResolvedInstancePlan[]): Resolve
             ...(run.fitConfig !== undefined ? { fitConfig: run.fitConfig } : {}),
             testSelection: run.testSelection,
             extraMavenArgs: run.extraMavenArgs,
+            ...(run.analytics ? { analytics: true } : {}),
             ...(cluster.cluster ? { cluster: cluster.cluster } : {}),
           })),
       ),
