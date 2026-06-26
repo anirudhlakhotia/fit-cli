@@ -140,7 +140,16 @@ test("resolveGithubToken falls back to AWS secret when no local config or env", 
   );
 });
 
+const STUB_DEFAULTS = {
+  clusterVersion: "8.0-stable",
+  cngClusterVersion: "8.0.2-5503",
+  enterpriseAnalyticsVersion: "2.2.0-1166",
+  caoOperatorVersion: "2.9.2",
+  cngVersion: "1.1.0-135",
+};
+
 const TEST_ENVIRONMENTS = {
+  defaults: STUB_DEFAULTS,
   capella: { dev: { endpoint: "https://dev.example", oid: "oid-dev", username: "sdk_qe@couchbase.com", secretId: "cap/dev" } },
   results: { dev: { host: "dev.db.example", secretId: "res/dev" } },
 };
@@ -281,7 +290,7 @@ test("resolveCapellaConfig throws for an unprovisioned environment", async () =>
   await assert.rejects(
     resolveCapellaConfig({
       block: "stage",
-      environments: { capella: { stage: { endpoint: null, oid: null, secretId: "cap/stage" } }, results: {} },
+      environments: { defaults: STUB_DEFAULTS, capella: { stage: { endpoint: null, oid: null, secretId: "cap/stage" } }, results: {} },
       config: { version: FIT_CLI_CONFIG_VERSION },
       env: {},
       fetchSecret: noFetch,

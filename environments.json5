@@ -1,6 +1,7 @@
 {
-  // Per-environment registry. Holds only NON-secret values plus a POINTER (secretId)
-  // to where the secrets live in AWS Secrets Manager — no secret values are committed.
+  // Per-environment registry plus global defaults. Holds only NON-secret values
+  // plus a POINTER (secretId) to where the secrets live in AWS Secrets Manager —
+  // no secret values are committed.
   //
   // Which environment a run uses is chosen in the definition file:
   //   capella  → instances[*].setup.capellaEnvironment   (default 'dev')
@@ -21,6 +22,32 @@
   // A null non-secret value means "not yet provided" — selecting that block fails fast.
   // bun run secrets set capella/dev password='<password>'
   // bun run secrets set results/dev password='<password>'
+
+  // Global defaults — not per-environment. Version strings passed to cbdinocluster
+  // (and related tools) when the definition file doesn't pin them explicitly.
+  defaults: {
+    // Default Couchbase Server version passed to cbdinocluster. Accepts stable-channel
+    // aliases (e.g. "8.0-stable") as well as pinned builds (e.g. "8.0.2-5322") — use
+    // a pinned build if you need a specific patch or the alias is temporarily broken.
+    clusterVersion: "8.0-stable",
+
+    // CNG generally uses OpenShift which uses server builds from cb-rhcc (rather than
+    // cb-vanilla). The same builds _should_ be available on both, but see:
+    // https://couchbase.slack.com/archives/C04DB7P157T/p1781783413258219
+    // Ideally this would track clusterVersion, but that version does not exist on cb-rhcc currently.
+    cngClusterVersion: "8.0.2-5503",
+
+    // Default self-managed Enterprise Analytics build passed to cbdinocluster.
+    enterpriseAnalyticsVersion: "2.2.0-1166",
+
+    // Default Couchbase Autonomous Operator version for CNG/Protostellar support
+    // (the ROSA/cao deployer).
+    caoOperatorVersion: "2.9.2",
+
+    // The Cloud Native Gateway (Protostellar gateway) version, the cao block's `gateway-version`.
+    cngVersion: "1.1.0-135",
+  },
+
   capella: {
     dev: {
       endpoint: "https://api.dev.nonprod-project-avengers.com",

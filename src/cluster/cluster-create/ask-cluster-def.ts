@@ -16,12 +16,8 @@
 import { isMain, runCli } from "../../util/non-fit/cli.js";
 import { printWithoutTimestamps } from "../../util/non-fit/fit-cli-log.js";
 import { checkbox, input, number } from "../../util/non-fit/prompts.js";
-import {
-  DEFAULT_CLUSTER_VERSION,
-  DEFAULT_CNG_CLUSTER_VERSION,
-  DEFAULT_ENTERPRISE_ANALYTICS_VERSION,
-  type ClusterDef,
-} from "./build-cluster-def.js";
+import { loadEnvironments } from "../../fit/util/environments.js";
+import { type ClusterDef } from "./build-cluster-def.js";
 
 /** Services offered, with the FIT-typical set selected by default. */
 const SERVICES = [
@@ -54,6 +50,8 @@ export interface AskClusterDefOptions {
 
 /** Ask the questions that describe the cluster to allocate. */
 export async function askClusterDef(options: AskClusterDefOptions = {}): Promise<ClusterDef> {
+  const defaults = loadEnvironments().defaults;
+
   if (options.cng) {
     console.log("\nNote: CNG (Cloud Native Gateway) will be automatically installed as CNG testing was requested.\n");
   }
@@ -66,7 +64,7 @@ export async function askClusterDef(options: AskClusterDefOptions = {}): Promise
     const version = await input({
       promptId: "cluster.create.server-version",
       message: "Which Enterprise Analytics version?",
-      default: DEFAULT_ENTERPRISE_ANALYTICS_VERSION,
+      default: defaults.enterpriseAnalyticsVersion,
     });
     // cbdinocluster derives the Analytics topology from `columnar: true`, so no service list.
     return { nodeCount, version, services: [], cng: false, enterpriseAnalytics: true };
@@ -78,7 +76,7 @@ export async function askClusterDef(options: AskClusterDefOptions = {}): Promise
 
   if (options.cng) {
     // CNG on OpenShift pulls the server from cb-rhcc (not cb-vanilla), which only
-    // carries specific certified builds — see DEFAULT_CNG_CLUSTER_VERSION.
+    // carries specific certified builds — see defaults.cngClusterVersion in environments.json5.
     printWithoutTimestamps("  CNG server images (github.com/orgs/cb-rhcc/packages/container/package/server): e.g. 8.1.0-2222");
   } else {
     printWithoutTimestamps("  Alias (github.com/couchbaselabs/cb-alias): e.g. 8.0-stable");
@@ -87,7 +85,7 @@ export async function askClusterDef(options: AskClusterDefOptions = {}): Promise
   const version = await input({
     promptId: "cluster.create.server-version",
     message: "Which Couchbase Server version?",
-    default: options.cng ? DEFAULT_CNG_CLUSTER_VERSION : DEFAULT_CLUSTER_VERSION,
+    default: options.cng ? defaults.cngClusterVersion : defaults.clusterVersion,
   });
 
   const services = await checkbox<string>({

@@ -7,14 +7,15 @@
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { loadEnvironments } from "../../../fit/util/environments.js";
 import {
-  CNG_VERSION,
-  CAO_OPERATOR_VERSION,
   DOCKER_SERVICE_MEMORY_MB,
   buildClusterDef,
   buildClusterDefObject,
   cbdinoAnalyticsClusterProduct,
 } from "../build-cluster-def.js";
+
+const { caoOperatorVersion: CAO_OPERATOR_VERSION, cngVersion: CNG_VERSION } = loadEnvironments().defaults;
 
 test("a basic single-node def renders the nodes block", () => {
   const def = buildClusterDef({
