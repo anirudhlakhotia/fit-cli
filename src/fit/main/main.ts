@@ -28,11 +28,13 @@ import { printVersion } from "../version/version.js";
 import { main as replayMain } from "../../util/non-fit/replay-entry.js";
 import { isFitBinary, runScriptPrefix } from "../../util/non-fit/fit-cli-log.js";
 import { printLogo } from "./logo.js";
+import { runRecentDefinitionsWizard } from "./recent-definitions-wizard.js";
 
 const WORKFLOW_PROMPT_MESSAGE = "What would you like to do?";
 
 const WORKFLOW_CHOICES = [
   { name: "Build a FIT definition file", value: "create-definition" },
+  { name: "Run or share a recently generated definition file", value: "recent-definitions" },
   { name: "Run a FIT definition file", value: "run-definition" },
   { name: "Export or run a preset", value: "preset" },
   { name: "Configure fit-cli", value: "configure" },
@@ -77,6 +79,7 @@ export async function chooseWorkflow(
   const choices = configMissing
     ? ([
         { name: "Build a FIT definition file", value: "create-definition" },
+        { name: "Run or share a recently generated definition file", value: "recent-definitions" },
         { name: "Run a FIT definition file", value: "run-definition" },
         { name: "Export or run a preset", value: "preset" },
         { name: "Configure fit-cli (recommended)", value: "configure" },
@@ -117,6 +120,8 @@ export async function runWorkflow(choice: WorkflowChoice, definitionPath?: strin
   switch (choice) {
     case "create-definition":
       return createFitDefinition({ format, pushGistVisibility });
+    case "recent-definitions":
+      return runRecentDefinitionsWizard(() => chooseWorkflow().then((c) => runWorkflow(c, definitionPath, format, pushGistVisibility)));
     case "run-definition":
       return runFromDefinition(definitionPath ?? await askDefinitionPath());
     case "preset":

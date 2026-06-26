@@ -66,7 +66,7 @@ export interface PromptLogFile {
 
 type PromptSessionMode = "record" | "replay" | "defaults" | "non-interactive";
 
-const RUN_ROOT_DIR = "/tmp/fit-cli";
+export const RUN_ROOT_DIR = "/tmp/fit-cli";
 const RUN_FROM_DEFINITION_ENTRYPOINT = "src/fit/functional/run-from-definition/run-from-definition.ts";
 
 // Some commands (notably `run` / `definition`) should run with default answers
