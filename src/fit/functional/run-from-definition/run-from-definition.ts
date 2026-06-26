@@ -57,7 +57,7 @@ import { clusterLabel as clusterSegmentLabel, formatRunLabel, instanceLabel, per
 import { confirm, select } from "../../../util/non-fit/prompts.js";
 import { DEFAULT_CAPELLA_ENV, resolveCapellaConfig, resolveFitPerformerDir, resolveGithubCredentials, resolveResultsDbCredentials, resolveRosaCredentials } from "../../util/config.js";
 import { terminateInstanceCommand } from "../../util/aws/lifecycle-warning.js";
-import { uploadRunArtifacts } from "../../util/aws/upload-run-artifacts.js";
+import { maybeUploadRunArtifacts } from "../../util/aws/upload-run-artifacts.js";
 import { AWS_REGION } from "../../../cloud/util/aws/aws-target.js";
 import { resolveAwsCredentials, type AwsCredentials } from "../../../cloud/util/aws/identity.js";
 import {
@@ -1976,7 +1976,7 @@ export async function runFromDefinition(
     }
     // Best-effort: ship the run's artifacts to S3 after teardown (so anything
     // teardown writes is included). Runs only inside GitHub Actions; never throws.
-    await uploadRunArtifacts(runDir);
+    await maybeUploadRunArtifacts(runDir);
   }
   return finalizeRunFromDefinition(artifacts, details, runDir, tracker.worst, tracker.failureCount);
 }
