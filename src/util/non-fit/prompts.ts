@@ -116,6 +116,12 @@ function missingNonInteractiveDefault(promptId: string, detail?: string): never 
   );
 }
 
+function withVimKeybindings(theme: unknown): Record<string, unknown> {
+  const base = theme && typeof theme === "object" ? (theme as Record<string, unknown>) : {};
+  const existing = Array.isArray(base.keybindings) ? (base.keybindings as unknown[]) : [];
+  return { ...base, keybindings: existing.includes("vim") ? existing : [...existing, "vim"] };
+}
+
 function applyCheckboxDefaults<Value>(choices: readonly unknown[], selectedValues: readonly Value[]): readonly unknown[] {
   const selected = new Set(selectedValues);
   return choices.map((choice) => {
@@ -204,7 +210,10 @@ export function select<Value>(
 ): Promise<Value> {
   const { promptId, ...promptConfig } = config;
   return runPrompt<Value>(promptId, "select", config.message, (replayDefault) =>
-    prompts.select<Value>({ ...promptConfig, default: replayDefault ?? promptConfig.default } as never, context), {
+    prompts.select<Value>(
+      { ...promptConfig, default: replayDefault ?? promptConfig.default, theme: withVimKeybindings(promptConfig.theme) } as never,
+      context,
+    ), {
       nonInteractiveDefault: () => {
         const choice = (promptConfig.default as Value | undefined) ?? firstChoiceValue<Value>(promptConfig.choices);
         return choice === undefined
@@ -267,6 +276,7 @@ export function checkbox<Value>(
     prompts.checkbox<Value>(
       {
         ...promptConfig,
+        theme: withVimKeybindings(promptConfig.theme),
         choices:
           replayDefault !== undefined
             ? applyCheckboxDefaults(promptConfig.choices, replayDefault)
