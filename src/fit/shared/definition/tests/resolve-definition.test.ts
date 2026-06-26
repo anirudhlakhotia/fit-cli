@@ -380,7 +380,7 @@ test("dirSegments are populated through instance → cluster → session → run
   assert.equal(run.path.dirSegments?.instance, "aws1");
   assert.equal(run.path.dirSegments?.cluster, "8.0-stable");
   assert.equal(run.path.dirSegments?.session, "java:main");
-  assert.equal(run.path.dirSegments?.run, "func:standard-qe");
+  assert.equal(run.path.dirSegments?.run, "functional:standard-qe");
 });
 
 test("repeat expands a run into N sequential copies with distinct runIndex values", () => {
@@ -401,9 +401,9 @@ test("repeat appends :r1/:r2/... to the run dir segment to avoid collisions", ()
     runs: [{ type: "functional", tests: { classes: ["com.example.MyTest"] }, repeat: 3 }],
   };
   const resolved = resolveSession(session, { instanceIndex: 0, clusterIndex: 0, sessionIndex: 0 }, false);
-  assert.equal(resolved.runs[0]?.path.dirSegments?.run, "func:r1");
-  assert.equal(resolved.runs[1]?.path.dirSegments?.run, "func:r2");
-  assert.equal(resolved.runs[2]?.path.dirSegments?.run, "func:r3");
+  assert.equal(resolved.runs[0]?.path.dirSegments?.run, "functional:r1");
+  assert.equal(resolved.runs[1]?.path.dirSegments?.run, "functional:r2");
+  assert.equal(resolved.runs[2]?.path.dirSegments?.run, "functional:r3");
 });
 
 test("run without repeat produces no :rN suffix and a single entry", () => {
