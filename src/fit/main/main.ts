@@ -25,6 +25,7 @@ import { defaultFitCliConfigPath } from "../util/config.js";
 import { runCloudInstancesMain } from "../../cloud/cloud-instances/cloud-instances.js";
 import { runSecretsMain } from "../../cloud/util/aws/secrets-cli.js";
 import { printVersion } from "../version/version.js";
+import { runUpgradeMain } from "../upgrade/upgrade.js";
 import { main as replayMain } from "../../util/non-fit/replay-entry.js";
 import { isFitBinary, runScriptPrefix } from "../../util/non-fit/fit-cli-log.js";
 import { printLogo } from "./logo.js";
@@ -224,6 +225,7 @@ const COMMANDS: Record<string, { fn: () => void; description: string; hidden?: b
   "archive":         { fn: runArchiveMain,          description: "Archive run artifacts" },
   "replay":          { fn: runReplayMain,           description: "Replay a recorded session" },
   "version":         { fn: printVersion,            description: "Print the fit-cli version" },
+  "upgrade":         { fn: runUpgradeMain,           description: "Upgrade fit-cli to the latest released build" },
   "help":            { fn: printHelp,               description: "Print this help message" },
 };
 

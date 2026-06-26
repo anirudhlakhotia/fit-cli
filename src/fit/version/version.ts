@@ -6,7 +6,7 @@ import { isFitBinary } from "../../util/non-fit/fit-cli-log.js";
 declare const __FIT_GIT_SHA: string;
 declare const __FIT_BUILD_TIME: string;
 
-function resolvedGitSha(): string {
+export function resolvedGitSha(): string {
   try {
     return __FIT_GIT_SHA;
   } catch {
