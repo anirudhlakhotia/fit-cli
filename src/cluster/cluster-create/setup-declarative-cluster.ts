@@ -38,7 +38,8 @@ import { buildCbdinoclusterFromPr, installCbdinoclusterRemote } from "./install-
 import { installCaoCrdsAndAdmission } from "./install-cao-tools.js";
 import { enableIngresses } from "./cao-ingress.js";
 import { type ClusterExistsPolicy } from "./cluster-exists-policy.js";
-import { cngServerImageRef, DEFAULT_CLUSTER_VERSION, type CbdinoclusterDef } from "./build-cluster-def.js";
+import { loadEnvironments } from "../../fit/util/environments.js";
+import { cngServerImageRef, type CbdinoclusterDef } from "./build-cluster-def.js";
 import { isAlias, resolveAlias } from "./cb-alias.js";
 import type { CbdinoclusterInitSetup, CbdinoclusterSource } from "../../fit/shared/definition/types.js";
 import { defaultCbdinoclusterInitArgs, situationalCbdinoclusterInitArgs } from "./default-cbdinocluster-init-config.js";
@@ -834,7 +835,7 @@ export async function setupDeclarativeCluster(plan: {
 if (isMain(import.meta.url)) {
   runCli(async () => {
     const result = await setupDeclarativeCluster({
-      config: { nodes: [{ count: 1, version: DEFAULT_CLUSTER_VERSION, services: ["kv", "n1ql", "index"] }] },
+      config: { nodes: [{ count: 1, version: loadEnvironments().defaults.clusterVersion, services: ["kv", "n1ql", "index"] }] },
       onClusterExists: "destroyAndRecreate",
     });
     console.log(JSON.stringify({ ...result, artifacts: result.artifacts.length }, null, 2));

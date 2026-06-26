@@ -1,7 +1,8 @@
 /**
  * Step: build the cbdinocluster definition (a small YAML document) from the
- * answers gathered by ask-cluster-def. Pure logic — no file IO and no
- * prompting — so it's easy to unit test (see tests/build-cluster-def.test.ts).
+ * answers gathered by ask-cluster-def. Reads version defaults from
+ * environments.json5 (via loadEnvironments) but is otherwise pure transform
+ * logic — no prompting — so it's easy to unit test (see tests/build-cluster-def.test.ts).
  *
  * The shape produced is, for example:
  *
@@ -22,34 +23,7 @@
  * Prints a sample def.
  */
 import { isMain, runCli } from "../../util/non-fit/cli.js";
-
-/**
- * Default Couchbase Autonomous Operator version for CNG/Protostellar support
- * (the ROSA/cao deployer). Only a default: a definition file (or preset) can
- * override it by setting the `cao` block's `operator-version`, which fit-cli
- * forwards to cbdinocluster verbatim.
- */
-export const CAO_OPERATOR_VERSION = "2.9.2";
-/** The Cloud Native Gateway (Protostellar gateway) version, the cao block's `gateway-version`. */
-export const CNG_VERSION = "1.1.0-135";
-
-/**
- * Default Couchbase Server version passed to cbdinocluster.
- * Accepts stable-channel aliases (e.g. "8.0-stable") as well as pinned builds
- * (e.g. "8.0.2-5322") — use a pinned build if you need a specific patch or
- * the alias is temporarily broken.
- */
-export const DEFAULT_CLUSTER_VERSION = "8.0-stable";
-
-/**
- * Note that CNG generally uses OpenShift which uses server builds from cb-rhcc (rather than cb-vanilla).
- * The same builds _should_ be available on both, but see:
- * https://couchbase.slack.com/archives/C04DB7P157T/p1781783413258219
- */
-export const DEFAULT_CNG_CLUSTER_VERSION = "8.0.2-5503"; // should be DEFAULT_CLUSTER_VERSION, but that version does not exist on cb-rhcc currently.
-
-/** Default self-managed Enterprise Analytics build passed to cbdinocluster. */
-export const DEFAULT_ENTERPRISE_ANALYTICS_VERSION = "2.2.0-1166";
+import { loadEnvironments } from "../../fit/util/environments.js";
 
 /** GHCR image reference for a CNG server build: `ghcr.io/cb-rhcc/server:<version>`. */
 export function cngServerImageRef(version: string): string {
@@ -167,10 +141,11 @@ export function buildClusterDefObject(def: ClusterDef): CbdinoclusterDef {
     };
   }
   const docker = def.cng ? undefined : dockerMemoryForServices(def.services);
+  const { caoOperatorVersion, cngVersion } = loadEnvironments().defaults;
   return {
     nodes: [{ count: def.nodeCount, version: def.version, services: def.services }],
     ...(def.cng
-      ? { cao: { "operator-version": CAO_OPERATOR_VERSION, "gateway-version": CNG_VERSION } }
+      ? { cao: { "operator-version": caoOperatorVersion, "gateway-version": cngVersion } }
       : {}),
     ...(docker ? { docker } : {}),
   };
@@ -186,10 +161,11 @@ export function buildClusterDef(def: ClusterDef): string {
   ];
 
   if (def.cng) {
+    const { caoOperatorVersion, cngVersion } = loadEnvironments().defaults;
     lines.push(
       "cao:",
-      `  operator-version: "${CAO_OPERATOR_VERSION}"`,
-      `  gateway-version: "${CNG_VERSION}"`,
+      `  operator-version: "${caoOperatorVersion}"`,
+      `  gateway-version: "${cngVersion}"`,
     );
   }
 
@@ -201,7 +177,7 @@ if (isMain(import.meta.url)) {
     console.log(
       buildClusterDef({
         nodeCount: 1,
-        version: DEFAULT_CNG_CLUSTER_VERSION,
+        version: loadEnvironments().defaults.cngClusterVersion,
         services: ["kv", "n1ql", "index", "fts"],
         cng: true,
       }),

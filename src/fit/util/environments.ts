@@ -1,6 +1,7 @@
 /**
  * Loader for `environments.json5` (repo root): the non-secret, per-environment
- * settings selected from a definition file. Two axes:
+ * settings selected from a definition file, plus global defaults. Three sections:
+ *   - defaults: global version strings for cbdinocluster (cluster, CNG, Analytics, CAO)
  *   - capella: control-plane endpoint + org id per Capella environment (dev/stage/…)
  *   - results: the hosted results host per results environment (dev/prod/…), which
  *     serves both the Postgres DB and the results UI.
@@ -28,7 +29,22 @@ export interface ResultsEnvironment {
   secretId?: string | null;
 }
 
+/** Global version defaults for cbdinocluster and related tools (not per-environment). */
+export interface Defaults {
+  /** Default Couchbase Server version, e.g. "8.0-stable" or a pinned build. */
+  clusterVersion: string;
+  /** Default Couchbase Server version for CNG/OpenShift (cb-rhcc registry). */
+  cngClusterVersion: string;
+  /** Default self-managed Enterprise Analytics build. */
+  enterpriseAnalyticsVersion: string;
+  /** Default Couchbase Autonomous Operator version for the cao deployer. */
+  caoOperatorVersion: string;
+  /** Default Cloud Native Gateway (Protostellar gateway) version. */
+  cngVersion: string;
+}
+
 export interface EnvironmentsFile {
+  defaults: Defaults;
   capella: Record<string, CapellaEnvironment>;
   results: Record<string, ResultsEnvironment>;
 }
@@ -53,8 +69,14 @@ export function loadEnvironments(path: string = DEFAULT_ENVIRONMENTS_PATH): Envi
     : path;
   const text = readFileSync(resolvedPath, "utf8");
   const parsed = JSON5.parse<EnvironmentsFile>(text);
-  if (!parsed || typeof parsed !== "object" || typeof parsed.capella !== "object" || typeof parsed.results !== "object") {
-    throw new Error(`Environments file at ${path} must define "capella" and "results" sections.`);
+  if (
+    !parsed ||
+    typeof parsed !== "object" ||
+    typeof parsed.defaults !== "object" ||
+    typeof parsed.capella !== "object" ||
+    typeof parsed.results !== "object"
+  ) {
+    throw new Error(`Environments file at ${path} must define "defaults", "capella", and "results" sections.`);
   }
   if (path === DEFAULT_ENVIRONMENTS_PATH) cached = parsed;
   return parsed;

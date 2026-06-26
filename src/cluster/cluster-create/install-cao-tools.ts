@@ -36,19 +36,19 @@ import { fitCliError } from "../../util/non-fit/fit-cli-log.js";
 import type { RunOptions } from "../../util/non-fit/proc.js";
 import { posixQuote, RemoteTarget } from "../../util/non-fit/remote-target.js";
 import { waitForSsh, type RemoteHost } from "../../util/non-fit/ssh.js";
-import { CAO_OPERATOR_VERSION } from "./build-cluster-def.js";
+import { loadEnvironments } from "../../fit/util/environments.js";
 
 /**
  * The Couchbase Autonomous Operator tools version CNG uses. The cao CLI generates
  * the operator's RBAC `Role` and installs the couchbase.com CRDs, so it MUST match
- * the operator image cbdinocluster deploys ({@link CAO_OPERATOR_VERSION}) — hence
- * it's derived from it, not pinned separately. When they drift, the cao CLI lays
- * down a Role/CRD set that lacks resources the operator image needs (e.g. 2.8.0's
- * tooling has no `couchbaseencryptionkeys`), so the 2.9.2 operator can't sync its
- * caches and crash-loops, the cluster never comes up, and `cbdinocluster allocate`
- * hangs forever waiting.
+ * the operator image cbdinocluster deploys (defaults.caoOperatorVersion in
+ * environments.json5) — hence it's derived from it, not pinned separately. When
+ * they drift, the cao CLI lays down a Role/CRD set that lacks resources the operator
+ * image needs (e.g. 2.8.0's tooling has no `couchbaseencryptionkeys`), so the 2.9.2
+ * operator can't sync its caches and crash-loops, the cluster never comes up, and
+ * `cbdinocluster allocate` hangs forever waiting.
  */
-export const CAO_TOOLS_VERSION = CAO_OPERATOR_VERSION;
+export const CAO_TOOLS_VERSION = loadEnvironments().defaults.caoOperatorVersion;
 
 /** Where Couchbase publishes the Autonomous Operator (cao) release tarballs. */
 export const CAO_TOOLS_DOWNLOAD_BASE = "https://packages.couchbase.com/releases/couchbase-operator";

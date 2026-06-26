@@ -19,7 +19,8 @@ import { capture, run, type RunOptions } from "../../util/non-fit/proc.js";
 import { ensureRunDir } from "../../util/non-fit/replay.js";
 import { posixQuote, teeToFileCommand } from "../../util/non-fit/remote-target.js";
 import { findOnPath } from "../../util/non-fit/which.js";
-import { buildClusterDef, DEFAULT_CLUSTER_VERSION } from "./build-cluster-def.js";
+import { loadEnvironments } from "../../fit/util/environments.js";
+import { buildClusterDef } from "./build-cluster-def.js";
 import { ensureCbdinocluster } from "./ensure-cbdinocluster.js";
 import { parseAllocatedId } from "./parse-allocated-id.js";
 
@@ -208,7 +209,7 @@ if (isMain(import.meta.url)) {
     }
     const def = buildClusterDef({
       nodeCount: 1,
-      version: DEFAULT_CLUSTER_VERSION,
+      version: loadEnvironments().defaults.clusterVersion,
       services: ["kv", "n1ql", "index", "fts"],
       cng: false,
     });
