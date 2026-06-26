@@ -9,16 +9,16 @@ import {
   validatePerformerVersion,
 } from "../util/performer-image.js";
 
-test("JVM performerPackageUrl points at the couchbase-jvm-clients GHCR package", () => {
+test("performerPackageUrl points at the couchbase org-level GHCR package", () => {
   const sdk = sdkByValue("java");
   assert.ok(sdk);
   assert.equal(
     performerPackageUrl(sdk),
-    "https://github.com/couchbase/couchbase-jvm-clients/pkgs/container/java-fit-performer",
+    "https://github.com/orgs/couchbase/packages/container/package/java-fit-performer",
   );
 });
 
-test("non-JVM performerPackageUrl points at the couchbase org-level GHCR package", () => {
+test("performerPackageUrl is the same form for non-JVM SDKs", () => {
   const sdk = sdkByValue("node");
   assert.ok(sdk);
   assert.equal(
@@ -27,25 +27,25 @@ test("non-JVM performerPackageUrl points at the couchbase org-level GHCR package
   );
 });
 
-test("non-JVM performerImageName builds a fully-qualified GHCR reference", () => {
+test("performerImageName builds a fully-qualified GHCR reference", () => {
   const sdk = sdkByValue("node");
   assert.ok(sdk);
   assert.equal(performerImageName(sdk, "4.2.0"), "ghcr.io/couchbase/node-fit-performer:4.2.0");
 });
 
-test("JVM performerImageName uses the couchbase GHCR namespace", () => {
+test("performerImageName builds a fully-qualified GHCR reference for JVM SDKs", () => {
   const sdk = sdkByValue("java");
   assert.ok(sdk);
   assert.equal(performerImageName(sdk, "4.2.0"), "ghcr.io/couchbase/java-fit-performer:4.2.0");
 });
 
-test("JVM performerImageName defaults to main tag", () => {
+test("performerImageName defaults to main tag", () => {
   const sdk = sdkByValue("java");
   assert.ok(sdk);
   assert.equal(performerImageName(sdk), "ghcr.io/couchbase/java-fit-performer:main");
 });
 
-test("non-JVM performerImageName defaults to main tag", () => {
+test("performerImageName defaults to main tag for non-JVM SDKs", () => {
   const sdk = sdkByValue("node");
   assert.ok(sdk);
   assert.equal(performerImageName(sdk), "ghcr.io/couchbase/node-fit-performer:main");
@@ -102,7 +102,7 @@ test("analysePerformerImage parses the hyphenated columnar-java SDK basename", (
   assert.equal(parsed.tag, "main");
 });
 
-test("performerImageName builds a JVM-style GHCR reference for columnar-java", () => {
+test("performerImageName builds a GHCR reference for columnar-java", () => {
   const sdk = sdkByValue("columnar-java");
   assert.ok(sdk);
   assert.equal(performerImageName(sdk, "main"), "ghcr.io/couchbase/columnar-java-fit-performer:main");
