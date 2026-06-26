@@ -1350,8 +1350,9 @@ async function resolveExecutionOverride(
   if (!isInteractiveRun()) {
     return { kind: "definition" };
   }
+  const allSameKind = groups.every((g) => g.instance.kind === groups[0].instance.kind);
   const definitionDestination =
-    groups.length === 1
+    groups.length === 1 || allSameKind
       ? groups[0].instance.kind
       : groups.map((g, i) => `group ${i + 1}: ${g.instance.kind}`).join(", ");
   const allLocalhost = groups.every((g) => g.instance.kind === "localhost");
