@@ -290,6 +290,9 @@ test("an Analytics load-balancer host rewrites the performer host (not the drive
   assert.deepEqual(eaAccess.performer, { connectionString: "http://172.18.0.3:8095", tls: null });
   // The driver keeps the multi-seed node list (couchbase:// handles it).
   assert.equal(eaAccess.connectionString, "couchbase://${defaultHostname}");
+  // The FIT proxy must forward to the single LB host, not the node list (which it
+  // can't dial as a comma-separated string).
+  assert.deepEqual(eaAccess.proxy, { hostname: "host.docker.internal", clusterHostname: "172.18.0.3" });
 
   // A Columnar SDK's couchbases:// scheme is preserved — only the host is rewritten.
   const columnarConfig = buildFitConfiguration(

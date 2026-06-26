@@ -141,15 +141,28 @@ export function generatedFitConfigurationPiece(
           rest: { hostname: firstHostname(cluster.defaultHostname), resolveDnsSrv: false },
           // Columnar / Analytics does not support direct SSH access.
           ssh: null,
-          // The performer runs in Docker and reaches the FIT proxy (the test-driver,
-          // on the host) via host.docker.internal — not localhost, which inside the
-          // container is the container itself, so every query fails with "Failed to
-          // connect to localhost:<mapped-port>". Matches the operational self-managed
-          // proxy. (The analytics reference example uses localhost only because there
-          // the performer runs on the host, not in Docker.)
+          // proxy.hostname: where the performer reaches the FIT proxy. The performer
+          // runs in Docker, so it must use host.docker.internal — not localhost, which
+          // inside the container is the container itself (every query would then fail
+          // with "Failed to connect to localhost:<mapped-port>"). Matches the
+          // operational self-managed proxy. (The analytics reference example uses
+          // localhost only because there the performer runs on the host, not in Docker.)
+          //
+          // proxy.clusterHostname: where the FIT proxy forwards TO. It defaults to
+          // defaultHostname, which here is the driver's comma-joined node list — and
+          // the proxy can't dial a comma-separated string (DNS lookup fails, it falls
+          // back to the literal string as one host → "unexpected end of stream"). For a
+          // load-balanced Enterprise Analytics cluster the proxy must forward to the
+          // single nginx LB host, so pin it explicitly when we know it.
+          //
           // TODO when Capella Analytics is wired up: like the operational branch, that
           // case wants proxy: null (no host-side proxy for a cloud cluster) — split here.
-          proxy: { hostname: "host.docker.internal" },
+          proxy: {
+            hostname: "host.docker.internal",
+            ...(cluster.analyticsLoadBalancerHost
+              ? { clusterHostname: cluster.analyticsLoadBalancerHost }
+              : {}),
+          },
         },
         performerPorts: [performerPort],
         excludeTests: ["situational"],
