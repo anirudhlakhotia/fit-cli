@@ -6,6 +6,13 @@
   },
   version: 1,
   type: 'fit',
+  setup: {
+    repos: {
+      'transactions-fit-performer': {
+        gerritRef: 'refs/changes/34/247534/1', // temp todo
+      },
+    },
+  },
   instances: [
     {
       aws: {},
