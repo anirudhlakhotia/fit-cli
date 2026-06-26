@@ -8,6 +8,7 @@ import YAML from "yaml";
 import { artifactFromPath, type Artifact, type RunOutput } from "../../../util/non-fit/artifacts.js";
 import { printWithoutTimestamps } from "../../../util/non-fit/fit-cli-log.js";
 import { ensureRunDir } from "../../../util/non-fit/replay.js";
+import { recordRecentDefinition } from "./recent-definitions.js";
 import type { PieceData } from "../../../util/non-fit/config-pieces.js";
 import type { Sdk } from "../../../util/sdk/sdks.js";
 import { buildClusterDefObject, type ClusterDef } from "../../../cluster/cluster-create/build-cluster-def.js";
@@ -453,6 +454,7 @@ export function writeFitDefinition(
   mkdirSync(runDir, { recursive: true, mode: 0o700 });
   const path = fitDefinitionPath(runDir, format);
   writeFileSync(path, formatFitDefinition(definition, format));
+  recordRecentDefinition(path, definition.description ?? "");
   return {
     path,
     artifact: artifactFromPath(path, "Generated fit definition file for reruns", runDir),
@@ -469,6 +471,7 @@ export function writeFitSituationalDefinition(
   mkdirSync(runDir, { recursive: true, mode: 0o700 });
   const path = fitDefinitionPath(runDir, format);
   writeFileSync(path, formatFitSituationalDefinition(definition, format));
+  recordRecentDefinition(path, definition.description ?? "");
   return {
     path,
     artifact: artifactFromPath(path, "Generated fit definition file for reruns", runDir),
