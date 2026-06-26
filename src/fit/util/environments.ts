@@ -41,6 +41,8 @@ export interface Defaults {
   caoOperatorVersion: string;
   /** Default Cloud Native Gateway (Protostellar gateway) version. */
   cngVersion: string;
+  /** Default Couchbase Server version for Capella cloud clusters. */
+  capellaClusterVersion: string;
 }
 
 export interface EnvironmentsFile {

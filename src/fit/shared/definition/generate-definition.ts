@@ -62,6 +62,12 @@ export interface DefinitionInputs {
    * which the user can tune; see the enterprise-analytics-functional preset.
    */
   analytics?: boolean;
+  /**
+   * Capella environment to create this cluster in (a key under `capella` in
+   * environments.json5 — e.g. "dev"). Only meaningful when the cluster is a
+   * Capella cloud cluster (i.e. `cluster.def.capellaCloudProvider` is set).
+   */
+  capellaEnvironment?: string;
 }
 
 export interface SituationalDefinitionInputs {
@@ -169,13 +175,24 @@ function buildFunctionalInstance(inputs: DefinitionInputs): BuiltFunctionalInsta
           tls: inputs.cluster.cluster.tls,
         },
       }
-    : {
-        id: CLUSTER_CONFIG_ID,
-        cbdinocluster: {
-          config: buildClusterDefObject(inputs.cluster.def),
-          ...(inputs.onClusterExists ? { onClusterExists: inputs.onClusterExists } : {}),
-        },
-      };
+    : (() => {
+        const capellaCloudProvider = inputs.cluster.def.capellaCloudProvider;
+        return {
+          id: CLUSTER_CONFIG_ID,
+          cbdinocluster: {
+            config: buildClusterDefObject(inputs.cluster.def),
+            ...(inputs.onClusterExists ? { onClusterExists: inputs.onClusterExists } : {}),
+            // Capella block records the intent declaratively; init args and deployer
+            // are derived from this at runtime (never baked into the definition file).
+            ...(capellaCloudProvider ? {
+              capella: {
+                cloudProvider: capellaCloudProvider,
+                ...(inputs.capellaEnvironment ? { environment: inputs.capellaEnvironment } : {}),
+              },
+            } : {}),
+          },
+        };
+      })();
   const instance: InstanceLifetime = {
     ...(inputs.instance ?? { localhost: {} }),
     clusters: [

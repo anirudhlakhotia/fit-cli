@@ -66,6 +66,7 @@ import {
 } from "../../../cluster/cluster-create/allocate-cluster.js";
 import { runClusterDiag } from "../../../cluster/cluster-diag/cluster-diag.js";
 import { prepareCbdinoclusterInit, remoteCbdinoclusterCloudEnabled, removeCluster, setupDeclarativeCluster } from "../../../cluster/cluster-create/setup-declarative-cluster.js";
+import { capellaFunctionalCbdinoclusterInitArgs } from "../../../cluster/cluster-create/default-cbdinocluster-init-config.js";
 import { isAlias, resolveAlias } from "../../../cluster/cluster-create/cb-alias.js";
 import { collectClusterLogs } from "../../../cluster/cluster-cbcollect/cluster-cbcollect.js";
 import { installCbdinoclusterRemote } from "../../../cluster/cluster-create/install-cbdinocluster.js";
@@ -1725,7 +1726,42 @@ export async function runFromDefinition(
           // CNG cycles need Kubernetes where cbdinocluster runs: check it on
           // localhost, or stand up k3d (and point the uploaded ~/.cbdinocluster at
           // it) on a clean instance, before allocating anything.
-          const functionalCycle = await prepareFunctionalCngCycle(group, execution);
+          let functionalCycle = await prepareFunctionalCngCycle(group, execution);
+
+          // Capella functional: upload credentials and inject init args + deployer
+          // before the cluster setup step. Mirrors the situational branch above but
+          // scoped to the cluster (not the instance), using the cluster's `capella`
+          // block rather than the instance-level capellaEnvironment.
+          const capellaSetup = functionalCycle.cbdinocluster?.capella;
+          if (capellaSetup !== undefined) {
+            const capellaEnvironment = capellaSetup.environment ?? DEFAULT_CAPELLA_ENV;
+            if (execution.kind === "remote") {
+              if (!group.cbdinoclusterSource && !(await execution.commandAvailable("cbdinocluster"))) {
+                await installCbdinoclusterRemote(execution);
+              }
+              let capella;
+              try {
+                capella = await resolveCapellaConfig({ block: capellaEnvironment });
+              } catch (err) {
+                throwFatalToCluster(
+                  `Capella functional runs allocate Capella clusters, but the "${capellaEnvironment}" Capella ` +
+                    `credentials couldn't be resolved: ${(err as Error).message}`,
+                );
+              }
+              await uploadRemoteCapellaConfig(execution.target, execution.rootDir, capella);
+            }
+            // Inject the derived init args and deployer into the cbdinocluster plan.
+            // Neither lives in the definition file — both are derived from capella.cloudProvider.
+            functionalCycle = {
+              ...functionalCycle,
+              cbdinocluster: {
+                ...functionalCycle.cbdinocluster!,
+                init: { args: capellaFunctionalCbdinoclusterInitArgs(capellaSetup.cloudProvider) },
+                deployer: "cloud",
+              },
+            };
+          }
+
           if (cycleIndex === startCycleIndex && !phases.setupCluster) {
             const resumed = await resumeCluster(functionalCycle, savedState, execution);
             activeCycle = resumed.group;

@@ -1,4 +1,5 @@
 import { AWS_REGION } from "../../cloud/util/aws/aws-target.js";
+import type { CapellaCloudProvider } from "./build-cluster-def.js";
 
 /** The docker network clean FIT environments allocate their clusters on. */
 export const DEFAULT_CBDINOCLUSTER_DOCKER_NETWORK = "fit";
@@ -56,5 +57,38 @@ export function situationalCbdinoclusterInitArgs(
   dockerNetwork: string = DEFAULT_CBDINOCLUSTER_DOCKER_NETWORK,
 ): string {
   return baseCbdinoclusterInitArgs(dockerNetwork, false, AWS_REGION);
+}
+
+/**
+ * The `cbdinocluster init` arguments for a functional run that creates a Capella
+ * cloud cluster. Capella is enabled (no `--disable-capella`) and the chosen
+ * cloud provider is set as the default. Direct cloud-infrastructure access
+ * (AWS/GCP/Azure) is not needed — Capella manages the underlying infra through
+ * its own API — so those blocks remain disabled.
+ *
+ * `--capella-provider` sets the default provider in `~/.cbdinocluster`;
+ * `--capella-*-region` pre-fills the per-provider region defaults so
+ * `cbdinocluster init --auto` doesn't interactively prompt for them.
+ * The CAPELLA_* credentials are forwarded as environment variables before init
+ * runs (see `uploadRemoteCapellaConfig` in `run-from-definition.ts`).
+ */
+export function capellaFunctionalCbdinoclusterInitArgs(
+  cloudProvider: CapellaCloudProvider,
+  dockerNetwork: string = DEFAULT_CBDINOCLUSTER_DOCKER_NETWORK,
+): string {
+  return [
+    "--auto",
+    "--disable-aws",
+    "--disable-azure",
+    "--disable-gcp",
+    `--capella-provider ${cloudProvider}`,
+    // Pre-fill region defaults for all three providers so init --auto never prompts.
+    "--capella-aws-region us-west-2",
+    "--capella-azure-region westus2",
+    "--capella-gcp-region us-west1",
+    "--disable-k8s",
+    "--disable-dns",
+    `--docker-network ${dockerNetwork}`,
+  ].join(" ");
 }
 

@@ -30,6 +30,10 @@ export function cngServerImageRef(version: string): string {
   return `ghcr.io/cb-rhcc/server:${version}`;
 }
 
+/** The cloud providers Capella can deploy clusters on. */
+export const CAPELLA_CLOUD_PROVIDERS = ["aws", "gcp", "azure"] as const;
+export type CapellaCloudProvider = (typeof CAPELLA_CLOUD_PROVIDERS)[number];
+
 /** The answers that describe the cluster to allocate. */
 export interface ClusterDef {
   /** Number of nodes in the cluster. */
@@ -42,6 +46,8 @@ export interface ClusterDef {
   cng: boolean;
   /** Whether to build a self-managed Enterprise Analytics cluster. */
   enterpriseAnalytics?: boolean;
+  /** Cloud provider for a Capella cluster; when set the `cloud` deployer is used. */
+  capellaCloudProvider?: CapellaCloudProvider;
 }
 
 /**
@@ -138,6 +144,15 @@ export function buildClusterDefObject(def: ClusterDef): CbdinoclusterDef {
       columnar: true,
       nodes: [{ count: def.nodeCount, version: def.version }],
       docker: { "passive-load-balancer": true, "use-dino-certs": true },
+    };
+  }
+  if (def.capellaCloudProvider) {
+    // A Capella cloud cluster: cbdinocluster allocates it via the Capella control-plane
+    // API (the `cloud` deployer). The `cloud.cloud-provider` field tells Capella which
+    // underlying infrastructure to use. No `docker` block — Capella manages resources.
+    return {
+      nodes: [{ count: def.nodeCount, version: def.version }],
+      cloud: { "cloud-provider": def.capellaCloudProvider },
     };
   }
   const docker = def.cng ? undefined : dockerMemoryForServices(def.services);

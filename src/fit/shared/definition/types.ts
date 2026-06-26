@@ -2,7 +2,7 @@
  * The shape of a `fit` YAML definition file.
  */
 import type { PortInUsePolicy } from "../../performers/util/performer-port.js";
-import type { CbdinoclusterDef } from "../../../cluster/cluster-create/build-cluster-def.js";
+import type { CapellaCloudProvider, CbdinoclusterDef } from "../../../cluster/cluster-create/build-cluster-def.js";
 import type { ClusterExistsPolicy } from "../../../cluster/cluster-create/cluster-exists-policy.js";
 import type { PieceData } from "../../../util/non-fit/config-pieces.js";
 
@@ -61,10 +61,26 @@ export interface CbdinoclusterSource {
   git: CbdinoclusterSourceGit;
 }
 
+/**
+ * Declares that this cluster should be created as a Capella cloud cluster via
+ * cbdinocluster's `cloud` deployer. `cloudProvider` specifies where Capella
+ * should deploy the underlying infrastructure; `environment` selects the
+ * Capella control-plane (a key under `capella` in environments.json5 — e.g.
+ * "dev", "stage"). fit-cli derives the cbdinocluster init args and deployer
+ * from this block at runtime; neither needs to appear in the definition file.
+ */
+export interface CapellaClusterSetup {
+  cloudProvider: CapellaCloudProvider;
+  /** Capella environment to create this cluster in. Defaults to "dev". */
+  environment?: string;
+}
+
 export interface CbdinoclusterSetup {
   config: CbdinoclusterDef;
   onClusterExists?: ClusterExistsPolicy;
   deployer?: string;
+  /** When present, this cluster is a Capella cloud cluster. */
+  capella?: CapellaClusterSetup;
 }
 
 /**
