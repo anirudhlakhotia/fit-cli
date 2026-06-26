@@ -5,7 +5,7 @@ import { pipeline } from "node:stream/promises";
 import { createGunzip } from "node:zlib";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { commandOn, formatCommandLine, runScriptPrefix } from "../../../util/non-fit/fit-cli-log.js";
-import { ensureRunDir, instanceInternalRunDir } from "../../../util/non-fit/replay.js";
+import { ensureRunDir, instanceInternalRunDir, type DefinitionRunPath } from "../../../util/non-fit/replay.js";
 import { announceArtifactStream, type BackgroundStream } from "../../../util/non-fit/proc.js";
 import { posixQuote, teeToFileCommand } from "../../../util/non-fit/remote-target.js";
 import { RemoteTarget } from "../../../util/non-fit/remote-target.js";
@@ -107,7 +107,7 @@ export async function createRemoteFitExecutionContext(
   // signature shared with the local path and the standalone CLI.
   _sdk: Sdk,
   skipPreparation = false,
-  instanceIndex = 0,
+  instancePath: DefinitionRunPath | number = 0,
 ): Promise<FitExecutionContext> {
   const rootDir = remoteFitRootDir();
   const binDir = remoteFitBinDir(rootDir);
@@ -140,7 +140,7 @@ export async function createRemoteFitExecutionContext(
     await target.run("sudo", ["-n", "systemctl", "enable", "--now", "docker"]);
 
     await target.run("mkdir", ["-p", binDir]);
-    const internalDir = instanceInternalRunDir(instanceIndex);
+    const internalDir = instanceInternalRunDir(instancePath);
     mkdirSync(internalDir, { recursive: true, mode: 0o700 });
     const localDockerWrapper = join(internalDir, "remote-docker-wrapper.sh");
     writeFileSync(localDockerWrapper, remoteDockerWrapperScript(), { mode: 0o700 });

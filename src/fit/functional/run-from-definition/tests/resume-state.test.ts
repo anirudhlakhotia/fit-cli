@@ -27,10 +27,10 @@ function sampleState(): RunState {
   };
 }
 
-test("runStatePath puts the state under instances/0/_internal inside the run dir", () => {
+test("runStatePath puts the state under _internal inside the run dir", () => {
   assert.equal(
     runStatePath("/tmp/fit-cli/20260605-142043"),
-    "/tmp/fit-cli/20260605-142043/instances/0/_internal/run-state.json",
+    "/tmp/fit-cli/20260605-142043/_internal/run-state.json",
   );
 });
 

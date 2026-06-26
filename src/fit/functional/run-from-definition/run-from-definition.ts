@@ -1680,7 +1680,7 @@ export async function runFromDefinition(
 
         execution = await createFitExecutionContext(targetOutcome.target, group.runs[0].sdk, {
           skipRemotePreparation: isResumeStartCycle && !phases.prepareRemote,
-          instanceIndex: group.path.instanceIndex,
+          instancePath: group.path,
         });
         activeExecution = execution;
         currentBoxInstanceIndex = group.path.instanceIndex;

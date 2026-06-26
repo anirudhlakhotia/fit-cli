@@ -4,16 +4,16 @@
  * invocation reads it to reconnect the same execution target and reuse the
  * cluster/performer the earlier run stood up.
  *
- * The file lives next to the definition you pass, under `instances/0/_internal/`, so it
+ * The file lives next to the definition you pass, under `_internal/`, so it
  * is clearly internal bookkeeping rather than a run artifact:
- *   <dir-of-fit.yaml>/instances/0/_internal/run-state.json
+ *   <dir-of-fit.yaml>/_internal/run-state.json
  *
  * Reading and writing are the only IO here; deciding what to do with the state
  * (validation, which phases to skip) lives in the resume.ts/run-from-definition
  * logic so it stays testable.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import type { SelectedCluster } from "../../../cluster/cluster-select/cluster-select.js";
 
 /** How to reconnect to the execution target a previous run used. */
@@ -73,7 +73,7 @@ export interface RunState {
 
 /** Where the run-state file lives inside the artifact directory `runDir`. */
 export function runStatePath(runDir: string): string {
-  return resolve(runDir, "instances", "0", "_internal", "run-state.json");
+  return join(runDir, "_internal", "run-state.json");
 }
 
 /** Read the saved run state from `runDir`, or undefined if none exists. */
