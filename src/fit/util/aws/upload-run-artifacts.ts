@@ -30,7 +30,7 @@ export function artifactUploadEnabled(env: NodeJS.ProcessEnv = process.env): boo
  * destination URI on success, or null when skipped (disabled / dir missing) or
  * failed — it never throws, so it's safe to call from a teardown/finally path.
  */
-export async function uploadRunArtifacts(runDir: string, env: NodeJS.ProcessEnv = process.env): Promise<string | null> {
+export async function maybeUploadRunArtifacts(runDir: string, env: NodeJS.ProcessEnv = process.env): Promise<string | null> {
   if (!artifactUploadEnabled(env)) {
     return null;
   }
