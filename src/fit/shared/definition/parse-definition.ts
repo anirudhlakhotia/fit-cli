@@ -14,7 +14,7 @@ import {
   CLUSTER_EXISTS_POLICIES,
   type ClusterExistsPolicy,
 } from "../../../cluster/cluster-create/cluster-exists-policy.js";
-import type { CbdinoclusterDef } from "../../../cluster/cluster-create/build-cluster-def.js";
+import { CAPELLA_CLOUD_PROVIDERS, type CbdinoclusterDef } from "../../../cluster/cluster-create/build-cluster-def.js";
 import { analysePerformerImage } from "../../performers/util/performer-image.js";
 import { isAnalyticsSdk } from "../../../util/sdk/sdks.js";
 import {
@@ -46,6 +46,7 @@ import {
   type SharedSetup,
   type SituationalDatabaseMode,
   type SituationalDatabaseSetup,
+  type CapellaClusterSetup,
   type SituationalSection,
   type TestPreset,
   type TestsSection,
@@ -217,7 +218,7 @@ function validateCbdinoclusterInit(value: unknown, path: string): CbdinoclusterI
 
 function validateCbdinocluster(value: unknown, path: string): CbdinoclusterSetup {
   const record = requireRecord(value, path);
-  rejectUnknown(record, ["config", "onClusterExists", "deployer", "init"], path);
+  rejectUnknown(record, ["config", "onClusterExists", "deployer", "init", "capella"], path);
   if (record.config === undefined) {
     throw new InvalidDefinitionError(`Missing required field: ${path}.config`);
   }
@@ -238,7 +239,27 @@ function validateCbdinocluster(value: unknown, path: string): CbdinoclusterSetup
   if (record.deployer !== undefined) {
     cbdinocluster.deployer = requireString(record, "deployer", `${path}.deployer`);
   }
+  if (record.capella !== undefined) {
+    cbdinocluster.capella = validateCapellaClusterSetup(record.capella, `${path}.capella`);
+  }
   return cbdinocluster;
+}
+
+function validateCapellaClusterSetup(value: unknown, path: string): CapellaClusterSetup {
+  const record = requireRecord(value, path);
+  rejectUnknown(record, ["cloudProvider", "environment"], path);
+  const cloudProvider = requireString(record, "cloudProvider", `${path}.cloudProvider`);
+  if (!CAPELLA_CLOUD_PROVIDERS.includes(cloudProvider as never)) {
+    throw new InvalidDefinitionError(
+      `"${path}.cloudProvider" must be one of ${CAPELLA_CLOUD_PROVIDERS.join(", ")}; got ${JSON.stringify(cloudProvider)}`,
+    );
+  }
+  const setup: CapellaClusterSetup = { cloudProvider: cloudProvider as CapellaClusterSetup["cloudProvider"] };
+  const environment = validateOptionalString(record, "environment", `${path}.environment`);
+  if (environment !== undefined) {
+    setup.environment = environment;
+  }
+  return setup;
 }
 
 function validateOptionalString(record: Record<string, unknown>, key: string, path: string): string | undefined {

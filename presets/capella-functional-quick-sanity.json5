@@ -1,0 +1,58 @@
+{
+  preset: {
+    order: 35,
+    description: 'Quick sanity testing for FIT functional against a real Capella cluster on AWS (via cbdinocluster cloud deployer).',
+    expectedTime: '~15 minutes',
+  },
+  version: 1,
+  type: 'fit',
+  instances: [
+    {
+      aws: {},
+      clusters: [
+        {
+          clusterConfig: 'cluster-0',
+          sessions: [
+            {
+              performer: {
+                image: '{{PERFORMER_IMAGE}}',
+                onPortInUse: 'reuse',
+              },
+              runs: [
+                {
+                  type: 'functional',
+                  tests: {
+                    classes: ['com.couchbase.client.kv.SanityTest'],
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+  clusterConfigs: [
+    {
+      id: 'cluster-0',
+      cbdinocluster: {
+        config: {
+          nodes: [
+            {
+              count: 1,
+              version: '7.6',
+            },
+          ],
+          cloud: {
+            'cloud-provider': 'aws',
+          },
+        },
+        onClusterExists: 'useExisting',
+        capella: {
+          cloudProvider: 'aws',
+          environment: 'dev',
+        },
+      },
+    },
+  ],
+}

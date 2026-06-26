@@ -60,7 +60,7 @@ export async function askClusterDef(options: AskClusterDefOptions = {}): Promise
   const defaults = loadEnvironments().defaults;
 
   if (options.capellaCloudProvider) {
-    console.log(`\nNote: allocating a Capella cloud cluster on ${options.capellaCloudProvider.toUpperCase()} via the Capella control-plane API.\n`);
+    console.log(`\nNote: cbdinocluster will allocate a Capella cloud cluster on ${options.capellaCloudProvider.toUpperCase()} via the Capella control-plane API.\n`);
     printWithoutTimestamps("  Capella server versions: e.g. 7.6, 7.2");
     const version = await input({
       promptId: "cluster.create.server-version",
