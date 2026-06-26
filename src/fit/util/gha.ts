@@ -86,14 +86,14 @@ export async function appendRunSummaryToGhaSummary(result: RunSummary): Promise<
 
 /**
  * Emits a GHA notice annotation with a direct link to the artifact bundle for
- * this run. The notice surfaces in the step log as a highlighted callout, making
- * the artifacts easy to find without hunting through the run page.
+ * this run. Links to the S3 zip when available (preferred — survives beyond the
+ * GHA retention window), otherwise falls back to the GHA run page.
  */
-export function emitGhaArtifactNotice(): void {
+export function emitGhaArtifactNotice(s3Uri?: string): void {
   const { GITHUB_RUN_ID, GITHUB_REPOSITORY } = process.env;
   if (!GITHUB_RUN_ID || !GITHUB_REPOSITORY) return;
 
-  const url = `https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}#artifacts`;
+  const url = s3Uri ?? `https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}`;
   const name = `fit-cli-run-${GITHUB_RUN_ID}`;
   // GHA workflow command: printed to stdout, parsed by the runner.
   console.log(`::notice title=Run artifacts (${name})::${url}`);
