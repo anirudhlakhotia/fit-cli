@@ -26,6 +26,7 @@ import { loadFitCliConfigEnv } from "../config.js";
 import { createKeyPair, deleteKeyPair } from "../../../cloud/util/aws/key-pair.js";
 import { ensureSecurityGroup } from "../../../cloud/util/aws/security-group.js";
 import { instanceRunDir } from "../../../util/non-fit/replay.js";
+import { instanceLabel } from "../../shared/util/run-labels.js";
 import { waitForSsh, type RemoteHost } from "../../../util/non-fit/ssh.js";
 import { RemoteTarget } from "../../../util/non-fit/remote-target.js";
 import { fitCliWarn } from "../../../util/non-fit/fit-cli-log.js";
@@ -153,7 +154,7 @@ export async function provisionFitInstance(options: ProvisionOptions = {}): Prom
 
   const keyName = `fit-cli-${Date.now().toString(36)}`;
   const instanceIdx = options.instanceIndex ?? 0;
-  const instanceDir = instanceRunDir({ instanceIndex: instanceIdx, dirSegments: { instance: `aws${instanceIdx + 1}` } });
+  const instanceDir = instanceRunDir({ instanceIndex: instanceIdx, dirSegments: { instance: instanceLabel({ instanceIndex: instanceIdx }, "aws") } });
   mkdirSync(instanceDir, { recursive: true, mode: 0o700 });
   const keyPath = join(instanceDir, `${keyName}.pem`);
   await createKeyPair(keyName, keyPath);
