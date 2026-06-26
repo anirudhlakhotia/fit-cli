@@ -166,7 +166,9 @@ Definition file rules while generating:
 - If there are fields that are added later at runtime, add a very short comment saying that.  
 - Comments are injected by decorating the definition object with `"//<6 chars>": "text"` marker keys before the field they annotate and replacing them at render time (see `generate-definition.ts`).  
 - Add new comments there by keying off the field name, not the output text.
-- `cbdinocluster init` belongs under `instances[].setup.cbdinocluster.init`, not on each cluster: it configures `~/.cbdinocluster` once per instance.
+- Take a lot of care when adding new fields.  The broad idea is that the definition file should be concise, and we should generate most stuff at runtime - like cbdinocluster init strings, and FITConfigurations - rather than having it here.  That gives us a lot more wiggle room to adapt in future.
+  - Generally we will be aiming to have a higher level abstraction of the feature in the definition file, capturing the essentials.  While also having passthrough post-generation patch support so the user can easily customise details like generated FITConfigurations for adhoc experimentation. 
+  - An exception to this broad rule is the cbdinocluster allocate def file, which we include verbatim as that is also a stable interface.
 - Take full advantage of being able to move cluster, cbdinocluster and fitConfig definitions elsewhere in the file and reference them by id.  This makes it much easier to read. 
 
 #### Definition file versions
@@ -202,6 +204,10 @@ Unlike Mini CLI these _are_ meant to be stable.  We should try not to break.
 All top-level commands have at least one subcommand.  This gives room to expand in future.
 If the user ran `fit` all when outputting commands they should generally show `fit X`.  If they ran with `bun` then generally `bun run X`.
 Commands should never have `bun run X --` or `fit X --`, e.g. the `--` is totally superfluous now we've moved away from npm.
+
+### Performers
+We exclusively use the new prebuilt Docker performer images, and no longer support building them from source (jenkins-sdk `buildPerformer`).
+All performer images should behave identically; existing in the same repo, with the same metadata.  If they don't then stop and raise, as that's a smell.
 
 ### Testing
 - Anytime there's easy testable business logic, e.g. it doesn't require file access or similar, add unit tests.  Put these in a tests directory off the one being tested.

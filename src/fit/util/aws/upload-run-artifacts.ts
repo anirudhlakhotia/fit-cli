@@ -48,6 +48,7 @@ export async function uploadRunArtifacts(runDir: string, env: NodeJS.ProcessEnv 
     console.log(`Uploading run artifacts (${zipSizeMb} MB) → ${zipKey}`);
     await uploadFileToS3(zipPath, zipKey);
     console.log(`✓ Uploaded run artifacts to ${zipKey}`);
+    console.log(`  Can fetch later with:     fit archive fetch ${zipKey}`);
     return zipKey;
   } catch (err) {
     fitCliWarn(`Could not upload run artifacts to ${s3Base}: ${(err as Error).message}`);
