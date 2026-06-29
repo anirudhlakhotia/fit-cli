@@ -21,7 +21,6 @@ import { confirm } from "../../util/non-fit/prompts.js";
 import { isMain } from "../../util/non-fit/cli.js";
 import { run } from "../../util/non-fit/proc.js";
 import { isFitBinary, runScriptPrefix } from "../../util/non-fit/fit-cli-log.js";
-import { resolveGithubToken } from "../util/config.js";
 import { resolvedGitSha } from "../version/version.js";
 
 const REPO = "couchbaselabs/fit-cli";
@@ -106,15 +105,13 @@ export function shasMatch(a: string, b: string): boolean {
  * Resolve the commit SHA that a release-channel tag (`latest` / `ci`) currently
  * points at. The release workflows recreate the tag at the built commit, so the
  * tag's commit is exactly the SHA baked into that channel's binary. Dereferences
- * annotated tags to the underlying commit. A GitHub token (if available) is used
- * only to dodge the low unauthenticated rate limit — the repo's releases are public.
+ * annotated tags to the underlying commit. The repo is public so no auth is needed.
  */
-export async function resolveRemoteSha(channel: Channel, token?: string): Promise<string> {
+export async function resolveRemoteSha(channel: Channel): Promise<string> {
   const headers: Record<string, string> = {
     Accept: "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
   };
-  if (token) headers.Authorization = `Bearer ${token}`;
 
   const fetchJson = async (url: string): Promise<{ object: { sha: string; type: string; url: string } }> => {
     const res = await fetch(url, { headers });
@@ -159,7 +156,7 @@ export async function runUpgrade(args: UpgradeArgs): Promise<void> {
 
   const localSha = resolvedGitSha();
   console.log(`Checking the "${args.channel}" channel for updates...`);
-  const remoteSha = await resolveRemoteSha(args.channel, await resolveGithubToken().catch(() => undefined));
+  const remoteSha = await resolveRemoteSha(args.channel);
 
   console.log(`  installed: ${localSha}`);
   console.log(`  ${args.channel}:   ${remoteSha}`);
