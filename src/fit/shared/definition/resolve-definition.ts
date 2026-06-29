@@ -426,7 +426,10 @@ export function resolveCbdinocluster(cluster: ClusterLifetime): ResolvedCbdinocl
   return {
     config: cluster.cbdinocluster.config,
     onClusterExists: cluster.cbdinocluster.onClusterExists ?? DEFAULT_CLUSTER_EXISTS_POLICY,
-    ...(cluster.cbdinocluster.deployer !== undefined ? { deployer: cluster.cbdinocluster.deployer } : {}),
+    // Prefer an explicit top-level deployer; fall back to config.deployer (e.g. "cloud" for Capella Analytics).
+    ...(cluster.cbdinocluster.deployer !== undefined || cluster.cbdinocluster.config.deployer !== undefined
+      ? { deployer: cluster.cbdinocluster.deployer ?? cluster.cbdinocluster.config.deployer }
+      : {}),
     ...(cluster.cbdinocluster.capella !== undefined ? { capella: cluster.cbdinocluster.capella } : {}),
   };
 }
@@ -530,10 +533,12 @@ export function resolveCluster(cluster: ClusterLifetime, path: DefinitionRunPath
   }
   const cbdinoclusterVersion =
     clusterMode === "cbdinocluster" && cbdinocluster
-      ? [...new Set(cbdinocluster.config.nodes.map((n) => n.version))].filter(Boolean).join("+") || undefined
+      ? [...new Set(cbdinocluster.config.nodes.map((n) => n.version))].filter((v): v is string => !!v).join("+") || undefined
       : undefined;
+  const isEA = cbdinocluster?.config.columnar === true && cbdinocluster.config.deployer !== "cloud";
+  const isCA = cbdinocluster?.config.columnar === true && cbdinocluster.config.deployer === "cloud";
   const clusterSeg =
-    clusterLabel(path, clusterMode, cbdinoclusterVersion, cbdinocluster?.config.columnar === true) ??
+    clusterLabel(path, clusterMode, cbdinoclusterVersion, isEA, isCA) ??
     String(path.clusterIndex ?? 0);
   const pathWithCluster: DefinitionRunPath = { ...path, dirSegments: { ...path.dirSegments, cluster: clusterSeg } };
   return {

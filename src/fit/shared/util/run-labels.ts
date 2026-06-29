@@ -29,6 +29,8 @@ export interface RunLabelParts {
   enterpriseAnalytics?: boolean;
   /** Whether the cluster is a real Capella cloud cluster (prefixes the cluster segment with `Capella:`). */
   capella?: boolean;
+  /** Whether the cluster is a Capella Analytics cloud cluster (prefixes the cluster segment with `CA:`). */
+  capellaAnalytics?: boolean;
 }
 
 /** `local` / `aws1` / (fallback) `instance1`. */
@@ -53,6 +55,7 @@ export function clusterLabel(
   version?: string,
   enterpriseAnalytics = false,
   capella = false,
+  capellaAnalytics = false,
 ): string | undefined {
   if (path.clusterlessSession) {
     return undefined;
@@ -62,8 +65,12 @@ export function clusterLabel(
     return `existing${n}`;
   }
   const base = version ? version : `cbdino${n}`;
+  // A self-managed Enterprise Analytics cbdino cluster reads as e.g. `EA:2.2.0-1166`.
+  // A real Capella cloud cluster reads as e.g. `Capella:cbdino1`.
+  // A Capella Analytics cloud cluster reads as e.g. `CA:cbdino1`.
   if (enterpriseAnalytics) return `EA:${base}`;
   if (capella) return `Capella:${base}`;
+  if (capellaAnalytics) return `CA:${base}`;
   return base;
 }
 
@@ -106,7 +113,7 @@ export function runLabel(
 export function formatRunLabel(path: DefinitionRunPath, parts: RunLabelParts = {}): string {
   return [
     instanceLabel(path, parts.instanceKind),
-    clusterLabel(path, parts.clusterMode, parts.clusterVersion, parts.enterpriseAnalytics, parts.capella),
+    clusterLabel(path, parts.clusterMode, parts.clusterVersion, parts.enterpriseAnalytics, parts.capella, parts.capellaAnalytics),
     performerLabel(path, parts.sdkValue, parts.performerVersion),
     runLabel(path, parts.type, parts.presets, parts.cng),
   ]

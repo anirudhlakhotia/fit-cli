@@ -96,7 +96,6 @@ export async function askClusterDef(options: AskClusterDefOptions = {}): Promise
   }
 
   if (options.capellaAnalytics) {
-    console.log("\nNote: building a Capella Analytics (cloud) cluster via cbdinocluster. Capella credentials come from your cbdinocluster init config.\n");
     const nodeCount =
       (await number({ promptId: "cluster.create.node-count", message: "How many nodes?", default: 2, min: 1 })) ?? 2;
     const cloudProvider = await select<"aws" | "gcp">({

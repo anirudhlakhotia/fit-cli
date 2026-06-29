@@ -44,7 +44,7 @@
           columnar: true,
           nodes: [
             {
-              count: 2,
+              count: 3,
             },
           ],
           deployer: 'cloud',
