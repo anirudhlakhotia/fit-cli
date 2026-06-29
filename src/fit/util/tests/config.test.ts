@@ -82,12 +82,21 @@ test("ignores legacy stored AWS credentials, region, and profile in config", () 
   assert.deepEqual(parsed, { version: FIT_CLI_CONFIG_VERSION });
 });
 
-test("parses a stored GitHub token", () => {
-  const parsed = parseFitCliConfig(`{ version: 1, github: { token: 'ghp_example' } }`);
+test("parses a stored GitHub token (new localhost.github location)", () => {
+  const parsed = parseFitCliConfig(`{ version: 1, localhost: { github: { token: 'ghp_example' } } }`);
 
   assert.deepEqual(parsed, {
     version: FIT_CLI_CONFIG_VERSION,
-    github: { token: "ghp_example" },
+    localhost: { github: { token: "ghp_example" } },
+  });
+});
+
+test("parses a legacy top-level github token and folds it into localhost", () => {
+  const parsed = parseFitCliConfig(`{ version: 1, github: { token: 'ghp_legacy' } }`);
+
+  assert.deepEqual(parsed, {
+    version: FIT_CLI_CONFIG_VERSION,
+    localhost: { github: { token: "ghp_legacy" } },
   });
 });
 
@@ -95,7 +104,7 @@ const noFetchSecret = (): Promise<Record<string, string>> => Promise.reject(new 
 
 test("resolveGithubToken prefers the config token over the environment", async () => {
   const token = await resolveGithubToken({
-    config: { version: FIT_CLI_CONFIG_VERSION, github: { token: "from-config" } },
+    config: { version: FIT_CLI_CONFIG_VERSION, localhost: { github: { token: "from-config" } } },
     env: { GITHUB_TOKEN: "from-env" },
     fetchSecret: noFetchSecret,
   });
