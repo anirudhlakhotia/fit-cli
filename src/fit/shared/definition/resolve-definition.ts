@@ -157,6 +157,16 @@ export interface ResolvedSituationalExecutionRun extends ResolvedExecutionRunCom
 
 export type ResolvedExecutionRun = ResolvedFunctionalExecutionRun | ResolvedSituationalExecutionRun;
 
+export interface ResolvedSessionGroup {
+  sdk: Sdk;
+  performerPort: number;
+  performerVersion?: string;
+  onPortInUse: PortInUsePolicy;
+  /** Session-level path (carries sessionIndex). */
+  path: DefinitionRunPath;
+  runs: ResolvedFunctionalExecutionRun[];
+}
+
 export interface ResolvedFunctionalExecutionGroup {
   type: "functional";
   path: DefinitionRunPath;
@@ -168,7 +178,7 @@ export interface ResolvedFunctionalExecutionGroup {
   /** Where to get the cbdinocluster binary. Absent means latest release. */
   cbdinoclusterSource?: CbdinoclusterSource;
   capellaEnvironment: string;
-  runs: ResolvedFunctionalExecutionRun[];
+  sessions: ResolvedSessionGroup[];
 }
 
 export interface ResolvedSituationalExecutionGroup {
@@ -598,11 +608,16 @@ export function buildExecutionGroups(instances: ResolvedInstancePlan[]): Resolve
         : {}),
       ...(instance.cbdinoclusterSource ? { cbdinoclusterSource: instance.cbdinoclusterSource } : {}),
       capellaEnvironment: instance.capellaEnvironment,
-      runs: cluster.sessions.flatMap((session) =>
-        session.runs
+      sessions: cluster.sessions.map((session) => ({
+        sdk: session.sdk,
+        performerPort: session.performerPort,
+        ...(session.performerVersion !== undefined ? { performerVersion: session.performerVersion } : {}),
+        onPortInUse: session.onPortInUse,
+        path: session.path,
+        runs: session.runs
           .filter((run): run is ResolvedFunctionalRun => run.type === "functional")
           .map((run) => ({
-            type: "functional",
+            type: "functional" as const,
             path: run.path,
             sdk: session.sdk,
             performerPort: session.performerPort,
@@ -614,7 +629,7 @@ export function buildExecutionGroups(instances: ResolvedInstancePlan[]): Resolve
             ...(run.analytics ? { analytics: true } : {}),
             ...(cluster.cluster ? { cluster: cluster.cluster } : {}),
           })),
-      ),
+      })),
     })),
     ...(instance.clusterlessSessions.length === 0 || !instance.cbdinoclusterInit
       ? []

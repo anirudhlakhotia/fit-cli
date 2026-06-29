@@ -179,7 +179,7 @@ function clusterLabel(group: ResolvedExecutionGroup): string {
   if (group.type === "situational") {
     return "none — situational runs build their own cluster via FIT/SIT";
   }
-  const cluster = group.runs.find(functionalWithCluster)?.cluster;
+  const cluster = group.sessions.flatMap((s) => s.runs).find(functionalWithCluster)?.cluster;
   if (cluster) {
     const cng = cluster.cng ? ` — CNG performer ${cluster.cng.performerConnectionString}` : "";
     return `${cluster.scheme}://${cluster.defaultHostname} (${cluster.flavour})${cng}`;
@@ -205,7 +205,10 @@ function applyGroupCluster(
 ): ResolvedFunctionalExecutionGroup {
   return {
     ...group,
-    runs: group.runs.map((run) => ({ ...run, cluster })),
+    sessions: group.sessions.map((session) => ({
+      ...session,
+      runs: session.runs.map((run) => ({ ...run, cluster })),
+    })),
   };
 }
 
@@ -229,7 +232,7 @@ export function cbdinoclusterSetupFailed(
   return (
     group.clusterMode === "cbdinocluster" &&
     ranSetupCluster &&
-    group.runs.some((run) => !run.cluster)
+    group.sessions.some((session) => session.runs.some((run) => !run.cluster))
   );
 }
 
@@ -1437,7 +1440,11 @@ export async function runFromDefinition(
   }
   const startCycleIndex = savedState?.executionGroupIndex ?? 0;
   const startIterationIndex = savedState?.startRunIndex ?? 0;
-  const expectedResumePath = executionGroups[startCycleIndex]?.runs[startIterationIndex]?.path;
+  const startGroup = executionGroups[startCycleIndex];
+  const allRunsInStartCycle = startGroup?.type === "functional"
+    ? startGroup.sessions.flatMap((s) => s.runs)
+    : (startGroup?.runs ?? []);
+  const expectedResumePath = allRunsInStartCycle[startIterationIndex]?.path;
   if (resumeAt && hasResumeSelector(resumeSelector)) {
     if (!expectedResumePath) {
       fitCliError(
@@ -1625,7 +1632,9 @@ export async function runFromDefinition(
   try {
     let globalIterationIndex = executionGroups
       .slice(0, startCycleIndex)
-      .reduce((total, group) => total + group.runs.length, 0);
+      .reduce((total, group) => total + (group.type === "functional"
+        ? group.sessions.reduce((s, session) => s + session.runs.length, 0)
+        : group.runs.length), 0);
 
     try {
     for (let cycleIndex = startCycleIndex; cycleIndex < executionGroups.length; cycleIndex++) {
@@ -1669,7 +1678,9 @@ export async function runFromDefinition(
         if (!targetOutcome.ready) {
           fitCliError({ classification: "FatalToInstance" }, `\n✗ Could not acquire an execution target for execution group ${cycleIndex + 1}; skipping it.`);
           tracker.record("FatalToInstance", `Could not acquire an execution target for execution group ${cycleIndex + 1}`, failureContextFromPath(group.path, failureLabel(group)));
-          globalIterationIndex += group.runs.length;
+          globalIterationIndex += group.type === "functional"
+            ? group.sessions.reduce((s, session) => s + session.runs.length, 0)
+            : group.runs.length;
           continue;
         }
         cycleTeardown = targetOutcome.teardown;
@@ -1679,7 +1690,8 @@ export async function runFromDefinition(
           printResumeHint("after-instance-creation", definitionCopyPath, group.path, false);
         }
 
-        execution = await createFitExecutionContext(targetOutcome.target, group.runs[0].sdk, {
+        const firstSdk = group.type === "functional" ? group.sessions[0]?.sdk : group.runs[0]?.sdk;
+        execution = await createFitExecutionContext(targetOutcome.target, firstSdk, {
           skipRemotePreparation: isResumeStartCycle && !phases.prepareRemote,
           instancePath: group.path,
         });
@@ -1798,16 +1810,35 @@ export async function runFromDefinition(
           }
         }
 
-        // The performer lives for the whole session (all runs share one container).
+        const allSessionsAndRuns = activeCycle.type === "functional"
+          ? activeCycle.sessions.flatMap((session) => session.runs.map((run) => ({ session, run })))
+          : activeCycle.runs.map((run) => ({ session: null as null, run }));
+        const totalIterations = allSessionsAndRuns.length;
+
+        // Iterate sessions (functional) or runs (situational). For functional groups,
+        // each session owns its own performer: start it before the session's first run,
+        // reuse it across all runs in that session, stop it after the last run.
         let sessionPerformer: RunningPerformer | undefined;
-        for (const [cycleIterationIndex, iteration] of activeCycle.runs.entries()) {
+        let activeSessionIndex: number | undefined;
+        for (const [cycleIterationIndex, { session, run: iteration }] of allSessionsAndRuns.entries()) {
           if (cycleIndex === startCycleIndex && cycleIterationIndex < startIterationIndex) {
             globalIterationIndex++;
             continue;
           }
           activeIterationIndex = cycleIterationIndex;
           activeResumePath = iteration.path;
-          const isLastIteration = cycleIterationIndex === activeCycle.runs.length - 1;
+          const isLastIteration = cycleIterationIndex === totalIterations - 1;
+
+          // Detect session boundary: when the session changes, stop the old performer.
+          const currentSessionIndex = session ? iteration.path.sessionIndex : undefined;
+          if (session && currentSessionIndex !== activeSessionIndex) {
+            if (sessionPerformer) {
+              await stopManagedPerformer(execution, sessionPerformer);
+              sessionPerformer = undefined;
+            }
+            activeSessionIndex = currentSessionIndex;
+          }
+
           announce(activeCycle, iteration, resolved.fitPerformerGerritRef);
           const isStartIteration = cycleIndex === startCycleIndex && cycleIterationIndex === startIterationIndex;
           const setupPerformerPhase = isStartIteration ? phases.setupPerformer : true;
@@ -1864,7 +1895,9 @@ export async function runFromDefinition(
         if (err instanceof ClassifiedFailure && err.classification === "FatalToCluster") {
           fitCliError({ classification: "FatalToCluster" }, `\n✗ ${err.message}`);
           tracker.record("FatalToCluster", err.message, failureContextFromPath(group.path, failureLabel(activeCycle)));
-          globalIterationIndex += activeCycle.runs.length;
+          globalIterationIndex += activeCycle.type === "functional"
+            ? activeCycle.sessions.reduce((s, session) => s + session.runs.length, 0)
+            : activeCycle.runs.length;
 
           // Promote this cycle as the active set so that stopping here lets
           // teardownRun offer to leave its instance/cluster/performers up.

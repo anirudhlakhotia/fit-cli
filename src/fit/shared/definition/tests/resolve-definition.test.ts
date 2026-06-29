@@ -115,7 +115,7 @@ test("an analytics-functional run resolves into the functional group carrying th
   assert.equal(group?.type, "functional");
   if (group?.type !== "functional") return;
   assert.equal(group.clusterMode, "cbdinocluster");
-  const run = group.runs[0];
+  const run = group.sessions[0]?.runs[0];
   assert.equal(run?.type, "functional");
   assert.equal(run?.analytics, true);
   assert.equal(run?.sdk.value, "columnar-java");
@@ -375,7 +375,7 @@ test("dirSegments are populated through instance → cluster → session → run
   assert.ok(group);
   assert.equal(group.path.dirSegments?.instance, "aws1");
   assert.equal(group.path.dirSegments?.cluster, "8.0-stable");
-  const run = group.runs[0];
+  const run = group.type === "functional" ? group.sessions[0]?.runs[0] : undefined;
   assert.ok(run);
   assert.equal(run.path.dirSegments?.instance, "aws1");
   assert.equal(run.path.dirSegments?.cluster, "8.0-stable");

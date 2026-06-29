@@ -28,24 +28,32 @@ function functionalCycle(): ResolvedFunctionalExecutionGroup {
       config: { nodes: [{ count: 1, version: "8.1.0-2188", services: ["kv"] }] },
       onClusterExists: "destroyAndRecreate",
     },
-    runs: [
+    sessions: [
       {
-        type: "functional",
-        path: { instanceIndex: 0, clusterIndex: 0, sessionIndex: 0, runIndex: 0 },
         sdk,
         performerPort: 8060,
-        testSelection: { allTests: [], selectedTests: [] },
         onPortInUse: "restart",
-        extraMavenArgs: [],
-      },
-      {
-        type: "functional",
-        path: { instanceIndex: 0, clusterIndex: 0, sessionIndex: 0, runIndex: 1 },
-        sdk,
-        performerPort: 8061,
-        testSelection: { allTests: [], selectedTests: [] },
-        onPortInUse: "restart",
-        extraMavenArgs: [],
+        path: { instanceIndex: 0, clusterIndex: 0, sessionIndex: 0 },
+        runs: [
+          {
+            type: "functional",
+            path: { instanceIndex: 0, clusterIndex: 0, sessionIndex: 0, runIndex: 0 },
+            sdk,
+            performerPort: 8060,
+            testSelection: { allTests: [], selectedTests: [] },
+            onPortInUse: "restart",
+            extraMavenArgs: [],
+          },
+          {
+            type: "functional",
+            path: { instanceIndex: 0, clusterIndex: 0, sessionIndex: 0, runIndex: 1 },
+            sdk,
+            performerPort: 8061,
+            testSelection: { allTests: [], selectedTests: [] },
+            onPortInUse: "restart",
+            extraMavenArgs: [],
+          },
+        ],
       },
     ],
   };
@@ -144,7 +152,7 @@ test("setupCluster applies the allocated cbdinocluster to every functional itera
   });
 
   assert.equal(receivedExecution, execution);
-  assert.deepEqual(result.group.runs.map((iteration) => iteration.cluster), [cluster(), cluster()]);
+  assert.deepEqual(result.group.sessions.flatMap((s) => s.runs.map((r) => r.cluster)), [cluster(), cluster()]);
 });
 
 test("setupCluster leaves the iterations unchanged when allocation fails", async () => {
@@ -156,14 +164,17 @@ test("setupCluster leaves the iterations unchanged when allocation fails", async
     }),
   );
 
-  assert.deepEqual(result.group.runs.map((iteration) => iteration.cluster), [undefined, undefined]);
+  assert.deepEqual(result.group.sessions.flatMap((s) => s.runs.map((r) => r.cluster)), [undefined, undefined]);
 });
 
 test("cbdinoclusterSetupFailed flags a missing cycle cluster after the cluster phase ran", () => {
   assert.equal(cbdinoclusterSetupFailed(functionalCycle(), true), true);
 
   const resolved = functionalCycle();
-  resolved.runs = resolved.runs.map((iteration) => ({ ...iteration, cluster: cluster() }));
+  resolved.sessions = resolved.sessions.map((session) => ({
+    ...session,
+    runs: session.runs.map((iteration) => ({ ...iteration, cluster: cluster() })),
+  }));
   assert.equal(cbdinoclusterSetupFailed(resolved, true), false);
   assert.equal(cbdinoclusterSetupFailed(functionalCycle(), false), false);
 });
