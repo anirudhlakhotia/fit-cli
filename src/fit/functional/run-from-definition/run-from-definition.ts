@@ -928,6 +928,7 @@ async function runIteration(
   const artifacts: Artifact[] = [];
   const details: Detail[] = [];
 
+  const ownedPerformer = !existingPerformer;
   let performer: RunningPerformer | undefined;
   if (existingPerformer) {
     // Reuse a performer that is already running for this session — no setup needed.
@@ -949,11 +950,21 @@ async function runIteration(
   }
 
   let output: RunOutput;
-  if (run.type === "situational") {
-    output = await runSituationalTests(execution, run, { recordResult });
-  } else {
-    const clusterMode: ResolvedFunctionalExecutionGroup["clusterMode"] = functionalClusterMode ?? "useExisting";
-    output = await runTests(execution, clusterMode, run, performer, { recordResult }, functionalClusterVersion);
+  try {
+    if (run.type === "situational") {
+      output = await runSituationalTests(execution, run, { recordResult });
+    } else {
+      const clusterMode: ResolvedFunctionalExecutionGroup["clusterMode"] = functionalClusterMode ?? "useExisting";
+      output = await runTests(execution, clusterMode, run, performer, { recordResult }, functionalClusterVersion);
+    }
+  } catch (err) {
+    // When we started this performer ourselves and a FatalToSession error escapes, stop
+    // the container now. The outer loop only has a performer reference when runIteration
+    // returns successfully, so it cannot stop this one at the next session boundary.
+    if (ownedPerformer && err instanceof ClassifiedFailure && err.classification === "FatalToSession") {
+      await stopManagedPerformer(execution, performer);
+    }
+    throw err;
   }
   artifacts.push(...output.artifacts);
   details.push(...output.details);
