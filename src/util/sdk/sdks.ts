@@ -32,8 +32,8 @@ export const SDKS = [
   // Enterprise Analytics SDK first — it's the standard/recommended choice for the
   // (self-managed Enterprise Analytics) clusters fit-cli allocates; the Columnar SDK
   // is mainly for Capella Analytics or the odd cross-combination.
-  { name: "Enterprise Analytics SDK — Java", value: "analytics-java", jvm: true, performer: "analytics/java", family: "enterprise-analytics" },
-  { name: "Columnar SDK — Java", value: "columnar-java", jvm: true, performer: "columnar/java", family: "columnar" },
+  { name: "Java Enterprise Analytics", value: "analytics-java", jvm: true, performer: "analytics/java", family: "enterprise-analytics" },
+  { name: "Java Columnar", value: "columnar-java", jvm: true, performer: "columnar/java", family: "columnar" },
 ] as const;
 
 export type Sdk = (typeof SDKS)[number];

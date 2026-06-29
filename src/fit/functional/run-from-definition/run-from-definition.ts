@@ -1195,7 +1195,7 @@ function resumeSuggestions(inputs: TeardownInputs): ResumePoint[] {
  */
 function printRunResultsTables(results: readonly RunResultSummary[]): void {
   for (const result of results) {
-    const heading = `${result.pathLabel} (${result.sdk})`;
+    const heading = `${result.pathLabel}`;
     console.log(`\n── ${heading} ──`);
     if (result.surefireDir) {
       process.stdout.write(junitToPlainTextFromDir(result.surefireDir));
