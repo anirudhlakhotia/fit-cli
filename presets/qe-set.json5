@@ -14,7 +14,25 @@
       },
       clusters: [
         {
-          clusterConfig: 'cluster-0',
+          clusterConfig: '8.0-stable',
+          sessions: [
+            {
+              performer: {
+                image: '{{PERFORMER_IMAGE}}',
+              },
+              runs: [
+                {
+                  type: 'functional',
+                  tests: {
+                    presets: ['all'],
+                  },
+                },
+              ],
+            },
+          ],
+        },
+        {
+          clusterConfig: '7.6-stable',
           sessions: [
             {
               performer: {
@@ -58,13 +76,32 @@
   ],
   clusterConfigs: [
     {
-      id: 'cluster-0',
+      id: '8.0-stable',
       cbdinocluster: {
         config: {
           nodes: [
             {
               count: 3,
               version: '8.0-stable',
+              services: ['kv', 'n1ql', 'index', 'fts'],
+            },
+          ],
+          docker: {
+            'kv-memory': 4096,
+            'fts-memory': 4096,
+          },
+        },
+        onClusterExists: 'useExisting',
+      },
+    },
+    {
+      id: '7.6-stable',
+      cbdinocluster: {
+        config: {
+          nodes: [
+            {
+              count: 3,
+              version: '7.6-stable',
               services: ['kv', 'n1ql', 'index', 'fts'],
             },
           ],
