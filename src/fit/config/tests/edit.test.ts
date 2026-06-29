@@ -66,32 +66,32 @@ test("init answers keep existing cloud settings when AWS is declined", () => {
     cloud: { aws: { instanceTypes: { perf: "m6i.large" } } },
   };
 
-  const config = initAnswersToConfig({ configureAws: false, configureCapella: false, configureLocalhost: false, githubToken: "ghp_new" }, existing);
+  const config = initAnswersToConfig({ configureAws: false, configureCapella: false, configureLocalhost: true, githubToken: "ghp_new" }, existing);
 
   assert.deepEqual(config, {
     version: FIT_CLI_CONFIG_VERSION,
     cloud: { aws: { instanceTypes: { perf: "m6i.large" } } },
-    github: { token: "ghp_new" },
+    localhost: { github: { token: "ghp_new" } },
   });
 });
 
-test("init answers store a GitHub token alongside (or without) AWS", () => {
-  assert.deepEqual(initAnswersToConfig({ configureAws: false, configureCapella: false, configureLocalhost: false, githubToken: "ghp_example" }), {
+test("init answers store a GitHub token under localhost alongside (or without) AWS", () => {
+  assert.deepEqual(initAnswersToConfig({ configureAws: false, configureCapella: false, configureLocalhost: true, githubToken: "ghp_example" }), {
     version: FIT_CLI_CONFIG_VERSION,
-    github: { token: "ghp_example" },
+    localhost: { github: { token: "ghp_example" } },
   });
 
   assert.deepEqual(
     initAnswersToConfig({
       configureAws: true,
-      configureCapella: false, configureLocalhost: false,
+      configureCapella: false, configureLocalhost: true,
       githubToken: "  ghp_trimmed  ",
       aws: { instanceTypes: { ...ALL_TYPES } },
     }),
     {
       version: FIT_CLI_CONFIG_VERSION,
       cloud: { aws: { instanceTypes: { ...ALL_TYPES } } },
-      github: { token: "ghp_trimmed" },
+      localhost: { github: { token: "ghp_trimmed" } },
     },
   );
 });

@@ -142,16 +142,34 @@ export interface FitCliReposConfig {
 
 /**
  * Settings that only matter when running FIT tests on this machine (localhost).
- * EC2 runs need none of these — the remote box clones the repos itself and
- * installs its own cbdinocluster. github/gerrit creds are deliberately NOT here:
- * when set locally they're used for remote runs too (GHCR pulls, uploaded
- * `.git-credentials`), so they stay top-level.
+ * EC2 runs need none of these — the remote box clones the repos itself,
+ * installs its own cbdinocluster, and pulls GitHub/Gerrit credentials from
+ * AWS Secrets Manager rather than the user's personal config.
+ * grahamp: that is very intentional.  User testing found that user's own PAT
+ * tokens often weren't recently SSO-permissioned to access couchbaselabs, and/or
+ * did not have required permissions.  It's much cleaner to use the known one in
+ * AWS secrets wherever we can.  If that ever hits a problem (maybe user wants
+ * access to a particular branch only their PAT can access or something odd),
+ * better to add runtime override at that point.
  */
 export interface FitCliLocalhostConfig {
   /** Local checkouts of the repos a localhost run needs (the FIT test-driver). */
   repos?: FitCliReposConfig;
   /** Absolute path to the cbdinocluster binary, for non-PATH installs. */
   cbdinoclusterPath?: string;
+  /**
+   * GitHub credentials for localhost runs: cloning private FIT repos and pulling
+   * GHCR images. EC2 runs always source these from the AWS secret
+   * {@link GITHUB_AWS_SECRET_ID} so that a user's personal PAT (which may have
+   * different permission scopes) is never used on the remote box.
+   */
+  github?: FitCliGithubConfig;
+  /**
+   * Gerrit username for localhost runs (checking out Gerrit change refs).
+   * EC2 runs use the Gerrit SSH key from AWS Secrets Manager and derive the
+   * username the same way — this field is not sent to the remote box.
+   */
+  gerrit?: FitCliGerritConfig;
 }
 
 /**
@@ -173,9 +191,7 @@ export interface FitCliCapellaConfig {
 export interface FitCliConfig {
   version: 1;
   cloud?: FitCliCloudConfig;
-  github?: FitCliGithubConfig;
   output?: FitCliOutputConfig;
-  gerrit?: FitCliGerritConfig;
   capella?: FitCliCapellaConfig;
   /** Settings that only matter for running FIT tests on this machine. */
   localhost?: FitCliLocalhostConfig;
@@ -299,30 +315,7 @@ export function validateFitCliConfig(raw: unknown): FitCliConfig {
 
   const cloud = cloudValue ? validateCloudConfig(cloudValue) : undefined;
 
-  const githubValue = raw.github;
-  if (githubValue !== undefined && !isRecord(githubValue)) {
-    throw new InvalidFitCliConfigError(`Field "github" must be a mapping; got ${JSON.stringify(githubValue)}`);
-  }
-
-  const github = githubValue
-    ? compactRecord({
-        user: readOptionalString(githubValue, "user", "github.user"),
-        token: readOptionalString(githubValue, "token", "github.token"),
-      })
-    : undefined;
-
   const output = validateOutputConfig(raw.output);
-
-  const gerritValue = raw.gerrit;
-  if (gerritValue !== undefined && !isRecord(gerritValue)) {
-    throw new InvalidFitCliConfigError(`Field "gerrit" must be a mapping; got ${JSON.stringify(gerritValue)}`);
-  }
-
-  const gerrit = gerritValue
-    ? compactRecord({
-        user: readOptionalString(gerritValue, "user", "gerrit.user"),
-      })
-    : undefined;
 
   const capellaValue = raw.capella;
   if (capellaValue !== undefined && !isRecord(capellaValue)) {
@@ -337,30 +330,44 @@ export function validateFitCliConfig(raw: unknown): FitCliConfig {
     : undefined;
 
   // Legacy: cbdinoclusterPath used to be top-level; it now lives under `localhost`.
-  // Fold an old top-level value in so existing configs keep working (no version bump).
+  // Legacy: github and gerrit used to be top-level; they now live under `localhost`.
+  // Fold old top-level values in so existing configs keep working (no version bump).
   const legacyCbdinoclusterPath = readOptionalString(raw, "cbdinoclusterPath", "cbdinoclusterPath");
-  const localhost = validateLocalhostConfig(raw.localhost, legacyCbdinoclusterPath);
+  const legacyGithubValue = raw.github;
+  const legacyGithub =
+    legacyGithubValue && isRecord(legacyGithubValue)
+      ? compactRecord({
+          user: readOptionalString(legacyGithubValue, "user", "github.user"),
+          token: readOptionalString(legacyGithubValue, "token", "github.token"),
+        })
+      : undefined;
+  const legacyGerritValue = raw.gerrit;
+  const legacyGerrit =
+    legacyGerritValue && isRecord(legacyGerritValue)
+      ? compactRecord({ user: readOptionalString(legacyGerritValue, "user", "gerrit.user") })
+      : undefined;
+  const localhost = validateLocalhostConfig(raw.localhost, legacyCbdinoclusterPath, legacyGithub, legacyGerrit);
 
   return {
     version: FIT_CLI_CONFIG_VERSION,
     ...(cloud ? { cloud } : {}),
-    ...(github && Object.keys(github).length > 0 ? { github } : {}),
     ...(output ? { output } : {}),
-    ...(gerrit && Object.keys(gerrit).length > 0 ? { gerrit } : {}),
     ...(capella && Object.keys(capella).length > 0 ? { capella } : {}),
     ...(localhost ? { localhost } : {}),
   };
 }
 
 /**
- * Validate and compact the `localhost` section: the local checkouts of repos a
- * localhost run needs (`repos["transactions-fit-performer"].dir`) and the
- * cbdinocluster binary path. `legacyCbdinoclusterPath` is an old top-level value
- * folded in when `localhost` doesn't set one. Returns undefined when empty.
+ * Validate and compact the `localhost` section. `legacyCbdinoclusterPath`,
+ * `legacyGithub`, and `legacyGerrit` are old top-level values folded in when
+ * `localhost` doesn't set them — keeps existing configs working without a version bump.
+ * Returns undefined when everything is empty.
  */
 function validateLocalhostConfig(
   value: unknown,
   legacyCbdinoclusterPath?: string,
+  legacyGithub?: Partial<FitCliGithubConfig>,
+  legacyGerrit?: Partial<FitCliGerritConfig>,
 ): FitCliLocalhostConfig | undefined {
   if (value !== undefined && !isRecord(value)) {
     throw new InvalidFitCliConfigError(`Field "localhost" must be a mapping; got ${JSON.stringify(value)}`);
@@ -388,10 +395,37 @@ function validateLocalhostConfig(
     (value ? readOptionalString(value, "cbdinoclusterPath", "localhost.cbdinoclusterPath") : undefined) ??
     legacyCbdinoclusterPath;
 
-  if (!repos && !cbdinoclusterPath) return undefined;
+  const githubValue = value?.github;
+  if (githubValue !== undefined && !isRecord(githubValue)) {
+    throw new InvalidFitCliConfigError(`Field "localhost.github" must be a mapping; got ${JSON.stringify(githubValue)}`);
+  }
+  const githubRaw = githubValue && isRecord(githubValue)
+    ? compactRecord({
+        user: readOptionalString(githubValue, "user", "localhost.github.user"),
+        token: readOptionalString(githubValue, "token", "localhost.github.token"),
+      })
+    : undefined;
+  const github = Object.keys(githubRaw ?? {}).length > 0
+    ? githubRaw
+    : (legacyGithub && Object.keys(legacyGithub).length > 0 ? legacyGithub : undefined);
+
+  const gerritValue = value?.gerrit;
+  if (gerritValue !== undefined && !isRecord(gerritValue)) {
+    throw new InvalidFitCliConfigError(`Field "localhost.gerrit" must be a mapping; got ${JSON.stringify(gerritValue)}`);
+  }
+  const gerritRaw = gerritValue && isRecord(gerritValue)
+    ? compactRecord({ user: readOptionalString(gerritValue, "user", "localhost.gerrit.user") })
+    : undefined;
+  const gerrit = Object.keys(gerritRaw ?? {}).length > 0
+    ? gerritRaw
+    : (legacyGerrit && Object.keys(legacyGerrit).length > 0 ? legacyGerrit : undefined);
+
+  if (!repos && !cbdinoclusterPath && !github && !gerrit) return undefined;
   return {
     ...(repos ? { repos } : {}),
     ...(cbdinoclusterPath ? { cbdinoclusterPath } : {}),
+    ...(github ? { github } : {}),
+    ...(gerrit ? { gerrit } : {}),
   };
 }
 
@@ -497,13 +531,13 @@ export function loadFitCliConfig(path: string = defaultFitCliConfigPath()): FitC
 }
 
 /**
- * The GitHub token used to clone the private FIT repos. Resolution order:
- *   1. `github.token` in the fit-cli config
+ * The GitHub token used to clone the private FIT repos on localhost. Resolution order:
+ *   1. `localhost.github.token` in the fit-cli config
  *   2. GITHUB_TOKEN / GH_TOKEN env vars
  *   3. `token` field in the {@link GITHUB_AWS_SECRET_ID} AWS secret
  *
- * The AWS fallback is the primary path on clean EC2 test instances that have no
- * personal config file. Loads the config itself when a parsed config isn't supplied.
+ * For EC2 runs use {@link resolveGithubTokenFromAws} directly — the user's personal
+ * PAT is never forwarded to the remote box.
  */
 export async function resolveGithubToken(
   options: {
@@ -515,9 +549,29 @@ export async function resolveGithubToken(
 ): Promise<string | undefined> {
   const env = options.env ?? process.env;
   const config = options.config ?? loadFitCliConfig(options.path).config;
-  const fromLocal = config?.github?.token ?? (env.GITHUB_TOKEN?.trim() || undefined) ?? (env.GH_TOKEN?.trim() || undefined);
+  const fromLocal = config?.localhost?.github?.token ?? (env.GITHUB_TOKEN?.trim() || undefined) ?? (env.GH_TOKEN?.trim() || undefined);
   if (fromLocal) return fromLocal;
 
+  try {
+    const fetchSecret = options.fetchSecret ?? getJsonSecret;
+    const secret = await fetchSecret(GITHUB_AWS_SECRET_ID);
+    return secret.token?.trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The GitHub token for EC2 runs, fetched directly from {@link GITHUB_AWS_SECRET_ID}.
+ * EC2 runs always use the shared org secret rather than the user's personal PAT:
+ * personal PATs may have different permission scopes and should not be sent to
+ * remote boxes the user does not fully control.
+ */
+export async function resolveGithubTokenFromAws(
+  options: {
+    fetchSecret?: (secretId: string) => Promise<Record<string, string>>;
+  } = {},
+): Promise<string | undefined> {
   try {
     const fetchSecret = options.fetchSecret ?? getJsonSecret;
     const secret = await fetchSecret(GITHUB_AWS_SECRET_ID);
@@ -554,14 +608,13 @@ export function resolveFitPerformerDir(
 }
 
 /**
- * The GitHub credentials (user + token) needed for GHCR image pulls in remote
+ * The GitHub credentials (user + token) needed for GHCR image pulls in localhost
  * cbdinocluster environments. Resolution order for each field:
- *   1. `github.user` / `github.token` in the fit-cli config
+ *   1. `localhost.github.user` / `localhost.github.token` in the fit-cli config
  *   2. `user` / `token` fields in the {@link GITHUB_AWS_SECRET_ID} AWS secret
  *
- * The AWS fallback is the primary path on clean EC2 test instances that have no
- * personal config file. Returns the credentials on success, or an error message
- * string on failure.
+ * For EC2 runs use {@link resolveGithubCredentialsFromAws} directly — the user's
+ * personal PAT is never forwarded to the remote box.
  */
 export async function resolveGithubCredentials(
   options: {
@@ -571,8 +624,8 @@ export async function resolveGithubCredentials(
   } = {},
 ): Promise<{ user: string; token: string } | string> {
   const config = options.config ?? loadFitCliConfig(options.path).config;
-  let user = config?.github?.user;
-  let token = config?.github?.token;
+  let user = config?.localhost?.github?.user;
+  let token = config?.localhost?.github?.token;
 
   if (!user || !token) {
     try {
@@ -586,13 +639,40 @@ export async function resolveGithubCredentials(
   }
 
   if (!user || !token) {
-    const missing = [!user && "github.user", !token && "github.token"].filter(Boolean).join(" and ");
+    const missing = [!user && "localhost.github.user", !token && "localhost.github.token"].filter(Boolean).join(" and ");
     return (
       `${missing} not found in ~/.fit-cli/config.json5 or in the AWS secret "${GITHUB_AWS_SECRET_ID}". ` +
       `Run \`${runScriptPrefix("config")} edit\` to configure locally, or populate the AWS secret for EC2 use.`
     );
   }
   return { user, token };
+}
+
+/**
+ * The GitHub credentials (user + token) for EC2 runs, fetched directly from
+ * {@link GITHUB_AWS_SECRET_ID}. EC2 runs always use the shared org secret rather
+ * than the user's personal PAT — personal PATs may have different permission scopes
+ * and should not be sent to remote boxes the user does not fully control.
+ */
+export async function resolveGithubCredentialsFromAws(
+  options: {
+    fetchSecret?: (secretId: string) => Promise<Record<string, string>>;
+  } = {},
+): Promise<{ user: string; token: string } | string> {
+  try {
+    const fetchSecret = options.fetchSecret ?? getJsonSecret;
+    const secret = await fetchSecret(GITHUB_AWS_SECRET_ID);
+    const user = secret.user?.trim() || undefined;
+    const token = secret.token?.trim() || undefined;
+    if (user && token) return { user, token };
+    const missing = [!user && "user", !token && "token"].filter(Boolean).join(" and ");
+    return (
+      `GitHub ${missing} not found in the AWS secret "${GITHUB_AWS_SECRET_ID}". ` +
+      `Populate the secret for EC2 use.`
+    );
+  } catch {
+    return `Could not fetch the AWS secret "${GITHUB_AWS_SECRET_ID}". Ensure AWS credentials are configured.`;
+  }
 }
 
 /** ROSA / OpenShift cluster login details for a CNG functional run. */
@@ -784,9 +864,9 @@ export async function resolveCapellaConfig(
 const CANDIDATE_GERRIT_SSH_KEY_NAMES = ["id_rsa", "id_ed25519", "id_ecdsa"];
 
 /**
- * Resolve the Gerrit username. Priority: gerrit.user in config → FIT_GERRIT_USER
- * env var → GERRIT_USER env var → github.user in config (same login is typical
- * at Couchbase). Returns undefined if nothing is found.
+ * Resolve the Gerrit username. Priority: localhost.gerrit.user in config →
+ * FIT_GERRIT_USER env var → GERRIT_USER env var → localhost.github.user in config
+ * (same login is typical at Couchbase). Returns undefined if nothing is found.
  */
 export function resolveGerritUser(
   options: { config?: FitCliConfig; path?: string; env?: NodeJS.ProcessEnv } = {},
@@ -794,10 +874,10 @@ export function resolveGerritUser(
   const env = options.env ?? process.env;
   const config = options.config ?? loadFitCliConfig(options.path).config;
   return (
-    config?.gerrit?.user ??
+    config?.localhost?.gerrit?.user ??
     (env.FIT_GERRIT_USER?.trim() || undefined) ??
     (env.GERRIT_USER?.trim() || undefined) ??
-    config?.github?.user
+    config?.localhost?.github?.user
   );
 }
 

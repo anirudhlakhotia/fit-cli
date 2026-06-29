@@ -10,7 +10,7 @@ import { announceArtifactStream, type BackgroundStream } from "../../../util/non
 import { posixQuote, teeToFileCommand } from "../../../util/non-fit/remote-target.js";
 import { RemoteTarget } from "../../../util/non-fit/remote-target.js";
 import type { ExecutionTarget } from "../../../util/non-fit/target.js";
-import { resolveGithubToken } from "../../util/config.js";
+import { resolveGithubTokenFromAws } from "../../util/config.js";
 import { FIT_PERFORMER, repoPath } from "../../util/repos.js";
 import { SDKS, sdkByValue, type Sdk } from "../../../util/sdk/sdks.js";
 import { DEFAULT_PERFORMER_PORT } from "../../performers/util/performer-port.js";
@@ -148,13 +148,13 @@ export async function createRemoteFitExecutionContext(
     await target.putFile(localDockerWrapper, wrapperPath);
     await target.run("chmod", ["755", wrapperPath]);
 
-    const githubToken = await resolveGithubToken();
+    const githubToken = await resolveGithubTokenFromAws();
     if (githubToken) {
       await configureRemoteGitCredentials(target, rootDir, githubToken);
     } else {
       console.log(
-        "\n⚠ No GitHub token found — the private FIT repos will fail to clone.\n" +
-          `  Add one with \`${runScriptPrefix("config")} edit\`, or set GITHUB_TOKEN / GH_TOKEN, then try again.`,
+        "\n⚠ No GitHub token found in AWS Secrets Manager — the private FIT repos will fail to clone.\n" +
+          `  Populate the "fit-cli/github/token" AWS secret, or ask #the-fit-stop for help.`,
       );
     }
 

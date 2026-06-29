@@ -148,24 +148,18 @@ export function initAnswersToConfig(answers: InitAnswers, existing?: FitCliConfi
       ? awsAnswersToConfig(answers.aws, existing?.cloud?.aws?.instanceTypes)
       : existing?.cloud?.aws;
   const cloud: FitCliCloudConfig | undefined = aws ? { aws } : undefined;
-  const user = trimOptional(answers.githubUser) ?? existing?.github?.user;
-  const token = trimOptional(answers.githubToken);
-  const github = user || token
-    ? { ...(user ? { user } : {}), ...(token ? { token } : {}) }
-    : undefined;
   // Definition output format lives under `output`. Results-DB credentials are no
   // longer stored in config — they come from AWS Secrets Manager at run time.
   const outputFormat = answers.outputFormat ?? existing?.output?.format;
   const output: FitCliOutputConfig | undefined = outputFormat ? { format: outputFormat } : undefined;
-
-  const gerritUser = trimOptional(answers.gerritUser);
-  const gerrit = gerritUser ? { user: gerritUser } : existing?.gerrit;
 
   // Declining the Capella prompt leaves any saved capella settings untouched.
   const capella =
     answers.configureCapella && answers.capella ? capellaAnswersToConfig(answers.capella) : existing?.capella;
 
   // Declining the localhost prompt leaves any saved localhost settings untouched.
+  // github and gerrit creds live under localhost — they are not used for EC2 runs
+  // (those always pull from AWS Secrets Manager).
   const localhost = answers.configureLocalhost
     ? buildLocalhostConfig(answers, existing?.localhost)
     : existing?.localhost;
@@ -173,9 +167,7 @@ export function initAnswersToConfig(answers: InitAnswers, existing?: FitCliConfi
   return {
     version: FIT_CLI_CONFIG_VERSION,
     ...(cloud ? { cloud } : {}),
-    ...(github ? { github } : {}),
     ...(output ? { output } : {}),
-    ...(gerrit ? { gerrit } : {}),
     ...(capella ? { capella } : {}),
     ...(localhost ? { localhost } : {}),
   };
@@ -189,10 +181,22 @@ function buildLocalhostConfig(
   const dir = trimOptional(answers.fitPerformerDir) ?? existing?.repos?.["transactions-fit-performer"]?.dir;
   const cbdinoclusterPath = trimOptional(answers.cbdinoclusterPath) ?? existing?.cbdinoclusterPath;
   const repos = dir ? { "transactions-fit-performer": { dir } } : undefined;
-  if (!repos && !cbdinoclusterPath) return undefined;
+
+  const githubUser = trimOptional(answers.githubUser) ?? existing?.github?.user;
+  const githubToken = trimOptional(answers.githubToken) ?? existing?.github?.token;
+  const github = githubUser || githubToken
+    ? { ...(githubUser ? { user: githubUser } : {}), ...(githubToken ? { token: githubToken } : {}) }
+    : undefined;
+
+  const gerritUser = trimOptional(answers.gerritUser);
+  const gerrit = gerritUser ? { user: gerritUser } : existing?.gerrit;
+
+  if (!repos && !cbdinoclusterPath && !github && !gerrit) return undefined;
   return {
     ...(repos ? { repos } : {}),
     ...(cbdinoclusterPath ? { cbdinoclusterPath } : {}),
+    ...(github ? { github } : {}),
+    ...(gerrit ? { gerrit } : {}),
   };
 }
 
@@ -201,10 +205,9 @@ function buildInitialDefaults(existing?: FitCliConfig): AwsInitAnswers {
 }
 
 async function promptForGithubUser(existing?: FitCliConfig): Promise<string | undefined> {
-  const existingUser = existing?.github?.user;
+  const existingUser = existing?.localhost?.github?.user;
   console.log(
-    `\nGitHub — used to pull Docker images from GHCR and clone private FIT repos.` +
-    `\nOptional locally: on EC2 test instances the "${GITHUB_AWS_SECRET_ID}" AWS secret is used instead.`,
+    `\nGitHub — used to pull Docker images from GHCR and clone private FIT repos.`,
   );
   const detected = existingUser ?? resolveGerritUserFromGhCli() ?? resolveGerritUserFromGitConfig();
   const entered = await input({
@@ -220,11 +223,11 @@ async function promptForGithubUser(existing?: FitCliConfig): Promise<string | un
 }
 
 async function promptForGithubToken(existing?: FitCliConfig): Promise<string | undefined> {
-  const existingToken = existing?.github?.token ?? process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN;
+  const existingToken = existing?.localhost?.github?.token ?? process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN;
   console.log(
     "\nA GitHub Personal Access Token (PAT) is a password substitute for API/CLI access." +
     "\nCreate one at https://github.com/settings/tokens — needs read:packages scope (for GHCR) and repo access (for private FIT repos)." +
-    `\nOptional locally: set $GITHUB_TOKEN or $GH_TOKEN to avoid storing here, or populate the "${GITHUB_AWS_SECRET_ID}" AWS secret for EC2 use.`,
+    `\nCan alternatively use environment variables $GITHUB_TOKEN or $GH_TOKEN.`,
   );
   const entered = await password({
     promptId: "init.github.token",
@@ -239,8 +242,8 @@ async function promptForGithubToken(existing?: FitCliConfig): Promise<string | u
 }
 
 async function promptForGerritUser(existing?: FitCliConfig): Promise<string | undefined> {
-  const existingUser = existing?.gerrit?.user;
-  const githubUser = existing?.github?.user;
+  const existingUser = existing?.localhost?.gerrit?.user;
+  const githubUser = existing?.localhost?.github?.user;
   const defaultUser = existingUser ?? githubUser;
   console.log("\nGerrit — used to fetch FIT performer code from review.couchbase.org when running against a Gerrit change ref. Set $FIT_GERRIT_USER to avoid storing here.");
   const entered = await input({
@@ -325,7 +328,7 @@ async function promptForLocalhost(existing?: FitCliConfig): Promise<{
   const configureLocalhost = await confirm({
     promptId: "init.localhost.configure",
     message: hasExisting
-      ? "Edit localhost testing settings? (the source checkout and cbdinocluster path used for runs on this machine)"
+      ? "Edit test settings used to run fit-cli on localhost?"
       : "Do you plan to run FIT tests on this machine (localhost)?",
     default: false,
   });
@@ -463,10 +466,18 @@ const ELIDED = "********";
  * leaking credentials into scrollback or session logs.
  */
 export function formatConfigForDisplay(config: FitCliConfig): string {
+  const localhostGithub = config.localhost?.github;
   const redacted: FitCliConfig = {
     ...config,
-    ...(config.github
-      ? { github: { ...config.github, ...(config.github.token ? { token: ELIDED } : {}) } }
+    ...(config.localhost
+      ? {
+          localhost: {
+            ...config.localhost,
+            ...(localhostGithub
+              ? { github: { ...localhostGithub, ...(localhostGithub.token ? { token: ELIDED } : {}) } }
+              : {}),
+          },
+        }
       : {}),
     ...(config.capella
       ? {
@@ -671,40 +682,6 @@ export function buildAutoConfig(
     log.push({ field: "cloud.aws.*", source: "--disable-aws", found: false });
   }
 
-  // GitHub section
-  let github: FitCliConfig["github"] | undefined;
-  if (!args.disableGithub) {
-    const user = resolveField(log, "github.user", args.githubUser, "--github-user", [
-      { name: "GITHUB_USER", value: env.GITHUB_USER },
-    ], resolveGerritUserFromGhCli(env) ?? resolveGerritUserFromGitConfig(env));
-    const token = resolveField(log, "github.token", args.githubToken, "--github-token", [
-      { name: "GITHUB_TOKEN", value: env.GITHUB_TOKEN },
-      { name: "GH_TOKEN", value: env.GH_TOKEN },
-    ]);
-
-    const parts = {
-      ...(user ? { user } : {}),
-      ...(token ? { token } : {}),
-    };
-    if (Object.keys(parts).length > 0) github = parts;
-  } else {
-    log.push({ field: "github.*", source: "--disable-github", found: false });
-  }
-
-  // Gerrit section — only the username is stored in config; the SSH key is
-  // auto-discovered from env vars or ~/.ssh/ at runtime (with an AWS Secrets
-  // Manager fallback for clean EC2 instances).
-  let gerrit: FitCliConfig["gerrit"] | undefined;
-  if (!args.disableGerrit) {
-    const user = resolveField(log, "gerrit.user", args.gerritUser, "--gerrit-user", [
-      { name: "FIT_GERRIT_USER", value: env.FIT_GERRIT_USER },
-      { name: "GERRIT_USER", value: env.GERRIT_USER },
-    ]);
-    if (user) gerrit = { user };
-  } else {
-    log.push({ field: "gerrit.*", source: "--disable-gerrit", found: false });
-  }
-
   // Output section: default definition format. Results-DB credentials come from
   // AWS Secrets Manager now (keyed by the definition's resultsEnvironment), not config.
   const formatValue = resolveField(log, "output.format", args.outputFormat, "--output-format", [
@@ -742,8 +719,8 @@ export function buildAutoConfig(
     }
   }
 
-  // Localhost section: the source checkout + cbdinocluster path only matter for
-  // runs on this machine. EC2 runs need none of it, hence the --disable-localhost gate.
+  // Localhost section: source checkout, cbdinocluster path, and GitHub/Gerrit creds
+  // for running on this machine. EC2 runs pull creds from AWS Secrets Manager instead.
   let localhost: FitCliConfig["localhost"] | undefined;
   if (args.disableLocalhost) {
     log.push({ field: "localhost.*", source: "--disable-localhost", found: false });
@@ -758,9 +735,41 @@ export function buildAutoConfig(
     const cbdinoclusterPath = resolveField(log, "localhost.cbdinoclusterPath", args.cbdinoclusterPath, "--cbdinocluster-path", [
       { name: "CBDINOCLUSTER_PATH", value: env.CBDINOCLUSTER_PATH },
     ]);
+
+    let github: FitCliLocalhostConfig["github"] | undefined;
+    if (!args.disableGithub) {
+      const user = resolveField(log, "localhost.github.user", args.githubUser, "--github-user", [
+        { name: "GITHUB_USER", value: env.GITHUB_USER },
+      ], resolveGerritUserFromGhCli(env) ?? resolveGerritUserFromGitConfig(env));
+      const token = resolveField(log, "localhost.github.token", args.githubToken, "--github-token", [
+        { name: "GITHUB_TOKEN", value: env.GITHUB_TOKEN },
+        { name: "GH_TOKEN", value: env.GH_TOKEN },
+      ]);
+      const parts = { ...(user ? { user } : {}), ...(token ? { token } : {}) };
+      if (Object.keys(parts).length > 0) github = parts;
+    } else {
+      log.push({ field: "localhost.github.*", source: "--disable-github", found: false });
+    }
+
+    // Gerrit: only the username is stored in config; the SSH key is auto-discovered
+    // from env vars or ~/.ssh/ at runtime (with an AWS Secrets Manager fallback for
+    // clean EC2 instances).
+    let gerrit: FitCliLocalhostConfig["gerrit"] | undefined;
+    if (!args.disableGerrit) {
+      const user = resolveField(log, "localhost.gerrit.user", args.gerritUser, "--gerrit-user", [
+        { name: "FIT_GERRIT_USER", value: env.FIT_GERRIT_USER },
+        { name: "GERRIT_USER", value: env.GERRIT_USER },
+      ]);
+      if (user) gerrit = { user };
+    } else {
+      log.push({ field: "localhost.gerrit.*", source: "--disable-gerrit", found: false });
+    }
+
     const parts: FitCliConfig["localhost"] = {
       ...(fitPerformerDir ? { repos: { "transactions-fit-performer": { dir: fitPerformerDir } } } : {}),
       ...(cbdinoclusterPath ? { cbdinoclusterPath } : {}),
+      ...(github ? { github } : {}),
+      ...(gerrit ? { gerrit } : {}),
     };
     if (Object.keys(parts).length > 0) localhost = parts;
   }
@@ -768,9 +777,7 @@ export function buildAutoConfig(
   const config: FitCliConfig = {
     version: FIT_CLI_CONFIG_VERSION,
     ...(cloud ? { cloud } : {}),
-    ...(github ? { github } : {}),
     ...(output ? { output } : {}),
-    ...(gerrit ? { gerrit } : {}),
     ...(capella ? { capella } : {}),
     ...(localhost ? { localhost } : {}),
   };

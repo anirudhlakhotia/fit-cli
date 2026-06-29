@@ -94,7 +94,7 @@ main() {
 
   echo ""
   echo "Next steps:"
-  echo "  fit config edit   # one-off configuration (AWS, GitHub credentials)"
+  echo "  fit config edit   # one-off configuration (optional: only needed if you want fit-cli to run commands directly on your machine)"
   echo "  fit wizard        # launch the interactive wizard"
   echo "  fit help"
 }

@@ -37,7 +37,7 @@ test("buildAutoConfig: all env vars set produces full config", () => {
         instanceTypes: { functional: "m6i.large", situational: "m6i.large", perf: "m6i.4xlarge" },
       },
     },
-    github: { user: "octocat", token: "ghp_secret" },
+    localhost: { github: { user: "octocat", token: "ghp_secret" } },
   });
 });
 
@@ -50,7 +50,7 @@ test("buildAutoConfig: --disable-aws omits cloud section", () => {
   const { config } = buildAutoConfig({ args: baseArgs({ disableAws: true }), env });
 
   assert.equal(config.cloud, undefined);
-  assert.equal(config.github?.user, "octocat");
+  assert.equal(config.localhost?.github?.user, "octocat");
 });
 
 test("buildAutoConfig: --disable-github omits github section", () => {
@@ -58,7 +58,7 @@ test("buildAutoConfig: --disable-github omits github section", () => {
 
   const { config } = buildAutoConfig({ args: baseArgs({ disableGithub: true }), env });
 
-  assert.equal(config.github, undefined);
+  assert.equal(config.localhost?.github, undefined);
 });
 
 test("buildAutoConfig: CLI arg overrides env var", () => {
@@ -69,7 +69,7 @@ test("buildAutoConfig: CLI arg overrides env var", () => {
     env,
   });
 
-  assert.equal(config.github?.user, "cli-user");
+  assert.equal(config.localhost?.github?.user, "cli-user");
 });
 
 test("buildAutoConfig: missing optional fields are omitted gracefully", () => {
@@ -81,7 +81,7 @@ test("buildAutoConfig: missing optional fields are omitted gracefully", () => {
   assert.equal(config.cloud?.aws?.instanceTypes?.functional, "c5.2xlarge");
   assert.equal(config.cloud?.aws?.instanceTypes?.perf, "c5.4xlarge");
   // github has no defaults, so it's omitted
-  assert.equal(config.github, undefined);
+  assert.equal(config.localhost?.github, undefined);
 });
 
 test("buildAutoConfig: GH_TOKEN is used as fallback for github.token", () => {
@@ -89,7 +89,7 @@ test("buildAutoConfig: GH_TOKEN is used as fallback for github.token", () => {
 
   const { config } = buildAutoConfig({ args: baseArgs(), env });
 
-  assert.equal(config.github?.token, "ghp_fallback");
+  assert.equal(config.localhost?.github?.token, "ghp_fallback");
 });
 
 test("buildAutoConfig: GITHUB_TOKEN takes precedence over GH_TOKEN", () => {
@@ -97,7 +97,7 @@ test("buildAutoConfig: GITHUB_TOKEN takes precedence over GH_TOKEN", () => {
 
   const { config } = buildAutoConfig({ args: baseArgs(), env });
 
-  assert.equal(config.github?.token, "ghp_primary");
+  assert.equal(config.localhost?.github?.token, "ghp_primary");
 });
 
 test("buildAutoConfig: CAP_* env (fit-app-deployment names) populates the personal capella credentials", () => {
@@ -147,8 +147,8 @@ test("buildAutoConfig: resolution log records all checks in order", () => {
   assert.equal(awsEntry.found, false);
   assert.equal(awsEntry.source, "--disable-aws");
 
-  // github.token should show CLI arg not found, then GITHUB_TOKEN found
-  const tokenEntries = log.filter((e) => e.field === "github.token");
+  // localhost.github.token should show CLI arg not found, then GITHUB_TOKEN found
+  const tokenEntries = log.filter((e) => e.field === "localhost.github.token");
   assert.ok(tokenEntries.length >= 2);
   assert.equal(tokenEntries[0].source, "--github-token");
   assert.equal(tokenEntries[0].found, false);
