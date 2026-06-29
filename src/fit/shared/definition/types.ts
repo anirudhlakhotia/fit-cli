@@ -105,8 +105,24 @@ export interface InstanceSetup {
   capellaEnvironment?: string;
 }
 
+/**
+ * Private endpoint (PrivateLink) mode for an AWS instance. When present, the
+ * instance is launched into the cbqerunners VPC default SG (opened intra-VPC) so
+ * the box and the Capella private endpoint can reach each other.
+ *
+ * `instanceProfile` names the IAM instance profile that grants the box
+ * CreateVpcEndpoint + Route53 permissions at runtime (provisioned by
+ * sdkqe-github-runners-tf). Omit to skip profile attachment (networking only —
+ * the VPC endpoint creation by the FIT test will fail without a profile).
+ */
+export interface PrivateEndpointSetup {
+  instanceProfile?: string;
+}
+
 export interface AwsInstanceSetup {
   instanceType?: string;
+  /** Present when this instance should support private endpoint (PrivateLink) testing. */
+  privateEndpoint?: PrivateEndpointSetup;
 }
 
 export type InstanceMode =

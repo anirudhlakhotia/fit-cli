@@ -29,6 +29,8 @@ export interface CreateInstanceSpec {
   instanceType: string;
   keyName: string;
   securityGroupId: string;
+  /** Additional security groups to attach alongside `securityGroupId`. */
+  additionalSecurityGroupIds?: string[];
   /** Subnet to launch into. Required when the account/region has no default VPC. */
   subnetId?: string;
   /** Cloud-init / shell user-data run at first boot (plain text). */
@@ -37,18 +39,22 @@ export interface CreateInstanceSpec {
   tags?: Record<string, string>;
   /** EBS block-device mappings (e.g. root volume size & type). */
   blockDeviceMappings?: BlockDeviceMapping[];
+  /** IAM instance profile name to attach (grants the box its instance role). */
+  iamInstanceProfile?: string;
 }
 
 /** Launch a single instance and return its id (it will still be "pending"). */
 export async function createInstance(spec: CreateInstanceSpec): Promise<string> {
+  const allSgIds = [spec.securityGroupId, ...(spec.additionalSecurityGroupIds ?? [])];
   const response = await ec2Client.send(new RunInstancesCommand({
     ImageId: spec.amiId,
     InstanceType: spec.instanceType as _InstanceType,
     KeyName: spec.keyName,
-    SecurityGroupIds: [spec.securityGroupId],
+    SecurityGroupIds: allSgIds,
     MinCount: 1,
     MaxCount: 1,
     ...(spec.subnetId ? { SubnetId: spec.subnetId } : {}),
+    ...(spec.iamInstanceProfile ? { IamInstanceProfile: { Name: spec.iamInstanceProfile } } : {}),
     // The SDK expects user data as base64 (the CLI encoded it for us automatically).
     ...(spec.userData ? { UserData: Buffer.from(spec.userData).toString("base64") } : {}),
     ...(spec.tags && Object.keys(spec.tags).length > 0

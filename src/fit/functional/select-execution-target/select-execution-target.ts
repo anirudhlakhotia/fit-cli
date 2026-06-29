@@ -178,10 +178,12 @@ export async function resolveExecutionGroupTarget(
     // The definition's explicit instanceType wins; otherwise use the configured
     // default for this run's purpose (functional/situational/perf).
     const instanceType = (instance.kind === "aws" ? instance.instanceType : undefined) ?? resolveCloudInstanceType(purpose);
+    const privateEndpoint = instance.kind === "aws" ? instance.privateEndpoint : undefined;
     const provisioned = await provisionFitInstance({
       instanceIndex: executionGroupIndex,
       instanceType,
       interactive,
+      ...(privateEndpoint !== undefined ? { privateEndpoint } : {}),
     });
     const teardown: ExecutionTargetTeardown = {
       kind: "remote",

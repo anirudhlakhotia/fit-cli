@@ -14,7 +14,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { artifactFromPath, type Artifact, type Detail } from "../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
-import { AWS_REGION, AWS_SUBNET_ID, AWS_VPC_ID } from "../../../cloud/util/aws/aws-target.js";
+import { AWS_REGION, AWS_SUBNET_ID, AWS_VPC_DEFAULT_SG_ID, AWS_VPC_ID } from "../../../cloud/util/aws/aws-target.js";
 import { checkAwsCredentials } from "../../../cloud/util/aws/identity.js";
 import { findUbuntuAmi } from "../../../cloud/util/aws/image.js";
 import { createInstance, waitForInstanceRunning, type BlockDeviceMapping } from "../../../cloud/util/aws/create-instance.js";
@@ -31,6 +31,7 @@ import { RemoteTarget } from "../../../util/non-fit/remote-target.js";
 import { fitCliWarn } from "../../../util/non-fit/fit-cli-log.js";
 import { formatBanner, formatEc2DeletionResponsibilityBanner, terminateInstanceCommand } from "./lifecycle-warning.js";
 import { warnAboutExistingInstances } from "./warn-existing-instances.js";
+import type { PrivateEndpointSetup } from "../../shared/definition/types.js";
 
 /** Security group fit-cli reuses across runs (port 22 open). */
 export const FIT_SECURITY_GROUP = "fit-cli";
@@ -109,6 +110,12 @@ export interface ProvisionOptions {
   instanceIndex?: number;
   /** Whether the run is interactive; affects the lifecycle warning message shown to the user. */
   interactive?: boolean;
+  /**
+   * When set, launch the instance with the cbqerunners VPC default SG (opened intra-VPC for
+   * Capella private endpoints) plus, if `instanceProfile` is present, the named IAM profile
+   * so the FIT test on the box can call CreateVpcEndpoint / Route53.
+   */
+  privateEndpoint?: PrivateEndpointSetup;
 }
 
 /**
@@ -143,12 +150,30 @@ export async function provisionFitInstance(options: ProvisionOptions = {}): Prom
   }
 
   const instanceType = options.instanceType ?? defaultInstanceType();
-  console.log(`Provisioning a ${instanceType} EC2 instance in ${AWS_REGION} (VPC: ${AWS_VPC_ID})...`);
+  const pe = options.privateEndpoint;
+  const peDesc = pe ? " [private-endpoint mode]" : "";
+  console.log(`Provisioning a ${instanceType} EC2 instance in ${AWS_REGION} (VPC: ${AWS_VPC_ID})${peDesc}...`);
 
   const amiId = await findUbuntuAmi();
   const securityGroupId = await ensureSecurityGroup(
     { name: FIT_SECURITY_GROUP, description: "fit-cli ephemeral test instances", ingressPorts: [22], vpcId: AWS_VPC_ID },
   );
+
+  // Private endpoint mode: also attach the VPC default SG (opened for intra-VPC traffic)
+  // so the box can reach the Capella private endpoint that lands in that SG.
+  const additionalSecurityGroupIds = pe ? [AWS_VPC_DEFAULT_SG_ID] : undefined;
+
+  // IAM instance profile: grants CreateVpcEndpoint + Route53 so the FIT test can wire
+  // up the Capella private endpoint. Must be explicitly named in the definition — use the
+  // default constant AWS_PRIVATE_ENDPOINT_INSTANCE_PROFILE as a starting point. If omitted,
+  // no profile is attached (networking-only mode: VPC endpoint creation by the FIT test
+  // will fail without a profile, but the instance will boot and SSH will work).
+  const iamInstanceProfile = pe?.instanceProfile;
+
+  if (pe) {
+    const profileDesc = iamInstanceProfile ?? "(none — VPC endpoint creation by FIT test will require manual IAM setup)";
+    console.log(`  private endpoint: VPC default SG ${AWS_VPC_DEFAULT_SG_ID}, IAM profile ${profileDesc}`);
+  }
 
   const keyName = `fit-cli-${Date.now().toString(36)}`;
   const instanceIdx = options.instanceIndex ?? 0;
@@ -170,7 +195,9 @@ export async function provisionFitInstance(options: ProvisionOptions = {}): Prom
         instanceType,
         keyName,
         securityGroupId,
+        additionalSecurityGroupIds,
         subnetId: AWS_SUBNET_ID,
+        iamInstanceProfile,
         userData,
         tags: {
           Name: fitInstanceName(creatorTag),

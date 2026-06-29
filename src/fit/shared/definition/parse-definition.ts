@@ -24,6 +24,7 @@ import {
   SITUATIONAL_DATABASE_MODES,
   TEST_PRESETS,
   type AwsInstanceSetup,
+  type PrivateEndpointSetup,
   type CbdinoclusterInitSetup,
   type CbdinoclusterSetup,
   type ClusterConfigRef,
@@ -266,13 +267,27 @@ function validateOptionalString(record: Record<string, unknown>, key: string, pa
   return record[key] === undefined ? undefined : requireString(record, key, path);
 }
 
+function validatePrivateEndpointSetup(value: unknown, path: string): PrivateEndpointSetup {
+  const record = value === null || value === undefined ? {} : requireRecord(value, path);
+  rejectUnknown(record, ["instanceProfile"], path);
+  const pe: PrivateEndpointSetup = {};
+  const instanceProfile = validateOptionalString(record, "instanceProfile", `${path}.instanceProfile`);
+  if (instanceProfile !== undefined) {
+    pe.instanceProfile = instanceProfile;
+  }
+  return pe;
+}
+
 function validateAwsInstance(value: unknown, path: string): AwsInstanceSetup {
   const record = value === null ? {} : requireRecord(value, path);
-  rejectUnknown(record, ["instanceType"], path);
+  rejectUnknown(record, ["instanceType", "privateEndpoint"], path);
   const aws: AwsInstanceSetup = {};
   const instanceType = validateOptionalString(record, "instanceType", `${path}.instanceType`);
   if (instanceType !== undefined) {
     aws.instanceType = instanceType;
+  }
+  if (record["privateEndpoint"] !== undefined) {
+    aws.privateEndpoint = validatePrivateEndpointSetup(record["privateEndpoint"], `${path}.privateEndpoint`);
   }
   return aws;
 }
