@@ -46,6 +46,7 @@ async function loadPresetMap(): Promise<Record<string, string>> {
     "cng-functional-quick-sanity": ((await import("../../../../presets/cng-functional-quick-sanity.json5", { with: { type: "text" } })) as { default: string }).default,
     "enterprise-analytics-functional": ((await import("../../../../presets/enterprise-analytics-functional.json5", { with: { type: "text" } })) as { default: string }).default,
     "enterprise-analytics-functional-quick-sanity": ((await import("../../../../presets/enterprise-analytics-functional-quick-sanity.json5", { with: { type: "text" } })) as { default: string }).default,
+    "enterprise-analytics-qe-set":     ((await import("../../../../presets/enterprise-analytics-qe-set.json5",     { with: { type: "text" } })) as { default: string }).default,
     "everything-quick-sanity":     ((await import("../../../../presets/everything-quick-sanity.json5",     { with: { type: "text" } })) as { default: string }).default,
     "functional":                  ((await import("../../../../presets/functional.json5",                  { with: { type: "text" } })) as { default: string }).default,
     "functional-quick-sanity":     ((await import("../../../../presets/functional-quick-sanity.json5",     { with: { type: "text" } })) as { default: string }).default,
