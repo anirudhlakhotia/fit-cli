@@ -123,16 +123,25 @@ export function analyticsPerformerConnection(sdk: Sdk): { connectionString: stri
 }
 
 /**
- * A starter Analytics connection fitConfig for an `analytics-functional` run
- * against a self-managed Enterprise Analytics cluster: the driver connects
- * classically for admin (filled in at run time), while the SDK/performer reaches
- * Analytics through the load balancer's query port. The performer scheme depends
- * on the SDK family (see {@link analyticsPerformerConnection}). Mirrors the
- * enterprise-analytics-functional preset. Returned as a top-level
- * {@link FitConfigRef} (relocated out of the run and referenced by id) so the
- * generated file stays readable.
+ * A starter Analytics connection fitConfig for an `analytics-functional` run.
+ * The performer scheme depends on the SDK family (see {@link analyticsPerformerConnection}).
+ * For self-managed Enterprise Analytics the driver needs `clusterParams.loadBalancedCluster.ports`
+ * so it discovers the Analytics query port via the nginx load balancer; for Capella Analytics
+ * (cloud) there is no load balancer and the endpoint is the SaaS connection string directly.
+ * Returned as a top-level {@link FitConfigRef} (relocated out of the run and referenced by id)
+ * so the generated file stays readable.
  */
-function analyticsFitConfigRef(sdk: Sdk): FitConfigRef {
+function analyticsFitConfigRef(sdk: Sdk, capellaAnalytics: boolean): FitConfigRef {
+  if (capellaAnalytics) {
+    return {
+      id: FIT_CONFIG_ID,
+      config: {
+        clusterAccess: {
+          performer: analyticsPerformerConnection(sdk),
+        },
+      },
+    };
+  }
   return {
     id: FIT_CONFIG_ID,
     config: {
@@ -219,7 +228,8 @@ function buildFunctionalInstance(inputs: DefinitionInputs): BuiltFunctionalInsta
       },
     ],
   };
-  return { instance, clusterConfigRef, ...(inputs.analytics ? { fitConfigRef: analyticsFitConfigRef(inputs.sdk) } : {}) };
+  const capellaAnalytics = (inputs.analytics ?? false) && inputs.cluster.kind === "cbdinocluster" && (inputs.cluster.def.capellaAnalytics ?? false);
+  return { instance, clusterConfigRef, ...(inputs.analytics ? { fitConfigRef: analyticsFitConfigRef(inputs.sdk, capellaAnalytics) } : {}) };
 }
 
 function buildSituationalInstance(inputs: SituationalDefinitionInputs): InstanceLifetime {

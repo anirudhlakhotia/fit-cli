@@ -38,16 +38,20 @@ export type CapellaCloudProvider = (typeof CAPELLA_CLOUD_PROVIDERS)[number];
 export interface ClusterDef {
   /** Number of nodes in the cluster. */
   nodeCount: number;
-  /** Couchbase Server version, e.g. "8.0-stable" or a pinned build like "8.0.2-5322". */
+  /** Couchbase Server version, e.g. "8.0-stable" or a pinned build like "8.0.2-5322". Empty for cloud-allocated clusters where cbdinocluster picks the version. */
   version: string;
   /** Services to run on the node(s), e.g. ["kv", "n1ql", "index", "fts"]. */
   services: string[];
   /** Whether to add CNG/Protostellar (Cloud Native Gateway) support. */
   cng: boolean;
-  /** Whether to build a self-managed Enterprise Analytics cluster. */
+  /** Whether to build a self-managed Enterprise Analytics cluster (docker deployer + nginx load balancer). */
   enterpriseAnalytics?: boolean;
   /** Cloud provider for a Capella cluster; when set the `cloud` deployer is used. */
   capellaCloudProvider?: CapellaCloudProvider;
+  /** Whether to build a Capella Analytics (cloud) cluster via cbdinocluster's cloud deployer. */
+  capellaAnalytics?: boolean;
+  /** Cloud provider for a Capella Analytics cluster. */
+  cloudProvider?: "aws" | "gcp";
 }
 
 /**
@@ -61,12 +65,16 @@ export const ANALYTICS_CLUSTER_PRODUCTS = ["enterprise-analytics", "capella-anal
 export type AnalyticsClusterProduct = (typeof ANALYTICS_CLUSTER_PRODUCTS)[number];
 
 /**
- * The single place that interprets cbdinocluster's `columnar: true` wire flag:
- * a cbdino cluster def with `columnar: true` is a self-managed Enterprise
- * Analytics cluster. Returns undefined for a non-Analytics cbdino cluster.
+ * The single place that interprets cbdinocluster's `columnar: true` wire flag,
+ * combined with the deployer, to identify which Analytics product a cbdino cluster is:
+ *
+ * - `columnar: true` + `deployer: cloud` → Capella Analytics (cloud-managed SaaS)
+ * - `columnar: true` + docker deployer (or no deployer) → Enterprise Analytics (self-managed)
+ * - no `columnar: true` → not an Analytics cluster (undefined)
  */
 export function cbdinoAnalyticsClusterProduct(config: CbdinoclusterDef): AnalyticsClusterProduct | undefined {
-  return config.columnar === true ? "enterprise-analytics" : undefined;
+  if (config.columnar !== true) return undefined;
+  return config.deployer === "cloud" ? "capella-analytics" : "enterprise-analytics";
 }
 
 export interface CbdinoclusterDockerDef {
@@ -112,11 +120,15 @@ function dockerMemoryForServices(services: string[]): CbdinoclusterDockerDef | u
  * and pick the default deployer, `docker` for the generated RAM quotas.
  */
 export interface CbdinoclusterDef {
-  nodes: { count: number; version: string; services?: string[] }[];
+  nodes: { count: number; version?: string; services?: string[] }[];
   /** Present only when CNG/Protostellar support is wanted. */
   cao?: { "operator-version": string; "gateway-version": string };
-  /** Present only for a Enterprise Analytics cluster. */
+  /** Present only for an Analytics cluster (Enterprise Analytics or Capella Analytics). */
   columnar?: boolean;
+  /** cbdinocluster deployer: "cloud" for Capella Analytics; "docker" (or absent) for Enterprise Analytics. */
+  deployer?: string;
+  /** Cloud configuration for Capella Analytics clusters. */
+  cloud?: { "cloud-provider": string; region?: string };
   /** Per-service RAM quotas for the docker deployer; omitted for other deployers. */
   docker?: CbdinoclusterDockerDef;
   /** Pass-through: any other cbdinocluster cluster-def keys are forwarded as-is. */
@@ -153,6 +165,17 @@ export function buildClusterDefObject(def: ClusterDef): CbdinoclusterDef {
     return {
       nodes: [{ count: def.nodeCount, version: def.version }],
       cloud: { "cloud-provider": def.capellaCloudProvider },
+    };
+  }
+  if (def.capellaAnalytics) {
+    // A Capella Analytics (cloud) cluster. cbdinocluster uses the cloud deployer
+    // to create it in the Capella cloud; no version or service list is needed —
+    // cbdinocluster picks the latest and derives the Analytics topology.
+    return {
+      columnar: true,
+      nodes: [{ count: def.nodeCount }],
+      deployer: "cloud",
+      cloud: { "cloud-provider": def.cloudProvider ?? "aws" },
     };
   }
   const docker = def.cng ? undefined : dockerMemoryForServices(def.services);

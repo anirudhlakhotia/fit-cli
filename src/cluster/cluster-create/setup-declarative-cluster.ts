@@ -689,7 +689,7 @@ async function allocate(
     nodes: await Promise.all(
       config.nodes.map(async (node) => ({
         ...node,
-        version: isAlias(node.version) ? await resolveAlias(node.version) : node.version,
+        version: node.version !== undefined && isAlias(node.version) ? await resolveAlias(node.version) : node.version,
       })),
     ),
   };

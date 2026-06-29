@@ -16,7 +16,7 @@
  */
 import { isMain, runCli } from "../../util/non-fit/cli.js";
 import { printWithoutTimestamps } from "../../util/non-fit/fit-cli-log.js";
-import { checkbox, input, number } from "../../util/non-fit/prompts.js";
+import { checkbox, input, number, select } from "../../util/non-fit/prompts.js";
 import { loadEnvironments } from "../../fit/util/environments.js";
 import { type CapellaCloudProvider, type ClusterDef } from "./build-cluster-def.js";
 
@@ -53,6 +53,12 @@ export interface AskClusterDefOptions {
    * manages the cluster topology, so no node count or service list is asked.
    */
   capellaCloudProvider?: CapellaCloudProvider;
+  /**
+   * Build a Capella Analytics (cloud) cluster — emits cbdinocluster's
+   * `columnar: true` + `deployer: cloud`. Asks for cloud provider; cbdinocluster
+   * uses the configured default region. No service list or version is asked.
+   */
+  capellaAnalytics?: boolean;
 }
 
 /** Ask the questions that describe the cluster to allocate. */
@@ -87,6 +93,23 @@ export async function askClusterDef(options: AskClusterDefOptions = {}): Promise
     });
     // cbdinocluster derives the Analytics topology from `columnar: true`, so no service list.
     return { nodeCount, version, services: [], cng: false, enterpriseAnalytics: true };
+  }
+
+  if (options.capellaAnalytics) {
+    console.log("\nNote: building a Capella Analytics (cloud) cluster via cbdinocluster. Capella credentials come from your cbdinocluster init config.\n");
+    const nodeCount =
+      (await number({ promptId: "cluster.create.node-count", message: "How many nodes?", default: 2, min: 1 })) ?? 2;
+    const cloudProvider = await select<"aws" | "gcp">({
+      promptId: "cluster.create.cloud-provider",
+      message: "Which cloud provider?",
+      choices: [
+        { name: "AWS", value: "aws" },
+        { name: "GCP", value: "gcp" },
+      ],
+      default: "aws",
+    });
+    // cbdinocluster derives the Analytics topology and uses the configured default region.
+    return { nodeCount, version: "", services: [], cng: false, capellaAnalytics: true, cloudProvider };
   }
 
   const nodeCount =
