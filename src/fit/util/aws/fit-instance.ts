@@ -22,7 +22,7 @@ import { describeInstance } from "../../../cloud/util/aws/describe-instance.js";
 import { findInstancesByKeyName } from "../../../cloud/util/aws/list-instances.js";
 import { type InstanceInfo } from "../../../cloud/util/aws/parse-instance.js";
 import { terminateInstance } from "../../../cloud/util/aws/terminate-instance.js";
-import { loadFitCliConfigEnv } from "../config.js";
+import { prepareAwsCli } from "../../../cloud/util/aws/aws-cli.js";
 import { createKeyPair, deleteKeyPair } from "../../../cloud/util/aws/key-pair.js";
 import { ensureSecurityGroup } from "../../../cloud/util/aws/security-group.js";
 import { instanceRunDir } from "../../../util/non-fit/replay.js";
@@ -119,7 +119,7 @@ export interface ProvisionOptions {
  * the instance launches, it's terminated so we don't leak a paid box.
  */
 export async function provisionFitInstance(options: ProvisionOptions = {}): Promise<ProvisionedInstance> {
-  loadFitCliConfigEnv();
+  await prepareAwsCli();
   const creds = await checkCredentials();
   if (!creds.ok) {
     throw new Error(`AWS credentials are not usable: ${creds.message}`);

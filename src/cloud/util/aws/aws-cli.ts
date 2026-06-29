@@ -6,13 +6,78 @@
  * Run on its own (checks the AWS config is ready):
  *   bun src/cloud/util/aws/aws-cli.ts
  */
+import { userInfo } from "node:os";
+import { AssumeRoleCommand, GetCallerIdentityCommand, STSClient } from "@aws-sdk/client-sts";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { loadFitCliConfigEnv } from "../../../fit/util/config.js";
 import { AWS_REGION } from "./aws-target.js";
 
+const FIT_CLI_ROLE_ARN = "arn:aws:iam::958525475024:role/fit-cli-role";
+let roleAssumeAttempted = false;
+
+/**
+ * Assume fit-cli-role if the current identity is not already that role.
+ *
+ * Uses a fresh STSClient (not the module-level singleton) so we don't prime
+ * the shared client's credential cache with the pre-assume identity.  After
+ * injecting the temporary credentials into process.env, all subsequently-used
+ * AWS SDK clients pick them up on their first API call.
+ *
+ * Fails softly: a warning is printed and we continue with current credentials
+ * if assume-role fails (e.g. trust policy not configured for this user).
+ */
+async function assumeFitCliRoleIfNeeded(): Promise<void> {
+  const freshSts = new STSClient({ region: AWS_REGION });
+
+  let currentArn: string;
+  try {
+    const identity = await freshSts.send(new GetCallerIdentityCommand({}));
+    currentArn = identity.Arn ?? "";
+  } catch {
+    return;
+  }
+
+  if (currentArn.includes("fit-cli-role")) {
+    console.log(`Assuming fit-cli-role (already assumed as ${currentArn})`);
+    return;
+  }
+
+  console.log(`Assuming fit-cli-role...`);
+  console.log(`  current identity: ${currentArn}`);
+
+  let sessionName: string;
+  try {
+    sessionName = `fit-cli-${userInfo().username}`;
+  } catch {
+    sessionName = "fit-cli-local";
+  }
+
+  try {
+    const result = await freshSts.send(
+      new AssumeRoleCommand({ RoleArn: FIT_CLI_ROLE_ARN, RoleSessionName: sessionName }),
+    );
+    const creds = result.Credentials;
+    if (!creds?.AccessKeyId || !creds?.SecretAccessKey || !creds?.SessionToken) {
+      throw new Error("AssumeRole returned incomplete credentials");
+    }
+    process.env.AWS_ACCESS_KEY_ID = creds.AccessKeyId;
+    process.env.AWS_SECRET_ACCESS_KEY = creds.SecretAccessKey;
+    process.env.AWS_SESSION_TOKEN = creds.SessionToken;
+    const expiry = creds.Expiration?.toISOString() ?? "unknown";
+    console.log(`✓ Assumed fit-cli-role (session expires: ${expiry})`);
+  } catch (err) {
+    console.warn(`⚠  Could not assume fit-cli-role: ${err instanceof Error ? err.message : String(err)}`);
+    console.warn(`   Continuing with current credentials.`);
+  }
+}
+
 /** Apply fit-cli config to env (sets AWS_PROFILE if configured) before SDK calls. */
 export async function prepareAwsCli(): Promise<void> {
   loadFitCliConfigEnv();
+  if (!roleAssumeAttempted) {
+    roleAssumeAttempted = true;
+    await assumeFitCliRoleIfNeeded();
+  }
 }
 
 function formatAwsDetail(value: unknown): string {

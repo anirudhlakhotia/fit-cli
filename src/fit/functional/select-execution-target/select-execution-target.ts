@@ -20,7 +20,8 @@
  */
 import { type RunOutput } from "../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
-import { loadFitCliConfigEnv, resolveCloudInstanceType, type CloudInstancePurpose } from "../../util/config.js";
+import { resolveCloudInstanceType, type CloudInstancePurpose } from "../../util/config.js";
+import { prepareAwsCli } from "../../../cloud/util/aws/aws-cli.js";
 import { fitCliError, fitCliWarn } from "../../../util/non-fit/fit-cli-log.js";
 import { input, select } from "../../../util/non-fit/prompts.js";
 import { LocalTarget } from "../../../util/non-fit/local-target.js";
@@ -168,7 +169,7 @@ export async function resolveExecutionGroupTarget(
   }
 
   // AWS EC2 needs credentials, from the environment or fit-cli config.
-  loadFitCliConfigEnv();
+  await prepareAwsCli();
   const creds = await checkCredentials();
   if (!creds.ok) {
     printCredentialsDiagnostic();
@@ -227,7 +228,7 @@ export async function selectExecutionTarget(): Promise<ExecutionTargetOutcome> {
     }
 
     // Both EC2 paths need credentials, from the environment or fit-cli config.
-    loadFitCliConfigEnv();
+    await prepareAwsCli();
     const creds = await checkCredentials();
     if (!creds.ok) {
       printCredentialsDiagnostic();
@@ -354,7 +355,7 @@ async function connectExistingInstance(attempt: number): Promise<ExecutionTarget
 export async function selectExistingInstanceForOverride(
   attempt: number,
 ): Promise<ExistingInstanceConnection | "back"> {
-  loadFitCliConfigEnv();
+  await prepareAwsCli();
   const creds = await checkCredentials();
   if (!creds.ok) {
     printCredentialsDiagnostic();
