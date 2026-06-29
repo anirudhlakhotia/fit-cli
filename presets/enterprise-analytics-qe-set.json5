@@ -1,0 +1,76 @@
+// Note this currently just runs functional tests, but the idea is to be an abstraction that allows adding situational and other testing later.
+{
+  preset: {
+    order: 30,
+    description: 'Analytics testing against a self-managed Enterprise Analytics cluster',
+    expectedTime: 'Long',
+  },
+  version: 1,
+  type: 'fit',
+  description: 'Enterprise Analytics QE set',
+  instances: [
+    {
+      aws: {},
+      clusters: [
+        {
+          clusterConfig: 'cluster-0',
+          sessions: [
+            {
+              performer: {
+                image: '{{PERFORMER_IMAGE}}',
+              },
+              runs: [
+                {
+                  type: 'analytics-functional',
+                  fitConfig: 'fit-config-0',
+                  tests: {
+                    presets: ['all'],
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+  clusterConfigs: [
+    {
+      id: 'cluster-0',
+      cbdinocluster: {
+        config: {
+          columnar: true,
+          nodes: [
+            {
+              count: 3,
+              version: '2.2.0-1166',
+            },
+          ],
+          docker: {
+            'passive-load-balancer': true,
+            'use-dino-certs': true,
+          },
+        },
+        onClusterExists: 'useExisting',
+      },
+    },
+  ],
+  fitConfigs: [
+    {
+      id: 'fit-config-0',
+      config: {
+        clusterAccess: {
+          clusterParams: {
+            loadBalancedCluster: {
+              ports: [8095, 18095],
+            },
+          },
+          performer: {
+            connectionString: 'http://${defaultHostname}:8095',
+            tls: null,
+          },
+        },
+      },
+    },
+  ],
+}
