@@ -4,7 +4,6 @@
  * bun src/fit/main/recent-definitions-wizard.ts
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, dirname } from "node:path";
 import { type RunOutput } from "../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../util/non-fit/cli.js";
 import { select } from "../../util/non-fit/prompts.js";
@@ -24,9 +23,8 @@ function formatEntryLabel(entry: RecentDefinitionEntry): string {
   const dt = new Date(entry.createdAt);
   const date = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
   const time = `${String(dt.getHours()).padStart(2, "0")}:${String(dt.getMinutes()).padStart(2, "0")}`;
-  const dir = basename(dirname(entry.path));
   const desc = entry.description.length > 70 ? entry.description.slice(0, 67) + "…" : entry.description;
-  return `${date} ${time}  ${desc}  (${dir}/${basename(entry.path)})`;
+  return `${date} ${time}  ${desc}  (${entry.path})`;
 }
 
 function patchInstanceMode(instance: InstanceLifetime, mode: "localhost" | "aws"): InstanceLifetime {
