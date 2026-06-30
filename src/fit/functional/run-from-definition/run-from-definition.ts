@@ -66,6 +66,7 @@ import {
 } from "../../../cluster/cluster-create/allocate-cluster.js";
 import { runClusterDiag } from "../../../cluster/cluster-diag/cluster-diag.js";
 import { prepareCbdinoclusterInit, remoteCbdinoclusterCloudEnabled, removeCluster, setupDeclarativeCluster } from "../../../cluster/cluster-create/setup-declarative-cluster.js";
+import { capellaFunctionalCbdinoclusterInitArgs } from "../../../cluster/cluster-create/default-cbdinocluster-init-config.js";
 import { isAlias, resolveAlias } from "../../../cluster/cluster-create/cb-alias.js";
 import { collectClusterLogs } from "../../../cluster/cluster-cbcollect/cluster-cbcollect.js";
 import { installCbdinoclusterRemote } from "../../../cluster/cluster-create/install-cbdinocluster.js";
@@ -305,6 +306,7 @@ function runLabelParts(
   run: ResolvedExecutionRun,
   clusterVersion?: string,
   cng?: boolean,
+  capella?: boolean,
 ): RunLabelParts {
   // An analytics run on a cbdino cluster is a self-managed Enterprise Analytics cluster.
   const enterpriseAnalytics = clusterMode === "cbdinocluster" && run.type === "functional" && run.analytics === true;
@@ -313,6 +315,7 @@ function runLabelParts(
     ...(clusterMode ? { clusterMode } : {}),
     ...(clusterVersion ? { clusterVersion } : {}),
     ...(enterpriseAnalytics ? { enterpriseAnalytics: true } : {}),
+    ...(capella ? { capella: true } : {}),
     sdkValue: run.sdk.value,
     ...(run.performerVersion ? { performerVersion: run.performerVersion } : {}),
     type: run.type,
@@ -341,6 +344,10 @@ function isEnterpriseAnalyticsGroup(group: ResolvedExecutionGroup): boolean {
   return group.type === "functional" && group.cbdinocluster?.config.columnar === true;
 }
 
+function isCapellaGroup(group: ResolvedExecutionGroup): boolean {
+  return group.type === "functional" && group.cbdinocluster?.capella !== undefined;
+}
+
 /** Print what an iteration resolved to, so a CI log shows the run's inputs. */
 function announce(
   group: ResolvedExecutionGroup,
@@ -367,6 +374,7 @@ function announce(
     run,
     clusterVersionLabel(group),
     cng,
+    isCapellaGroup(group),
   );
   console.log(`\n=== ${formatRunLabel(run.path, parts)} (${group.instance.kind}, ${run.type}) ===`);
   const instSeg = instanceLabel(run.path, parts.instanceKind);
@@ -375,11 +383,13 @@ function announce(
       ? `Running on AWS EC2 instance ${run.path.instanceIndex + 1}`
       : "Running locally on this machine";
   console.log(`  ${instSeg}:  ${instDesc}`);
-  const clusterSeg = clusterSegmentLabel(run.path, parts.clusterMode, parts.clusterVersion, parts.enterpriseAnalytics);
+  const clusterSeg = clusterSegmentLabel(run.path, parts.clusterMode, parts.clusterVersion, parts.enterpriseAnalytics, parts.capella);
   if (clusterSeg) {
     let clusterDesc: string;
     if (parts.enterpriseAnalytics) {
       clusterDesc = `Self-managed Enterprise Analytics ${parts.clusterVersion ?? ""} cluster, provisioned via cbdinocluster`.replace(/\s+/g, " ").trim();
+    } else if (parts.capella) {
+      clusterDesc = `Capella ${parts.clusterVersion ?? ""} cluster, provisioned via cbdinocluster cloud deployer`.replace(/\s+/g, " ").trim();
     } else if (parts.clusterVersion) {
       clusterDesc = `Couchbase Server ${parts.clusterVersion} cluster, provisioned via cbdinocluster`;
     } else if (parts.clusterMode === "connection" || parts.clusterMode === "useExisting") {
@@ -661,9 +671,10 @@ export async function runTests(
     run.analytics ? ANALYTICS_TEST_DRIVER_MODULE : DEFAULT_TEST_DRIVER_MODULE,
   );
   artifacts.push(...testRun.artifacts);
+  const isCapella = run.cluster?.flavour === "internal-capella" || run.cluster?.flavour === "production-capella";
   const pathLabel = formatRunLabel(
     run.path,
-    runLabelParts(execution.kind === "remote" ? "aws" : "localhost", clusterMode, run, clusterVersion, run.cluster?.cng !== undefined),
+    runLabelParts(execution.kind === "remote" ? "aws" : "localhost", clusterMode, run, clusterVersion, run.cluster?.cng !== undefined, isCapella),
   );
   const iterationLabel = (label: string) => `Run ${run.path.runIndex ?? 0} ${label}`;
   details.push(
@@ -1095,10 +1106,12 @@ function failureLabel(group: ResolvedExecutionGroup, run?: ResolvedExecutionRun)
   const clusterMode = group.type === "functional" ? group.clusterMode : undefined;
   const clusterVersion = clusterVersionLabel(group);
   const cng = group.type === "functional" ? group.cng : undefined;
+  const capella = isCapellaGroup(group);
   if (run) {
-    return formatRunLabel(run.path, runLabelParts(instanceKind, clusterMode, run, clusterVersion, cng));
+    const isRunCapella = run.type === "functional" && (run.cluster?.flavour === "internal-capella" || run.cluster?.flavour === "production-capella");
+    return formatRunLabel(run.path, runLabelParts(instanceKind, clusterMode, run, clusterVersion, cng, isRunCapella));
   }
-  return [instanceLabel(group.path, instanceKind), clusterSegmentLabel(group.path, clusterMode, clusterVersion, isEnterpriseAnalyticsGroup(group))]
+  return [instanceLabel(group.path, instanceKind), clusterSegmentLabel(group.path, clusterMode, clusterVersion, isEnterpriseAnalyticsGroup(group), capella)]
     .filter((segment): segment is string => Boolean(segment))
     .join(" / ");
 }
@@ -1749,7 +1762,42 @@ export async function runFromDefinition(
           // CNG cycles need Kubernetes where cbdinocluster runs: check it on
           // localhost, or stand up k3d (and point the uploaded ~/.cbdinocluster at
           // it) on a clean instance, before allocating anything.
-          const functionalCycle = await prepareFunctionalCngCycle(group, execution);
+          let functionalCycle = await prepareFunctionalCngCycle(group, execution);
+
+          // Capella functional: upload credentials and inject init args + deployer
+          // before the cluster setup step. Mirrors the situational branch above but
+          // scoped to the cluster (not the instance), using the cluster's `capella`
+          // block rather than the instance-level capellaEnvironment.
+          const capellaSetup = functionalCycle.cbdinocluster?.capella;
+          if (capellaSetup !== undefined) {
+            const capellaEnvironment = capellaSetup.environment ?? DEFAULT_CAPELLA_ENV;
+            if (execution.kind === "remote") {
+              if (!group.cbdinoclusterSource && !(await execution.commandAvailable("cbdinocluster"))) {
+                await installCbdinoclusterRemote(execution);
+              }
+              let capella;
+              try {
+                capella = await resolveCapellaConfig({ block: capellaEnvironment });
+              } catch (err) {
+                throwFatalToCluster(
+                  `Capella functional runs allocate Capella clusters, but the "${capellaEnvironment}" Capella ` +
+                    `credentials couldn't be resolved: ${(err as Error).message}`,
+                );
+              }
+              await uploadRemoteCapellaConfig(execution.target, execution.rootDir, capella);
+            }
+            // Inject the derived init args and deployer into the cbdinocluster plan.
+            // Neither lives in the definition file — both are derived from capella.cloudProvider.
+            functionalCycle = {
+              ...functionalCycle,
+              cbdinocluster: {
+                ...functionalCycle.cbdinocluster!,
+                init: { args: capellaFunctionalCbdinoclusterInitArgs(capellaSetup.cloudProvider) },
+                deployer: "cloud",
+              },
+            };
+          }
+
           if (cycleIndex === startCycleIndex && !phases.setupCluster) {
             const resumed = await resumeCluster(functionalCycle, savedState, execution);
             activeCycle = resumed.group;
@@ -1769,7 +1817,7 @@ export async function runFromDefinition(
           }
           if (clusterState) {
             setLogContext({
-              cluster: clusterSegmentLabel(activeCycle.path, activeCycle.clusterMode, clusterVersionLabel(activeCycle), isEnterpriseAnalyticsGroup(activeCycle)),
+              cluster: clusterSegmentLabel(activeCycle.path, activeCycle.clusterMode, clusterVersionLabel(activeCycle), isEnterpriseAnalyticsGroup(activeCycle), isCapellaGroup(activeCycle)),
             });
           }
         } else {

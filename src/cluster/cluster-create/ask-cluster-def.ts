@@ -7,9 +7,10 @@
  * is *not* asked here — the caller decides it (the definition builder asks
  * "operational vs CNG" when adding functional testing) and passes it in.
  *
- * Run on its own (add --cng to build a CNG cluster def):
+ * Run on its own (add --cng to build a CNG cluster def, --capella-aws/gcp/azure for Capella):
  *   bun src/cluster/cluster-create/ask-cluster-def.ts
  *   bun src/cluster/cluster-create/ask-cluster-def.ts --cng
+ *   bun src/cluster/cluster-create/ask-cluster-def.ts --capella-aws
  *
  * Prints the gathered answers as JSON.
  */
@@ -17,7 +18,7 @@ import { isMain, runCli } from "../../util/non-fit/cli.js";
 import { printWithoutTimestamps } from "../../util/non-fit/fit-cli-log.js";
 import { checkbox, input, number } from "../../util/non-fit/prompts.js";
 import { loadEnvironments } from "../../fit/util/environments.js";
-import { type ClusterDef } from "./build-cluster-def.js";
+import { type CapellaCloudProvider, type ClusterDef } from "./build-cluster-def.js";
 
 /** Services offered, with the FIT-typical set selected by default. */
 const SERVICES = [
@@ -46,11 +47,29 @@ export interface AskClusterDefOptions {
    * cbdino derives the Analytics topology, so no service list is asked.
    */
   enterpriseAnalytics?: boolean;
+  /**
+   * Build a Capella cloud cluster on the given provider (aws/gcp/azure). Decided
+   * one level up (the "what to test against" prompt), so it's passed in. Capella
+   * manages the cluster topology, so no node count or service list is asked.
+   */
+  capellaCloudProvider?: CapellaCloudProvider;
 }
 
 /** Ask the questions that describe the cluster to allocate. */
 export async function askClusterDef(options: AskClusterDefOptions = {}): Promise<ClusterDef> {
   const defaults = loadEnvironments().defaults;
+
+  if (options.capellaCloudProvider) {
+    printWithoutTimestamps("  Capella server versions: e.g. 7.6, 7.2");
+    const version = await input({
+      promptId: "cluster.create.server-version",
+      message: "Which Couchbase Server version?",
+      default: defaults.capellaClusterVersion,
+    });
+    // Capella manages cluster topology; no service list needed.
+    // 3 nodes so cbdinocluster's cloud deployer (which always sends numReplicas=1) is valid.
+    return { nodeCount: 3, version, services: [], cng: false, capellaCloudProvider: options.capellaCloudProvider };
+  }
 
   if (options.cng) {
     console.log("\nNote: CNG (Cloud Native Gateway) will be automatically installed as CNG testing was requested.\n");
@@ -99,7 +118,12 @@ export async function askClusterDef(options: AskClusterDefOptions = {}): Promise
 
 if (isMain(import.meta.url)) {
   runCli(async () => {
-    const cng = process.argv.slice(2).includes("--cng");
-    console.log(JSON.stringify(await askClusterDef({ cng }), null, 2));
+    const args = process.argv.slice(2);
+    const cng = args.includes("--cng");
+    const capellaCloudProvider = args.includes("--capella-aws") ? "aws" as const
+      : args.includes("--capella-gcp") ? "gcp" as const
+      : args.includes("--capella-azure") ? "azure" as const
+      : undefined;
+    console.log(JSON.stringify(await askClusterDef({ cng, capellaCloudProvider }), null, 2));
   });
 }

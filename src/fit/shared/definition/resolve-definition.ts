@@ -35,6 +35,7 @@ import {
 } from "../../../cluster/cluster-create/cluster-exists-policy.js";
 import { DEFAULT_CAPELLA_ENV, DEFAULT_RESULTS_ENV } from "../../util/config.js";
 import type { CbdinoclusterDef } from "../../../cluster/cluster-create/build-cluster-def.js";
+import type { CapellaClusterSetup } from "./types.js";
 import { loadDefinition } from "./parse-definition.js";
 import type {
   CbdinoclusterInitSetup,
@@ -109,6 +110,8 @@ export interface ResolvedCbdinocluster {
   config: CbdinoclusterDef;
   onClusterExists: ClusterExistsPolicy;
   deployer?: string;
+  /** Present when this is a Capella cloud cluster. */
+  capella?: CapellaClusterSetup;
 }
 
 export interface ResolvedClusterPlan {
@@ -424,6 +427,7 @@ export function resolveCbdinocluster(cluster: ClusterLifetime): ResolvedCbdinocl
     config: cluster.cbdinocluster.config,
     onClusterExists: cluster.cbdinocluster.onClusterExists ?? DEFAULT_CLUSTER_EXISTS_POLICY,
     ...(cluster.cbdinocluster.deployer !== undefined ? { deployer: cluster.cbdinocluster.deployer } : {}),
+    ...(cluster.cbdinocluster.capella !== undefined ? { capella: cluster.cbdinocluster.capella } : {}),
   };
 }
 

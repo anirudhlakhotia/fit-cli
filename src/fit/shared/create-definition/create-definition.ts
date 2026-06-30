@@ -11,6 +11,7 @@ import { qualifyPromptId, select, confirm, input } from "../../../util/non-fit/p
 import { loadFitCliConfig, resolveOutputFormat } from "../../util/config.js";
 import { chooseAnalyticsFunctionalSdk, chooseSdk } from "../../../util/sdk/choose-sdk.js";
 import { askClusterDef } from "../../../cluster/cluster-create/ask-cluster-def.js";
+import { CAPELLA_CLOUD_PROVIDERS, type CapellaCloudProvider } from "../../../cluster/cluster-create/build-cluster-def.js";
 import { askClusterExistsPolicy } from "../../../cluster/cluster-create/ask-cluster-exists-policy.js";
 import { selectCluster } from "../../../cluster/cluster-select/cluster-select.js";
 import { askPerformerTag } from "../../performers/util/ask-performer-image.js";
@@ -77,7 +78,7 @@ export async function askFitGerritRef(promptIdPrefix?: string): Promise<string |
 }
 
 type DefinitionBuilderAction = "functional" | "situational" | "performance" | "done";
-type FunctionalConnectivity = "operational" | "cng" | "enterprise-analytics";
+type FunctionalConnectivity = "operational" | "cng" | "enterprise-analytics" | "capella";
 
 interface DefinitionBuilderState {
   gerritRefAsked: boolean;
@@ -104,12 +105,21 @@ async function chooseDefinitionBuilderAction(index: number): Promise<DefinitionB
 async function chooseFunctionalConnectivity(promptIdPrefix: string): Promise<FunctionalConnectivity> {
   return select<FunctionalConnectivity>({
     promptId: qualifyPromptId("connectivity", promptIdPrefix),
-    message: "What do you want to FIT functional test against?  (Capella Analytics and more to come)",
+    message: "What do you want to FIT functional test against?",
     choices: [
       { name: "Operational", value: "operational" },
       { name: "Cloud Native Gateway (couchbase2://)", value: "cng" },
       { name: "Enterprise Analytics (self-hosted)", value: "enterprise-analytics" },
+      { name: "Capella", value: "capella" },
     ],
+  });
+}
+
+async function chooseCapellaCloudProvider(promptIdPrefix: string): Promise<CapellaCloudProvider> {
+  return select<CapellaCloudProvider>({
+    promptId: qualifyPromptId("capella.cloud-provider", promptIdPrefix),
+    message: "Which cloud provider should Capella deploy the cluster on?",
+    choices: CAPELLA_CLOUD_PROVIDERS.map((p) => ({ name: p.toUpperCase(), value: p })),
   });
 }
 
@@ -118,23 +128,27 @@ export function functionalInstanceConnectivity(
   clusterConfigs: ClusterConfigRef[] = [],
 ): FunctionalConnectivity {
   const cluster = instance.clusters[0];
-  // The cluster's cbdino config may be inline or referenced via clusterConfig id.
-  const config =
-    cluster?.cbdinocluster?.config ??
+  // The cluster's cbdino setup may be inline or referenced via clusterConfig id.
+  const cbdinocluster =
+    cluster?.cbdinocluster ??
     (typeof cluster?.clusterConfig === "string"
-      ? clusterConfigs.find((cc) => cc.id === cluster.clusterConfig)?.cbdinocluster?.config
+      ? clusterConfigs.find((cc) => cc.id === cluster.clusterConfig)?.cbdinocluster
       : undefined);
-  if (config?.columnar === true) return "enterprise-analytics";
-  if (config?.cao !== undefined) return "cng";
+  if (cbdinocluster?.capella !== undefined) return "capella";
+  if (cbdinocluster?.config.columnar === true) return "enterprise-analytics";
+  if (cbdinocluster?.config.cao !== undefined) return "cng";
   return "operational";
 }
 
-async function chooseFunctionalDefinitionCluster(connectivity: FunctionalConnectivity): Promise<DefinitionCluster> {
+async function chooseFunctionalDefinitionCluster(connectivity: FunctionalConnectivity, capellaCloudProvider?: CapellaCloudProvider): Promise<DefinitionCluster> {
   if (connectivity === "cng") {
     return { kind: "cbdinocluster", def: await askClusterDef({ cng: true }) };
   }
   if (connectivity === "enterprise-analytics") {
     return { kind: "cbdinocluster", def: await askClusterDef({ enterpriseAnalytics: true }) };
+  }
+  if (connectivity === "capella") {
+    return { kind: "cbdinocluster", def: await askClusterDef({ capellaCloudProvider }) };
   }
   return chooseDefinitionCluster();
 }
@@ -275,6 +289,7 @@ async function addFunctionalRun(
   const execution = createLocalFitExecutionContext();
   const connectivity = await chooseFunctionalConnectivity(promptIdPrefix);
   const analytics = connectivity === "enterprise-analytics";
+
   const sdk = analytics
     ? await chooseAnalyticsFunctionalSdk("Which Analytics SDK do you want to test?", promptIdPrefix)
     : await chooseSdk("Which SDK do you want to test with FIT functional?", promptIdPrefix);
@@ -301,15 +316,25 @@ async function addFunctionalRun(
     return;
   }
 
+  // Capella provider and environment are only needed when starting a new instance.
+  let capellaCloudProvider: CapellaCloudProvider | undefined;
+  let capellaEnvironment: string | undefined;
+  if (connectivity === "capella") {
+    capellaCloudProvider = await chooseCapellaCloudProvider(promptIdPrefix);
+    capellaEnvironment = await chooseCapellaEnvironment(promptIdPrefix);
+  }
+
   console.log(
     connectivity === "cng"
       ? "\nStarting a new FIT functional CNG instance. cbdinocluster installs the gateway via the Couchbase Kubernetes Operator, so this needs Kubernetes."
       : connectivity === "enterprise-analytics"
         ? "\nStarting a new FIT Analytics instance. cbdinocluster builds a self-managed Enterprise Analytics cluster (fronted by an nginx load balancer)."
-        : "\nStarting a new FIT functional instance. Runs added now will share one cluster lifetime on that instance.",
+        : connectivity === "capella"
+          ? `\nStarting a new FIT Capella instance. cbdinocluster creates a real Capella cluster on ${capellaCloudProvider!.toUpperCase()} via the Capella control-plane API.`
+          : "\nStarting a new FIT functional instance. Runs added now will share one cluster lifetime on that instance.",
   );
   const instance = await chooseInstanceExecution(promptIdPrefix);
-  const cluster = await chooseFunctionalDefinitionCluster(connectivity);
+  const cluster = await chooseFunctionalDefinitionCluster(connectivity, capellaCloudProvider);
   const onClusterExists = cluster.kind === "cbdinocluster" ? await askClusterExistsPolicy() : undefined;
   const subDef = buildFitFunctionalDefinitionFrom({
     cluster,
@@ -320,6 +345,7 @@ async function addFunctionalRun(
     onPortInUse,
     selection,
     ...(analytics ? { analytics: true } : {}),
+    ...(capellaEnvironment ? { capellaEnvironment } : {}),
   });
   const generatedInstance = collectSubDefInstance(state, subDef);
   if (!generatedInstance) {
@@ -351,6 +377,7 @@ function functionalDefinitionCluster(instance: InstanceLifetime, clusterConfigs:
         cng: clusterData.cbdinocluster.config.cao !== undefined,
         // cbdino's wire `columnar: true` means a self-managed Enterprise Analytics cluster.
         ...(clusterData.cbdinocluster.config.columnar === true ? { enterpriseAnalytics: true } : {}),
+        ...(clusterData.cbdinocluster.capella ? { capellaCloudProvider: clusterData.cbdinocluster.capella.cloudProvider } : {}),
       },
     };
   }

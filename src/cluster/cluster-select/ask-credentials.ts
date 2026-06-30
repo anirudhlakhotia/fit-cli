@@ -21,6 +21,16 @@ export const DEFAULT_CREDENTIALS: Credentials = {
   password: "password",
 };
 
+/**
+ * The database-user credentials FIT creates (via `cbdinocluster users add`) when
+ * it allocates a Capella cloud cluster. Capella enforces password complexity, so
+ * this must satisfy: ≥1 uppercase, ≥1 lowercase, ≥1 digit, ≥1 special character.
+ */
+export const CAPELLA_DEFAULT_CREDENTIALS: Credentials = {
+  username: "Administrator",
+  password: "Password1!",
+};
+
 export interface CredentialPromptPolicy {
   usernameDefault?: string;
   passwordDefault?: string;

@@ -17,7 +17,8 @@ function describeClusterSource(cluster: ClusterLifetime): string {
     const cng = cluster.cbdinocluster.config.cao ? "+CNG" : "";
     // `columnar: true` allocates a self-managed Enterprise Analytics cluster.
     const ea = cluster.cbdinocluster.config.columnar ? "EA," : "";
-    return `cbdino(${ea}${nodes}${cng})`;
+    const capella = cluster.cbdinocluster.capella ? `Capella(${cluster.cbdinocluster.capella.cloudProvider}),` : "";
+    return `cbdino(${capella}${ea}${nodes}${cng})`;
   }
   if (cluster.connection) {
     return "connection";

@@ -23,7 +23,7 @@ import type { PieceData } from "../../util/non-fit/config-pieces.js";
 import { ensureRunDir } from "../../util/non-fit/replay.js";
 import { posixQuote } from "../../util/non-fit/remote-target.js";
 import { findOnPath } from "../../util/non-fit/which.js";
-import { DEFAULT_CREDENTIALS } from "../cluster-select/ask-credentials.js";
+import { CAPELLA_DEFAULT_CREDENTIALS, DEFAULT_CREDENTIALS } from "../cluster-select/ask-credentials.js";
 import { classifyConnectionString } from "../cluster-select/classify-connection-string.js";
 import type { SelectedCluster } from "../cluster-select/cluster-select.js";
 import { parseClusterIds, type CbdinoCluster } from "../cluster-select/parse-cluster-ids.js";
@@ -474,11 +474,12 @@ export function buildSelectedClusterFromConnstr(connectionString: string): Selec
     );
     return undefined;
   }
+  const isCapella = classification.flavour === "internal-capella" || classification.flavour === "production-capella";
   return {
     scheme: classification.scheme,
     defaultHostname: classification.defaultHostname,
     flavour: classification.flavour,
-    credentials: { ...DEFAULT_CREDENTIALS },
+    credentials: isCapella ? { ...CAPELLA_DEFAULT_CREDENTIALS } : { ...DEFAULT_CREDENTIALS },
     // A cbdino couchbases:// cluster uses a self-signed cert; trust it insecurely.
     tls: classification.scheme === "couchbases" ? { insecure: true } : null,
   };
@@ -641,7 +642,15 @@ async function createCaoDefaultBucket(
   password: string,
   execution: ClusterCommandExecutor,
 ): Promise<void> {
-  const bucketUrl = `https://${uiHost}:443/pools/default/buckets`;
+  await createDefaultBucketAt(`https://${uiHost}:443/pools/default/buckets`, username, password, execution);
+}
+
+async function createDefaultBucketAt(
+  bucketUrl: string,
+  username: string,
+  password: string,
+  execution: ClusterCommandExecutor,
+): Promise<void> {
   console.log(`→ setup-cluster: creating default bucket via ${bucketUrl}`);
   const createScript = [
     "set -e",
@@ -692,6 +701,52 @@ async function allocate(
   } catch (err) {
     console.error(`\n✗ setup-cluster: cbdinocluster failed to allocate the cluster: ${(err as Error).message}`);
     return FAILED({ cbdinocluster });
+  }
+
+  // Capella cloud clusters: allowlist the current machine's public IP so the
+  // REST (18091) and SDK ports are reachable. Without this the connection times
+  // out completely. Then create a database user with the default FIT credentials
+  // so the SDK performer can connect.
+  if (deployer === "cloud") {
+    try {
+      const rawIp = await execution.capture("curl", ["-sf", "--max-time", "5", "https://checkip.amazonaws.com"]);
+      const cidr = `${rawIp.trim()}/32`;
+      console.log(`→ setup-cluster: allowlisting ${cidr} for Capella cluster ${allocated.clusterId}`);
+      await execution.run(cbdinocluster, ["allow-list", "add", allocated.clusterId, cidr], undefined, {
+        display: `cbdinocluster allow-list add (${cidr})`,
+      });
+    } catch (err) {
+      console.error(`⚠ setup-cluster: failed to allowlist current IP for Capella cluster — sanity check may fail: ${(err as Error).message}`);
+    }
+    // Create the default FIT credentials so the SDK performer can connect.
+    // `cbdinocluster users-add` polls until the user is ready before returning.
+    try {
+      console.log(`→ setup-cluster: creating SDK user Administrator for Capella cluster ${allocated.clusterId}`);
+      await execution.run(
+        cbdinocluster,
+        ["users", "add", allocated.clusterId, CAPELLA_DEFAULT_CREDENTIALS.username, `--password=${CAPELLA_DEFAULT_CREDENTIALS.password}`, "--can-read", "--can-write"],
+        undefined,
+        { display: "cbdinocluster users add Administrator" },
+      );
+    } catch (err) {
+      console.error(`⚠ setup-cluster: failed to create SDK user for Capella cluster — performer may fail to connect: ${(err as Error).message}`);
+    }
+    // Capella does not auto-create a "default" bucket.  FIT tests expect one, and
+    // skipBucketCreation=true in FITConfiguration means the test-driver won't do it
+    // either, so fit-cli must create it here.
+    // `cbdinocluster buckets add` uses the Capella v4 API (stored admin creds), avoiding
+    // the privilege issues that arise from hitting port 18091 with a database user.
+    try {
+      console.log(`→ setup-cluster: creating default bucket on Capella cluster ${allocated.clusterId}`);
+      await execution.run(
+        cbdinocluster,
+        ["buckets", "add", allocated.clusterId, "default", "--ram-quota-mb=100"],
+        undefined,
+        { display: "cbdinocluster buckets add default" },
+      );
+    } catch (err) {
+      console.error(`⚠ setup-cluster: failed to create default bucket for Capella cluster — tests will fail: ${(err as Error).message}`);
+    }
   }
 
   // cao (CNG) clusters need their ingresses enabled before the data/REST planes —
