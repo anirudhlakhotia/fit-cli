@@ -14,7 +14,7 @@ import { basename, dirname, join } from "node:path";
 import { artifactFromPath, combineArtifacts, type Detail, type RunOutput } from "../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { createLogFile } from "../../../util/non-fit/proc.js";
-import type { DefinitionRunPath } from "../../../util/non-fit/replay.js";
+import { sanitizePathSeg, type DefinitionRunPath } from "../../../util/non-fit/replay.js";
 import { surefireReportsDir } from "./collect-junit.js";
 import { createLocalFitExecutionContext, type FitExecutionContext } from "../util/remote-fit-run.js";
 import { selectFitTests, type FitTestSelection } from "../select-fit-tests/select-fit-tests.js";
@@ -82,12 +82,12 @@ export interface FitTestDriverSummary {
 const JUNIT_ATTRIBUTE_RE = (name: string): RegExp => new RegExp(`\\b${name}="(\\d+)"`);
 
 export function fitTestLogStem(path: DefinitionRunPath): string {
-  const instanceSeg = path.dirSegments?.instance ?? String(path.instanceIndex);
-  const sessionSeg = path.dirSegments?.session ?? String(path.sessionIndex);
-  const runSeg = path.dirSegments?.run ?? String(path.runIndex);
+  const instanceSeg = sanitizePathSeg(path.dirSegments?.instance ?? String(path.instanceIndex));
+  const sessionSeg = sanitizePathSeg(path.dirSegments?.session ?? String(path.sessionIndex));
+  const runSeg = sanitizePathSeg(path.dirSegments?.run ?? String(path.runIndex));
   const base = path.clusterlessSession
     ? join("instances", instanceSeg, "clusterless-sessions", sessionSeg, "runs", runSeg)
-    : join("instances", instanceSeg, "clusters", path.dirSegments?.cluster ?? String(path.clusterIndex), "sessions", sessionSeg, "runs", runSeg);
+    : join("instances", instanceSeg, "clusters", sanitizePathSeg(path.dirSegments?.cluster ?? String(path.clusterIndex)), "sessions", sessionSeg, "runs", runSeg);
   return join(base, "driver");
 }
 

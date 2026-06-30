@@ -6,10 +6,13 @@ import { test } from "node:test";
 import {
   PromptSession,
   REPO_ROOT,
+  clusterRunDir,
   defaultsToNonInteractive,
   extractInteractiveFlag,
   extractReplayFlag,
   markNonInteractiveByDefault,
+  sanitizePathSeg,
+  sessionRunDir,
 } from "../replay.js";
 
 const DEFINITION_ENTRYPOINT = join(
@@ -620,4 +623,23 @@ test("replay mode loads stored invocation metadata", () => {
     entrypoint: "src/workflows/fit-functional/select-fit-tests/index.ts",
     args: ["--root", "/workspace"],
   });
+});
+
+test("sanitizePathSeg replaces colons with hyphens", () => {
+  assert.equal(sanitizePathSeg("EA:2.2.0-1166"), "EA-2.2.0-1166");
+  assert.equal(sanitizePathSeg("java:main"), "java-main");
+  assert.equal(sanitizePathSeg("functional:cng"), "functional-cng");
+  assert.equal(sanitizePathSeg("no-colons"), "no-colons");
+});
+
+test("clusterRunDir sanitizes colons in the cluster segment", () => {
+  const runDir = mkdtempSync(join(tmpdir(), "fit-test-"));
+  const path = { instanceIndex: 0, clusterIndex: 0, dirSegments: { instance: "aws1", cluster: "EA:2.2.0-1166" } };
+  assert.ok(clusterRunDir(path, runDir).endsWith("/clusters/EA-2.2.0-1166"));
+});
+
+test("sessionRunDir sanitizes colons in the session segment", () => {
+  const runDir = mkdtempSync(join(tmpdir(), "fit-test-"));
+  const path = { instanceIndex: 0, clusterIndex: 0, sessionIndex: 0, dirSegments: { instance: "aws1", cluster: "8.0.0", session: "java:main" } };
+  assert.ok(sessionRunDir(path, runDir).endsWith("/sessions/java-main"));
 });
