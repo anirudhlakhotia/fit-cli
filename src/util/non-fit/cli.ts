@@ -15,7 +15,7 @@ import {
 import { installFitCliConsoleFormatting, fitCliError, runScriptPrefix } from "./fit-cli-log.js";
 import { startSessionLog, startDebugLog } from "./proc.js";
 import { ensurePromptSession } from "./replay.js";
-import { emitGhaArtifactNotice } from "../../fit/util/gha.js";
+import { emitGhaArtifactNotice, appendArtifactFetchToGhaSummary } from "../../fit/util/gha.js";
 import { maybeUploadRunArtifacts } from "../../fit/util/aws/upload-run-artifacts.js";
 
 /**
@@ -50,6 +50,8 @@ async function renderRunSummary(runDir: string, runOutput: RunOutput): Promise<v
   const s3Uri = await maybeUploadRunArtifacts(runDir);
   if (!s3Uri) {
     console.log(`\nTo upload run artifacts to S3 (optional):\n  ${runScriptPrefix("archive")} s3-upload --zip ${runDir} s3://fit-cli/runs/`);
+  } else {
+    await appendArtifactFetchToGhaSummary(s3Uri);
   }
   emitGhaArtifactNotice(s3Uri ?? undefined);
 }
