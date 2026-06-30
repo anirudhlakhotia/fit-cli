@@ -16,7 +16,7 @@
     {
       aws: {},
       setup: {
-        capellaEnvironment: 'dev',
+        capellaEnvironment: 'prod',
       },
       // FIT/SIT creates its own clusters, so none are set up here.
       clusters: [],
