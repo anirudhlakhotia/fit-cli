@@ -1239,7 +1239,10 @@ async function teardownRun(inputs: TeardownInputs): Promise<{ leftUp: boolean }>
   // "moving to next iteration" line, which read as if more was still to come — then
   // show how each run did so the leave-up choice is informed.
   console.log("\n── Run finished — no more iterations, clusters or instances to run. ──");
-  if (results.length > 0) {
+  // Only reprint in interactive mode: in non-interactive mode the leave-up prompt
+  // answers itself with the default anyway, and the results were already printed by
+  // recordResult as each run completed, so reprinting here is just noise.
+  if (results.length > 0 && isInteractiveRun()) {
     printRunResultsTables(results);
   }
 
