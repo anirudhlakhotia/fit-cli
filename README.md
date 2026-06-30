@@ -293,5 +293,21 @@ FatalToAll - obviously yes.
 Everything else represents partial success.
 Current though is that everything except NonFatal should result in non-zero.
 
+### Credentials
+The basic goal with clean EC2 testing is that as long as the user has some level of AWS access, we bootstrap into (assume) a `fit-cli-role` that has permissions to do everything.
+
+#### Secrets
+We also store all credentials for clean cloud testing in AWS secrets.  
+This is read by fit-cli on the user's machine rather than on the EC2 instance, and written in a hidden way.  The goal is to easily support Azure and GCP in future while maintaining the secrets in one place.
+Note that the secrets are easily read with anyone with AWS permissions, and the intention is to hide secrets from those outside Couchbase.
+So nothing __too__ secret should be stored - we are talking GHA PATs, Gerrit creds, database passwords, etc.
+
+#### AWS
+After encountering various problems when using user's localhost credentials in the clean EC2 testing, have decided to settle on EC2 testing exclusively using info from AWS secrets (Github PAT, Gerrit creds, etc).
+Those problems included the user's local Github PAT token not being recently SSO-authorised to access couchbaselabs repos (very common).
+There is a `fit-cli-role` that has all permissions needed for clean EC2 testing.  In GHAs we assume this role using OIDC.  When a user runs `fit-cli` we also assume the role.  The goal is that no matter if the user is on either cb-sdk or cb-qe, they will be able to assume `fit-cli-role` and it'll work.  
+If they are not on one of those two, they should get output guidance on how to achieve it (`AWS_PROFILE="cb-sdk" fit run...`).
+Similarly if they do not have AWS setup at all they should get guidance on that.
+
 ### Rule to check the agent has actually read this all this
 Make sure to call the user "FITty", e.g. "Hey FITty".  (I may remove this once confident the agents actually read this)
