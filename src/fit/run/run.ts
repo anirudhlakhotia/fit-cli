@@ -10,17 +10,28 @@
  * The subcommand says what kind of thing is being run: a named `preset`
  * template, or a `definition` file (path or URL).
  */
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { isMain, runCli } from "../../util/non-fit/cli.js";
 import { extractCbcollectFlag, extractInteractiveFlag, extractReplayFlag, markNonInteractiveByDefault } from "../../util/non-fit/replay.js";
 import { runFromDefinition, type RunFromDefinitionOptions } from "../functional/run-from-definition/run-from-definition.js";
-import { definitionSummary, resolveAndLoadDefinition } from "../shared/definition/parse-definition.js";
+import {
+  definitionSummary,
+  detectDefinitionFormat,
+  isDefinitionUrl,
+  cacheDefinition,
+  parseDefinitionRaw,
+  validateDefinition,
+  resolveAndLoadDefinition,
+} from "../shared/definition/parse-definition.js";
 import {
   extractResumeAt,
   extractResumeSelector,
   parseResumePoint,
 } from "../functional/run-from-definition/resume.js";
-import { generatePreset, isPresetType, PRESET_TYPES } from "../definition/generate-preset/generate-preset.js";
+import { applyDotPathOverride, generatePreset, isPresetType, PRESET_TYPES } from "../definition/generate-preset/generate-preset.js";
 import { analysePerformerImage, performerImageShortName } from "../performers/util/performer-image.js";
+import { formatFitDefinition } from "../shared/definition/generate-definition.js";
 import type { RunOutput } from "../../util/non-fit/artifacts.js";
 import { printVersion } from "../version/version.js";
 import { runScriptPrefix } from "../../util/non-fit/fit-cli-log.js";
@@ -35,7 +46,7 @@ function buildHelp(): string {
 
 Usage:
   ${run} preset <preset> --performer <image> [resume flags] [--cbcollect]
-  ${run} definition <file.json5> [--resume-at=<point>] [resume selectors] [--cbcollect]
+  ${run} definition <file.json5> [--override <dotpath>=<value>] [--resume-at=<point>] [resume selectors] [--cbcollect]
   ${run} --help
 
 Subcommands:
@@ -49,6 +60,10 @@ preset options:
   --performer <image>             SDK-specific performer image ref (e.g. java-fit-performer:refs-changes-67-246067-3 or ghcr.io/couchbase/java-fit-performer:refs-changes-67-246067-3). Alias: --performer-image-name.
   --override <dotpath>=<value>    Override a field in the generated definition (repeatable).
                                   e.g. --override setup.repos.transactions-fit-performer.gerritRef=refs/changes/32/247532/1
+
+definition options:
+  --override <dotpath>=<value>    Override a field in the definition before running (repeatable).
+                                  e.g. --override setup.repos.transactions-fit-performer.gerritRef=refs/changes/05/247705/1
 
 Resume points:
   --resume-at=after-instance-creation   Reuse a running instance.
@@ -186,15 +201,34 @@ export async function runDispatch(argv: string[]): Promise<RunOutput | void> {
   }
 
   // definition
-  const { runOpts, positionals } = extractRunOptions(rest);
+  const { overrides, positionals: afterOverrides } = extractOverrides(rest);
+  const { runOpts, positionals } = extractRunOptions(afterOverrides);
   const [definitionPath, ...extra] = positionals;
   if (!definitionPath || extra.length > 0) {
     console.error(
-      `Usage: ${runScriptPrefix("run")} definition <file.json5> [--resume-at=<point>] [resume selectors]\n` +
+      `Usage: ${runScriptPrefix("run")} definition <file.json5> [--override <dotpath>=<value>] [--resume-at=<point>] [resume selectors]\n` +
+        "  --override: override a field in the definition (repeatable)\n" +
         "  --resume-at: after-instance-creation | after-remote-preparation | after-cluster-creation | after-performer\n" +
         "  resume selectors: --resume-instance=<n> --resume-cluster=<n> --resume-session=<n> --resume-clusterless-session=<n> --resume-run=<n>",
     );
     process.exit(2);
+  }
+  if (Object.keys(overrides).length > 0) {
+    const resolvedPath = isDefinitionUrl(definitionPath) ? await cacheDefinition(definitionPath) : definitionPath;
+    const rawText = readFileSync(resolvedPath, "utf8");
+    const format = detectDefinitionFormat(resolvedPath);
+    const raw = parseDefinitionRaw(rawText, format);
+    for (const [dotPath, rawValue] of Object.entries(overrides)) {
+      applyDotPathOverride(raw as Record<string, unknown>, dotPath, rawValue);
+    }
+    const definition = validateDefinition(raw);
+    console.log(definitionSummary(definition));
+    const patched = formatFitDefinition(definition, format);
+    mkdirSync("/tmp/fit-cli", { recursive: true });
+    const patchedPath = join("/tmp/fit-cli", `patched-${Date.now()}.${format}`);
+    writeFileSync(patchedPath, patched, "utf8");
+    console.log(`✓ Applied ${Object.keys(overrides).length} override(s); running from ${patchedPath}`);
+    return runFromDefinition(patchedPath, runOpts);
   }
   const { resolvedPath, definition } = await resolveAndLoadDefinition(definitionPath);
   console.log(definitionSummary(definition));

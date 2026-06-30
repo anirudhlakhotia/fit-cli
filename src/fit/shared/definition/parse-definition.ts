@@ -836,10 +836,31 @@ export function validateDefinition(raw: unknown): FitDefinition {
 
 export type DefinitionFormat = "json5" | "yaml";
 
-function detectDefinitionFormat(path: string): DefinitionFormat {
+export function detectDefinitionFormat(path: string): DefinitionFormat {
   if (/\.json5$/i.test(path)) return "json5";
   if (/\.ya?ml$/i.test(path)) return "yaml";
   return "json5";
+}
+
+/** Parse raw text into an unknown object without validating the schema. */
+export function parseDefinitionRaw(text: string, format?: DefinitionFormat): unknown {
+  if (format === "yaml") {
+    try { return YAML.parse(text); }
+    catch (err) { throw new InvalidDefinitionError(`Could not parse YAML: ${(err as Error).message}`); }
+  }
+  if (format === "json5") {
+    try { return JSON5.parse(text); }
+    catch (err) { throw new InvalidDefinitionError(`Could not parse JSON5: ${(err as Error).message}`); }
+  }
+  let json5Err: Error;
+  try { return JSON5.parse(text); }
+  catch (err) {
+    json5Err = err as Error;
+    try { return YAML.parse(text); }
+    catch (yamlErr) {
+      throw new InvalidDefinitionError(`Could not parse definition file as JSON5 (${json5Err.message}) or YAML (${(yamlErr as Error).message})`);
+    }
+  }
 }
 
 export function parseDefinition(text: string, format?: DefinitionFormat): FitDefinition {
