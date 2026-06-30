@@ -143,7 +143,7 @@ test("fitTestLogStem uses dirSegments when present", () => {
       runIndex: 0,
       dirSegments: { instance: "aws1", cluster: "8.0.2-5503", session: "java:main", run: "functional" },
     }),
-    "instances/aws1/clusters/8.0.2-5503/sessions/java:main/runs/functional/driver",
+    "instances/aws1/clusters/8.0.2-5503/sessions/java-main/runs/functional/driver",
   );
 });
 

@@ -592,6 +592,16 @@ export interface DefinitionRunPath {
   };
 }
 
+/**
+ * Sanitize a label for use as a filesystem directory segment.
+ * GitHub Actions artifact upload rejects colons (and other chars illegal on Windows NTFS).
+ * Display labels (log prefixes, table output) keep their colons; call this only when
+ * building actual file-system paths.
+ */
+export function sanitizePathSeg(seg: string): string {
+  return seg.replace(/:/g, "-");
+}
+
 /** Absolute path to the artifact directory for instance N (e.g. `{runDir}/instances/aws1`).
  *  Accepts a full {@link DefinitionRunPath} (uses `dirSegments.instance` when present) or a
  *  plain index for callers that don't have label context. */
@@ -599,19 +609,19 @@ export function instanceRunDir(pathOrIndex: DefinitionRunPath | number, runDir: 
   if (typeof pathOrIndex === "number") {
     return join(runDir, "instances", String(pathOrIndex));
   }
-  const seg = pathOrIndex.dirSegments?.instance ?? String(pathOrIndex.instanceIndex);
+  const seg = sanitizePathSeg(pathOrIndex.dirSegments?.instance ?? String(pathOrIndex.instanceIndex));
   return join(runDir, "instances", seg);
 }
 
 /** Absolute path to the artifact directory for a cluster lifetime. */
 export function clusterRunDir(path: DefinitionRunPath, runDir: string = ensureRunDir()): string {
-  const seg = path.dirSegments?.cluster ?? String(path.clusterIndex ?? 0);
+  const seg = sanitizePathSeg(path.dirSegments?.cluster ?? String(path.clusterIndex ?? 0));
   return join(instanceRunDir(path, runDir), "clusters", seg);
 }
 
 /** Absolute path to the artifact directory for a session lifetime. */
 export function sessionRunDir(path: DefinitionRunPath, runDir: string = ensureRunDir()): string {
-  const seg = path.dirSegments?.session ?? String(path.sessionIndex);
+  const seg = sanitizePathSeg(path.dirSegments?.session ?? String(path.sessionIndex));
   if (path.clusterlessSession) {
     if (path.sessionIndex === undefined) {
       throw new Error("clusterless session paths require sessionIndex.");
@@ -629,7 +639,7 @@ export function runRunDir(path: DefinitionRunPath, runDir: string = ensureRunDir
   if (path.runIndex === undefined) {
     throw new Error("run paths require runIndex.");
   }
-  const seg = path.dirSegments?.run ?? String(path.runIndex);
+  const seg = sanitizePathSeg(path.dirSegments?.run ?? String(path.runIndex));
   return join(sessionRunDir(path, runDir), "runs", seg);
 }
 

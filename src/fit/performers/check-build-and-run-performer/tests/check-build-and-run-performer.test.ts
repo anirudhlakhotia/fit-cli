@@ -66,7 +66,7 @@ test("performerLogStem uses dirSegments names when present", () => {
       sdk,
       "main",
     ),
-    "instances/aws1/clusters/8.0-stable/sessions/java:main/java-main-performer",
+    "instances/aws1/clusters/8.0-stable/sessions/java-main/java-main-performer",
   );
 });
 
@@ -79,6 +79,6 @@ test("performerLogStem uses dirSegments names for clusterless sessions", () => {
       sdk,
       "main",
     ),
-    "instances/aws1/clusterless-sessions/java:main/java-main-performer",
+    "instances/aws1/clusterless-sessions/java-main/java-main-performer",
   );
 });

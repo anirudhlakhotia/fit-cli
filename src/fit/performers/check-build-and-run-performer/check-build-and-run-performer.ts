@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { artifactFromPath, type RunOutput } from "../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { createLogFile, type BackgroundStream } from "../../../util/non-fit/proc.js";
-import type { DefinitionRunPath } from "../../../util/non-fit/replay.js";
+import { sanitizePathSeg, type DefinitionRunPath } from "../../../util/non-fit/replay.js";
 import { type Sdk } from "../../../util/sdk/sdks.js";
 import { chooseSdk } from "../../../util/sdk/choose-sdk.js";
 import {
@@ -53,11 +53,11 @@ export interface RunningPerformer extends RunOutput {
 }
 
 export function performerLogStem(path: DefinitionRunPath, sdk: Sdk, version?: string): string {
-  const instanceSeg = path.dirSegments?.instance ?? String(path.instanceIndex);
-  const sessionSeg = path.dirSegments?.session ?? String(path.sessionIndex);
+  const instanceSeg = sanitizePathSeg(path.dirSegments?.instance ?? String(path.instanceIndex));
+  const sessionSeg = sanitizePathSeg(path.dirSegments?.session ?? String(path.sessionIndex));
   const base = path.clusterlessSession
     ? join("instances", instanceSeg, "clusterless-sessions", sessionSeg)
-    : join("instances", instanceSeg, "clusters", path.dirSegments?.cluster ?? String(path.clusterIndex), "sessions", sessionSeg);
+    : join("instances", instanceSeg, "clusters", sanitizePathSeg(path.dirSegments?.cluster ?? String(path.clusterIndex)), "sessions", sessionSeg);
   return join(base, `${sdk.value}-${tagLogComponent(version)}-performer`);
 }
 
