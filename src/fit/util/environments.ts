@@ -43,6 +43,10 @@ export interface Defaults {
   cngVersion: string;
   /** Default Couchbase Server version for Capella cloud clusters. */
   capellaClusterVersion: string;
+  /** Default Capella environment key (a key under `capella` in this file). */
+  defaultCapellaEnvironment: string;
+  /** Default results environment key (a key under `results` in this file). */
+  defaultResultsEnvironment: string;
 }
 
 export interface EnvironmentsFile {

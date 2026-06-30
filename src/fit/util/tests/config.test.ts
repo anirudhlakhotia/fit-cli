@@ -156,6 +156,8 @@ const STUB_DEFAULTS = {
   caoOperatorVersion: "2.9.2",
   cngVersion: "1.1.0-135",
   capellaClusterVersion: "7.6",
+  defaultCapellaEnvironment: "dev",
+  defaultResultsEnvironment: "dev",
 };
 
 const TEST_ENVIRONMENTS = {
