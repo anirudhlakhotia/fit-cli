@@ -60,15 +60,15 @@ export async function askClusterDef(options: AskClusterDefOptions = {}): Promise
   const defaults = loadEnvironments().defaults;
 
   if (options.capellaCloudProvider) {
-    console.log(`\nNote: cbdinocluster will allocate a Capella cloud cluster on ${options.capellaCloudProvider.toUpperCase()} via the Capella control-plane API.\n`);
     printWithoutTimestamps("  Capella server versions: e.g. 7.6, 7.2");
     const version = await input({
       promptId: "cluster.create.server-version",
       message: "Which Couchbase Server version?",
       default: defaults.capellaClusterVersion,
     });
-    // Capella manages cluster topology; no node count or service list needed.
-    return { nodeCount: 1, version, services: [], cng: false, capellaCloudProvider: options.capellaCloudProvider };
+    // Capella manages cluster topology; no service list needed.
+    // 3 nodes so cbdinocluster's cloud deployer (which always sends numReplicas=1) is valid.
+    return { nodeCount: 3, version, services: [], cng: false, capellaCloudProvider: options.capellaCloudProvider };
   }
 
   if (options.cng) {

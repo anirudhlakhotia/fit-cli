@@ -734,8 +734,8 @@ async function allocate(
     // Capella does not auto-create a "default" bucket.  FIT tests expect one, and
     // skipBucketCreation=true in FITConfiguration means the test-driver won't do it
     // either, so fit-cli must create it here.
-    // Use `cbdinocluster buckets add` which goes through the Capella v4 API, avoiding
-    // the privilege issues that would arise from hitting port 18091 with a database user.
+    // `cbdinocluster buckets add` uses the Capella v4 API (stored admin creds), avoiding
+    // the privilege issues that arise from hitting port 18091 with a database user.
     try {
       console.log(`→ setup-cluster: creating default bucket on Capella cluster ${allocated.clusterId}`);
       await execution.run(

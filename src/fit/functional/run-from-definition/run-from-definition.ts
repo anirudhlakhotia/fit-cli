@@ -303,6 +303,7 @@ function runLabelParts(
   run: ResolvedExecutionRun,
   clusterVersion?: string,
   cng?: boolean,
+  capella?: boolean,
 ): RunLabelParts {
   // An analytics run on a cbdino cluster is a self-managed Enterprise Analytics cluster.
   const enterpriseAnalytics = clusterMode === "cbdinocluster" && run.type === "functional" && run.analytics === true;
@@ -311,6 +312,7 @@ function runLabelParts(
     ...(clusterMode ? { clusterMode } : {}),
     ...(clusterVersion ? { clusterVersion } : {}),
     ...(enterpriseAnalytics ? { enterpriseAnalytics: true } : {}),
+    ...(capella ? { capella: true } : {}),
     sdkValue: run.sdk.value,
     ...(run.performerVersion ? { performerVersion: run.performerVersion } : {}),
     type: run.type,
@@ -339,6 +341,10 @@ function isEnterpriseAnalyticsGroup(group: ResolvedExecutionGroup): boolean {
   return group.type === "functional" && group.cbdinocluster?.config.columnar === true;
 }
 
+function isCapellaGroup(group: ResolvedExecutionGroup): boolean {
+  return group.type === "functional" && group.cbdinocluster?.capella !== undefined;
+}
+
 /** Print what an iteration resolved to, so a CI log shows the run's inputs. */
 function announce(
   group: ResolvedExecutionGroup,
@@ -365,6 +371,7 @@ function announce(
     run,
     clusterVersionLabel(group),
     cng,
+    isCapellaGroup(group),
   );
   console.log(`\n=== ${formatRunLabel(run.path, parts)} (${group.instance.kind}, ${run.type}) ===`);
   const instSeg = instanceLabel(run.path, parts.instanceKind);
@@ -373,11 +380,13 @@ function announce(
       ? `Running on AWS EC2 instance ${run.path.instanceIndex + 1}`
       : "Running locally on this machine";
   console.log(`  ${instSeg}:  ${instDesc}`);
-  const clusterSeg = clusterSegmentLabel(run.path, parts.clusterMode, parts.clusterVersion, parts.enterpriseAnalytics);
+  const clusterSeg = clusterSegmentLabel(run.path, parts.clusterMode, parts.clusterVersion, parts.enterpriseAnalytics, parts.capella);
   if (clusterSeg) {
     let clusterDesc: string;
     if (parts.enterpriseAnalytics) {
       clusterDesc = `Self-managed Enterprise Analytics ${parts.clusterVersion ?? ""} cluster, provisioned via cbdinocluster`.replace(/\s+/g, " ").trim();
+    } else if (parts.capella) {
+      clusterDesc = `Capella ${parts.clusterVersion ?? ""} cluster, provisioned via cbdinocluster cloud deployer`.replace(/\s+/g, " ").trim();
     } else if (parts.clusterVersion) {
       clusterDesc = `Couchbase Server ${parts.clusterVersion} cluster, provisioned via cbdinocluster`;
     } else if (parts.clusterMode === "connection" || parts.clusterMode === "useExisting") {
@@ -659,9 +668,10 @@ export async function runTests(
     run.analytics ? ANALYTICS_TEST_DRIVER_MODULE : DEFAULT_TEST_DRIVER_MODULE,
   );
   artifacts.push(...testRun.artifacts);
+  const isCapella = run.cluster?.flavour === "internal-capella" || run.cluster?.flavour === "production-capella";
   const pathLabel = formatRunLabel(
     run.path,
-    runLabelParts(execution.kind === "remote" ? "aws" : "localhost", clusterMode, run, clusterVersion, run.cluster?.cng !== undefined),
+    runLabelParts(execution.kind === "remote" ? "aws" : "localhost", clusterMode, run, clusterVersion, run.cluster?.cng !== undefined, isCapella),
   );
   const iterationLabel = (label: string) => `Run ${run.path.runIndex ?? 0} ${label}`;
   details.push(
@@ -1082,10 +1092,12 @@ function failureLabel(group: ResolvedExecutionGroup, run?: ResolvedExecutionRun)
   const clusterMode = group.type === "functional" ? group.clusterMode : undefined;
   const clusterVersion = clusterVersionLabel(group);
   const cng = group.type === "functional" ? group.cng : undefined;
+  const capella = isCapellaGroup(group);
   if (run) {
-    return formatRunLabel(run.path, runLabelParts(instanceKind, clusterMode, run, clusterVersion, cng));
+    const isRunCapella = run.type === "functional" && (run.cluster?.flavour === "internal-capella" || run.cluster?.flavour === "production-capella");
+    return formatRunLabel(run.path, runLabelParts(instanceKind, clusterMode, run, clusterVersion, cng, isRunCapella));
   }
-  return [instanceLabel(group.path, instanceKind), clusterSegmentLabel(group.path, clusterMode, clusterVersion, isEnterpriseAnalyticsGroup(group))]
+  return [instanceLabel(group.path, instanceKind), clusterSegmentLabel(group.path, clusterMode, clusterVersion, isEnterpriseAnalyticsGroup(group), capella)]
     .filter((segment): segment is string => Boolean(segment))
     .join(" / ");
 }
@@ -1781,7 +1793,7 @@ export async function runFromDefinition(
           }
           if (clusterState) {
             setLogContext({
-              cluster: clusterSegmentLabel(activeCycle.path, activeCycle.clusterMode, clusterVersionLabel(activeCycle), isEnterpriseAnalyticsGroup(activeCycle)),
+              cluster: clusterSegmentLabel(activeCycle.path, activeCycle.clusterMode, clusterVersionLabel(activeCycle), isEnterpriseAnalyticsGroup(activeCycle), isCapellaGroup(activeCycle)),
             });
           }
         } else {
