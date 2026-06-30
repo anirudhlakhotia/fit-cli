@@ -454,7 +454,7 @@ export function writeFitDefinition(
   mkdirSync(runDir, { recursive: true, mode: 0o700 });
   const path = fitDefinitionPath(runDir, format);
   writeFileSync(path, formatFitDefinition(definition, format));
-  recordRecentDefinition(path, definition.description ?? "");
+  recordRecentDefinition(path, definition.description || describeDefinition(definition));
   return {
     path,
     artifact: artifactFromPath(path, "Generated fit definition file for reruns", runDir),
@@ -471,7 +471,7 @@ export function writeFitSituationalDefinition(
   mkdirSync(runDir, { recursive: true, mode: 0o700 });
   const path = fitDefinitionPath(runDir, format);
   writeFileSync(path, formatFitSituationalDefinition(definition, format));
-  recordRecentDefinition(path, definition.description ?? "");
+  recordRecentDefinition(path, definition.description || describeDefinition(definition));
   return {
     path,
     artifact: artifactFromPath(path, "Generated fit definition file for reruns", runDir),
