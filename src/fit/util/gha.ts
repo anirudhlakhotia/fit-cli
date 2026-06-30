@@ -85,6 +85,21 @@ export async function appendRunSummaryToGhaSummary(result: RunSummary): Promise<
 }
 
 /**
+ * Append a "Run artifacts" section to $GITHUB_STEP_SUMMARY with the
+ * `fit archive fetch` command so reviewers can pull the run down locally.
+ * No-ops outside GHA or when GITHUB_STEP_SUMMARY is unset.
+ */
+export async function appendArtifactFetchToGhaSummary(s3Uri: string): Promise<void> {
+  if (!process.env.GITHUB_STEP_SUMMARY) return;
+
+  await core.summary
+    .addHeading("Run artifacts (S3)", 3)
+    .addRaw(`<p>Artifacts uploaded — download locally with:</p>`)
+    .addCodeBlock(`fit archive fetch ${s3Uri}`, "sh")
+    .write({ overwrite: false });
+}
+
+/**
  * Emits a GHA notice annotation with a direct link to the artifact bundle for
  * this run. Links to the S3 zip when available (preferred — survives beyond the
  * GHA retention window), otherwise falls back to the GHA run page.
