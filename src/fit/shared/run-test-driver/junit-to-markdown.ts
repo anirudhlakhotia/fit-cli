@@ -248,7 +248,7 @@ const RED = "\x1b[31m";
 const RESET = "\x1b[0m";
 
 /** Render a JunitMarkdownData object as a plain-text table for terminal output. */
-export function renderJunitPlainText(data: JunitMarkdownData): string {
+export function renderJunitPlainText(data: JunitMarkdownData, maxFailuresPerPackage = 3): string {
   const { packages, failingCases, totalPassed, totalFailed, totalSkipped, totalTimeMs } = data;
   const lines: string[] = [];
 
@@ -273,32 +273,58 @@ export function renderJunitPlainText(data: JunitMarkdownData): string {
     return `${pkg.padEnd(pkgWidth)} | ${pass.padStart(passWidth)} | ${skip.padStart(skipWidth)} | ${failStr} | ${pct.padStart(pctWidth)} | ${time.padStart(timeWidth)}`;
   };
 
-  lines.push(row(pkgHeader, passHeader, skipHeader, failHeader, pctHeader, timeHeader));
-  lines.push(sep);
-  for (const s of packages) {
-    lines.push(row(s.pkg, String(s.passed), String(s.skipped), String(s.failed), pctSuccess(s.passed, s.failed), formatTime(s.timeMs), true));
-  }
-  lines.push(sep);
-  lines.push(row("TOTAL", String(totalPassed), String(totalSkipped), String(totalFailed), pctSuccess(totalPassed, totalFailed), formatTime(totalTimeMs), true));
+  const renderTable = (): void => {
+    lines.push(row(pkgHeader, passHeader, skipHeader, failHeader, pctHeader, timeHeader));
+    lines.push(sep);
+    for (const s of packages) {
+      lines.push(row(s.pkg, String(s.passed), String(s.skipped), String(s.failed), pctSuccess(s.passed, s.failed), formatTime(s.timeMs), true));
+    }
+    lines.push(sep);
+    lines.push(row("TOTAL", String(totalPassed), String(totalSkipped), String(totalFailed), pctSuccess(totalPassed, totalFailed), formatTime(totalTimeMs), true));
+  };
+
+  renderTable();
 
   if (failingCases.length > 0) {
     lines.push("");
     lines.push("Failures:");
+
+    // Group by package so we can cap output per package.
+    const byPackage = new Map<string, FailingTestCase[]>();
     for (const tc of failingCases) {
-      const simpleClass = removePackage(tc.classname);
-      lines.push(`  ${RED}${simpleClass}.${tc.name}${RESET}`);
-      for (const issue of tc.issues) {
-        if (issue.message) {
-          lines.push(`    ${issue.message}`);
-        }
-        if (issue.body) {
-          // 10 sometimes isn't quite enough to reach the relevant frame.
-          for (const line of truncate(issue.body).split("\n").slice(0, 13)) {
-            lines.push(`      ${line}`);
+      const dotIdx = tc.classname.lastIndexOf(".");
+      const pkg = dotIdx === -1 ? "(default)" : tc.classname.substring(0, dotIdx);
+      const arr = byPackage.get(pkg) ?? [];
+      arr.push(tc);
+      byPackage.set(pkg, arr);
+    }
+
+    for (const [pkg, cases] of byPackage) {
+      const shown = cases.slice(0, maxFailuresPerPackage);
+      const hidden = cases.length - shown.length;
+      for (const tc of shown) {
+        const simpleClass = removePackage(tc.classname);
+        lines.push(`  ${RED}${simpleClass}.${tc.name}${RESET}`);
+        for (const issue of tc.issues) {
+          if (issue.message) {
+            lines.push(`    ${issue.message}`);
+          }
+          if (issue.body) {
+            // 10 sometimes isn't quite enough to reach the relevant frame.
+            for (const line of truncate(issue.body).split("\n").slice(0, 13)) {
+              lines.push(`      ${line}`);
+            }
           }
         }
       }
+      if (hidden > 0) {
+        lines.push(`  ${RED}... and ${hidden} more failure(s) in ${pkg}${RESET}`);
+      }
     }
+
+    // Repeat the summary table so it's visible without scrolling past a wall of failures.
+    lines.push("");
+    renderTable();
   }
 
   return lines.join("\n") + "\n";
