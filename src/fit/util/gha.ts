@@ -19,7 +19,6 @@ interface RunSummary {
   /** Rich path label (`aws1 / cbdino1 / java:main / func`), precomputed by the run loop. */
   pathLabel: string;
   sdk: string;
-  type: string;
   ok: boolean;
   summary?: { testsRun: number; failures: number; errors: number; skipped: number };
   /** Local path to the surefire-reports dir for this run; appended as a JUnit table if present. */
@@ -37,30 +36,22 @@ export async function appendRunSummaryToGhaSummary(result: RunSummary): Promise<
     return;
   }
 
-  const { pathLabel, sdk, type, ok, summary, surefireDir } = result;
+  const { pathLabel, sdk, ok, summary, surefireDir } = result;
   const status = ok ? "✅ PASS" : "❌ FAIL";
   const sizeBefore = summaryFileSize();
 
-  const rows: SummaryTableRow[] = [
-    [{ data: "Detail", header: true }, { data: "Value", header: true }],
-    ["Path", pathLabel],
-    ["SDK", sdk],
-    ["Type", type],
-    ...(summary
-      ? ([
-          ["Tests run", String(summary.testsRun)],
-          ["Failures", String(summary.failures)],
-          ["Errors", String(summary.errors)],
-          ["Skipped", String(summary.skipped)],
-        ] as SummaryTableRow[])
-      : []),
-    [{ data: "Result", header: true }, status],
-  ];
-
-  await core.summary
-    .addHeading(`${pathLabel} (${sdk}) — ${status}`, 3)
-    .addTable(rows)
-    .write({ overwrite: false });
+  let s = core.summary.addHeading(`${pathLabel} (${sdk}) — ${status}`, 3);
+  if (summary) {
+    const rows: SummaryTableRow[] = [
+      [{ data: "Metric", header: true }, { data: "Value", header: true }],
+      ["Tests run", String(summary.testsRun)],
+      ["Failures", String(summary.failures)],
+      ["Errors", String(summary.errors)],
+      ["Skipped", String(summary.skipped)],
+    ];
+    s = s.addTable(rows);
+  }
+  await s.write({ overwrite: false });
 
   // Append the per-package JUnit table directly to the summary file.
   // appendFileSync is used here rather than core.summary because core.summary
