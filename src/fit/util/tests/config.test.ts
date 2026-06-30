@@ -155,6 +155,8 @@ const STUB_DEFAULTS = {
   enterpriseAnalyticsVersion: "2.2.0-1166",
   caoOperatorVersion: "2.9.2",
   cngVersion: "1.1.0-135",
+  defaultCapellaEnvironment: "dev",
+  defaultResultsEnvironment: "dev",
 };
 
 const TEST_ENVIRONMENTS = {

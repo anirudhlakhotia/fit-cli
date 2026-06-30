@@ -31,9 +31,9 @@ export const ROSA_AWS_SECRET_ID = "fit-cli/rosa/openshift";
 /** Default OpenShift login user when the ROSA secret doesn't override it. */
 export const DEFAULT_ROSA_USERNAME = "cluster-admin";
 
-/** Default environment block names (the "dev" blocks in environments.json5). */
-export const DEFAULT_CAPELLA_ENV = "dev";
-export const DEFAULT_RESULTS_ENV = "dev";
+/** Default environment block names — sourced from environments.json5 defaults. */
+export const DEFAULT_CAPELLA_ENV = loadEnvironments().defaults.defaultCapellaEnvironment;
+export const DEFAULT_RESULTS_ENV = loadEnvironments().defaults.defaultResultsEnvironment;
 /** Default user for the hosted results database when the secret doesn't override it. */
 const DEFAULT_RESULTS_DB_USERNAME = "postgres";
 
@@ -797,7 +797,7 @@ function firstEnv(env: NodeJS.ProcessEnv, names: string[]): string | undefined {
 
 /**
  * Resolve the Capella control-plane settings for a Capella environment (a key
- * under `capella` in environments.json5; default "dev").
+ * under `capella` in environments.json5; default "prod").
  *
  * endpoint/organizationId/username are the non-secret registry values (username is
  * the shared account for the environment). Only the password is a secret: a personal

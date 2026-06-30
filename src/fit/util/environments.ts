@@ -41,6 +41,10 @@ export interface Defaults {
   caoOperatorVersion: string;
   /** Default Cloud Native Gateway (Protostellar gateway) version. */
   cngVersion: string;
+  /** Default Capella environment key (a key under `capella` in this file). */
+  defaultCapellaEnvironment: string;
+  /** Default results environment key (a key under `results` in this file). */
+  defaultResultsEnvironment: string;
 }
 
 export interface EnvironmentsFile {
