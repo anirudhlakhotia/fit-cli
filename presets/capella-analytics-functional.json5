@@ -1,0 +1,76 @@
+{
+  preset: {
+    order: 31,
+    description: 'Analytics functional tests against a Capella Analytics (cloud) cluster',
+    expectedTime: '< 30 min',
+  },
+  version: 1,
+  type: 'fit',
+  description: 'Capella Analytics functional tests',
+  instances: [
+    {
+      aws: {},
+      setup: {
+        capellaEnvironment: 'prod',
+      },
+      clusters: [
+        {
+          clusterConfig: 'cluster-0',
+          sessions: [
+            {
+              performer: {
+                image: '{{PERFORMER_IMAGE}}',
+              },
+              runs: [
+                {
+                  type: 'analytics-functional',
+                  fitConfig: 'fit-config-0',
+                  tests: {
+                    presets: ['all'],
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+  clusterConfigs: [
+    {
+      id: 'cluster-0',
+      cbdinocluster: {
+        config: {
+          // cbdino wire flag: `columnar: true` with `deployer: cloud` builds a
+          // Capella Analytics cluster in the Capella cloud. Capella credentials
+          // come from your cbdinocluster init config (~/.cbdinocluster).
+          columnar: true,
+          nodes: [
+            {
+              count: 4,
+            },
+          ],
+          deployer: 'cloud',
+          cloud: {
+            'cloud-provider': 'aws',
+          },
+        },
+        onClusterExists: 'useExisting',
+      },
+    },
+  ],
+  fitConfigs: [
+    {
+      id: 'fit-config-0',
+      config: {
+        clusterAccess: {
+          // The Columnar SDK performer connects directly to the Capella Analytics endpoint.
+          performer: {
+            connectionString: 'couchbases://${defaultHostname}',
+            tls: {insecure: true},
+          },
+        },
+      },
+    },
+  ],
+}

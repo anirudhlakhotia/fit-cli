@@ -52,6 +52,12 @@ export interface SelectedCluster {
    * See build-fit-configuration's performer-host rewrite.
    */
   analyticsLoadBalancerHost?: string;
+  /**
+   * True for a Capella Analytics (cloud) cluster. The management REST API
+   * (port 18091 / /pools/default) is not available on these clusters, so
+   * sanity checks that curl that endpoint must be skipped.
+   */
+  capellaAnalytics?: boolean;
 }
 
 /** The outcome of the cluster-select workflow. */

@@ -36,11 +36,13 @@ export async function chooseSdk(
 export async function chooseAnalyticsFunctionalSdk(
   message: string = "Which Analytics SDK do you want to test (Columnar SDK or Enterprise Analytics SDK)?",
   promptIdPrefix?: string,
+  defaultSdkValue?: SdkValue,
 ): Promise<Sdk> {
   const value = await select<SdkValue>({
     promptId: qualifyPromptId("sdk.choose.analytics", promptIdPrefix),
     message,
     choices: ANALYTICS_FUNCTIONAL_SDKS.map((sdk) => ({ name: sdk.name, value: sdk.value })),
+    ...(defaultSdkValue !== undefined ? { default: defaultSdkValue } : {}),
   });
   return sdkByValue(value)!;
 }

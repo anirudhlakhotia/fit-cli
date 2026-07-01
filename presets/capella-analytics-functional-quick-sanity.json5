@@ -1,0 +1,76 @@
+// Quick sanity for Analytics functional tests against a Capella Analytics (cloud)
+// cluster — runs a connection test and a basic query test rather than the full
+// columnar-test-driver suite. See capella-analytics-functional for the full run.
+{
+  preset: {
+    order: 33,
+    description: 'Quick sanity for Analytics functional tests against a Capella Analytics (cloud) cluster.',
+    expectedTime: '< 10 minutes',
+  },
+  version: 1,
+  type: 'fit',
+  description: 'Capella Analytics functional quick sanity',
+  instances: [
+    {
+      aws: {},
+      setup: {
+        capellaEnvironment: 'prod',
+      },
+      clusters: [
+        {
+          clusterConfig: 'cluster-0',
+          sessions: [
+            {
+              performer: {
+                image: '{{PERFORMER_IMAGE}}',
+                onPortInUse: 'reuse',
+              },
+              runs: [
+                {
+                  type: 'analytics-functional',
+                  fitConfig: 'fit-config-0',
+                  tests: {
+                    classes: ['com.couchbase.fit.columnar.tests.query.ClusterConnectionTest','com.couchbase.fit.columnar.tests.query.QueryTest'],
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+  clusterConfigs: [
+    {
+      id: 'cluster-0',
+      cbdinocluster: {
+        config: {
+          columnar: true,
+          nodes: [
+            {
+              count: 4,
+            },
+          ],
+          deployer: 'cloud',
+          cloud: {
+            'cloud-provider': 'aws',
+          },
+        },
+        onClusterExists: 'useExisting',
+      },
+    },
+  ],
+  fitConfigs: [
+    {
+      id: 'fit-config-0',
+      config: {
+        clusterAccess: {
+          performer: {
+            connectionString: 'couchbases://${defaultHostname}',
+            tls: {insecure: true},
+          },
+        },
+      },
+    },
+  ],
+}

@@ -138,7 +138,16 @@ export function generatedFitConfigurationPiece(
           username: cluster.credentials.username,
           password: cluster.credentials.password,
           tls: cluster.tls,
-          rest: { hostname: firstHostname(cluster.defaultHostname), resolveDnsSrv: false },
+          // For Enterprise Analytics (load-balanced cbdinocluster): use the first node
+          // hostname so REST talks to a single node; no DNS SRV. For Capella Analytics
+          // (cloud, cbdinocluster cloud deployer): use the ${defaultHostname} template
+          // and resolve DNS SRV, matching how the cloud cluster exposes its endpoint.
+          rest: {
+            hostname: cluster.analyticsLoadBalancerHost
+              ? firstHostname(cluster.defaultHostname)
+              : "${defaultHostname}",
+            resolveDnsSrv: !cluster.analyticsLoadBalancerHost,
+          },
           // Columnar / Analytics does not support direct SSH access.
           ssh: null,
           // proxy.hostname: where the performer reaches the FIT proxy. The performer
@@ -153,10 +162,8 @@ export function generatedFitConfigurationPiece(
           // the proxy can't dial a comma-separated string (DNS lookup fails, it falls
           // back to the literal string as one host → "unexpected end of stream"). For a
           // load-balanced Enterprise Analytics cluster the proxy must forward to the
-          // single nginx LB host, so pin it explicitly when we know it.
-          //
-          // TODO when Capella Analytics is wired up: like the operational branch, that
-          // case wants proxy: null (no host-side proxy for a cloud cluster) — split here.
+          // single nginx LB host, so pin it explicitly when we know it. For Capella
+          // Analytics (cloud, single endpoint) no override is needed.
           proxy: {
             hostname: "host.docker.internal",
             ...(cluster.analyticsLoadBalancerHost

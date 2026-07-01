@@ -78,7 +78,7 @@ export async function askFitGerritRef(promptIdPrefix?: string): Promise<string |
 }
 
 type DefinitionBuilderAction = "functional" | "situational" | "performance" | "done";
-type FunctionalConnectivity = "operational" | "cng" | "enterprise-analytics" | "capella";
+type FunctionalConnectivity = "operational" | "cng" | "enterprise-analytics" | "capella" | "capella-analytics";
 
 interface DefinitionBuilderState {
   gerritRefAsked: boolean;
@@ -111,6 +111,7 @@ async function chooseFunctionalConnectivity(promptIdPrefix: string): Promise<Fun
       { name: "Cloud Native Gateway (couchbase2://)", value: "cng" },
       { name: "Enterprise Analytics (self-hosted)", value: "enterprise-analytics" },
       { name: "Capella", value: "capella" },
+      { name: "Capella Analytics (cloud, was called Columnar)", value: "capella-analytics" },
     ],
   });
 }
@@ -135,7 +136,9 @@ export function functionalInstanceConnectivity(
       ? clusterConfigs.find((cc) => cc.id === cluster.clusterConfig)?.cbdinocluster
       : undefined);
   if (cbdinocluster?.capella !== undefined) return "capella";
-  if (cbdinocluster?.config.columnar === true) return "enterprise-analytics";
+  if (cbdinocluster?.config.columnar === true) {
+    return cbdinocluster.config.deployer === "cloud" ? "capella-analytics" : "enterprise-analytics";
+  }
   if (cbdinocluster?.config.cao !== undefined) return "cng";
   return "operational";
 }
@@ -149,6 +152,9 @@ async function chooseFunctionalDefinitionCluster(connectivity: FunctionalConnect
   }
   if (connectivity === "capella") {
     return { kind: "cbdinocluster", def: await askClusterDef({ capellaCloudProvider }) };
+  }
+  if (connectivity === "capella-analytics") {
+    return { kind: "cbdinocluster", def: await askClusterDef({ capellaAnalytics: true }) };
   }
   return chooseDefinitionCluster();
 }
@@ -288,10 +294,10 @@ async function addFunctionalRun(
   const promptIdPrefix = `fit.definition.run.${runIndex + 1}.functional`;
   const execution = createLocalFitExecutionContext();
   const connectivity = await chooseFunctionalConnectivity(promptIdPrefix);
-  const analytics = connectivity === "enterprise-analytics";
-
+  const analytics = connectivity === "enterprise-analytics" || connectivity === "capella-analytics";
   const sdk = analytics
-    ? await chooseAnalyticsFunctionalSdk("Which Analytics SDK do you want to test?", promptIdPrefix)
+    ? await chooseAnalyticsFunctionalSdk("Which Analytics SDK do you want to test?", promptIdPrefix,
+        connectivity === "capella-analytics" ? "columnar-java" : undefined)
     : await chooseSdk("Which SDK do you want to test with FIT functional?", promptIdPrefix);
   const version = await askPerformerTag(sdk, promptIdPrefix);
   const onPortInUse = await askPortInUsePolicy(promptIdPrefix);
@@ -331,6 +337,8 @@ async function addFunctionalRun(
         ? "\nStarting a new FIT Analytics instance. cbdinocluster builds a self-managed Enterprise Analytics cluster (fronted by an nginx load balancer)."
         : connectivity === "capella"
           ? `\nStarting a new FIT Capella instance. cbdinocluster creates a real Capella cluster on ${capellaCloudProvider!.toUpperCase()} via the Capella control-plane API.`
+        : connectivity === "capella-analytics"
+          ? "\nStarting a new FIT Capella Analytics instance. cbdinocluster creates a real Capella Analytics cluster via the Capella control-plane API (cloud deployer)."
           : "\nStarting a new FIT functional instance. Runs added now will share one cluster lifetime on that instance.",
   );
   const instance = await chooseInstanceExecution(promptIdPrefix);
@@ -372,11 +380,15 @@ function functionalDefinitionCluster(instance: InstanceLifetime, clusterConfigs:
       kind: "cbdinocluster",
       def: {
         nodeCount: firstNode.count,
-        version: firstNode.version,
+        version: firstNode.version ?? "",
         services: firstNode.services ?? [],
         cng: clusterData.cbdinocluster.config.cao !== undefined,
-        // cbdino's wire `columnar: true` means a self-managed Enterprise Analytics cluster.
-        ...(clusterData.cbdinocluster.config.columnar === true ? { enterpriseAnalytics: true } : {}),
+        // cbdino's wire `columnar: true` + `deployer: cloud` = Capella Analytics; without = Enterprise Analytics.
+        ...(clusterData.cbdinocluster.config.columnar === true
+          ? clusterData.cbdinocluster.config.deployer === "cloud"
+            ? { capellaAnalytics: true, cloudProvider: (clusterData.cbdinocluster.config.cloud?.["cloud-provider"] ?? "aws") as "aws" | "gcp" }
+            : { enterpriseAnalytics: true }
+          : {}),
         ...(clusterData.cbdinocluster.capella ? { capellaCloudProvider: clusterData.cbdinocluster.capella.cloudProvider } : {}),
       },
     };

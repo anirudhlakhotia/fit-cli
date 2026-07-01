@@ -12,13 +12,15 @@ import { sdkPerformerImageBasename } from "../../../util/sdk/sdks.js";
 function describeClusterSource(cluster: ClusterLifetime): string {
   if (cluster.cbdinocluster) {
     const nodes = cluster.cbdinocluster.config.nodes
-      .map((n) => `${n.count}n@${n.version}`)
+      .map((n) => (n.version ? `${n.count}n@${n.version}` : `${n.count}n`))
       .join("+");
     const cng = cluster.cbdinocluster.config.cao ? "+CNG" : "";
-    // `columnar: true` allocates a self-managed Enterprise Analytics cluster.
-    const ea = cluster.cbdinocluster.config.columnar ? "EA," : "";
+    // `columnar: true` + `deployer: cloud` = Capella Analytics (CA); without deployer = Enterprise Analytics (EA).
+    const analyticsPrefix = cluster.cbdinocluster.config.columnar
+      ? cluster.cbdinocluster.config.deployer === "cloud" ? "CA," : "EA,"
+      : "";
     const capella = cluster.cbdinocluster.capella ? `Capella(${cluster.cbdinocluster.capella.cloudProvider}),` : "";
-    return `cbdino(${capella}${ea}${nodes}${cng})`;
+    return `cbdino(${capella}${analyticsPrefix}${nodes}${cng})`;
   }
   if (cluster.connection) {
     return "connection";
