@@ -44,6 +44,7 @@ async function loadPresetMap(): Promise<Record<string, string>> {
   // see as static references; passing either through a variable hides them from the bundler.
   return {
     "capella-analytics-functional": ((await import("../../../../presets/capella-analytics-functional.json5", { with: { type: "text" } })) as { default: string }).default,
+    "capella-analytics-functional-quick-sanity": ((await import("../../../../presets/capella-analytics-functional-quick-sanity.json5", { with: { type: "text" } })) as { default: string }).default,
     "capella-functional":          ((await import("../../../../presets/capella-functional.json5",          { with: { type: "text" } })) as { default: string }).default,
     "capella-quick-sanity":        ((await import("../../../../presets/capella-quick-sanity.json5",        { with: { type: "text" } })) as { default: string }).default,
     "cng-functional":              ((await import("../../../../presets/cng-functional.json5",              { with: { type: "text" } })) as { default: string }).default,

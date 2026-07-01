@@ -92,3 +92,16 @@ export function capellaFunctionalCbdinoclusterInitArgs(
   ].join(" ");
 }
 
+/**
+ * Like {@link situationalCbdinoclusterInitArgs} but without AWS: Capella Analytics
+ * uses cbdinocluster's `cloud` deployer (Capella control plane) for cluster
+ * allocation rather than direct EC2, so no `--aws-region` is needed. Capella is
+ * left enabled so `--auto` writes the capella block from the `CAPELLA_*` env vars
+ * that fit-cli uploads before init runs (see `uploadCapellaCredsForCloudDeployer`).
+ */
+export function capellaAnalyticsCbdinoclusterInitArgs(
+  dockerNetwork: string = DEFAULT_CBDINOCLUSTER_DOCKER_NETWORK,
+): string {
+  return baseCbdinoclusterInitArgs(dockerNetwork, false);
+}
+

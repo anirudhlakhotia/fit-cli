@@ -674,6 +674,105 @@ async function createDefaultBucketAt(
   }
 }
 
+/**
+ * Add the execution host's public IP to a Capella cloud cluster's allow list so
+ * the SDK performer can reach the cluster. Both Capella Server and Capella
+ * Analytics clusters start with an empty allow list — without this step every
+ * connection times out.
+ *
+ * Discovers the public IP via the AWS IMDS (fast, works on EC2 without extra
+ * network egress) and falls back to ifconfig.me. Logs a warning and continues
+ * rather than failing if the IP can't be determined or the add fails, because the
+ * run will surface a clearer "connection timed out" error than a hard failure here.
+ */
+async function allowHostIpOnCapellaCluster(
+  cbdinocluster: string,
+  clusterId: string,
+  execution: ClusterCommandExecutor,
+): Promise<void> {
+  let publicIp: string | undefined;
+  for (const url of ["http://169.254.169.254/latest/meta-data/public-ipv4", "https://ifconfig.me"]) {
+    try {
+      const out = (await execution.capture("curl", ["-sf", "--max-time", "3", url], undefined, { quiet: true })).trim();
+      if (/^\d+\.\d+\.\d+\.\d+$/.test(out)) {
+        publicIp = out;
+        break;
+      }
+    } catch {
+      // Try next URL
+    }
+  }
+  if (!publicIp) {
+    console.warn(
+      `\n⚠ setup-cluster: couldn't determine public IP — skipping Capella allow-list update.\n` +
+        `  If the performer can't connect, add your IP manually:\n` +
+        `  cbdinocluster allow-list add ${clusterId} <your-ip>/32`,
+    );
+    return;
+  }
+  const cidr = `${publicIp}/32`;
+  console.log(`\n→ setup-cluster: adding ${cidr} to Capella cluster allow list…`);
+  try {
+    await execution.run(cbdinocluster, ["allow-list", "add", clusterId, cidr]);
+    console.log(`  ✓ ${cidr} added to allow list.`);
+  } catch (err) {
+    console.warn(`\n⚠ setup-cluster: failed to add ${cidr} to allow list: ${(err as Error).message}`);
+  }
+}
+
+/**
+ * Create the default FIT database user on a newly-allocated Capella cloud
+ * cluster (Capella Server or Capella Analytics). cbdinocluster's cloud deployer
+ * doesn't auto-create one the way the docker deployer does — without this,
+ * connections fail with "Unauthorized user" (code 20000).
+ *
+ * Uses {@link CAPELLA_DEFAULT_CREDENTIALS}, matching what `buildSelectedClusterFromConnstr`
+ * assigns for a Capella-flavoured connection string, so no further plumbing is needed.
+ */
+async function createCloudDeployerUser(
+  cbdinocluster: string,
+  clusterId: string,
+  execution: ClusterCommandExecutor,
+): Promise<void> {
+  const { username, password } = CAPELLA_DEFAULT_CREDENTIALS;
+  console.log(`\n→ setup-cluster: creating SDK user ${username} for Capella cluster ${clusterId}…`);
+  try {
+    await execution.run(
+      cbdinocluster,
+      ["users", "add", clusterId, username, `--password=${password}`, "--can-read", "--can-write"],
+      undefined,
+      { display: `cbdinocluster users add ${username}` },
+    );
+    console.log(`  ✓ Database user "${username}" ready.`);
+  } catch (err) {
+    console.warn(`\n⚠ setup-cluster: failed to create database user "${username}": ${(err as Error).message}`);
+  }
+}
+
+/**
+ * Create the "default" bucket FIT tests expect on a newly-allocated Capella
+ * Server cluster. Capella doesn't auto-create one, and skipBucketCreation=true
+ * in FITConfiguration means the test-driver won't either. Not needed for Capella
+ * Analytics, which has no KV service to hold a bucket.
+ */
+async function createCapellaDefaultBucket(
+  cbdinocluster: string,
+  clusterId: string,
+  execution: ClusterCommandExecutor,
+): Promise<void> {
+  console.log(`\n→ setup-cluster: creating default bucket on Capella cluster ${clusterId}…`);
+  try {
+    await execution.run(
+      cbdinocluster,
+      ["buckets", "add", clusterId, "default", "--ram-quota-mb=100"],
+      undefined,
+      { display: "cbdinocluster buckets add default" },
+    );
+  } catch (err) {
+    console.warn(`\n⚠ setup-cluster: failed to create default bucket for Capella cluster — tests will fail: ${(err as Error).message}`);
+  }
+}
+
 /** Allocate a fresh cluster from the resolved plan and resolve it for the run. */
 async function allocate(
   cbdinocluster: string,
@@ -703,49 +802,18 @@ async function allocate(
     return FAILED({ cbdinocluster });
   }
 
-  // Capella cloud clusters: allowlist the current machine's public IP so the
-  // REST (18091) and SDK ports are reachable. Without this the connection times
-  // out completely. Then create a database user with the default FIT credentials
-  // so the SDK performer can connect.
+  // Capella cloud clusters (Capella Server or Capella Analytics) start with an
+  // empty allow list and no database user — cbdinocluster's cloud deployer
+  // doesn't auto-create either the way the docker deployer does. Without the
+  // allow-list entry connections time out; without the user they fail with
+  // "Unauthorized user".
   if (deployer === "cloud") {
-    try {
-      const rawIp = await execution.capture("curl", ["-sf", "--max-time", "5", "https://checkip.amazonaws.com"]);
-      const cidr = `${rawIp.trim()}/32`;
-      console.log(`→ setup-cluster: allowlisting ${cidr} for Capella cluster ${allocated.clusterId}`);
-      await execution.run(cbdinocluster, ["allow-list", "add", allocated.clusterId, cidr], undefined, {
-        display: `cbdinocluster allow-list add (${cidr})`,
-      });
-    } catch (err) {
-      console.error(`⚠ setup-cluster: failed to allowlist current IP for Capella cluster — sanity check may fail: ${(err as Error).message}`);
-    }
-    // Create the default FIT credentials so the SDK performer can connect.
-    // `cbdinocluster users-add` polls until the user is ready before returning.
-    try {
-      console.log(`→ setup-cluster: creating SDK user Administrator for Capella cluster ${allocated.clusterId}`);
-      await execution.run(
-        cbdinocluster,
-        ["users", "add", allocated.clusterId, CAPELLA_DEFAULT_CREDENTIALS.username, `--password=${CAPELLA_DEFAULT_CREDENTIALS.password}`, "--can-read", "--can-write"],
-        undefined,
-        { display: "cbdinocluster users add Administrator" },
-      );
-    } catch (err) {
-      console.error(`⚠ setup-cluster: failed to create SDK user for Capella cluster — performer may fail to connect: ${(err as Error).message}`);
-    }
-    // Capella does not auto-create a "default" bucket.  FIT tests expect one, and
-    // skipBucketCreation=true in FITConfiguration means the test-driver won't do it
-    // either, so fit-cli must create it here.
-    // `cbdinocluster buckets add` uses the Capella v4 API (stored admin creds), avoiding
-    // the privilege issues that arise from hitting port 18091 with a database user.
-    try {
-      console.log(`→ setup-cluster: creating default bucket on Capella cluster ${allocated.clusterId}`);
-      await execution.run(
-        cbdinocluster,
-        ["buckets", "add", allocated.clusterId, "default", "--ram-quota-mb=100"],
-        undefined,
-        { display: "cbdinocluster buckets add default" },
-      );
-    } catch (err) {
-      console.error(`⚠ setup-cluster: failed to create default bucket for Capella cluster — tests will fail: ${(err as Error).message}`);
+    await allowHostIpOnCapellaCluster(cbdinocluster, allocated.clusterId, execution);
+    await createCloudDeployerUser(cbdinocluster, allocated.clusterId, execution);
+    // Capella Analytics has no KV service, so there's no bucket to create — and
+    // no bucket to expect, since skipBucketCreation only matters for KV-backed tests.
+    if (!config.columnar) {
+      await createCapellaDefaultBucket(cbdinocluster, allocated.clusterId, execution);
     }
   }
 
@@ -755,11 +823,18 @@ async function allocate(
     await enableIngresses(cbdinocluster, allocated.clusterId, execution);
   }
 
-  const cluster = await selectedClusterFor(cbdinocluster, allocated.clusterId, execution, cng, allocated.caoHosts, loadBalanced);
+  let cluster = await selectedClusterFor(cbdinocluster, allocated.clusterId, execution, cng, allocated.caoHosts, loadBalanced);
 
   if (cng && allocated.caoHosts) {
     const { username, password } = cluster?.credentials ?? { username: "Administrator", password: "password" };
     await createCaoDefaultBucket(allocated.caoHosts.uiHost, username, password, execution);
+  }
+
+  // Capella Analytics clusters don't expose the Couchbase Server management REST
+  // API — mark the cluster so runClusterDiag skips it. Credentials are already
+  // set correctly by buildSelectedClusterFromConnstr (Capella-flavoured hostname).
+  if (cluster && deployer === "cloud" && config.columnar) {
+    cluster = { ...cluster, capellaAnalytics: true };
   }
 
   return {
@@ -848,7 +923,10 @@ export async function setupDeclarativeCluster(plan: {
       `→ setup-cluster: onClusterExists is "useExisting" — trusting the running cluster ` +
         `${decision.cluster.id} [${decision.cluster.details}].`,
     );
-    const cluster = await selectedClusterFor(cbdinocluster, decision.cluster.id, execution, cng, undefined, loadBalanced);
+    let cluster = await selectedClusterFor(cbdinocluster, decision.cluster.id, execution, cng, undefined, loadBalanced);
+    if (cluster && plan.deployer === "cloud" && plan.config?.columnar) {
+      cluster = { ...cluster, capellaAnalytics: true };
+    }
     return { ...(cluster ? { cluster } : {}), allocated: false, cbdinocluster, artifacts: [], details: [] };
   }
 

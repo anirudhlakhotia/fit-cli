@@ -44,8 +44,14 @@ export interface ClusterDiagOptions {
 }
 
 /** Run a quick curl-based sanity check against the cluster's management endpoint.
- *  Retries with exponential backoff (up to 5 s per sleep) for up to retryTimeoutMs. */
+ *  Retries with exponential backoff (up to 5 s per sleep) for up to retryTimeoutMs.
+ *  Returns true immediately for Capella Analytics clusters — they don't expose the
+ *  Couchbase Server management API at 18091/pools/default. */
 export async function runClusterDiag(cluster: SelectedCluster, opts?: ClusterDiagOptions): Promise<boolean> {
+  if (cluster.capellaAnalytics) {
+    console.log("\n✓ Skipping cluster diag for Capella Analytics cluster (management REST API not available).");
+    return true;
+  }
   const url = clusterDiagUrl(cluster);
   const command = `curl -k -u <username>:<password> -X GET ${url}`;
   const retryTimeoutMs = opts?.retryTimeoutMs ?? 30_000;
