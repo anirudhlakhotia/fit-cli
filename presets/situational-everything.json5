@@ -1,0 +1,40 @@
+{
+  preset: {
+    order: 12,
+    description: 'Run all situational tests for a given SDK.',
+    expectedTime: '< 10 minutes'
+  },
+  version: 1,
+  type: 'fit',
+  instances: [
+    {
+      aws: {},
+      setup: {
+        capellaEnvironment: 'prod',
+      },
+      clusters: [],
+      clusterlessSessions: [
+        {
+          performer: {
+            image: '{{PERFORMER_IMAGE}}',
+            onPortInUse: 'reuse',
+          },
+          runs: [
+            {
+              type: 'situational',
+              tests: {
+                presets: ['all'],
+              },
+              situational: {
+                database: {
+                  mode: 'hosted',
+                  resultsEnvironment: 'prod',
+                },
+              },
+            },
+          ],
+        },
+      ],
+    },
+  ],
+}
