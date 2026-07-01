@@ -15,14 +15,13 @@ import { join } from "node:path";
 import { artifactFromPath, type Artifact, type Detail } from "../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { AWS_REGION, AWS_SUBNET_ID, AWS_VPC_ID } from "../../../cloud/util/aws/aws-target.js";
-import { checkCredentials } from "../../../cloud/util/aws/identity.js";
+import { checkAwsCredentials } from "../../../cloud/util/aws/identity.js";
 import { findUbuntuAmi } from "../../../cloud/util/aws/image.js";
 import { createInstance, waitForInstanceRunning, type BlockDeviceMapping } from "../../../cloud/util/aws/create-instance.js";
 import { describeInstance } from "../../../cloud/util/aws/describe-instance.js";
 import { findInstancesByKeyName } from "../../../cloud/util/aws/list-instances.js";
 import { type InstanceInfo } from "../../../cloud/util/aws/parse-instance.js";
 import { terminateInstance } from "../../../cloud/util/aws/terminate-instance.js";
-import { prepareAwsCli } from "../../../cloud/util/aws/aws-cli.js";
 import { createKeyPair, deleteKeyPair } from "../../../cloud/util/aws/key-pair.js";
 import { ensureSecurityGroup } from "../../../cloud/util/aws/security-group.js";
 import { instanceRunDir } from "../../../util/non-fit/replay.js";
@@ -119,8 +118,7 @@ export interface ProvisionOptions {
  * the instance launches, it's terminated so we don't leak a paid box.
  */
 export async function provisionFitInstance(options: ProvisionOptions = {}): Promise<ProvisionedInstance> {
-  await prepareAwsCli();
-  const creds = await checkCredentials();
+  const creds = await checkAwsCredentials();
   if (!creds.ok) {
     throw new Error(`AWS credentials are not usable: ${creds.message}`);
   }

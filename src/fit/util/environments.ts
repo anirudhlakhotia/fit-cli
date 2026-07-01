@@ -29,6 +29,17 @@ export interface ResultsEnvironment {
   secretId?: string | null;
 }
 
+/** An AWS account fit-cli-role's trust policy allows a human to assume it from. */
+export interface AwsTenantEnvironment {
+  accountId: string;
+}
+
+/** The shared role fit-cli assumes for EC2/situational work, and the account it lives in. */
+export interface FitCliRoleEnvironment {
+  accountId: string;
+  roleName: string;
+}
+
 /** Global version defaults for cbdinocluster and related tools (not per-environment). */
 export interface Defaults {
   /** Default Couchbase Server version, e.g. "8.0-stable" or a pinned build. */
@@ -53,6 +64,8 @@ export interface EnvironmentsFile {
   defaults: Defaults;
   capella: Record<string, CapellaEnvironment>;
   results: Record<string, ResultsEnvironment>;
+  awsTenants: Record<string, AwsTenantEnvironment>;
+  fitCliRole: FitCliRoleEnvironment;
 }
 
 /** Absolute path to the repo-root environments file (this module lives at src/fit/util/). */
@@ -80,9 +93,13 @@ export function loadEnvironments(path: string = DEFAULT_ENVIRONMENTS_PATH): Envi
     typeof parsed !== "object" ||
     typeof parsed.defaults !== "object" ||
     typeof parsed.capella !== "object" ||
-    typeof parsed.results !== "object"
+    typeof parsed.results !== "object" ||
+    typeof parsed.awsTenants !== "object" ||
+    typeof parsed.fitCliRole !== "object"
   ) {
-    throw new Error(`Environments file at ${path} must define "defaults", "capella", and "results" sections.`);
+    throw new Error(
+      `Environments file at ${path} must define "defaults", "capella", "results", "awsTenants", and "fitCliRole" sections.`,
+    );
   }
   if (path === DEFAULT_ENVIRONMENTS_PATH) cached = parsed;
   return parsed;
@@ -96,4 +113,17 @@ export function capellaEnvironmentNames(environments: EnvironmentsFile = loadEnv
 /** The configured results environment names (e.g. ["dev", "prod"]). */
 export function resultsEnvironmentNames(environments: EnvironmentsFile = loadEnvironments()): string[] {
   return Object.keys(environments.results);
+}
+
+/** The tenant alias (e.g. "cb-sdk") for an AWS account id, or undefined if it's not a known tenant. */
+export function awsTenantAliasForAccount(
+  accountId: string,
+  environments: EnvironmentsFile = loadEnvironments(),
+): string | undefined {
+  return Object.entries(environments.awsTenants).find(([, tenant]) => tenant.accountId === accountId)?.[0];
+}
+
+/** The configured AWS tenant aliases (e.g. ["cb-sdk", "cb-qe"]). */
+export function awsTenantAliases(environments: EnvironmentsFile = loadEnvironments()): string[] {
+  return Object.keys(environments.awsTenants);
 }

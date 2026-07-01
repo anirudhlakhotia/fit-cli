@@ -9,9 +9,9 @@
  * bun run cloud-instances --help
  */
 import { isMain, runCli } from "../../util/non-fit/cli.js";
-import { logAwsAction, prepareAwsCli } from "../../cloud/util/aws/aws-cli.js";
+import { logAwsAction } from "../../cloud/util/aws/aws-cli.js";
 import { AWS_REGION } from "../../cloud/util/aws/aws-target.js";
-import { checkAccountAlias, checkCredentials, logAwsIdentity, warnIfNotCbSdkAccount } from "../../cloud/util/aws/identity.js";
+import { checkAwsCredentials } from "../../cloud/util/aws/identity.js";
 import { listInstances, LIVE_STATES } from "../../cloud/util/aws/list-instances.js";
 import { terminateInstance } from "../../cloud/util/aws/terminate-instance.js";
 import { describeInstance } from "../../cloud/util/aws/describe-instance.js";
@@ -60,13 +60,10 @@ remove-all options:
 
 async function cmdList(argv: string[]): Promise<void> {
   const allUsers = argv.includes("--all-users");
-  await prepareAwsCli();
 
-  const creds = await checkCredentials();
-  logAwsIdentity(creds);
-  warnIfNotCbSdkAccount(await checkAccountAlias());
+  const creds = await checkAwsCredentials();
   const context: InstanceListContext | undefined = creds.ok
-    ? { account: creds.identity.account, creator: creds.identity.arn.split("/").at(-1) ?? creds.identity.userId }
+    ? { account: creds.identity.account, creator: callerCreator(creds.identity) }
     : undefined;
 
   if (!allUsers && !creds.ok) {
@@ -99,7 +96,6 @@ async function cmdList(argv: string[]): Promise<void> {
 
 async function cmdManage(argv: string[]): Promise<void> {
   const allUsers = argv.includes("--all-users");
-  await prepareAwsCli();
 
   const flag = (name: string): string | undefined => {
     const index = argv.indexOf(`--${name}`);
@@ -118,7 +114,7 @@ async function cmdManage(argv: string[]): Promise<void> {
     };
   }
 
-  const creds = await checkCredentials();
+  const creds = await checkAwsCredentials();
   const creator = creds.ok ? callerCreator(creds.identity) : undefined;
 
   if (!allUsers && !creator) {
@@ -134,8 +130,6 @@ async function cmdManage(argv: string[]): Promise<void> {
       ? { keyName: query.keyName, states: LIVE_STATES, scope: allUsers ? "all users" : "current user" }
       : { tag: query.tag ? `${query.tag.key}=${query.tag.value}` : "fit-cli=owned", states: LIVE_STATES, scope: allUsers ? "all users" : "current user" },
   );
-  logAwsIdentity(await checkCredentials());
-  warnIfNotCbSdkAccount(await checkAccountAlias());
 
   await manageInstances(query, allUsers ? undefined : creator);
 }
@@ -147,11 +141,12 @@ async function cmdRemove(argv: string[]): Promise<void> {
   }
 
   const force = argv.includes("--force");
-  await prepareAwsCli();
 
+  const creds = await checkAwsCredentials();
+  if (!creds.ok) {
+    throw new Error(creds.message);
+  }
   logAwsAction("Terminating EC2 instance", { instanceId });
-  logAwsIdentity(await checkCredentials());
-  warnIfNotCbSdkAccount(await checkAccountAlias());
 
   const info = await describeInstance(instanceId);
   if (!info) {
@@ -195,7 +190,8 @@ async function cmdRemoveAll(argv: string[]): Promise<void> {
   }
   // Parse up front so a bad duration fails before we touch AWS.
   const cutoffMs = olderThanArg !== undefined ? parseDuration(olderThanArg) : undefined;
-  await prepareAwsCli();
+
+  const creds = await checkAwsCredentials();
 
   logAwsAction("Removing fit-cli EC2 instances", {
     tag: `${FIT_OWNER_TAG.key}=${FIT_OWNER_TAG.value}`,
@@ -205,9 +201,6 @@ async function cmdRemoveAll(argv: string[]): Promise<void> {
     ...(dryRun ? { dryRun: true } : {}),
   });
 
-  const creds = await checkCredentials();
-  logAwsIdentity(creds);
-  warnIfNotCbSdkAccount(await checkAccountAlias());
   const context: InstanceListContext | undefined = creds.ok
     ? { account: creds.identity.account, creator: callerCreator(creds.identity) }
     : undefined;

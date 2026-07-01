@@ -14,8 +14,8 @@
  *   bun src/fit/util/aws/warn-existing-instances.ts
  */
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
-import { logAwsAction, prepareAwsCli } from "../../../cloud/util/aws/aws-cli.js";
-import { checkCredentials } from "../../../cloud/util/aws/identity.js";
+import { logAwsAction } from "../../../cloud/util/aws/aws-cli.js";
+import { checkAwsCredentials } from "../../../cloud/util/aws/identity.js";
 import { listInstances, LIVE_STATES } from "../../../cloud/util/aws/list-instances.js";
 import { type InstanceInfo } from "../../../cloud/util/aws/parse-instance.js";
 import { fitCliWarn } from "../../../util/non-fit/fit-cli-log.js";
@@ -47,12 +47,11 @@ export async function warnAboutExistingInstances(
 
 if (isMain(import.meta.url)) {
   runCli(async () => {
-    await prepareAwsCli();
+    const creds = await checkAwsCredentials();
     logAwsAction("Checking for existing fit-cli EC2 instances", {
       tag: `${FIT_OWNER_TAG.key}=${FIT_OWNER_TAG.value}`,
       states: LIVE_STATES,
     });
-    const creds = await checkCredentials();
     const context: InstanceListContext | undefined = creds.ok
       ? { account: creds.identity.account, creator: creds.identity.arn.split("/").at(-1) ?? creds.identity.userId }
       : undefined;

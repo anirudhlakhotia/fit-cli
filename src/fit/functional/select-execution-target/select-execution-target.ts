@@ -15,17 +15,16 @@
  * Run this workflow on its own (picks a target, runs `uname -a` on it, cleans up):
  *   bun src/fit/functional/select-execution-target/select-execution-target.ts
  *
- * To preview what the credentials-missing failure output looks like:
- *   bun src/fit/functional/select-execution-target/select-execution-target.ts --show-creds-failure
+ * To preview what the various AWS credentials failure/success outputs look like:
+ *   bun src/cloud/util/aws/identity.ts simulate <no-creds|wrong-tenant|assume-fail|success>
  */
 import { type RunOutput } from "../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { resolveCloudInstanceType, type CloudInstancePurpose } from "../../util/config.js";
-import { prepareAwsCli } from "../../../cloud/util/aws/aws-cli.js";
 import { fitCliError, fitCliWarn } from "../../../util/non-fit/fit-cli-log.js";
 import { input, select } from "../../../util/non-fit/prompts.js";
 import { LocalTarget } from "../../../util/non-fit/local-target.js";
-import { checkAccountAlias, checkCredentials, printCredentialsDiagnostic, warnIfNotCbSdkAccount } from "../../../cloud/util/aws/identity.js";
+import { checkAwsCredentials } from "../../../cloud/util/aws/identity.js";
 import { listInstances } from "../../../cloud/util/aws/list-instances.js";
 import { terminateInstance } from "../../../cloud/util/aws/terminate-instance.js";
 import { type InstanceInfo } from "../../../cloud/util/aws/parse-instance.js";
@@ -168,16 +167,12 @@ export async function resolveExecutionGroupTarget(
     return { ready: true, target: new LocalTarget(), teardown: LOCAL_TEARDOWN, artifacts: [], details: [] };
   }
 
-  // AWS EC2 needs credentials, from the environment or fit-cli config.
-  await prepareAwsCli();
-  const creds = await checkCredentials();
+  // AWS EC2 needs a working fit-cli-role session — check very early, before any provisioning.
+  const creds = await checkAwsCredentials();
   if (!creds.ok) {
-    printCredentialsDiagnostic();
     fitCliError(`\nCan't use EC2 for this execution group: ${creds.message}`);
     return { ready: false, artifacts: [], details: [] };
   }
-  console.log(`\n✓ Using AWS account ${creds.identity.account} (${creds.identity.arn})`);
-  warnIfNotCbSdkAccount(await checkAccountAlias());
 
   try {
     // The definition's explicit instanceType wins; otherwise use the configured
@@ -227,17 +222,13 @@ export async function selectExecutionTarget(): Promise<ExecutionTargetOutcome> {
       return { ready: true, target: new LocalTarget(), teardown: LOCAL_TEARDOWN, artifacts: [], details: [] };
     }
 
-    // Both EC2 paths need credentials, from the environment or fit-cli config.
-    await prepareAwsCli();
-    const creds = await checkCredentials();
+    // Both EC2 paths need a working fit-cli-role session.
+    const creds = await checkAwsCredentials();
     if (!creds.ok) {
-      printCredentialsDiagnostic();
       fitCliError(`\nCan't use EC2: ${creds.message}`);
       attempt += 1;
       continue; // back to the target prompt
     }
-    console.log(`\n✓ Using AWS account ${creds.identity.account} (${creds.identity.arn})`);
-    warnIfNotCbSdkAccount(await checkAccountAlias());
 
     if (choice === "existing") {
       const outcome = await connectExistingInstance(attempt);
@@ -355,15 +346,11 @@ async function connectExistingInstance(attempt: number): Promise<ExecutionTarget
 export async function selectExistingInstanceForOverride(
   attempt: number,
 ): Promise<ExistingInstanceConnection | "back"> {
-  await prepareAwsCli();
-  const creds = await checkCredentials();
+  const creds = await checkAwsCredentials();
   if (!creds.ok) {
-    printCredentialsDiagnostic();
     fitCliError(`\nCan't use an existing EC2 instance: ${creds.message}`);
     return "back";
   }
-  console.log(`\n✓ Using AWS account ${creds.identity.account} (${creds.identity.arn})`);
-  warnIfNotCbSdkAccount(await checkAccountAlias());
 
   const outcome = await connectExistingInstance(attempt);
   if (outcome === "back" || !outcome.ready) {
@@ -378,13 +365,6 @@ export async function selectExistingInstanceForOverride(
 
 if (isMain(import.meta.url)) {
   runCli(async () => {
-    if (process.argv.includes("--show-creds-failure")) {
-      console.log("(Simulating missing AWS credentials)\n");
-      printCredentialsDiagnostic({ ...process.env, AWS_ACCESS_KEY_ID: "", AWS_SECRET_ACCESS_KEY: "", HOME: "/nonexistent" });
-      fitCliError(`\nCan't use EC2 for this execution group: Could not load credentials from any providers`);
-      process.exit(1);
-    }
-
     const outcome = await selectExecutionTarget();
     if (!outcome.ready) {
       process.exit(1);

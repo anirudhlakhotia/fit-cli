@@ -164,6 +164,8 @@ const TEST_ENVIRONMENTS = {
   defaults: STUB_DEFAULTS,
   capella: { dev: { endpoint: "https://dev.example", oid: "oid-dev", username: "sdk_qe@couchbase.com", secretId: "cap/dev" } },
   results: { dev: { host: "dev.db.example", secretId: "res/dev" } },
+  awsTenants: { "cb-sdk": { accountId: "958525475024" } },
+  fitCliRole: { accountId: "958525475024", roleName: "fit-cli-role" },
 };
 const noFetch = (): Promise<Record<string, string>> => Promise.reject(new Error("should not fetch the AWS secret"));
 
@@ -302,7 +304,13 @@ test("resolveCapellaConfig throws for an unprovisioned environment", async () =>
   await assert.rejects(
     resolveCapellaConfig({
       block: "stage",
-      environments: { defaults: STUB_DEFAULTS, capella: { stage: { endpoint: null, oid: null, secretId: "cap/stage" } }, results: {} },
+      environments: {
+        defaults: STUB_DEFAULTS,
+        capella: { stage: { endpoint: null, oid: null, secretId: "cap/stage" } },
+        results: {},
+        awsTenants: {},
+        fitCliRole: { accountId: "958525475024", roleName: "fit-cli-role" },
+      },
       config: { version: FIT_CLI_CONFIG_VERSION },
       env: {},
       fetchSecret: noFetch,

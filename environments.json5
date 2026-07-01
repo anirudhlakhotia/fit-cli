@@ -82,4 +82,19 @@
     // production results.
     prod: { host: "performance-sdk.couchbase.com", secretId: "fit-cli/results/prod" },
   },
+
+  // AWS accounts ("tenants") whose users fit-cli-role's trust policy allows to assume it —
+  // the only two accounts a human can currently run EC2 testing from.
+  awsTenants: {
+    "cb-sdk": { accountId: "958525475024" },
+    "cb-qe": { accountId: "516524556673" },
+  },
+
+  // The shared role fit-cli assumes for all EC2/situational work — lives in the cb-sdk
+  // account above (same accountId), which is why cb-sdk users assume it same-account
+  // while cb-qe users assume it cross-account (per the role's trust policy).
+  fitCliRole: {
+    accountId: "958525475024",
+    roleName: "fit-cli-role",
+  },
 }

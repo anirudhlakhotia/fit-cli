@@ -1,97 +1,39 @@
 /**
- * identity — check that AWS credentials are present and working. This is the
- * preflight the EC2 workflow runs before trying to launch anything, so a
- * missing/expired key fails early with a clear message rather than midway
- * through provisioning.
+ * identity — the one-stop AWS credentials preflight fit-cli runs before any
+ * EC2/situational work. Always prints where it looked for credentials, which
+ * AWS profile is active, and (on success) which fit-cli-role session resulted;
+ * on failure it explains exactly what to try next.
  *
  * Run on its own:
- *   bun src/cloud/util/aws/identity.ts
+ *   bun src/cloud/util/aws/identity.ts check
  *
- * Prints the caller identity, or the reason it couldn't be determined (exit 1).
+ * Preview the various failure/success outputs without touching real AWS or your
+ * local ~/.aws files:
+ *   bun src/cloud/util/aws/identity.ts simulate no-creds
+ *   bun src/cloud/util/aws/identity.ts simulate wrong-tenant
+ *   bun src/cloud/util/aws/identity.ts simulate assume-fail
+ *   bun src/cloud/util/aws/identity.ts simulate success
  */
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { ListAccountAliasesCommand } from "@aws-sdk/client-iam";
-import { GetCallerIdentityCommand } from "@aws-sdk/client-sts";
-import { fromNodeProviderChain } from "@aws-sdk/credential-providers";
+import { GetCallerIdentityCommand, STSClient } from "@aws-sdk/client-sts";
+import { fromIni, fromNodeProviderChain } from "@aws-sdk/credential-providers";
+import { loadSharedConfigFiles } from "@aws-sdk/shared-ini-file-loader";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
-import { logAwsAction, prepareAwsCli } from "./aws-cli.js";
-import { iamClient, stsClient } from "./aws-clients.js";
+import { awsTenantAliasForAccount, loadEnvironments, type EnvironmentsFile } from "../../../fit/util/environments.js";
+import { loadFitCliConfigEnv } from "../../../fit/util/config.js";
+import { AWS_REGION } from "./aws-target.js";
+import {
+  assumeFitCliRole,
+  freshCallerIdentity,
+  logAwsAction,
+  type AssumeRoleOutcome,
+  type CallerIdentity,
+  type CredentialsCheck,
+} from "./aws-cli.js";
 
-/** Who the current credentials belong to. */
-export interface CallerIdentity {
-  account: string;
-  arn: string;
-  userId: string;
-  /** Active AWS profile, if set via AWS_PROFILE or AWS_DEFAULT_PROFILE. */
-  profile?: string;
-}
-
-/** The result of a credentials check: usable identity, or a reason it failed. */
-export type CredentialsCheck =
-  | { ok: true; identity: CallerIdentity }
-  | { ok: false; message: string };
-
-/**
- * Resolve the current AWS caller identity, or a failure with a human-readable
- * reason. Returns `ok: false` (rather than throwing) for the expected cases —
- * credentials being absent or invalid — so the workflow can report and offer
- * the local path instead.
- */
-export async function checkCredentials(): Promise<CredentialsCheck> {
-  try {
-    const response = await stsClient.send(new GetCallerIdentityCommand({}));
-    const profile = process.env.AWS_PROFILE ?? process.env.AWS_DEFAULT_PROFILE;
-    return {
-      ok: true,
-      identity: {
-        account: response.Account ?? "",
-        arn: response.Arn ?? "",
-        userId: response.UserId ?? "",
-        ...(profile ? { profile } : {}),
-      },
-    };
-  } catch (err) {
-    return { ok: false, message: err instanceof Error ? err.message : String(err) };
-  }
-}
-
-/**
- * Print a ✓/✗ checklist of which AWS credential sources are present. When none
- * are found, adds instructions for the three common fix paths.
- */
-export function printCredentialsDiagnostic(env: NodeJS.ProcessEnv = process.env): void {
-  const hasEnvVars = Boolean(env.AWS_ACCESS_KEY_ID?.trim() && env.AWS_SECRET_ACCESS_KEY?.trim());
-  const home = env.HOME ?? homedir();
-  const hasCredentialsFile = existsSync(join(home, ".aws", "credentials"));
-  const hasConfigFile = existsSync(join(home, ".aws", "config"));
-
-  console.log("AWS credential sources:");
-  console.log(`  ${hasEnvVars ? "✓" : "✗"} AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY (env vars)`);
-  console.log(`  ${hasCredentialsFile ? "✓" : "✗"} ~/.aws/credentials`);
-  console.log(`  ${hasConfigFile ? "✓" : "✗"} ~/.aws/config`);
-
-  if (!hasEnvVars && !hasCredentialsFile && !hasConfigFile) {
-    console.log("");
-    console.log("No AWS credentials found.  To get set up:");
-    console.log("");
-    console.log("  1. If you don't have AWS access yet, file a Zendesk ticket requesting");
-    console.log('     access and ask to be added to the "cb-sdk" tenant.');
-    console.log("");
-    console.log("  2. Once you have access, create an access key in the AWS console");
-    console.log("     (IAM → Users → your user → Security credentials → Create access key).");
-    console.log("");
-    console.log("  3. Install the AWS CLI if you haven't already:");
-    console.log("     https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html");
-    console.log("");
-    console.log("  4. Configure your credentials with one of:");
-    console.log("     aws configure                            (static key/secret — simplest)");
-    console.log("     aws sso login --profile <profile>        (SSO)");
-    console.log("     export AWS_ACCESS_KEY_ID=...             (env vars)");
-    console.log("       export AWS_SECRET_ACCESS_KEY=...");
-  }
-}
+export type { CallerIdentity, CredentialsCheck };
 
 /** Raw AWS credential values needed to forward to a remote execution target. */
 export interface AwsCredentials {
@@ -100,29 +42,128 @@ export interface AwsCredentials {
   sessionToken?: string;
 }
 
+/** A configured AWS profile, with its account/tenant when we could determine it. */
+export interface AwsProfileEntry {
+  name: string;
+  /** undefined when the profile's credentials couldn't be used (expired, not logged in, etc). */
+  accountId?: string;
+  /** undefined when accountId is unset, or the account isn't a known tenant (see awsTenants). */
+  tenant?: string;
+}
+
+/** The active AWS profile and every profile found in ~/.aws/{config,credentials}, each resolved to an account/tenant. */
+export interface AwsProfilesInfo {
+  active: string;
+  profiles: AwsProfileEntry[];
+}
+
+const PROFILE_ACCOUNT_LOOKUP_TIMEOUT_MS = 4000;
+
+/** The AWS account id `profile`'s credentials resolve to, or undefined if they don't work right now. */
+async function accountIdForProfile(profile: string): Promise<string | undefined> {
+  try {
+    const client = new STSClient({ region: AWS_REGION, credentials: fromIni({ profile }) });
+    const response = await Promise.race([
+      client.send(new GetCallerIdentityCommand({})),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), PROFILE_ACCOUNT_LOOKUP_TIMEOUT_MS)),
+    ]);
+    return response.Account;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
- * Verify that AWS credentials are present and valid, then extract their raw
- * values so they can be forwarded to a remote instance. Returns the credentials
- * on success, or an error-message string on failure.
- *
- * Prefers explicit env vars (fastest, covers CI / STS / assumed-role sessions);
- * falls back to the SDK credential provider chain for profile-based credentials.
+ * Which AWS profiles are configured, which one is active, and (best-effort, in
+ * parallel) the account id / tenant each profile's credentials currently resolve
+ * to. A profile that's expired/not logged in just shows no account — this never
+ * throws or blocks indefinitely (each lookup is time-boxed).
  */
-export async function resolveAwsCredentials(
+export async function listAwsProfiles(
   env: NodeJS.ProcessEnv = process.env,
-): Promise<AwsCredentials | string> {
-  // Validate first — this covers all credential sources (env, profiles, SSO, IMDS).
-  const check = await checkCredentials();
-  if (!check.ok) {
-    printCredentialsDiagnostic(env);
-    return (
-      `AWS credentials are required for situational FIT/SIT runs — the test-driver ` +
-      `allocates cloud clusters via cbdinocluster. ${check.message}.`
-    );
+  environments: EnvironmentsFile = loadEnvironments(),
+): Promise<AwsProfilesInfo> {
+  const active = env.AWS_PROFILE?.trim() || env.AWS_DEFAULT_PROFILE?.trim() || "default";
+  let names: string[];
+  try {
+    const { configFile, credentialsFile } = await loadSharedConfigFiles();
+    const nameSet = new Set<string>();
+    for (const key of Object.keys(configFile)) nameSet.add(key.replace(/^profile\s+/, ""));
+    for (const key of Object.keys(credentialsFile)) nameSet.add(key);
+    names = [...nameSet].sort();
+  } catch {
+    names = [];
   }
 
-  // Credentials are valid; extract raw values for forwarding to remote instances.
-  // Explicit env vars are the common case (CI, STS sessions, assumed roles).
+  const profiles = await Promise.all(
+    names.map(async (name) => {
+      const accountId = await accountIdForProfile(name);
+      const tenant = accountId ? awsTenantAliasForAccount(accountId, environments) : undefined;
+      return { name, ...(accountId ? { accountId } : {}), ...(tenant ? { tenant } : {}) };
+    }),
+  );
+
+  return { active, profiles };
+}
+
+function describeProfile(p: AwsProfileEntry): string {
+  if (!p.accountId) return `${p.name} (account unknown — not logged in / expired)`;
+  return `${p.name} (${p.accountId}${p.tenant ? `, ${p.tenant}` : ""})`;
+}
+
+function printAwsProfileSummary(profiles: AwsProfilesInfo): void {
+  console.log("fit-cli and AWS explained:");
+  console.log("  fit-cli will try and assume the role 'fit-cli-role' from the cb-sdk account, which has all AWS permissions needed.");
+  console.log("  This is done both on localhost testing and when run on a GHA, so that the two environments are similar and isolated from user's setup.");
+  console.log("  There are some limits on how long a role can be assumed: 1-12 hours, depending on how logged in.  TBD what impact this has..");
+  console.log("  'fit-cli-role' can only be assumed from these two AWS accounts: cb-sdk (958525475024) and cb-qe (516524556673).");
+  console.log("  E.g. you must be on one of these two accounts: if not, create an IT ticket.");
+  console.log("  Instances are always created on us-west-2 and in VPC `cbqerunners-vpc` for several reasons (see README).");
+  console.log("AWS profile:");
+  const activeEntry = profiles.profiles.find((p) => p.name === profiles.active);
+  console.log(`  active: ${activeEntry ? describeProfile(activeEntry) : profiles.active}`);
+  console.log(`  configured (${profiles.profiles.length}):`);
+  if (profiles.profiles.length === 0) {
+    console.log("    (none found)");
+  } else {
+    for (const p of profiles.profiles) {
+      console.log(`    ${describeProfile(p)}`);
+    }
+  }
+}
+
+/** Print a ✓/✗ checklist of which AWS credential sources are present. */
+export function printCredentialsDiagnostic(env: NodeJS.ProcessEnv = process.env): void {
+  const hasEnvVars = Boolean(env.AWS_ACCESS_KEY_ID?.trim() && env.AWS_SECRET_ACCESS_KEY?.trim());
+  const home = env.HOME ?? homedir();
+  const hasCredentialsFile = existsSync(join(home, ".aws", "credentials"));
+  const hasConfigFile = existsSync(join(home, ".aws", "config"));
+
+  console.log("AWS credential sources (✓ indicates it exists):");
+  console.log(`  ${hasEnvVars ? "✓" : "✗"} AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY (env vars)`);
+  console.log(`  ${hasCredentialsFile ? "✓" : "✗"} ~/.aws/credentials`);
+  console.log(`  ${hasConfigFile ? "✓" : "✗"} ~/.aws/config`);
+}
+
+/** Guidance printed on any failure — how to get from "broken" to "working". */
+function printAwsFailureGuidance(profiles: AwsProfilesInfo, _environments: EnvironmentsFile): void {
+  console.log("");
+  console.log("To fix this:");
+  console.log(`  1. You will need AWS access if you don't have it already, and be on either the "cb-sdk" or "cb-qe" tenants: 
+      Install aws cli (https://aws.amazon.com/cli/).
+      Create an IT ticket asking for access to the "cb-sdk" tenant.`);
+  console.log(`  2. Make sure you've logged into AWS recently so your cached credentials are up-to-date:`);
+  console.log(`       aws credentials`);
+  console.log(`       aws sso login    (if you use AWS SSO)`);
+  if (profiles.profiles.length > 1) {
+    console.log(`  3. You have multiple AWS profiles configured (note you have ${profiles.profiles.map((p) => p.name).join(", ")}).`);
+    console.log(`     Then run with the right one with (note that only "cb-sdk" and "cb-qe" are supported):`);
+    console.log(`       AWS_PROFILE="cb-sdk" fit ...  or AWS_PROFILE="cb-qe" fit ...`);
+  }
+}
+
+/** Raw credential values for `env`: explicit env vars first, then the SDK provider chain. */
+async function extractRawCredentials(env: NodeJS.ProcessEnv): Promise<AwsCredentials | string> {
   const accessKeyId = env.AWS_ACCESS_KEY_ID?.trim();
   const secretAccessKey = env.AWS_SECRET_ACCESS_KEY?.trim();
   if (accessKeyId && secretAccessKey) {
@@ -130,7 +171,6 @@ export async function resolveAwsCredentials(
     return { accessKeyId, secretAccessKey, ...(sessionToken ? { sessionToken } : {}) };
   }
 
-  // Fall back to the SDK credential provider chain for profile-based credentials.
   try {
     const creds = await fromNodeProviderChain()();
     if (!creds.accessKeyId || !creds.secretAccessKey) {
@@ -153,62 +193,213 @@ export async function resolveAwsCredentials(
   }
 }
 
-/**
- * Print the account (and profile, if one is active) from a credentials check,
- * in the same indented-detail style as logAwsAction.
- */
-export function logAwsIdentity(creds: CredentialsCheck): void {
-  if (!creds.ok) return;
-  const { account, profile } = creds.identity;
-  console.log(`  account: ${account}`);
-  if (profile) {
-    console.log(`  profile: ${profile}`);
-  }
+/** The result of {@link checkAwsCredentials}: a working fit-cli-role session, or why we don't have one. */
+export type AwsCredentialsResult =
+  | { ok: true; identity: CallerIdentity; credentials: AwsCredentials; tenant: string }
+  | { ok: false; message: string };
+
+export interface CheckAwsCredentialsOptions {
+  env?: NodeJS.ProcessEnv;
+  environments?: EnvironmentsFile;
+  /** Override the pre-assume identity lookup (STS GetCallerIdentity) — for testing/simulation. */
+  getPreAssumeIdentity?: () => Promise<CredentialsCheck>;
+  /** Override the fit-cli-role assumption — for testing/simulation. */
+  assumeRole?: () => Promise<AssumeRoleOutcome>;
+  /** Override AWS profile enumeration — for testing/simulation. */
+  listProfiles?: (env: NodeJS.ProcessEnv) => Promise<AwsProfilesInfo>;
 }
 
+let cachedResult: AwsCredentialsResult | undefined;
+
 /**
- * Fetch the IAM account alias for the current credentials. Returns the first
- * alias if one exists, undefined otherwise. Silently returns undefined on
- * permission errors — not all roles have iam:ListAccountAliases.
+ * The one method fit-cli uses to check and fetch AWS credentials for EC2/situational
+ * work. Always prints (success or failure): where it looked for credentials and which
+ * sources are set, the active AWS profile and how many are configured, the caller
+ * identity, and (on success) the fit-cli-role session it assumed. Fails fast — with
+ * guidance on how to fix it — if the account isn't a supported tenant (cb-sdk/cb-qe,
+ * per fit-cli-role's trust policy) or the role can't be assumed.
+ *
+ * Call this as early as possible in any workflow that will need AWS (see the
+ * "check very early" rule) rather than deep inside EC2 provisioning. Cached for the
+ * lifetime of the process when called with no overrides, so calling it again later
+ * in the same run (e.g. once in select-execution-target, again in provisionFitInstance)
+ * doesn't reprint the whole diagnostic a second time.
  */
-export async function checkAccountAlias(): Promise<string | undefined> {
-  try {
-    const response = await iamClient.send(new ListAccountAliasesCommand({}));
-    return response.AccountAliases?.[0];
-  } catch {
-    return undefined;
-  }
+export async function checkAwsCredentials(options: CheckAwsCredentialsOptions = {}): Promise<AwsCredentialsResult> {
+  const usingDefaults = Object.keys(options).length === 0;
+  if (usingDefaults && cachedResult) return cachedResult;
+  const result = await runCheckAwsCredentials(options);
+  if (usingDefaults) cachedResult = result;
+  return result;
 }
 
-const EXPECTED_ACCOUNT_ALIAS = "cb-sdk";
+async function runCheckAwsCredentials(options: CheckAwsCredentialsOptions): Promise<AwsCredentialsResult> {
+  const env = options.env ?? process.env;
+  const environments = options.environments ?? loadEnvironments();
+  const getPreAssumeIdentity = options.getPreAssumeIdentity ?? freshCallerIdentity;
+  const doAssumeRole = options.assumeRole ?? assumeFitCliRole;
+  const listProfiles = options.listProfiles ?? listAwsProfiles;
 
-/**
- * Warn if the current account alias doesn't match the expected cb-sdk tenant.
- * Prints nothing if the alias couldn't be determined (e.g. missing IAM permission).
- */
-export function warnIfNotCbSdkAccount(alias: string | undefined): void {
-  if (alias === undefined || alias === EXPECTED_ACCOUNT_ALIAS) return;
-  console.warn(`⚠  You appear to be authenticated to AWS account "${alias}", not "${EXPECTED_ACCOUNT_ALIAS}".`);
-  console.warn(`   fit-cli expects the cb-sdk account.  To switch:`);
-  console.warn(`     export AWS_PROFILE=cb-sdk`);
-  console.warn(`     aws sso login --profile cb-sdk   # if your session has expired`);
+  loadFitCliConfigEnv(undefined, env);
+
+  const profiles = await listProfiles(env);
+  printAwsProfileSummary(profiles);
+  printCredentialsDiagnostic(env);
+
+  const pre = await getPreAssumeIdentity();
+  if (!pre.ok) {
+    const message = `Could not find working AWS credentials: ${pre.message}`;
+    console.error(`\n✗ ${message}`);
+    printAwsFailureGuidance(profiles, environments);
+    return { ok: false, message };
+  }
+  console.log(`\nAWS identity: ${pre.identity.arn}`);
+
+  const tenant = awsTenantAliasForAccount(pre.identity.account, environments);
+  if (!tenant) {
+    const supported = Object.keys(environments.awsTenants).join("/");
+    const message = `AWS account ${pre.identity.account} is not a supported fit-cli tenant (need ${supported}).`;
+    console.error(`✗ ${message}`);
+    printAwsFailureGuidance(profiles, environments);
+    return { ok: false, message };
+  }
+  console.log(`AWS tenant/account: ${tenant}`);
+
+  const assumed = await doAssumeRole();
+  if (!assumed.ok) {
+    const message = `Could not assume fit-cli-role: ${assumed.message}`;
+    console.error(`✗ ${message}`);
+    printAwsFailureGuidance(profiles, environments);
+    return { ok: false, message };
+  }
+
+  const credentials = await extractRawCredentials(env);
+  if (typeof credentials === "string") {
+    console.error(`✗ ${credentials}`);
+    printAwsFailureGuidance(profiles, environments);
+    return { ok: false, message: credentials };
+  }
+
+  console.log(`✓ Using AWS account ${assumed.identity.account} (${assumed.identity.arn})`);
+  return { ok: true, identity: assumed.identity, credentials, tenant };
+}
+
+function helpText(): string {
+  return `fit-cli AWS credentials preflight.
+
+Usage:
+  bun src/cloud/util/aws/identity.ts check
+  bun src/cloud/util/aws/identity.ts simulate <scenario>
+
+Scenarios (no real AWS calls, no ~/.aws files read):
+  no-creds       no AWS credentials found anywhere
+  wrong-tenant   valid credentials, but not on the cb-sdk/cb-qe tenant
+  assume-fail    on a supported tenant, but assuming fit-cli-role fails (e.g. expired session)
+  success        everything works`;
+}
+
+type Scenario = "no-creds" | "wrong-tenant" | "assume-fail" | "success";
+
+function simulatedOptions(scenario: Scenario): CheckAwsCredentialsOptions {
+  const fakeEnv: NodeJS.ProcessEnv = { HOME: "/nonexistent" };
+  const fakeProfiles: AwsProfilesInfo = {
+    active: "cb-sdk",
+    profiles: [
+      { name: "default", accountId: "958525475024", tenant: "cb-sdk" },
+      { name: "cb-sdk", accountId: "958525475024", tenant: "cb-sdk" },
+      { name: "cb-qe-shared", accountId: "516524556673", tenant: "cb-qe" },
+    ],
+  };
+  const environments = loadEnvironments();
+
+  switch (scenario) {
+    case "no-creds":
+      return {
+        env: fakeEnv,
+        listProfiles: () => Promise.resolve({ active: "default", profiles: [] }),
+        getPreAssumeIdentity: () =>
+          Promise.resolve({
+            ok: false,
+            message: "Could not load credentials from any providers",
+          }),
+      };
+    case "wrong-tenant":
+      return {
+        env: fakeEnv,
+        listProfiles: () => Promise.resolve(fakeProfiles),
+        getPreAssumeIdentity: () =>
+          Promise.resolve({
+            ok: true,
+            identity: { account: "044057754343", arn: "arn:aws:iam::044057754343:user/some.user@couchbase.com", userId: "AIDAEXAMPLE" },
+          }),
+      };
+    case "assume-fail":
+      return {
+        env: fakeEnv,
+        listProfiles: () => Promise.resolve(fakeProfiles),
+        getPreAssumeIdentity: () =>
+          Promise.resolve({
+            ok: true,
+            identity: {
+              account: Object.values(environments.awsTenants)[0].accountId,
+              arn: "arn:aws:iam::958525475024:user/some.user@couchbase.com",
+              userId: "AIDAEXAMPLE",
+            },
+          }),
+        assumeRole: () =>
+          Promise.resolve({
+            ok: false,
+            message: "The security token included in the request is invalid",
+          }),
+      };
+    case "success":
+      return {
+        env: { ...fakeEnv, AWS_ACCESS_KEY_ID: "AKIAEXAMPLE", AWS_SECRET_ACCESS_KEY: "example-secret" },
+        listProfiles: () => Promise.resolve(fakeProfiles),
+        getPreAssumeIdentity: () =>
+          Promise.resolve({
+            ok: true,
+            identity: {
+              account: Object.values(environments.awsTenants)[0].accountId,
+              arn: "arn:aws:iam::958525475024:user/some.user@couchbase.com",
+              userId: "AIDAEXAMPLE",
+            },
+          }),
+        assumeRole: () =>
+          Promise.resolve({
+            ok: true,
+            preAssumeIdentity: { account: "958525475024", arn: "arn:aws:iam::958525475024:user/some.user@couchbase.com", userId: "AIDAEXAMPLE" },
+            identity: { account: "958525475024", arn: "arn:aws:sts::958525475024:assumed-role/fit-cli-role/fit-cli-some-user", userId: "" },
+            sessionExpiry: "2026-07-01T12:00:00.000Z",
+          }),
+      };
+  }
 }
 
 if (isMain(import.meta.url)) {
   runCli(async () => {
-    await prepareAwsCli();
-    logAwsAction("Checking AWS credentials", { operation: "sts:GetCallerIdentity" });
-    const result = await checkCredentials();
-    if (!result.ok) {
-      console.error(`✗ ${result.message}`);
-      process.exit(1);
+    const [command, arg] = process.argv.slice(2);
+    switch (command) {
+      case "check": {
+        logAwsAction("Checking AWS credentials");
+        const result = await checkAwsCredentials();
+        if (!result.ok) process.exit(1);
+        return;
+      }
+      case "simulate": {
+        const scenarios: Scenario[] = ["no-creds", "wrong-tenant", "assume-fail", "success"];
+        if (!scenarios.includes(arg as Scenario)) {
+          console.log(helpText());
+          process.exit(2);
+        }
+        console.log(`(Simulating: ${arg} — no real AWS calls)\n`);
+        const result = await checkAwsCredentials(simulatedOptions(arg as Scenario));
+        if (!result.ok) process.exit(1);
+        return;
+      }
+      default:
+        console.log(helpText());
+        if (command !== undefined && command !== "--help" && command !== "-h") process.exit(2);
     }
-    const profilePart = result.identity.profile ? `  profile: ${result.identity.profile}` : "";
-    console.log(`✓ Authenticated as ${result.identity.arn} (account ${result.identity.account}${profilePart})`);
-    const alias = await checkAccountAlias();
-    if (alias !== undefined) {
-      console.log(`  account alias: ${alias}`);
-    }
-    warnIfNotCbSdkAccount(alias);
   });
 }

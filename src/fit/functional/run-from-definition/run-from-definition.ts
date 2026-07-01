@@ -59,7 +59,7 @@ import { DEFAULT_CAPELLA_ENV, resolveCapellaConfig, resolveFitPerformerDir, reso
 import { terminateInstanceCommand } from "../../util/aws/lifecycle-warning.js";
 import { maybeUploadRunArtifacts } from "../../util/aws/upload-run-artifacts.js";
 import { AWS_REGION } from "../../../cloud/util/aws/aws-target.js";
-import { resolveAwsCredentials, type AwsCredentials } from "../../../cloud/util/aws/identity.js";
+import { checkAwsCredentials, type AwsCredentials } from "../../../cloud/util/aws/identity.js";
 import {
   localClusterCommandExecutor,
   type ClusterCommandExecutor,
@@ -1493,6 +1493,38 @@ export async function runFromDefinition(
     }
   }
 
+  // One run-wide choice over where every execution group runs: honour the file, force
+  // localhost, or run all groups on one existing EC2 instance. Resolved this early
+  // (ahead of the GitHub/AWS credential checks below) so we know whether AWS will be
+  // needed at all before checking for it. Each group then provisions (or reconnects)
+  // its own target accordingly. `forceLocalhost`/`forceAws` are the parts we persist
+  // for resume; the existing-instance override is a within-run convenience and isn't saved.
+  const executionOverride = await resolveExecutionOverride(executionGroups.slice(startCycleIndex), savedState);
+  const forceLocalhost = executionOverride.kind === "localhost";
+  const forceAws = executionOverride.kind === "aws";
+  const willRunOnAws =
+    !forceLocalhost &&
+    (forceAws ||
+      executionGroups.slice(startCycleIndex).some((group) => group.type === "situational") ||
+      (executionOverride.kind === "definition" &&
+        executionGroups.slice(startCycleIndex).some((g) => g.instance.kind === "aws")));
+
+  // AWS is needed for EC2 execution groups AND for situational cbdinocluster cloud-deployer
+  // runs (even on localhost's own machine, credentials get forwarded to the remote box).
+  // Check this before anything else that might need AWS — including GitHub credentials
+  // below, whose own AWS Secrets Manager fallback would otherwise produce a confusing
+  // "localhost.github.user not found" error when the real problem is AWS credentials.
+  let awsCredentials: AwsCredentials | undefined;
+  if (willRunOnAws) {
+    const result = await checkAwsCredentials();
+    if (!result.ok) {
+      fitCliError({ classification: "FatalToAll" }, `\n✗ ${result.message}`);
+      tracker.record("FatalToAll", result.message, preconditionCtx);
+      return finalizeRunFromDefinition([], [], undefined, tracker.worst, tracker.failureCount);
+    }
+    awsCredentials = result.credentials;
+  }
+
   // Resolve GitHub credentials upfront so we fail before provisioning an instance.
   let githubCredentials: { user: string; token: string } | undefined;
   if (
@@ -1509,8 +1541,6 @@ export async function runFromDefinition(
     }
     githubCredentials = result;
   }
-
-  let awsCredentials: AwsCredentials | undefined;
 
   // Check hosted results-database credentials upfront — fail before provisioning
   // an instance when credentials can't be resolved from AWS Secrets Manager.
@@ -1578,14 +1608,6 @@ export async function runFromDefinition(
   copyFileSync(definitionPath, definitionCopyPath);
   artifacts.push(artifactFromPath(definitionCopyPath, "Definition file used for this run", runDir));
 
-  // One run-wide choice over where every execution group runs: honour the file, force
-  // localhost, or run all groups on one existing EC2 instance. Each group then provisions
-  // (or reconnects) its own target accordingly. `forceLocalhost`/`forceAws` are the parts we
-  // persist for resume; the existing-instance override is a within-run convenience and isn't saved.
-  const executionOverride = await resolveExecutionOverride(executionGroups.slice(startCycleIndex), savedState);
-  const forceLocalhost = executionOverride.kind === "localhost";
-  const forceAws = executionOverride.kind === "aws";
-
   // Fail early if any group will run on localhost but the performer checkout isn't configured.
   // The same check happens inside ensureWorkspace, but that fires deep into the run (after
   // cluster creation), so catching it here saves the user a long wait.
@@ -1620,22 +1642,6 @@ export async function runFromDefinition(
       }
       console.log(`  ✓ Reached ${host}.`);
     }
-  }
-
-  // Resolve AWS credentials for situational cycles that will run remotely — the
-  // test-driver's cbdinocluster call uses the cloud (AWS) deployer and credentials
-  // must be forwarded to the EC2 instance. Skip when localhost is chosen.
-  if (
-    !forceLocalhost &&
-    executionGroups.slice(startCycleIndex).some((group) => group.type === "situational")
-  ) {
-    const result = await resolveAwsCredentials();
-    if (typeof result === "string") {
-      fitCliError({ classification: "FatalToAll" }, `\n✗ ${result}`);
-      tracker.record("FatalToAll", result, preconditionCtx);
-      return finalizeRunFromDefinition([], [], undefined, tracker.worst, tracker.failureCount);
-    }
-    awsCredentials = result;
   }
 
   // The "active" set tracks the cycle currently up so the outer finally tears down
