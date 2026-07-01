@@ -43,6 +43,7 @@ async function loadPresetMap(): Promise<Record<string, string>> {
   // Path AND import options must be literals — bun build --compile only embeds modules it can
   // see as static references; passing either through a variable hides them from the bundler.
   return {
+    "capella-analytics-qe-set": ((await import("../../../../presets/capella-analytics-qe-set.json5", { with: { type: "text" } })) as { default: string }).default,
     "capella-analytics-functional": ((await import("../../../../presets/capella-analytics-functional.json5", { with: { type: "text" } })) as { default: string }).default,
     "capella-analytics-functional-quick-sanity": ((await import("../../../../presets/capella-analytics-functional-quick-sanity.json5", { with: { type: "text" } })) as { default: string }).default,
     "capella-functional":          ((await import("../../../../presets/capella-functional.json5",          { with: { type: "text" } })) as { default: string }).default,
