@@ -17,6 +17,7 @@ import {
   writeFitDefinition,
   type DefinitionFormat,
 } from "../../shared/definition/generate-definition.js";
+import { describeDefinition } from "../../shared/definition/generate-desc.js";
 import type { FitDefinition } from "../../shared/definition/types.js";
 import { printDefinitionRunGuidance } from "../../shared/definition/run-guidance.js";
 import { pushGist, type GistVisibility } from "../../shared/definition/push-gist.js";
@@ -42,7 +43,8 @@ async function loadPresetMap(): Promise<Record<string, string>> {
   // Path AND import options must be literals — bun build --compile only embeds modules it can
   // see as static references; passing either through a variable hides them from the bundler.
   return {
-    "capella-functional-quick-sanity": ((await import("../../../../presets/capella-functional-quick-sanity.json5", { with: { type: "text" } })) as { default: string }).default,
+    "capella-functional":          ((await import("../../../../presets/capella-functional.json5",          { with: { type: "text" } })) as { default: string }).default,
+    "capella-quick-sanity":        ((await import("../../../../presets/capella-quick-sanity.json5",        { with: { type: "text" } })) as { default: string }).default,
     "cng-functional":              ((await import("../../../../presets/cng-functional.json5",              { with: { type: "text" } })) as { default: string }).default,
     "cng-functional-quick-sanity": ((await import("../../../../presets/cng-functional-quick-sanity.json5", { with: { type: "text" } })) as { default: string }).default,
     "enterprise-analytics-functional": ((await import("../../../../presets/enterprise-analytics-functional.json5", { with: { type: "text" } })) as { default: string }).default,
@@ -54,6 +56,7 @@ async function loadPresetMap(): Promise<Record<string, string>> {
     "qe-set":                      ((await import("../../../../presets/qe-set.json5",                     { with: { type: "text" } })) as { default: string }).default,
     "qe-set-mega-wip":             ((await import("../../../../presets/qe-set-mega-wip.json5",            { with: { type: "text" } })) as { default: string }).default,
     "situational-quick-sanity":    ((await import("../../../../presets/situational-quick-sanity.json5",   { with: { type: "text" } })) as { default: string }).default,
+    "situational-everything":    ((await import("../../../../presets/situational-everything.json5",   { with: { type: "text" } })) as { default: string }).default,
   };
 }
 
@@ -171,6 +174,9 @@ function applyPresetParams(template: string, image: string): FitDefinition {
   const filled = template.replace(/\{\{PERFORMER_IMAGE\}\}/g, image);
   const definition = JSON5.parse(filled) as FitDefinition & { preset?: unknown };
   delete definition.preset;
+  // `preset.description` above is menu-only and already stripped; this is the separate,
+  // optional file-level `description`. Synthesize one if the template didn't hand-author it.
+  definition.description ??= describeDefinition(definition);
   return definition;
 }
 
