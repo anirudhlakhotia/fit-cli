@@ -10,6 +10,7 @@
  *   bun src/util/non-fit/ssh.ts --host <ip> --user ec2-user --key k.pem -- uname -a
  */
 import { isMain, runCli } from "./cli.js";
+import { formatBytes } from "./fit-cli-log.js";
 import { capture, run, type RunOptions } from "./proc.js";
 
 /** A host reachable over SSH. */
@@ -136,10 +137,15 @@ export function scpUp(host: RemoteHost, localPath: string, remotePath: string): 
   }));
 }
 
-/** Copy `remotePath` on `host` down to a local file. */
-export function scpDown(host: RemoteHost, remotePath: string, localPath: string): Promise<void> {
+/**
+ * Copy `remotePath` on `host` down to a local file. `sizeBytes`, when known
+ * ahead of time, is shown in the echoed command so large transfers (e.g.
+ * compressed logs) make clear how much data is about to move.
+ */
+export function scpDown(host: RemoteHost, remotePath: string, localPath: string, sizeBytes?: number): Promise<void> {
+  const size = sizeBytes !== undefined ? ` (${formatBytes(sizeBytes)})` : "";
   return withSshRetry(() => run("scp", buildScpArgs(host, localPath, remotePath, "down"), undefined, {
-    display: `scp ${loginTarget(host)}:${remotePath} -> ${localPath}`,
+    display: `scp ${loginTarget(host)}:${remotePath}${size} -> ${localPath}`,
   }));
 }
 

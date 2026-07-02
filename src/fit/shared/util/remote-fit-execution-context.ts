@@ -248,13 +248,13 @@ export async function createRemoteFitExecutionContext(
       mkdirSync(dirname(localPath), { recursive: true, mode: 0o700 });
       // Compress on the remote before downloading — log files compress 10:1+,
       // making SCP much faster over WAN. Mirrors the JUnit collect pattern.
-      const remoteGz = (await target.capture("sh", [
+      const [sizeLine, remoteGz] = (await target.capture("sh", [
         "-lc",
-        `tmp=$(mktemp /tmp/fit-collect-XXXXXX.gz) && gzip -c ${posixQuote(targetPath)} > "$tmp" && printf '%s\\n' "$tmp"`,
-      ], undefined, { quiet: true })).trim();
+        `tmp=$(mktemp /tmp/fit-collect-XXXXXX.gz) && gzip -c ${posixQuote(targetPath)} > "$tmp" && stat -c%s "$tmp" && printf '%s\\n' "$tmp"`,
+      ], undefined, { quiet: true })).trim().split("\n");
       const localGz = `${localPath}.fit-gz`;
       try {
-        await target.getFile(remoteGz, localGz);
+        await target.getFile(remoteGz, localGz, Number(sizeLine));
         await pipeline(createReadStream(localGz), createGunzip(), createWriteStream(localPath, { mode: 0o600 }));
       } finally {
         await target.run("rm", ["-f", remoteGz], undefined, { quiet: true });

@@ -431,6 +431,18 @@ export function commandOn(line: string, where: string): string {
   return `${line}  (on ${where})`;
 }
 
+/** Render a byte count as a short human-readable size, e.g. `4.2 MB`. */
+export function formatBytes(bytes: number): string {
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit++;
+  }
+  return `${unit === 0 ? value : value.toFixed(1)} ${units[unit]}`;
+}
+
 /**
  * Echo the command about to run, as `$ <line>`. The single place fit-cli prints
  * "here's what I'm about to do" — every command-runner funnels through here so

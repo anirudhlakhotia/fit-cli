@@ -75,7 +75,7 @@ export class RemoteTarget implements ExecutionTarget {
     return scpUp(this.host, localPath, remotePath);
   }
 
-  getFile(remotePath: string, localPath: string): Promise<void> {
-    return scpDown(this.host, remotePath, localPath);
+  getFile(remotePath: string, localPath: string, sizeBytes?: number): Promise<void> {
+    return scpDown(this.host, remotePath, localPath, sizeBytes);
   }
 }

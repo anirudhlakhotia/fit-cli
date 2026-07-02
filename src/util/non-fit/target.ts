@@ -34,6 +34,10 @@ export interface ExecutionTarget {
   /** Copy a local file to `remotePath` on the target. */
   putFile(localPath: string, remotePath: string): Promise<void>;
 
-  /** Copy `remotePath` on the target down to a local file. */
-  getFile(remotePath: string, localPath: string): Promise<void>;
+  /**
+   * Copy `remotePath` on the target down to a local file. `sizeBytes`, when
+   * known ahead of time, is included in the echoed command so large transfers
+   * (e.g. compressed logs) show how much data is about to move.
+   */
+  getFile(remotePath: string, localPath: string, sizeBytes?: number): Promise<void>;
 }

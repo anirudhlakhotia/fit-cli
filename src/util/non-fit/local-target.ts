@@ -28,7 +28,7 @@ export class LocalTarget implements ExecutionTarget {
     return Promise.resolve();
   }
 
-  getFile(remotePath: string, localPath: string): Promise<void> {
+  getFile(remotePath: string, localPath: string, _sizeBytes?: number): Promise<void> {
     copyFileSync(remotePath, localPath);
     return Promise.resolve();
   }

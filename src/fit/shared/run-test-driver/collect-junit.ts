@@ -56,7 +56,7 @@ function parseJunitXmlFiles(output: string): string[] {
 export function remoteJunitArchiveArgs(sourceDir: string): string[] {
   return [
     "-lc",
-    'tmp=$(mktemp /tmp/fit-junit-XXXXXX.tar.gz) && cd "$1" && tar -czf "$tmp" -- TEST-*.xml && printf \'%s\\n\' "$tmp"',
+    'tmp=$(mktemp /tmp/fit-junit-XXXXXX.tar.gz) && cd "$1" && tar -czf "$tmp" -- TEST-*.xml && stat -c%s "$tmp" && printf \'%s\\n\' "$tmp"',
     "sh",
     sourceDir,
   ];
@@ -198,13 +198,14 @@ export async function collectJunitArtifactsFromTarget(
   mkdirSync(destDir, { recursive: true, mode: 0o700 });
   let remoteArchive = "";
   try {
-    remoteArchive = (await target.capture("sh", remoteJunitArchiveArgs(sourceDir))).trim();
+    const [sizeLine, archiveLine] = (await target.capture("sh", remoteJunitArchiveArgs(sourceDir))).trim().split("\n");
+    remoteArchive = archiveLine ?? "";
     if (remoteArchive === "") {
       throw new Error("Remote JUnit archive path was empty.");
     }
     // Keep the archive as an artifact; extract to destDir for summary extraction
     // and HTML rendering. Individual files are filtered from the artifact table.
-    await target.getFile(remoteArchive, archivePath);
+    await target.getFile(remoteArchive, archivePath, Number(sizeLine));
     await run("tar", ["-xzf", archivePath, "-C", destDir]);
   } finally {
     if (remoteArchive !== "") {
