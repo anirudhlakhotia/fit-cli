@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-import { accessSync, constants } from "node:fs";
+import { accessSync, constants, realpathSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { installFitCliConsoleFormatting, runScriptPrefix } from "./fit-cli-log.js";
 import { reexecInherit } from "./proc.js";
 import { readPromptLog, extractReplayFlag, REPO_ROOT } from "./replay.js";
-import { isMain } from "./cli.js";
 
 interface ReplayDispatch {
   entrypoint: string;
@@ -63,7 +63,13 @@ export function shouldAutoRunReplayEntry(metaUrl: string, argv1: string | undefi
   if (!argv1) {
     return false;
   }
-  return isMain(metaUrl);
+  try {
+    return realpathSync(fileURLToPath(metaUrl)) === realpathSync(argv1);
+  } catch {
+    // In Bun compiled binaries, import.meta.url is a virtual /$bunfs/ path
+    // that can't be resolved on disk — fall back to false.
+    return false;
+  }
 }
 
 if (shouldAutoRunReplayEntry(import.meta.url)) {
