@@ -45,7 +45,7 @@
     caoOperatorVersion: "2.9.2",
 
     // The Cloud Native Gateway (Protostellar gateway) version, the cao block's `gateway-version`.
-    cngVersion: "1.1.0-135",
+    cngVersion: "1.2.1-123",
 
     // Default Couchbase Server version for Capella cloud clusters (functional and situational).
     // Capella's supported server versions lag behind self-managed; keep this separate so
