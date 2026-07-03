@@ -95,7 +95,6 @@ async function chooseDefinitionBuilderAction(index: number): Promise<DefinitionB
     choices: [
       { name: "Add FIT functional testing", value: "functional" },
       { name: "Add FIT situational testing", value: "situational" },
-      { name: "Add FIT performance testing (coming later!)", value: "performance" },
       { name: "I'm done with the FIT definition building", value: "done" },
     ],
     default: index > 1 ? "done" : undefined,
@@ -105,13 +104,13 @@ async function chooseDefinitionBuilderAction(index: number): Promise<DefinitionB
 async function chooseFunctionalConnectivity(promptIdPrefix: string): Promise<FunctionalConnectivity> {
   return select<FunctionalConnectivity>({
     promptId: qualifyPromptId("connectivity", promptIdPrefix),
-    message: "What do you want to FIT functional test against?",
+    message: "What cluster do you want to run FIT functional testing against?",
     choices: [
-      { name: "Operational", value: "operational" },
+      { name: "On-prem operational", value: "operational" },
+      { name: "Capella operational", value: "capella" },
       { name: "Cloud Native Gateway (couchbase2://)", value: "cng" },
-      { name: "Enterprise Analytics (self-hosted)", value: "enterprise-analytics" },
-      { name: "Capella", value: "capella" },
-      { name: "Capella Analytics (cloud, was called Columnar)", value: "capella-analytics" },
+      { name: "Enterprise Analytics (self-hosted, requires Enterprise Analytics SDKs)", value: "enterprise-analytics" },
+      { name: "Capella Analytics (cloud, previously called Columnar, requires Columnar SDKs)", value: "capella-analytics" },
     ],
   });
 }
