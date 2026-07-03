@@ -137,8 +137,12 @@ export async function allocateCluster(
   if (deployer) {
     args.push(`--deployer=${deployer}`);
   }
-  // Matches the --expiry FIT/SIT itself passes to cbdinocluster allocate.
-  args.push("--expiry=3h");
+  // Intentionally set a very long expiry, because:
+  // cbdino generally creates instances that are bound to the lifetime of the created cloud instance, and
+  // if the user leaves the instance up, they get this confusing error when they come back and bring the instance down
+  // after cbdino has expired:
+  // "[11:12:07·aws1·8.0.2-5503] FitCliError: Failed to remove cluster af698c6b9cd64570a1c209bd5cbc7914: ssh exited with code 1"
+  args.push("--expiry=31h");
   args.push(`--def-file=${defFile}`);
 
   mkdirSync(cycleDir, { recursive: true, mode: 0o700 });
