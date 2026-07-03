@@ -19,7 +19,9 @@ function describeClusterSource(cluster: ClusterLifetime): string {
     const analyticsPrefix = cluster.cbdinocluster.config.columnar
       ? cluster.cbdinocluster.config.deployer === "cloud" ? "CA," : "EA,"
       : "";
-    const capella = cluster.cbdinocluster.capella ? `Capella(${cluster.cbdinocluster.capella.cloudProvider}),` : "";
+    const capella = cluster.cbdinocluster.capella
+      ? `Capella(${cluster.cbdinocluster.capella.cloudProvider}${cluster.cbdinocluster.capella.privateEndpoint ? ",PE" : ""}),`
+      : "";
     return `cbdino(${capella}${analyticsPrefix}${nodes}${cng})`;
   }
   if (cluster.connection) {

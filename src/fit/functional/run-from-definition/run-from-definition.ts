@@ -561,7 +561,8 @@ export async function setupCluster(
           ...(outcome.clusterId ? { clusterId: outcome.clusterId } : {}),
           ...(outcome.cbdinocluster ? { cbdinoclusterCommand: outcome.cbdinocluster } : {}),
           logsDir: join(clusterDir, "server-logs"),
-          ...(outcome.cloudClusterId ? { cloudClusterId: outcome.cloudClusterId } : {}),
+          ...(outcome.couchbaseClusterUuid ? { couchbaseClusterUuid: outcome.couchbaseClusterUuid } : {}),
+          ...(outcome.privateEndpointEnabled ? { privateEndpointEnabled: true } : {}),
         }
       : undefined;
     return {
@@ -1187,15 +1188,16 @@ interface TeardownInputs {
  * against fit-cli's own AWS credentials (not the remote box) — cbdinocluster's
  * `remove` only tears down the cluster itself, never a successfully-linked
  * ("available") VPC endpoint, so this must run separately or the endpoint leaks.
- * `cloudClusterId` is the Capella-side UUID (see {@link ResumeClusterState.cloudClusterId}),
- * not cbdinocluster's own cluster id — the VPC endpoint is tagged with the former.
+ * `couchbaseClusterUuid` is the Couchbase cluster's own UUID (see
+ * {@link ResumeClusterState.couchbaseClusterUuid}), not cbdinocluster's own
+ * cluster id — the VPC endpoint is tagged with the former.
  * Best-effort: failure here doesn't fail the run's teardown.
  */
-async function deleteClusterPrivateEndpoint(cloudClusterId: string): Promise<void> {
+async function deleteClusterPrivateEndpoint(couchbaseClusterUuid: string): Promise<void> {
   try {
-    await deleteVpcEndpointsForCluster(cloudClusterId);
+    await deleteVpcEndpointsForCluster(couchbaseClusterUuid);
   } catch (err) {
-    fitCliWarn(`⚠ Failed to delete the private endpoint's VPC endpoint for cluster ${cloudClusterId}: ${err instanceof Error ? err.message : String(err)}`);
+    fitCliWarn(`⚠ Failed to delete the private endpoint's VPC endpoint for cluster ${couchbaseClusterUuid}: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
@@ -1223,8 +1225,8 @@ async function disposeGroupClusterAndPerformers(
       await collectClusterLogs(clusterState.cbdinoclusterCommand, clusterState.clusterId, clusterState.logsDir, execution);
     }
     await removeCluster(clusterState.cbdinoclusterCommand, clusterState.clusterId, execution);
-    if (clusterState.cloudClusterId) {
-      await deleteClusterPrivateEndpoint(clusterState.cloudClusterId);
+    if (clusterState.privateEndpointEnabled && clusterState.couchbaseClusterUuid) {
+      await deleteClusterPrivateEndpoint(clusterState.couchbaseClusterUuid);
     }
     popLogContext("cluster");
   }
@@ -1398,8 +1400,8 @@ async function teardownRun(inputs: TeardownInputs): Promise<{ leftUp: boolean }>
         await collectClusterLogs(clusterState.cbdinoclusterCommand, clusterState.clusterId, clusterState.logsDir, execution);
       }
       await removeCluster(clusterState.cbdinoclusterCommand, clusterState.clusterId, execution);
-       if (clusterState.cloudClusterId) {
-        await deleteClusterPrivateEndpoint(clusterState.cloudClusterId);
+      if (clusterState.privateEndpointEnabled && clusterState.couchbaseClusterUuid) {
+        await deleteClusterPrivateEndpoint(clusterState.couchbaseClusterUuid);
       }
       popLogContext("cluster");
     }

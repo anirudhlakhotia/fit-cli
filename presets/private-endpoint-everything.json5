@@ -1,7 +1,7 @@
 {
   preset: {
     order: 15,
-    description: 'Quick sanity for private endpoint (PrivateLink) testing against a real Capella cluster on AWS. Runs in the normal fit-cli AWS account.',
+    description: 'Functional and situational testing for private endpoint (PrivateLink) testing against a real Capella cluster on AWS.',
     expectedTime: '~15 minutes',
   },
   version: 1,
@@ -9,8 +9,6 @@
   instances: [
     {
       aws: {
-        // Places the instance in the fit-cli VPC's default SG so it can reach the
-        // Capella PrivateLink endpoint, which lands in the same SG.
         privateEndpoint: {},
       },
       clusters: [
@@ -26,7 +24,7 @@
                 {
                   type: 'functional',
                   tests: {
-                    classes: ['com.couchbase.client.kv.SanityTest'],
+                    presets: ['all']
                   },
                 },
               ],
@@ -44,8 +42,7 @@
             {
               type: 'situational',
               tests: {
-                classes: ['com.couchbase.client.kv.SanityTest'],
-                addToDefaultExcludedGroups: ['protostellarWillWorkLater']
+                presets: ['standard-qe']
               },
               situational: {
                 database: {
@@ -79,6 +76,8 @@
         capella: {
           cloudProvider: 'aws',
           environment: 'dev',
+          // Sets up an AWS PrivateLink connection to this cluster after allocation,
+          // and connects the FIT test-driver/performer over it instead of the public endpoint.
           privateEndpoint: true,
         },
       },

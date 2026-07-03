@@ -112,17 +112,23 @@ export interface InstanceSetup {
   capellaEnvironment?: string;
 }
 
+/**
+ * Present when the instance is launched into the VPC default SG (opened
+ * intra-VPC by terraform) so it can reach a Capella PrivateLink endpoint,
+ * which also lands in that SG. AWS credentials are forwarded to the box the
+ * same way situational runs do, so cbdinocluster's `private-endpoints
+ * setup-link` (which creates the VPC endpoint) can authenticate as
+ * fit-cli-role — no separate IAM instance profile is needed. Pair with
+ * `capella.privateEndpoint: true` on the cluster.
+ *
+ * Empty for now (just a marker) but kept as an object — not a boolean — so
+ * provider-specific settings can be added later without a breaking schema change.
+ */
+export type PrivateEndpointSetup = Record<string, never>;
+
 export interface AwsInstanceSetup {
   instanceType?: string;
-  /**
-   * When true, the instance is launched into the VPC default SG (opened intra-VPC
-   * by terraform) so it can reach a Capella PrivateLink endpoint, which also lands
-   * in that SG. AWS credentials are forwarded to the box the same way situational
-   * runs do, so cbdinocluster's `private-endpoints setup-link` (which creates the
-   * VPC endpoint) can authenticate as fit-cli-role — no separate IAM instance
-   * profile is needed. Pair with `capella.privateEndpoint: true` on the cluster.
-   */
-  privateEndpoint?: boolean;
+  privateEndpoint?: PrivateEndpointSetup;
 }
 
 export type InstanceMode =

@@ -453,12 +453,18 @@ export interface SetupDeclarativeClusterResult extends RunOutput {
   /** The resolved cbdinocluster command, present when one was found — for teardown. */
   cbdinocluster?: string;
   /**
-   * The Capella-side cluster UUID (distinct from cbdinocluster's own `clusterId`),
-   * present when private endpoint setup succeeded. cbdinocluster's `private-endpoints
-   * setup-link` tags the created VPC endpoint with this id (`Cbdc2ClusterId`), not
-   * cbdinocluster's own cluster id — so teardown must delete by this id, not `clusterId`.
+   * The Couchbase cluster's own UUID (distinct from cbdinocluster's own tracking
+   * id, `clusterId`) — a generic concept that applies beyond Capella/PE. Populated
+   * for any `cloud` (Capella) cluster, PE or not — cbdinocluster's `--verbose
+   * allocate` logs it on every cloud allocation (see allocate-cluster.ts).
    */
-  cloudClusterId?: string;
+  couchbaseClusterUuid?: string;
+  /**
+   * True only when private endpoint setup actually succeeded this run — gates
+   * whether teardown should also delete a VPC endpoint. Not implied by
+   * `couchbaseClusterUuid` alone, since that's now set for every cloud cluster.
+   */
+  privateEndpointEnabled?: boolean;
 }
 
 const FAILED = (extra: Partial<SetupDeclarativeClusterResult> = {}): SetupDeclarativeClusterResult => ({
@@ -742,34 +748,34 @@ async function allowHostIpOnCapellaCluster(
 }
 
 /**
- * `cbdinocluster cloud get-cloud-id <id>` prints the Capella-side cluster UUID via
- * Go's plain `log.Printf` — which, unlike cbdinocluster's other machine-readable
+ * `cbdinocluster cloud get-cloud-id <id>` prints the Couchbase cluster's own UUID
+ * via Go's plain `log.Printf` — which, unlike cbdinocluster's other machine-readable
  * output (allocate/connstr, printed via fmt so it lands on stdout), goes to the
  * default logger's stderr and is timestamp-prefixed
  * (e.g. "2026/06/29 12:00:00 8fb3a708-1234-4567-89ab-cdef01234567"). We merge
  * stderr into the captured stream via a shell redirect and pull the trailing UUID
  * off the last non-empty line.
  */
-const CLOUD_CLUSTER_ID_PATTERN = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\s*$/i;
+const COUCHBASE_CLUSTER_UUID_PATTERN = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\s*$/i;
 
-function parseCloudClusterId(output: string): string | null {
+function parseCouchbaseClusterUuid(output: string): string | null {
   const lines = output.split("\n").map((line) => line.trim()).filter(Boolean);
   for (let i = lines.length - 1; i >= 0; i--) {
-    const match = CLOUD_CLUSTER_ID_PATTERN.exec(lines[i]);
+    const match = COUCHBASE_CLUSTER_UUID_PATTERN.exec(lines[i]);
     if (match) return match[1];
   }
   return null;
 }
 
 /**
- * The Capella-side cluster UUID for a cbdinocluster-tracked cluster. This is
+ * The Couchbase cluster's own UUID for a cbdinocluster-tracked cluster. This is
  * *not* the same id used for `connstr`/`remove`/etc — cbdinocluster tracks its
  * own `ClusterID` internally, separate from Capella's own `CloudClusterID`. The
  * VPC endpoint `setup-link` creates is tagged with the latter (see
  * CreateVPCEndpoint in cbdinocluster's awscontrol package), so cleanup needs this
  * id, not the cbdinocluster one.
  */
-async function cloudClusterIdFor(
+async function couchbaseClusterUuidFor(
   cbdinocluster: string,
   id: string,
   execution: ClusterCommandExecutor,
@@ -781,9 +787,9 @@ async function cloudClusterIdFor(
       undefined,
       { display: "cbdinocluster cloud get-cloud-id" },
     );
-    return parseCloudClusterId(output) ?? undefined;
+    return parseCouchbaseClusterUuid(output) ?? undefined;
   } catch (err) {
-    console.error(`✗ setup-cluster: couldn't resolve the Capella cloud cluster id for ${id}: ${(err as Error).message}`);
+    console.error(`✗ setup-cluster: couldn't resolve the Couchbase cluster UUID for ${id}: ${(err as Error).message}`);
     return undefined;
   }
 }
@@ -877,8 +883,11 @@ async function createCapellaDefaultBucket(
 /**
  * Set up an AWS PrivateLink connection to a Capella cluster via cbdinocluster's
  * `private-endpoints` commands. Returns the private `couchbases://` connection
- * string to connect over, plus the Capella cloud cluster id (needed later to
- * delete the VPC endpoint on teardown — see {@link cloudClusterIdFor}).
+ * string to connect over, plus the Couchbase cluster's own UUID (needed later to
+ * delete the VPC endpoint on teardown — see {@link couchbaseClusterUuidFor}).
+ * `knownUuid` is passed in when the caller already has it (from `allocate`'s own
+ * output — see allocate-cluster.ts) so we skip the extra `cloud get-cloud-id`
+ * round-trip; otherwise it's fetched here as a fallback.
  * Best-effort: on failure, explains and returns an empty result so the caller
  * falls back to the cluster's normal (public) connection string.
  */
@@ -886,19 +895,20 @@ async function setupPrivateEndpoint(
   cbdinocluster: string,
   id: string,
   execution: ClusterCommandExecutor,
-): Promise<{ connectionString?: string; cloudClusterId?: string }> {
+  knownUuid?: string,
+): Promise<{ connectionString?: string; couchbaseClusterUuid?: string }> {
   try {
     console.log(`→ setup-cluster: enabling private endpoints on Capella cluster ${id}`);
     await execution.run(cbdinocluster, ["private-endpoints", "enable", id], undefined, {
       display: "cbdinocluster private-endpoints enable",
     });
-    const cloudClusterId = await cloudClusterIdFor(cbdinocluster, id, execution);
+    const couchbaseClusterUuid = knownUuid ?? (await couchbaseClusterUuidFor(cbdinocluster, id, execution));
     console.log(`→ setup-cluster: setting up the PrivateLink connection to ${id} (auto-identifying this instance)`);
     await execution.run(cbdinocluster, ["private-endpoints", "setup-link", id, "--auto"], undefined, {
       display: "cbdinocluster private-endpoints setup-link --auto",
     });
     const connectionString = await fetchPrivateEndpointConnstr(cbdinocluster, id, execution);
-    return { ...(connectionString ? { connectionString } : {}), ...(cloudClusterId ? { cloudClusterId } : {}) };
+    return { ...(connectionString ? { connectionString } : {}), ...(couchbaseClusterUuid ? { couchbaseClusterUuid } : {}) };
   } catch (err) {
     console.error(`✗ setup-cluster: failed to set up the private endpoint for ${id}: ${(err as Error).message}`);
     return {};
@@ -957,7 +967,13 @@ async function allocate(
   }
 
   const privateEndpointResult =
-    deployer === "cloud" && privateEndpoint ? await setupPrivateEndpoint(cbdinocluster, allocated.clusterId, execution) : undefined;
+    deployer === "cloud" && privateEndpoint
+      ? await setupPrivateEndpoint(cbdinocluster, allocated.clusterId, execution, allocated.couchbaseClusterUuid)
+      : undefined;
+  // Prefer the UUID `allocate` already logged (no extra round-trip); only cloud
+  // clusters have one at all, and setupPrivateEndpoint falls back to fetching it
+  // itself if allocate's own output didn't have it.
+  const couchbaseClusterUuid = allocated.couchbaseClusterUuid ?? privateEndpointResult?.couchbaseClusterUuid;
 
   let cluster = await selectedClusterFor(
     cbdinocluster,
@@ -988,8 +1004,8 @@ async function allocate(
   if (!cluster && deployer === "cloud" && privateEndpoint) {
     console.error(`✗ setup-cluster: private endpoint setup failed — removing the newly-allocated cluster ${allocated.clusterId} to avoid leaking it.`);
     await removeCluster(cbdinocluster, allocated.clusterId, execution);
-    if (privateEndpointResult?.cloudClusterId) {
-      await deleteVpcEndpointsForCluster(privateEndpointResult.cloudClusterId).catch(() => {});
+    if (couchbaseClusterUuid) {
+      await deleteVpcEndpointsForCluster(couchbaseClusterUuid).catch(() => {});
     }
     return FAILED({ cbdinocluster });
   }
@@ -999,7 +1015,11 @@ async function allocate(
     allocated: true,
     clusterId: allocated.clusterId,
     cbdinocluster,
-    ...(privateEndpointResult?.cloudClusterId ? { cloudClusterId: privateEndpointResult.cloudClusterId } : {}),
+    ...(couchbaseClusterUuid ? { couchbaseClusterUuid } : {}),
+    // Only true when PE was actually set up this run — gates whether teardown should
+    // also attempt to delete a VPC endpoint. `couchbaseClusterUuid` alone isn't enough:
+    // it's now populated for every cloud cluster, not just PE ones.
+    ...(privateEndpointResult?.connectionString ? { privateEndpointEnabled: true } : {}),
     artifacts: allocated.artifacts,
     details: allocated.details,
   };
@@ -1090,6 +1110,17 @@ export async function setupDeclarativeCluster(plan: {
     const privateConnectionString = reusedPrivateEndpoint
       ? await fetchPrivateEndpointConnstr(cbdinocluster, decision.cluster.id, execution)
       : undefined;
+    // Cloud (Capella) clusters always have a Couchbase cluster UUID; log it here too for
+    // consistency with a fresh allocation, even though reuse never tears the cluster down
+    // (so there's nothing here that needs to persist it for teardown).
+    if (plan.deployer === "cloud") {
+      const couchbaseClusterUuid = await couchbaseClusterUuidFor(cbdinocluster, decision.cluster.id, execution);
+      console.log(
+        couchbaseClusterUuid
+          ? `  Couchbase cluster UUID: ${couchbaseClusterUuid}`
+          : `  ⚠ couldn't resolve a Couchbase cluster UUID for the reused cloud cluster ${decision.cluster.id}.`,
+      );
+    }
     let cluster = await selectedClusterFor(
       cbdinocluster,
       decision.cluster.id,

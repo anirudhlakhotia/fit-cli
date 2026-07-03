@@ -46,6 +46,7 @@ import type {
   FitDefinition,
   FitRun,
   InstanceLifetime,
+  PrivateEndpointSetup,
   ResolvedFitConfig,
   SessionLifetime,
   SituationalDatabaseMode,
@@ -53,9 +54,10 @@ import type {
 } from "./types.js";
 
 export type { ResolvedFitConfig } from "./types.js";
+export type { PrivateEndpointSetup } from "./types.js";
 
 export type ResolvedInstance =
-  | { kind: "aws"; instanceType?: string; privateEndpoint?: boolean }
+  | { kind: "aws"; instanceType?: string; privateEndpoint?: PrivateEndpointSetup }
   | { kind: "localhost" };
 
 export function resolveInstance(instance: InstanceLifetime): ResolvedInstance {

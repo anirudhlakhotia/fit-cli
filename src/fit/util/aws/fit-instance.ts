@@ -16,6 +16,7 @@ import { artifactFromPath, type Artifact, type Detail } from "../../../util/non-
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { AWS_REGION, AWS_SUBNET_ID, AWS_VPC_ID } from "../../../cloud/util/aws/aws-target.js";
 import { loadEnvironments } from "../../util/environments.js";
+import type { PrivateEndpointSetup } from "../../shared/definition/types.js";
 import { checkAwsCredentials } from "../../../cloud/util/aws/identity.js";
 import { findUbuntuAmi } from "../../../cloud/util/aws/image.js";
 import { createInstance, waitForInstanceRunning, type BlockDeviceMapping } from "../../../cloud/util/aws/create-instance.js";
@@ -111,10 +112,10 @@ export interface ProvisionOptions {
   /** Whether the run is interactive; affects the lifecycle warning message shown to the user. */
   interactive?: boolean;
   /**
-   * When true, launch the instance with the fit-cli VPC's default SG (opened intra-VPC)
+   * When present, launch the instance with the fit-cli VPC's default SG (opened intra-VPC)
    * so it can reach a Capella PrivateLink endpoint, which lands in the same SG.
    */
-  privateEndpoint?: boolean;
+  privateEndpoint?: PrivateEndpointSetup;
 }
 
 /**

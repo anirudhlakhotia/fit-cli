@@ -2,14 +2,18 @@
   preset: {
     order: 15,
     description: 'Quick sanity testing across all testing axes against a given SDK.',
-    expectedTime: '< 30 minutes',
+    expectedTime: '< 60 minutes',
   },
   version: 1,
   type: 'fit',
-  description: 'Quick sanity — operational functional, CNG functional, and situational',
+  description: 'Quick sanity — operational functional, CNG functional, Capella private endpoint functional, and situational',
   instances: [
     {
-      aws: {},
+      // privateEndpoint places this instance in the fit-cli VPC's default SG so it
+      // can reach the Capella PrivateLink endpoint the cluster-capella-pe cluster sets up.
+      aws: {
+        privateEndpoint: {},
+      },
       setup: {
         capellaEnvironment: 'prod',
       },
@@ -50,6 +54,26 @@
                   tests: {
                     classes: ['com.couchbase.client.kv.SanityTest'],
                     addToDefaultExcludedGroups: ['protostellarWillWorkLater'],
+                  },
+                },
+              ],
+            },
+          ],
+        },
+        // Capella private endpoint (PrivateLink) functional sanity test.
+        {
+          clusterConfig: 'cluster-capella-pe',
+          sessions: [
+            {
+              performer: {
+                image: '{{PERFORMER_IMAGE}}',
+                onPortInUse: 'reuse',
+              },
+              runs: [
+                {
+                  type: 'functional',
+                  tests: {
+                    classes: ['com.couchbase.client.kv.SanityTest'],
                   },
                 },
               ],
@@ -120,6 +144,30 @@
           },
         },
         onClusterExists: 'useExisting',
+      },
+    },
+    {
+      id: 'cluster-capella-pe',
+      cbdinocluster: {
+        config: {
+          nodes: [
+            {
+              count: 3,
+              version: '7.6',
+            },
+          ],
+          cloud: {
+            'cloud-provider': 'aws',
+          },
+        },
+        onClusterExists: 'useExisting',
+        capella: {
+          cloudProvider: 'aws',
+          environment: 'prod',
+          // Sets up an AWS PrivateLink connection to this cluster after allocation,
+          // and connects the FIT test-driver/performer over it instead of the public endpoint.
+          privateEndpoint: true,
+        },
       },
     },
   ],

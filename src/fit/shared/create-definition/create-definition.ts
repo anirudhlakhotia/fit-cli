@@ -361,7 +361,7 @@ async function addFunctionalRun(
   // PE testing requires an AWS EC2 instance in the fit-cli VPC — skip the usual
   // localhost/AWS choice and fix the instance accordingly.
   const instance = capellaPrivateEndpoint
-    ? { aws: { privateEndpoint: true } }
+    ? { aws: { privateEndpoint: {} } }
     : await chooseInstanceExecution(promptIdPrefix);
   const cluster = await chooseFunctionalDefinitionCluster(connectivity, capellaCloudProvider);
   const onClusterExists = cluster.kind === "cbdinocluster" ? await askClusterExistsPolicy() : undefined;
