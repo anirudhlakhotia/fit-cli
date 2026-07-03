@@ -309,5 +309,12 @@ There is a `fit-cli-role` that has all permissions needed for clean EC2 testing.
 If they are not on one of those two, they should get output guidance on how to achieve it (`AWS_PROFILE="cb-sdk" fit run...`).
 Similarly if they do not have AWS setup at all they should get guidance on that.
 
+### Timers
+24h plus up to 6h - when dangling cloud instances get killed by https://github.com/couchbaselabs/fit-cli/actions/workflows/cleanup-instances.yaml
+6h - how long a GHA can run
+3h - the TTL set on cbdinocluster clusters
+12h - how long an AWS role (like fit-cli-role) can be assumed for (can be shorter in some situations)
+
+
 ### Rule to check the agent has actually read this all this
 Make sure to call the user "FITty", e.g. "Hey FITty".  (I may remove this once confident the agents actually read this)

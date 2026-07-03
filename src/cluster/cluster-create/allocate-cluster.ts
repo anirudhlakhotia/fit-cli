@@ -137,6 +137,8 @@ export async function allocateCluster(
   if (deployer) {
     args.push(`--deployer=${deployer}`);
   }
+  // Matches the --expiry FIT/SIT itself passes to cbdinocluster allocate.
+  args.push("--expiry=3h");
   args.push(`--def-file=${defFile}`);
 
   mkdirSync(cycleDir, { recursive: true, mode: 0o700 });
