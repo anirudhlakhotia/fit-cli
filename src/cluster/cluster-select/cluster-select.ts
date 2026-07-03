@@ -58,6 +58,14 @@ export interface SelectedCluster {
    * sanity checks that curl that endpoint must be skipped.
    */
   capellaAnalytics?: boolean;
+  /**
+   * True when this Capella cluster is reached over an AWS PrivateLink connection
+   * rather than the public endpoint. Unlike public Capella hostnames, a PrivateLink
+   * private DNS hostname has no `_couchbases._tcp` SRV record, so build-fit-configuration
+   * must force `resolveDnsSrv: false` even though the cluster otherwise looks like Capella
+   * (which normally defaults `resolveDnsSrv: true`) — see build-fit-configuration.ts.
+   */
+  privateEndpoint?: boolean;
 }
 
 /** The outcome of the cluster-select workflow. */

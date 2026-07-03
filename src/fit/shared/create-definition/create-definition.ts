@@ -170,6 +170,20 @@ async function chooseInstanceExecution(promptIdPrefix: string): Promise<Instance
   return choice === "aws" ? { aws: {} } : { localhost: {} };
 }
 
+/**
+ * Ask whether to set up a PrivateLink connection to this Capella cluster. Only
+ * offered for AWS-provisioned clusters (the only provider fit-cli supports PE for
+ * today). PE requires an AWS EC2 instance in the VPC, so answering yes here means
+ * the instance-execution question is skipped in favour of a fixed AWS + privateEndpoint instance.
+ */
+async function askCapellaPrivateEndpoint(promptIdPrefix: string): Promise<boolean> {
+  return confirm({
+    promptId: qualifyPromptId("capella.private-endpoint", promptIdPrefix),
+    message: "Set up an AWS PrivateLink connection to this Capella cluster? (Requires an AWS EC2 test instance in the fit-cli VPC.)",
+    default: false,
+  });
+}
+
 async function ensureSharedRepoSetup(state: DefinitionBuilderState): Promise<void> {
   if (state.gerritRefAsked) {
     return;
@@ -324,9 +338,13 @@ async function addFunctionalRun(
   // Capella provider and environment are only needed when starting a new instance.
   let capellaCloudProvider: CapellaCloudProvider | undefined;
   let capellaEnvironment: string | undefined;
+  let capellaPrivateEndpoint = false;
   if (connectivity === "capella") {
     capellaCloudProvider = await chooseCapellaCloudProvider(promptIdPrefix);
     capellaEnvironment = await chooseCapellaEnvironment(promptIdPrefix);
+    if (capellaCloudProvider === "aws") {
+      capellaPrivateEndpoint = await askCapellaPrivateEndpoint(promptIdPrefix);
+    }
   }
 
   console.log(
@@ -340,7 +358,11 @@ async function addFunctionalRun(
           ? "\nStarting a new FIT Capella Analytics instance. cbdinocluster creates a real Capella Analytics cluster via the Capella control-plane API (cloud deployer)."
           : "\nStarting a new FIT functional instance. Runs added now will share one cluster lifetime on that instance.",
   );
-  const instance = await chooseInstanceExecution(promptIdPrefix);
+  // PE testing requires an AWS EC2 instance in the fit-cli VPC — skip the usual
+  // localhost/AWS choice and fix the instance accordingly.
+  const instance = capellaPrivateEndpoint
+    ? { aws: { privateEndpoint: true } }
+    : await chooseInstanceExecution(promptIdPrefix);
   const cluster = await chooseFunctionalDefinitionCluster(connectivity, capellaCloudProvider);
   const onClusterExists = cluster.kind === "cbdinocluster" ? await askClusterExistsPolicy() : undefined;
   const subDef = buildFitFunctionalDefinitionFrom({
@@ -353,6 +375,7 @@ async function addFunctionalRun(
     selection,
     ...(analytics ? { analytics: true } : {}),
     ...(capellaEnvironment ? { capellaEnvironment } : {}),
+    ...(capellaPrivateEndpoint ? { capellaPrivateEndpoint } : {}),
   });
   const generatedInstance = collectSubDefInstance(state, subDef);
   if (!generatedInstance) {

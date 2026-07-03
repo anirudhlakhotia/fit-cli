@@ -1,20 +1,17 @@
 {
   preset: {
     order: 15,
-    description: 'Quick sanity for private endpoint (PrivateLink) testing. Requires the cb-qe AWS account and sdkqe-github-runners-tf infrastructure.',
-    expectedTime: '< 10 minutes'
+    description: 'Quick sanity for private endpoint (PrivateLink) testing against a real Capella cluster on AWS. Runs in the normal fit-cli AWS account.',
+    expectedTime: '~15 minutes',
   },
   version: 1,
   type: 'fit',
   instances: [
     {
       aws: {
-        // Attach the cbqerunners-vpc default SG (intra-VPC) and the qerunner IAM profile
-        // so the FIT test can create a Capella private endpoint at runtime.
-        privateEndpoint: {},
-      },
-      setup: {
-        capellaEnvironment: 'dev',
+        // Places the instance in the fit-cli VPC's default SG so it can reach the
+        // Capella PrivateLink endpoint, which lands in the same SG.
+        privateEndpoint: true,
       },
       clusters: [
         {
@@ -47,16 +44,21 @@
           nodes: [
             {
               count: 3,
-              version: '8.0-stable',
-              services: ['kv', 'n1ql', 'index', 'fts'],
+              version: '7.6',
             },
           ],
-          docker: {
-            'kv-memory': 4096,
-            'fts-memory': 4096,
+          cloud: {
+            'cloud-provider': 'aws',
           },
         },
         onClusterExists: 'useExisting',
+        capella: {
+          cloudProvider: 'aws',
+          environment: 'dev',
+          // Sets up an AWS PrivateLink connection to this cluster after allocation,
+          // and connects the FIT test-driver/performer over it instead of the public endpoint.
+          privateEndpoint: true,
+        },
       },
     },
   ],

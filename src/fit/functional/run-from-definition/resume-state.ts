@@ -41,6 +41,12 @@ export interface ResumeClusterState {
   cbdinoclusterCommand?: string;
   /** The cluster's artifacts dir, where cbcollect diagnostics are gathered before removal. */
   logsDir?: string;
+  /**
+   * The Capella-side cluster UUID, present when this cluster has an AWS PrivateLink
+   * endpoint that must also be deleted on teardown. Distinct from `clusterId`
+   * (cbdinocluster's own tracking id) — the VPC endpoint is tagged with this one.
+   */
+  cloudClusterId?: string;
 }
 
 /** A performer a previous run left running, per run. */

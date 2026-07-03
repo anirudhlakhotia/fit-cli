@@ -73,6 +73,13 @@ export interface CapellaClusterSetup {
   cloudProvider: CapellaCloudProvider;
   /** Capella environment to create this cluster in. Defaults to "dev". */
   environment?: string;
+  /**
+   * Set up an AWS PrivateLink connection to this cluster after it's created, and
+   * connect the FIT test-driver/performer over it instead of the public endpoint.
+   * Requires the instance to have `aws.privateEndpoint` set (see {@link AwsInstanceSetup}).
+   * AWS only for now.
+   */
+  privateEndpoint?: boolean;
 }
 
 export interface CbdinoclusterSetup {
@@ -105,24 +112,17 @@ export interface InstanceSetup {
   capellaEnvironment?: string;
 }
 
-/**
- * Private endpoint (PrivateLink) mode for an AWS instance. When present, the
- * instance is launched into the cbqerunners VPC default SG (opened intra-VPC) so
- * the box and the Capella private endpoint can reach each other.
- *
- * `instanceProfile` names the IAM instance profile that grants the box
- * CreateVpcEndpoint + Route53 permissions at runtime (provisioned by
- * sdkqe-github-runners-tf). Omit to skip profile attachment (networking only —
- * the VPC endpoint creation by the FIT test will fail without a profile).
- */
-export interface PrivateEndpointSetup {
-  instanceProfile?: string;
-}
-
 export interface AwsInstanceSetup {
   instanceType?: string;
-  /** Present when this instance should support private endpoint (PrivateLink) testing. */
-  privateEndpoint?: PrivateEndpointSetup;
+  /**
+   * When true, the instance is launched into the VPC default SG (opened intra-VPC
+   * by terraform) so it can reach a Capella PrivateLink endpoint, which also lands
+   * in that SG. AWS credentials are forwarded to the box the same way situational
+   * runs do, so cbdinocluster's `private-endpoints setup-link` (which creates the
+   * VPC endpoint) can authenticate as fit-cli-role — no separate IAM instance
+   * profile is needed. Pair with `capella.privateEndpoint: true` on the cluster.
+   */
+  privateEndpoint?: boolean;
 }
 
 export type InstanceMode =

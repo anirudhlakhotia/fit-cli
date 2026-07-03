@@ -63,8 +63,14 @@ export function situationalCbdinoclusterInitArgs(
  * The `cbdinocluster init` arguments for a functional run that creates a Capella
  * cloud cluster. Capella is enabled (no `--disable-capella`) and the chosen
  * cloud provider is set as the default. Direct cloud-infrastructure access
- * (AWS/GCP/Azure) is not needed — Capella manages the underlying infra through
- * its own API — so those blocks remain disabled.
+ * (AWS/GCP/Azure) is not normally needed — Capella manages the underlying infra
+ * through its own API — so those blocks stay disabled.
+ *
+ * `privateEndpoint` is the exception: `cbdinocluster private-endpoints setup-link`
+ * calls the AWS EC2 API directly (`CreateVpcEndpoint`/`ModifyVpcEndpoint`) to wire up
+ * PrivateLink, so it needs the `aws` block enabled. AWS credentials are uploaded
+ * before init runs (see `uploadRemoteAwsCredentials` in `run-from-definition.ts`),
+ * so `--aws-region` here lets `--auto` enable the aws block directly.
  *
  * `--capella-provider` sets the default provider in `~/.cbdinocluster`;
  * `--capella-*-region` pre-fills the per-provider region defaults so
@@ -75,10 +81,11 @@ export function situationalCbdinoclusterInitArgs(
 export function capellaFunctionalCbdinoclusterInitArgs(
   cloudProvider: CapellaCloudProvider,
   dockerNetwork: string = DEFAULT_CBDINOCLUSTER_DOCKER_NETWORK,
+  privateEndpoint = false,
 ): string {
   return [
     "--auto",
-    "--disable-aws",
+    ...(privateEndpoint ? [`--aws-region ${AWS_REGION}`] : ["--disable-aws"]),
     "--disable-azure",
     "--disable-gcp",
     `--capella-provider ${cloudProvider}`,

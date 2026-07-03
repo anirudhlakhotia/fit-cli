@@ -41,9 +41,10 @@ import { type ClusterExistsPolicy } from "./cluster-exists-policy.js";
 import { loadEnvironments } from "../../fit/util/environments.js";
 import { cngServerImageRef, type CbdinoclusterDef } from "./build-cluster-def.js";
 import { isAlias, resolveAlias } from "./cb-alias.js";
-import type { CbdinoclusterInitSetup, CbdinoclusterSource } from "../../fit/shared/definition/types.js";
+import type { CapellaClusterSetup, CbdinoclusterInitSetup, CbdinoclusterSource } from "../../fit/shared/definition/types.js";
 import { defaultCbdinoclusterInitArgs, situationalCbdinoclusterInitArgs } from "./default-cbdinocluster-init-config.js";
 import { throwFatalToCluster } from "../../fit/shared/failure-classification.js";
+import { deleteVpcEndpointsForCluster } from "../../cloud/util/aws/delete-vpc-endpoints.js";
 
 /** The bare command name we look for on the PATH. */
 const CBDINOCLUSTER = "cbdinocluster";
@@ -451,6 +452,13 @@ export interface SetupDeclarativeClusterResult extends RunOutput {
   clusterId?: string;
   /** The resolved cbdinocluster command, present when one was found — for teardown. */
   cbdinocluster?: string;
+  /**
+   * The Capella-side cluster UUID (distinct from cbdinocluster's own `clusterId`),
+   * present when private endpoint setup succeeded. cbdinocluster's `private-endpoints
+   * setup-link` tags the created VPC endpoint with this id (`Cbdc2ClusterId`), not
+   * cbdinocluster's own cluster id — so teardown must delete by this id, not `clusterId`.
+   */
+  cloudClusterId?: string;
 }
 
 const FAILED = (extra: Partial<SetupDeclarativeClusterResult> = {}): SetupDeclarativeClusterResult => ({
@@ -549,6 +557,8 @@ async function selectedClusterFor(
   cng = false,
   caoHosts?: { uiHost: string; cngHost: string },
   loadBalanced = false,
+  privateEndpoint = false,
+  privateConnectionString?: string,
 ): Promise<SelectedCluster | undefined> {
   // CAO/OpenShift clusters: build connstrs from the parsed route hostnames
   // instead of calling `cbdinocluster connstr` (which returns "no endpoint available").
@@ -567,15 +577,26 @@ async function selectedClusterFor(
     return { ...cluster, cng: { performerConnectionString, tls: { insecure: true } } };
   }
 
-  const connectionString = await connstrFor(cbdinocluster, id, execution, false);
+  // Private endpoint mode: connect over the PrivateLink connection string instead of
+  // the cluster's normal (public) one. If PE was requested but setup didn't produce a
+  // connection string, fail outright rather than silently falling back to the public
+  // endpoint — a silent fallback would make the run "pass" without testing PE at all.
+  if (privateEndpoint && !privateConnectionString) {
+    console.error(`✗ setup-cluster: private endpoint was requested for cluster ${id} but setup didn't succeed; refusing to fall back to the public connection.`);
+    return undefined;
+  }
+  const connectionString = privateConnectionString ?? (await connstrFor(cbdinocluster, id, execution, false));
   if (!connectionString) {
     return undefined;
   }
   console.log(`→ setup-cluster: cluster ${id} is at ${connectionString}`);
-  const cluster = buildSelectedClusterFromConnstr(connectionString);
-  if (!cluster) {
+  const builtCluster = buildSelectedClusterFromConnstr(connectionString);
+  if (!builtCluster) {
     return undefined;
   }
+  // Tag PrivateLink connections so build-fit-configuration knows not to rely on
+  // Capella's public-DNS SRV record (the private DNS hostname has no SRV record).
+  const cluster = connectionString === privateConnectionString ? { ...builtCluster, privateEndpoint: true } : builtCluster;
   if (!cng) {
     // A load-balanced Enterprise Analytics cluster: the Analytics SDK performer
     // connects through the nginx load balancer (a single host), not the driver's
@@ -721,6 +742,86 @@ async function allowHostIpOnCapellaCluster(
 }
 
 /**
+ * `cbdinocluster cloud get-cloud-id <id>` prints the Capella-side cluster UUID via
+ * Go's plain `log.Printf` — which, unlike cbdinocluster's other machine-readable
+ * output (allocate/connstr, printed via fmt so it lands on stdout), goes to the
+ * default logger's stderr and is timestamp-prefixed
+ * (e.g. "2026/06/29 12:00:00 8fb3a708-1234-4567-89ab-cdef01234567"). We merge
+ * stderr into the captured stream via a shell redirect and pull the trailing UUID
+ * off the last non-empty line.
+ */
+const CLOUD_CLUSTER_ID_PATTERN = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\s*$/i;
+
+function parseCloudClusterId(output: string): string | null {
+  const lines = output.split("\n").map((line) => line.trim()).filter(Boolean);
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const match = CLOUD_CLUSTER_ID_PATTERN.exec(lines[i]);
+    if (match) return match[1];
+  }
+  return null;
+}
+
+/**
+ * The Capella-side cluster UUID for a cbdinocluster-tracked cluster. This is
+ * *not* the same id used for `connstr`/`remove`/etc — cbdinocluster tracks its
+ * own `ClusterID` internally, separate from Capella's own `CloudClusterID`. The
+ * VPC endpoint `setup-link` creates is tagged with the latter (see
+ * CreateVPCEndpoint in cbdinocluster's awscontrol package), so cleanup needs this
+ * id, not the cbdinocluster one.
+ */
+async function cloudClusterIdFor(
+  cbdinocluster: string,
+  id: string,
+  execution: ClusterCommandExecutor,
+): Promise<string | undefined> {
+  try {
+    const output = await execution.capture(
+      "sh",
+      ["-lc", `${posixQuote(cbdinocluster)} cloud get-cloud-id ${posixQuote(id)} 2>&1`],
+      undefined,
+      { display: "cbdinocluster cloud get-cloud-id" },
+    );
+    return parseCloudClusterId(output) ?? undefined;
+  } catch (err) {
+    console.error(`✗ setup-cluster: couldn't resolve the Capella cloud cluster id for ${id}: ${(err as Error).message}`);
+    return undefined;
+  }
+}
+
+/**
+ * Fetch a Capella cluster's already-configured PrivateLink connection string.
+ * Split out from {@link setupPrivateEndpoint} so a reused (`useExisting`)
+ * cluster can re-fetch it without redoing `enable`/`setup-link` — the VPC
+ * endpoint created for the fit-cli VPC is reachable from any instance in that
+ * VPC, not just the one that created it, so it only needs to be created once.
+ */
+async function fetchPrivateEndpointConnstr(
+  cbdinocluster: string,
+  id: string,
+  execution: ClusterCommandExecutor,
+): Promise<string | undefined> {
+  try {
+    console.log(`→ setup-cluster: waiting for the private endpoint's DNS to become visible`);
+    const output = await execution.capture(
+      cbdinocluster,
+      ["private-endpoints", "connstr", id, "--wait-visible"],
+      undefined,
+      { display: "cbdinocluster private-endpoints connstr --wait-visible" },
+    );
+    const connectionString = parseConnstr(output);
+    if (!connectionString) {
+      console.error(`✗ setup-cluster: private-endpoints connstr didn't return a connection string for ${id}.`);
+      return undefined;
+    }
+    console.log(`→ setup-cluster: private endpoint ready — cluster ${id} reachable at ${connectionString}`);
+    return connectionString;
+  } catch (err) {
+    console.error(`✗ setup-cluster: couldn't fetch the private endpoint connection string for ${id}: ${(err as Error).message}`);
+    return undefined;
+  }
+}
+
+/**
  * Create the default FIT database user on a newly-allocated Capella cloud
  * cluster (Capella Server or Capella Analytics). cbdinocluster's cloud deployer
  * doesn't auto-create one the way the docker deployer does — without this,
@@ -773,6 +874,37 @@ async function createCapellaDefaultBucket(
   }
 }
 
+/**
+ * Set up an AWS PrivateLink connection to a Capella cluster via cbdinocluster's
+ * `private-endpoints` commands. Returns the private `couchbases://` connection
+ * string to connect over, plus the Capella cloud cluster id (needed later to
+ * delete the VPC endpoint on teardown — see {@link cloudClusterIdFor}).
+ * Best-effort: on failure, explains and returns an empty result so the caller
+ * falls back to the cluster's normal (public) connection string.
+ */
+async function setupPrivateEndpoint(
+  cbdinocluster: string,
+  id: string,
+  execution: ClusterCommandExecutor,
+): Promise<{ connectionString?: string; cloudClusterId?: string }> {
+  try {
+    console.log(`→ setup-cluster: enabling private endpoints on Capella cluster ${id}`);
+    await execution.run(cbdinocluster, ["private-endpoints", "enable", id], undefined, {
+      display: "cbdinocluster private-endpoints enable",
+    });
+    const cloudClusterId = await cloudClusterIdFor(cbdinocluster, id, execution);
+    console.log(`→ setup-cluster: setting up the PrivateLink connection to ${id} (auto-identifying this instance)`);
+    await execution.run(cbdinocluster, ["private-endpoints", "setup-link", id, "--auto"], undefined, {
+      display: "cbdinocluster private-endpoints setup-link --auto",
+    });
+    const connectionString = await fetchPrivateEndpointConnstr(cbdinocluster, id, execution);
+    return { ...(connectionString ? { connectionString } : {}), ...(cloudClusterId ? { cloudClusterId } : {}) };
+  } catch (err) {
+    console.error(`✗ setup-cluster: failed to set up the private endpoint for ${id}: ${(err as Error).message}`);
+    return {};
+  }
+}
+
 /** Allocate a fresh cluster from the resolved plan and resolve it for the run. */
 async function allocate(
   cbdinocluster: string,
@@ -782,6 +914,7 @@ async function allocate(
   cycleDir: string,
   cng: boolean,
   loadBalanced: boolean,
+  privateEndpoint = false,
 ): Promise<SetupDeclarativeClusterResult> {
   const resolvedConfig = {
     ...config,
@@ -823,7 +956,19 @@ async function allocate(
     await enableIngresses(cbdinocluster, allocated.clusterId, execution);
   }
 
-  let cluster = await selectedClusterFor(cbdinocluster, allocated.clusterId, execution, cng, allocated.caoHosts, loadBalanced);
+  const privateEndpointResult =
+    deployer === "cloud" && privateEndpoint ? await setupPrivateEndpoint(cbdinocluster, allocated.clusterId, execution) : undefined;
+
+  let cluster = await selectedClusterFor(
+    cbdinocluster,
+    allocated.clusterId,
+    execution,
+    cng,
+    allocated.caoHosts,
+    loadBalanced,
+    deployer === "cloud" && privateEndpoint,
+    privateEndpointResult?.connectionString,
+  );
 
   if (cng && allocated.caoHosts) {
     const { username, password } = cluster?.credentials ?? { username: "Administrator", password: "password" };
@@ -837,11 +982,24 @@ async function allocate(
     cluster = { ...cluster, capellaAnalytics: true };
   }
 
+  // Private endpoint setup failed on a cluster we just allocated: don't leave a paid
+  // Capella cluster (and possibly a paid VPC endpoint) orphaned — mirrors fit-instance.ts's
+  // "don't leave a paid box lying around if bring-up failed" discipline.
+  if (!cluster && deployer === "cloud" && privateEndpoint) {
+    console.error(`✗ setup-cluster: private endpoint setup failed — removing the newly-allocated cluster ${allocated.clusterId} to avoid leaking it.`);
+    await removeCluster(cbdinocluster, allocated.clusterId, execution);
+    if (privateEndpointResult?.cloudClusterId) {
+      await deleteVpcEndpointsForCluster(privateEndpointResult.cloudClusterId).catch(() => {});
+    }
+    return FAILED({ cbdinocluster });
+  }
+
   return {
     ...(cluster ? { cluster } : {}),
     allocated: true,
     clusterId: allocated.clusterId,
     cbdinocluster,
+    ...(privateEndpointResult?.cloudClusterId ? { cloudClusterId: privateEndpointResult.cloudClusterId } : {}),
     artifacts: allocated.artifacts,
     details: allocated.details,
   };
@@ -870,6 +1028,8 @@ export async function setupDeclarativeCluster(plan: {
   githubCredentials?: { user: string; token: string };
   /** Where to get the cbdinocluster binary. Absent means latest release. */
   source?: CbdinoclusterSource;
+  /** Present when this is a Capella cloud cluster; `privateEndpoint` triggers PrivateLink setup after allocation. */
+  capella?: CapellaClusterSetup;
 }, execution: ClusterCommandExecutor = localClusterCommandExecutor(), cycleDir: string = ensureRunDir()): Promise<SetupDeclarativeClusterResult> {
   const cng = plan.cng ?? false;
   // A self-managed Enterprise Analytics cluster is fronted by an nginx load
@@ -923,7 +1083,23 @@ export async function setupDeclarativeCluster(plan: {
       `→ setup-cluster: onClusterExists is "useExisting" — trusting the running cluster ` +
         `${decision.cluster.id} [${decision.cluster.details}].`,
     );
-    let cluster = await selectedClusterFor(cbdinocluster, decision.cluster.id, execution, cng, undefined, loadBalanced);
+    const reusedPrivateEndpoint = plan.deployer === "cloud" && plan.capella?.privateEndpoint === true;
+    // The VPC endpoint (once created) is reachable from any instance in the fit-cli VPC,
+    // so a reused cluster just needs its already-configured private connstr re-fetched —
+    // no need to redo enable/setup-link.
+    const privateConnectionString = reusedPrivateEndpoint
+      ? await fetchPrivateEndpointConnstr(cbdinocluster, decision.cluster.id, execution)
+      : undefined;
+    let cluster = await selectedClusterFor(
+      cbdinocluster,
+      decision.cluster.id,
+      execution,
+      cng,
+      undefined,
+      loadBalanced,
+      reusedPrivateEndpoint,
+      privateConnectionString,
+    );
     if (cluster && plan.deployer === "cloud" && plan.config?.columnar) {
       cluster = { ...cluster, capellaAnalytics: true };
     }
@@ -962,7 +1138,7 @@ export async function setupDeclarativeCluster(plan: {
   if (effectiveDeployer === "docker") {
     warnIfDockerNotEnabled(execution);
   }
-  return allocate(cbdinocluster, plan.config, effectiveDeployer, execution, cycleDir, cng, loadBalanced);
+  return allocate(cbdinocluster, plan.config, effectiveDeployer, execution, cycleDir, cng, loadBalanced, plan.capella?.privateEndpoint ?? false);
 }
 
 if (isMain(import.meta.url)) {

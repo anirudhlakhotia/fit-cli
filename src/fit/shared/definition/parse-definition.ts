@@ -24,7 +24,6 @@ import {
   SITUATIONAL_DATABASE_MODES,
   TEST_PRESETS,
   type AwsInstanceSetup,
-  type PrivateEndpointSetup,
   type CbdinoclusterInitSetup,
   type CbdinoclusterSetup,
   type ClusterConfigRef,
@@ -248,7 +247,7 @@ function validateCbdinocluster(value: unknown, path: string): CbdinoclusterSetup
 
 function validateCapellaClusterSetup(value: unknown, path: string): CapellaClusterSetup {
   const record = requireRecord(value, path);
-  rejectUnknown(record, ["cloudProvider", "environment"], path);
+  rejectUnknown(record, ["cloudProvider", "environment", "privateEndpoint"], path);
   const cloudProvider = requireString(record, "cloudProvider", `${path}.cloudProvider`);
   if (!CAPELLA_CLOUD_PROVIDERS.includes(cloudProvider as never)) {
     throw new InvalidDefinitionError(
@@ -260,6 +259,10 @@ function validateCapellaClusterSetup(value: unknown, path: string): CapellaClust
   if (environment !== undefined) {
     setup.environment = environment;
   }
+  const privateEndpoint = validateOptionalBoolean(record, "privateEndpoint", `${path}.privateEndpoint`);
+  if (privateEndpoint !== undefined) {
+    setup.privateEndpoint = privateEndpoint;
+  }
   return setup;
 }
 
@@ -267,15 +270,14 @@ function validateOptionalString(record: Record<string, unknown>, key: string, pa
   return record[key] === undefined ? undefined : requireString(record, key, path);
 }
 
-function validatePrivateEndpointSetup(value: unknown, path: string): PrivateEndpointSetup {
-  const record = value === null || value === undefined ? {} : requireRecord(value, path);
-  rejectUnknown(record, ["instanceProfile"], path);
-  const pe: PrivateEndpointSetup = {};
-  const instanceProfile = validateOptionalString(record, "instanceProfile", `${path}.instanceProfile`);
-  if (instanceProfile !== undefined) {
-    pe.instanceProfile = instanceProfile;
+function validateOptionalBoolean(record: Record<string, unknown>, key: string, path: string): boolean | undefined {
+  if (record[key] === undefined) {
+    return undefined;
   }
-  return pe;
+  if (typeof record[key] !== "boolean") {
+    throw new InvalidDefinitionError(`"${path}" must be a boolean; got ${JSON.stringify(record[key])}`);
+  }
+  return record[key];
 }
 
 function validateAwsInstance(value: unknown, path: string): AwsInstanceSetup {
@@ -286,8 +288,9 @@ function validateAwsInstance(value: unknown, path: string): AwsInstanceSetup {
   if (instanceType !== undefined) {
     aws.instanceType = instanceType;
   }
-  if (record["privateEndpoint"] !== undefined) {
-    aws.privateEndpoint = validatePrivateEndpointSetup(record["privateEndpoint"], `${path}.privateEndpoint`);
+  const privateEndpoint = validateOptionalBoolean(record, "privateEndpoint", `${path}.privateEndpoint`);
+  if (privateEndpoint !== undefined) {
+    aws.privateEndpoint = privateEndpoint;
   }
   return aws;
 }

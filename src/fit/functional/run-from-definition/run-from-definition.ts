@@ -59,6 +59,7 @@ import { DEFAULT_CAPELLA_ENV, resolveCapellaConfig, resolveFitPerformerDir, reso
 import { terminateInstanceCommand } from "../../util/aws/lifecycle-warning.js";
 import { maybeUploadRunArtifacts } from "../../util/aws/upload-run-artifacts.js";
 import { AWS_REGION } from "../../../cloud/util/aws/aws-target.js";
+import { deleteVpcEndpointsForCluster } from "../../../cloud/util/aws/delete-vpc-endpoints.js";
 import { checkAwsCredentials, type AwsCredentials } from "../../../cloud/util/aws/identity.js";
 import {
   localClusterCommandExecutor,
@@ -560,6 +561,7 @@ export async function setupCluster(
           ...(outcome.clusterId ? { clusterId: outcome.clusterId } : {}),
           ...(outcome.cbdinocluster ? { cbdinoclusterCommand: outcome.cbdinocluster } : {}),
           logsDir: join(clusterDir, "server-logs"),
+          ...(outcome.cloudClusterId ? { cloudClusterId: outcome.cloudClusterId } : {}),
         }
       : undefined;
     return {
@@ -1181,6 +1183,23 @@ interface TeardownInputs {
 }
 
 /**
+ * Delete a Capella cluster's AWS PrivateLink VPC endpoint(s), if any. Runs
+ * against fit-cli's own AWS credentials (not the remote box) — cbdinocluster's
+ * `remove` only tears down the cluster itself, never a successfully-linked
+ * ("available") VPC endpoint, so this must run separately or the endpoint leaks.
+ * `cloudClusterId` is the Capella-side UUID (see {@link ResumeClusterState.cloudClusterId}),
+ * not cbdinocluster's own cluster id — the VPC endpoint is tagged with the former.
+ * Best-effort: failure here doesn't fail the run's teardown.
+ */
+async function deleteClusterPrivateEndpoint(cloudClusterId: string): Promise<void> {
+  try {
+    await deleteVpcEndpointsForCluster(cloudClusterId);
+  } catch (err) {
+    fitCliWarn(`⚠ Failed to delete the private endpoint's VPC endpoint for cluster ${cloudClusterId}: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+/**
  * Tear down just an execution group's own cluster and performers (not the box):
  * stop its performers and remove a cluster it allocated. Used when the box is shared
  * with later execution groups from the same definition instance, so the instance is
@@ -1204,6 +1223,9 @@ async function disposeGroupClusterAndPerformers(
       await collectClusterLogs(clusterState.cbdinoclusterCommand, clusterState.clusterId, clusterState.logsDir, execution);
     }
     await removeCluster(clusterState.cbdinoclusterCommand, clusterState.clusterId, execution);
+    if (clusterState.cloudClusterId) {
+      await deleteClusterPrivateEndpoint(clusterState.cloudClusterId);
+    }
     popLogContext("cluster");
   }
 }
@@ -1376,6 +1398,9 @@ async function teardownRun(inputs: TeardownInputs): Promise<{ leftUp: boolean }>
         await collectClusterLogs(clusterState.cbdinoclusterCommand, clusterState.clusterId, clusterState.logsDir, execution);
       }
       await removeCluster(clusterState.cbdinoclusterCommand, clusterState.clusterId, execution);
+       if (clusterState.cloudClusterId) {
+        await deleteClusterPrivateEndpoint(clusterState.cloudClusterId);
+      }
       popLogContext("cluster");
     }
   }
@@ -1834,6 +1859,12 @@ export async function runFromDefinition(
                 );
               }
               await uploadRemoteCapellaConfig(execution.target, execution.rootDir, capella);
+              // Private endpoint setup needs cbdinocluster's own AWS block enabled (it calls
+              // the EC2 API directly for CreateVpcEndpoint) — forward the same fit-cli-role
+              // credentials the situational branch uses, so setup-link can authenticate.
+              if (capellaSetup.privateEndpoint && awsCredentials) {
+                await uploadRemoteAwsCredentials(execution.target, execution.rootDir, awsCredentials);
+              }
             }
             // Inject the derived init args and deployer into the cbdinocluster plan.
             // Neither lives in the definition file — both are derived from capella.cloudProvider.
@@ -1841,7 +1872,7 @@ export async function runFromDefinition(
               ...functionalCycle,
               cbdinocluster: {
                 ...functionalCycle.cbdinocluster!,
-                init: { args: capellaFunctionalCbdinoclusterInitArgs(capellaSetup.cloudProvider) },
+                init: { args: capellaFunctionalCbdinoclusterInitArgs(capellaSetup.cloudProvider, undefined, capellaSetup.privateEndpoint) },
                 deployer: "cloud",
               },
             };
