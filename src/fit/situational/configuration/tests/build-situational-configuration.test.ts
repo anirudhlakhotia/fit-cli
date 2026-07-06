@@ -29,8 +29,15 @@ test("a custom performer port is honoured", () => {
   assert.deepEqual(config.performerPorts, [8070]);
 });
 
-test("situational tests are not excluded", () => {
+test("columnar/analytics tests are excluded by default", () => {
   const config = buildSituationalConfiguration(database);
+  assert.deepEqual(config.excludeTests, ["columnar"]);
+});
+
+test("a definition fitConfig piece can opt back into columnar tests", () => {
+  const config = buildSituationalConfiguration(database, DEFAULT_CBDINO_SETTINGS, 8060, {
+    excludeTests: [],
+  });
   assert.deepEqual(config.excludeTests, []);
 });
 
