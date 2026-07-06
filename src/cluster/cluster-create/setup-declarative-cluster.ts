@@ -861,6 +861,9 @@ async function createCloudDeployerUser(
  * Server cluster. Capella doesn't auto-create one, and skipBucketCreation=true
  * in FITConfiguration means the test-driver won't either. Not needed for Capella
  * Analytics, which has no KV service to hold a bucket.
+ *
+ * flush-enabled is set so ObservabilityTest.bucketFlush (and any other test that
+ * flushes the default bucket) can run — Capella buckets default to flush disabled.
  */
 async function createCapellaDefaultBucket(
   cbdinocluster: string,
@@ -871,7 +874,7 @@ async function createCapellaDefaultBucket(
   try {
     await execution.run(
       cbdinocluster,
-      ["buckets", "add", clusterId, "default", "--ram-quota-mb=100"],
+      ["buckets", "add", clusterId, "default", "--ram-quota-mb=100", "--flush-enabled"],
       undefined,
       { display: "cbdinocluster buckets add default" },
     );
