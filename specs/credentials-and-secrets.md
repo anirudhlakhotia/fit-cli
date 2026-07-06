@@ -1,0 +1,44 @@
+This doc covers how credentials and AWS secrets are used.
+This is a human-written doc.  Targeted, specific, reviewed LLM edits are permitted; but keep this doc concise and accurate.
+
+# Credentials
+The basic goal with clean EC2 testing is that as long as the user has some level of AWS access, we bootstrap into (assume) a `fit-cli-role` that has permissions to do everything.
+
+## Secrets
+[SECRETS1] We store all credentials for clean cloud testing in AWS secrets.
+A core goal is to have the same environment easily spunup from both localhost and CI, and so we want to avoid encoding the secrets into e.g. GHA. 
+This is read by fit-cli on the user's machine rather than on the EC2 instance, and written in a hidden way.  The goal is to easily support Azure and GCP in future while maintaining the secrets in one place.
+Note that the secrets are easily read with anyone with AWS permissions, and the intention is to hide secrets from those outside Couchbase.
+So nothing __too__ secret should be stored - we are talking GHA PATs, Gerrit creds, database passwords, etc.
+
+### Capella
+We use the known sdkqe@couchbase.com accounts, which are setup in all Capella envs, for all Capella testing by default.
+These are stored in environments.json5 and AWS Secrets [SECRETS1].
+[CAPELLA1] The user can provide a different acount in their fit-cli.  This is used both for localhost testing and clean cloud instance testing, an exception to the [CONFIG1] rule.  
+
+## AWS
+[SECRETS2] After encountering various problems when using user's localhost credentials in the clean EC2 testing, have decided to settle on EC2 testing exclusively using info from AWS secrets (Github PAT, Gerrit creds, etc).
+Those problems included the user's local Github PAT token not being recently SSO-authorised to access couchbaselabs repos (very common).
+[AWS1] The exception to this is AWS credentials themselves; the user must already have these.  They don't have to have `aws` installed; they can just get an access key and secret key from the AWS UI and set these via env vars.  These must come from either the cb-sdk or cb-qe accounts for [SECRETS3].
+[SECRETS3] There is a `fit-cli-role` that has all permissions needed for clean EC2 testing.  In GHAs we assume this role using OIDC.  When a user runs `fit-cli` we also assume the role.  The goal is that no matter if the user is on either cb-sdk or cb-qe, they will be able to assume `fit-cli-role` and it'll work.  
+If they are not on one of those two, they should get output guidance on how to achieve it (`AWS_PROFILE="cb-sdk" fit run...`).
+Similarly if they do not have AWS setup at all they should get guidance on that.
+
+## Localhost testing
+[CONFIG1] By extension of the [SECRETS2] decision, the user's localhost creds are only needed for localhost testing; not for clean cloud testing.  (With [CAPELLA1] excepted.)
+So they are stored in a localhost section in the config:
+```
+cat /home/grahamp-work/.fit-cli/config.json5
+
+{
+  version: 1,
+  ...
+  localhost: {
+    github: {
+      user: 'programmatix',
+      token: 'XXXX'
+    },
+    ...
+  },
+}
+```
