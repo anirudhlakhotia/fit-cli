@@ -57,7 +57,7 @@ async function loadPresetMap(): Promise<Record<string, string>> {
     "functional":                  ((await import("../../../../presets/functional.json5",                  { with: { type: "text" } })) as { default: string }).default,
     "functional-quick-sanity":     ((await import("../../../../presets/functional-quick-sanity.json5",     { with: { type: "text" } })) as { default: string }).default,
     "qe-set":                      ((await import("../../../../presets/qe-set.json5",                     { with: { type: "text" } })) as { default: string }).default,
-    "qe-set-mega-wip":             ((await import("../../../../presets/qe-set-mega-wip.json5",            { with: { type: "text" } })) as { default: string }).default,
+    "qe-set-release":              ((await import("../../../../presets/qe-set-release.json5",             { with: { type: "text" } })) as { default: string }).default,
     "situational-quick-sanity":    ((await import("../../../../presets/situational-quick-sanity.json5",   { with: { type: "text" } })) as { default: string }).default,
     "situational-everything":    ((await import("../../../../presets/situational-everything.json5",   { with: { type: "text" } })) as { default: string }).default,
     "private-endpoint-quick-sanity":    ((await import("../../../../presets/private-endpoint-quick-sanity.json5",   { with: { type: "text" } })) as { default: string }).default,

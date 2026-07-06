@@ -1,0 +1,187 @@
+{
+  preset: {
+    order: 5,
+    description: 'Full release sign-off: functional on-prem (8.0-stable + 7.6-stable), functional CNG, and situational against a real Capella (AWS) cluster.',
+    expectedTime: 'Quite long',
+  },
+  version: 1,
+  type: 'fit',
+  instances: [
+    {
+      aws: {},
+      setup: {
+        capellaEnvironment: 'prod',
+      },
+      clusters: [
+        {
+          // Functional on-prem testing, 8.0-stable.
+          clusterConfig: '8.0-stable',
+          sessions: [
+            {
+              performer: {
+                image: '{{PERFORMER_IMAGE}}',
+              },
+              runs: [
+                {
+                  type: 'functional',
+                  tests: {
+                    presets: ['all'],
+                  },
+                },
+              ],
+            },
+          ],
+        },
+        {
+          // Functional on-prem testing, 7.6-stable.
+          clusterConfig: '7.6-stable',
+          sessions: [
+            {
+              performer: {
+                image: '{{PERFORMER_IMAGE}}',
+              },
+              runs: [
+                {
+                  type: 'functional',
+                  tests: {
+                    presets: ['all'],
+                  },
+                },
+              ],
+            },
+          ],
+        },
+        {
+          // Functional CNG testing. CNG/Protostellar has no 7.6 build (see
+          // environments.json5's `cngClusterVersion` comment), so this only
+          // runs at the pinned 8.0 build cb-rhcc currently publishes.
+          clusterConfig: 'cng',
+          sessions: [
+            {
+              performer: {
+                image: '{{PERFORMER_IMAGE}}',
+              },
+              runs: [
+                {
+                  type: 'functional',
+                  fitConfig: 'cng-fit-config',
+                  tests: {
+                    presets: ['all'],
+                    addToDefaultExcludedGroups: ['protostellarWillWorkLater'],
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      // Situational testing always runs against a real Capella cloud cluster
+      // (AWS by default) via cbdino's own cluster management, separate from
+      // the clusters above.
+      //
+      // TODO: no Private Endpoint variant here. PE only wires up for a
+      // `functional` run bound to a `clusters[]` entry with
+      // `cbdinocluster.capella.privateEndpoint: {}` (see
+      // presets/private-endpoint-everything.json5) — situational's own cbdino
+      // block has no supported PE hook.
+      //
+      // TODO: no Sit CNG variant here. Situational's cbdino config only takes
+      // a server version/path, with no CAO/gateway hook, so it can't target a
+      // CNG cluster yet.
+      clusterlessSessions: [
+        {
+          performer: {
+            image: '{{PERFORMER_IMAGE}}',
+            onPortInUse: 'reuse',
+          },
+          runs: [
+            {
+              type: 'situational',
+              tests: {
+                presets: ['all'],
+              },
+              situational: {
+                database: {
+                  mode: 'hosted',
+                  resultsEnvironment: 'prod',
+                },
+              },
+            },
+          ],
+        },
+      ],
+    },
+  ],
+  clusterConfigs: [
+    {
+      id: '8.0-stable',
+      cbdinocluster: {
+        config: {
+          nodes: [
+            {
+              count: 3,
+              version: '8.0-stable',
+              services: ['kv', 'n1ql', 'index', 'fts'],
+            },
+          ],
+          docker: {
+            'kv-memory': 4096,
+            'fts-memory': 4096,
+          },
+        },
+        onClusterExists: 'useExisting',
+      },
+    },
+    {
+      id: '7.6-stable',
+      cbdinocluster: {
+        config: {
+          nodes: [
+            {
+              count: 3,
+              version: '7.6-stable',
+              services: ['kv', 'n1ql', 'index', 'fts'],
+            },
+          ],
+          docker: {
+            'kv-memory': 4096,
+            'fts-memory': 4096,
+          },
+        },
+        onClusterExists: 'useExisting',
+      },
+    },
+    {
+      id: 'cng',
+      cbdinocluster: {
+        config: {
+          nodes: [
+            {
+              count: 3,
+              version: '8.0.2-5503',
+              services: ['kv', 'n1ql', 'index', 'fts'],
+            },
+          ],
+          // Keep in sync with environments.json5's `caoOperatorVersion`/`cngVersion` defaults.
+          cao: {
+            'operator-version': '2.9.2',
+            'gateway-version': '1.2.1-123',
+          },
+        },
+        onClusterExists: 'useExisting',
+      },
+    },
+  ],
+  fitConfigs: [
+    {
+      id: 'cng-fit-config',
+      connection: {
+        scheme: 'couchbase2',
+        tls: { insecure: true },
+      },
+      config: {
+        excludeTests: ['ssh', 'openshift'],
+      },
+    },
+  ],
+}
