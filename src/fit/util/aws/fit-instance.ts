@@ -28,6 +28,7 @@ import { instanceRunDir } from "../../../util/non-fit/replay.js";
 import { instanceLabel } from "../../shared/util/run-labels.js";
 import { waitForSsh, type RemoteHost } from "../../../util/non-fit/ssh.js";
 import { RemoteTarget } from "../../../util/non-fit/remote-target.js";
+import { forceNtpSync } from "../../../util/non-fit/ntp-sync.js";
 import { fitCliWarn } from "../../../util/non-fit/fit-cli-log.js";
 import { formatBanner, formatEc2DeletionResponsibilityBanner, terminateInstanceCommand } from "./lifecycle-warning.js";
 import { warnAboutExistingInstances } from "./warn-existing-instances.js";
@@ -196,6 +197,12 @@ export async function provisionFitInstance(options: ProvisionOptions = {}): Prom
     }
     console.log(" ready");
 
+    const target = new RemoteTarget(host);
+    // A fresh box's clock can be off until chrony's first sync settles, which is enough to trip
+    // tests with a tight elapsed-time margin (see forceNtpSync's doc comment). Best-effort: never
+    // blocks provisioning on failure.
+    await forceNtpSync(target);
+
     const id = instanceId;
     const terminate = async (): Promise<void> => {
       await terminateInstance(id);
@@ -236,7 +243,7 @@ export async function provisionFitInstance(options: ProvisionOptions = {}): Prom
       "Via EC2 Instance Connect (no key needed — requires ec2-instance-connect:SendSSHPublicKey):",
       `  ${ec2icCommand}`,
     ]));
-    return { instanceId: id, address, keyPath, host, target: new RemoteTarget(host), artifacts, details, terminate };
+    return { instanceId: id, address, keyPath, host, target, artifacts, details, terminate };
   } catch (err) {
     // Don't leave a paid box (or its key) lying around if bring-up failed. If we
     // never captured the instance id (e.g. launch threw mid-call), sweep by the
