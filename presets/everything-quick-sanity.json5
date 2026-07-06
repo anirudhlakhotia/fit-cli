@@ -6,17 +6,11 @@
   },
   version: 1,
   type: 'fit',
-  description: 'Quick sanity — operational functional, CNG functional, Capella private endpoint functional, and situational',
+  description: 'Quick sanity — operational functional, CNG functional, Capella private endpoint functional + situational',
   instances: [
     {
-      // privateEndpoint places this instance in the fit-cli VPC's default SG so it
-      // can reach the Capella PrivateLink endpoint the cluster-capella-pe cluster sets up.
-      aws: {
-        privateEndpoint: {},
-      },
-      setup: {
-        capellaEnvironment: 'prod',
-      },
+      // Operational + CNG functional sanity — plain docker/cao clusters, no PE involved.
+      aws: {},
       clusters: [
         // Operational functional sanity test.
         {
@@ -60,6 +54,21 @@
             },
           ],
         },
+      ],
+    },
+    {
+      // Second instance, dedicated to private endpoint (PrivateLink) testing: Capella
+      // functional over PE, plus situational (its own separate Capella cluster —
+      // situational doesn't use PE, it just shares this box for convenience).
+      // privateEndpoint places this instance in the fit-cli VPC's default SG so it
+      // can reach the Capella PrivateLink endpoint the cluster-capella-pe cluster sets up.
+      aws: {
+        privateEndpoint: {},
+      },
+      setup: {
+        capellaEnvironment: 'prod',
+      },
+      clusters: [
         // Capella private endpoint (PrivateLink) functional sanity test.
         {
           clusterConfig: 'cluster-capella-pe',
@@ -79,7 +88,7 @@
               ],
             },
           ],
-        }
+        },
       ],
       // FIT/SIT SanityTest
       clusterlessSessions: [
@@ -105,7 +114,7 @@
           ],
         },
       ],
-    }
+    },
   ],
   clusterConfigs: [
     {
@@ -166,7 +175,7 @@
           environment: 'prod',
           // Sets up an AWS PrivateLink connection to this cluster after allocation,
           // and connects the FIT test-driver/performer over it instead of the public endpoint.
-          privateEndpoint: true,
+          privateEndpoint: {},
         },
       },
     },

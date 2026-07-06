@@ -169,6 +169,13 @@ import {
 import { appendRunSummaryToGhaSummary } from "../../util/gha.js";
 import { junitToPlainTextFromDir } from "../../shared/run-test-driver/junit-to-markdown.js";
 
+/**
+ * A freshly-linked AWS PrivateLink connection can take longer than the default
+ * cluster-sanity retry budget (30s) to become reachable, even after cbdinocluster
+ * reports the endpoint as "available" — so give it more room to retry.
+ */
+const PRIVATE_ENDPOINT_SANITY_RETRY_TIMEOUT_MS = 120_000;
+
 /** True for a functional iteration that has resolved to a concrete cluster. */
 function functionalWithCluster(
   run: ResolvedFunctionalExecutionRun,
@@ -658,7 +665,12 @@ export async function runTests(
   const artifacts: Artifact[] = [];
   const details: Detail[] = [];
 
-  if (!(await runClusterDiagFn(run.cluster, { captureCommand: (cmd, args, cwd, runOpts) => execution.capture(cmd, args, cwd, runOpts) }))) {
+  if (
+    !(await runClusterDiagFn(run.cluster, {
+      captureCommand: (cmd, args, cwd, runOpts) => execution.capture(cmd, args, cwd, runOpts),
+      ...(run.cluster.privateEndpoint ? { retryTimeoutMs: PRIVATE_ENDPOINT_SANITY_RETRY_TIMEOUT_MS } : {}),
+    }))
+  ) {
     throwFatalToCluster("Cluster sanity test failed; this execution group cannot continue.");
   }
 
@@ -1049,7 +1061,12 @@ async function resumeCluster(
   console.log(
     `\n→ resume: reusing cluster ${clusterState.clusterId ?? clusterState.cluster.defaultHostname} from the run state.`,
   );
-  if (!(await runClusterDiag(clusterState.cluster, { captureCommand: (cmd, args, cwd, runOpts) => execution.capture(cmd, args, cwd, runOpts) }))) {
+  if (
+    !(await runClusterDiag(clusterState.cluster, {
+      captureCommand: (cmd, args, cwd, runOpts) => execution.capture(cmd, args, cwd, runOpts),
+      ...(clusterState.cluster.privateEndpoint ? { retryTimeoutMs: PRIVATE_ENDPOINT_SANITY_RETRY_TIMEOUT_MS } : {}),
+    }))
+  ) {
     throw new Error(
       "resume: the saved cluster is no longer reachable. Re-run without --resume-at to allocate a fresh one.",
     );
@@ -1874,7 +1891,7 @@ export async function runFromDefinition(
               ...functionalCycle,
               cbdinocluster: {
                 ...functionalCycle.cbdinocluster!,
-                init: { args: capellaFunctionalCbdinoclusterInitArgs(capellaSetup.cloudProvider, undefined, capellaSetup.privateEndpoint) },
+                init: { args: capellaFunctionalCbdinoclusterInitArgs(capellaSetup.cloudProvider, undefined, capellaSetup.privateEndpoint !== undefined) },
                 deployer: "cloud",
               },
             };

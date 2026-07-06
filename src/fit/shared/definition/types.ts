@@ -77,9 +77,11 @@ export interface CapellaClusterSetup {
    * Set up an AWS PrivateLink connection to this cluster after it's created, and
    * connect the FIT test-driver/performer over it instead of the public endpoint.
    * Requires the instance to have `aws.privateEndpoint` set (see {@link AwsInstanceSetup}).
-   * AWS only for now.
+   * AWS only for now. Empty for now (just a marker) but kept as an object — not a
+   * boolean — so provider-specific settings can be added later without a breaking
+   * schema change (see {@link PrivateEndpointSetup}).
    */
-  privateEndpoint?: boolean;
+  privateEndpoint?: PrivateEndpointSetup;
 }
 
 export interface CbdinoclusterSetup {
@@ -119,7 +121,7 @@ export interface InstanceSetup {
  * same way situational runs do, so cbdinocluster's `private-endpoints
  * setup-link` (which creates the VPC endpoint) can authenticate as
  * fit-cli-role — no separate IAM instance profile is needed. Pair with
- * `capella.privateEndpoint: true` on the cluster.
+ * `capella.privateEndpoint: {}` on the cluster.
  *
  * Empty for now (just a marker) but kept as an object — not a boolean — so
  * provider-specific settings can be added later without a breaking schema change.

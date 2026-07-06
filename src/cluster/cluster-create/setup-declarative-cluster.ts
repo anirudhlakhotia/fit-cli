@@ -1103,7 +1103,7 @@ export async function setupDeclarativeCluster(plan: {
       `→ setup-cluster: onClusterExists is "useExisting" — trusting the running cluster ` +
         `${decision.cluster.id} [${decision.cluster.details}].`,
     );
-    const reusedPrivateEndpoint = plan.deployer === "cloud" && plan.capella?.privateEndpoint === true;
+    const reusedPrivateEndpoint = plan.deployer === "cloud" && plan.capella?.privateEndpoint !== undefined;
     // The VPC endpoint (once created) is reachable from any instance in the fit-cli VPC,
     // so a reused cluster just needs its already-configured private connstr re-fetched —
     // no need to redo enable/setup-link.
@@ -1169,7 +1169,7 @@ export async function setupDeclarativeCluster(plan: {
   if (effectiveDeployer === "docker") {
     warnIfDockerNotEnabled(execution);
   }
-  return allocate(cbdinocluster, plan.config, effectiveDeployer, execution, cycleDir, cng, loadBalanced, plan.capella?.privateEndpoint ?? false);
+  return allocate(cbdinocluster, plan.config, effectiveDeployer, execution, cycleDir, cng, loadBalanced, plan.capella?.privateEndpoint !== undefined);
 }
 
 if (isMain(import.meta.url)) {

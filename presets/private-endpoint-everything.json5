@@ -78,7 +78,7 @@
           environment: 'dev',
           // Sets up an AWS PrivateLink connection to this cluster after allocation,
           // and connects the FIT test-driver/performer over it instead of the public endpoint.
-          privateEndpoint: true,
+          privateEndpoint: {},
         },
       },
     },

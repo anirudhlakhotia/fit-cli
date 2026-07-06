@@ -70,7 +70,7 @@ test("successful sanity tests print the command and success line", () => {
 
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /Cluster sanity test succeeded with/);
-  assert.match(result.stdout, /curl -k -u <username>:<password> -X GET http:\/\/172\.18\.0\.2:8091\/pools\/default/);
+  assert.match(result.stdout, /curl -k --connect-timeout 5 -u <username>:<password> -X GET http:\/\/172\.18\.0\.2:8091\/pools\/default/);
   assert.doesNotMatch(result.stdout, /Sanity-testing the cluster with/);
   assert.doesNotMatch(result.stdout, /"name":"default"/);
 });

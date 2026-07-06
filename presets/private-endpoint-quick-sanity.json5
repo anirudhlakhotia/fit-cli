@@ -44,7 +44,7 @@
             {
               type: 'situational',
               tests: {
-                classes: ['com.couchbase.client.kv.SanityTest'],
+                classes: ['com.couchbase.situational.tests.SanityTest'],
                 addToDefaultExcludedGroups: ['protostellarWillWorkLater']
               },
               situational: {
@@ -79,7 +79,7 @@
         capella: {
           cloudProvider: 'aws',
           environment: 'dev',
-          privateEndpoint: true,
+          privateEndpoint: {},
         },
       },
     },

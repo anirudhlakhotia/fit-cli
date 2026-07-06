@@ -260,25 +260,14 @@ function validateCapellaClusterSetup(value: unknown, path: string): CapellaClust
   if (environment !== undefined) {
     setup.environment = environment;
   }
-  const privateEndpoint = validateOptionalBoolean(record, "privateEndpoint", `${path}.privateEndpoint`);
-  if (privateEndpoint !== undefined) {
-    setup.privateEndpoint = privateEndpoint;
+  if (record["privateEndpoint"] !== undefined) {
+    setup.privateEndpoint = validatePrivateEndpointSetup(record["privateEndpoint"], `${path}.privateEndpoint`);
   }
   return setup;
 }
 
 function validateOptionalString(record: Record<string, unknown>, key: string, path: string): string | undefined {
   return record[key] === undefined ? undefined : requireString(record, key, path);
-}
-
-function validateOptionalBoolean(record: Record<string, unknown>, key: string, path: string): boolean | undefined {
-  if (record[key] === undefined) {
-    return undefined;
-  }
-  if (typeof record[key] !== "boolean") {
-    throw new InvalidDefinitionError(`"${path}" must be a boolean; got ${JSON.stringify(record[key])}`);
-  }
-  return record[key];
 }
 
 function validatePrivateEndpointSetup(value: unknown, path: string): PrivateEndpointSetup {
