@@ -67,12 +67,18 @@ function baseConfigPiece(performerPort: number): ConfigPiece {
   };
 }
 
-/** The situational-specific part: don't exclude situational tests, add cbdino + database. */
+/**
+ * The situational-specific part: don't exclude situational tests, add cbdino +
+ * database. Analytics/Columnar situational tests (tagged "columnar", e.g.
+ * ColumnarTest) are excluded by default — they need an Analytics performer and
+ * fail against a plain operational one. A definition file can opt back in with
+ * a `fitConfig.excludeTests` override, which replaces this array wholesale.
+ */
 export function situationalConfigPiece(database: ResultsDatabase, cbdino: CbdinoSettings): ConfigPiece {
   return {
     label: "situational",
     data: {
-      excludeTests: [],
+      excludeTests: ["columnar"],
       situational: {
         cbdino: {
           version: cbdino.version,
