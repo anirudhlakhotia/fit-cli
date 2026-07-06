@@ -68,6 +68,11 @@ export interface DefinitionInputs {
    * Capella cloud cluster (i.e. `cluster.def.capellaCloudProvider` is set).
    */
   capellaEnvironment?: string;
+  /**
+   * Set up an AWS PrivateLink connection to this Capella cluster. Only meaningful
+   * for an AWS Capella cloud cluster; the instance must also have `aws.privateEndpoint: {}`.
+   */
+  capellaPrivateEndpoint?: boolean;
 }
 
 export interface SituationalDefinitionInputs {
@@ -197,6 +202,7 @@ function buildFunctionalInstance(inputs: DefinitionInputs): BuiltFunctionalInsta
               capella: {
                 cloudProvider: capellaCloudProvider,
                 ...(inputs.capellaEnvironment ? { environment: inputs.capellaEnvironment } : {}),
+                ...(inputs.capellaPrivateEndpoint ? { privateEndpoint: {} } : {}),
               },
             } : {}),
           },

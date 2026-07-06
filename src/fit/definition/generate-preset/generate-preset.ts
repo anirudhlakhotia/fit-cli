@@ -60,6 +60,7 @@ async function loadPresetMap(): Promise<Record<string, string>> {
     "qe-set-mega-wip":             ((await import("../../../../presets/qe-set-mega-wip.json5",            { with: { type: "text" } })) as { default: string }).default,
     "situational-quick-sanity":    ((await import("../../../../presets/situational-quick-sanity.json5",   { with: { type: "text" } })) as { default: string }).default,
     "situational-everything":    ((await import("../../../../presets/situational-everything.json5",   { with: { type: "text" } })) as { default: string }).default,
+    "private-endpoint-quick-sanity":    ((await import("../../../../presets/private-endpoint-quick-sanity.json5",   { with: { type: "text" } })) as { default: string }).default,
   };
 }
 

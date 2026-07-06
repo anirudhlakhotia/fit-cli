@@ -24,6 +24,7 @@ import {
   SITUATIONAL_DATABASE_MODES,
   TEST_PRESETS,
   type AwsInstanceSetup,
+  type PrivateEndpointSetup,
   type CbdinoclusterInitSetup,
   type CbdinoclusterSetup,
   type ClusterConfigRef,
@@ -247,7 +248,7 @@ function validateCbdinocluster(value: unknown, path: string): CbdinoclusterSetup
 
 function validateCapellaClusterSetup(value: unknown, path: string): CapellaClusterSetup {
   const record = requireRecord(value, path);
-  rejectUnknown(record, ["cloudProvider", "environment"], path);
+  rejectUnknown(record, ["cloudProvider", "environment", "privateEndpoint"], path);
   const cloudProvider = requireString(record, "cloudProvider", `${path}.cloudProvider`);
   if (!CAPELLA_CLOUD_PROVIDERS.includes(cloudProvider as never)) {
     throw new InvalidDefinitionError(
@@ -259,6 +260,9 @@ function validateCapellaClusterSetup(value: unknown, path: string): CapellaClust
   if (environment !== undefined) {
     setup.environment = environment;
   }
+  if (record["privateEndpoint"] !== undefined) {
+    setup.privateEndpoint = validatePrivateEndpointSetup(record["privateEndpoint"], `${path}.privateEndpoint`);
+  }
   return setup;
 }
 
@@ -266,13 +270,24 @@ function validateOptionalString(record: Record<string, unknown>, key: string, pa
   return record[key] === undefined ? undefined : requireString(record, key, path);
 }
 
+function validatePrivateEndpointSetup(value: unknown, path: string): PrivateEndpointSetup {
+  const record = requireRecord(value, path);
+  if (Object.keys(record).length > 0) {
+    throw new InvalidDefinitionError(`"${path}" must be empty.`);
+  }
+  return {};
+}
+
 function validateAwsInstance(value: unknown, path: string): AwsInstanceSetup {
   const record = value === null ? {} : requireRecord(value, path);
-  rejectUnknown(record, ["instanceType"], path);
+  rejectUnknown(record, ["instanceType", "privateEndpoint"], path);
   const aws: AwsInstanceSetup = {};
   const instanceType = validateOptionalString(record, "instanceType", `${path}.instanceType`);
   if (instanceType !== undefined) {
     aws.instanceType = instanceType;
+  }
+  if (record["privateEndpoint"] !== undefined) {
+    aws.privateEndpoint = validatePrivateEndpointSetup(record["privateEndpoint"], `${path}.privateEndpoint`);
   }
   return aws;
 }

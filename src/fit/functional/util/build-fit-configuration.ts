@@ -179,6 +179,10 @@ export function generatedFitConfigurationPiece(
   }
 
   const isCapella = cluster.flavour !== "self-managed";
+  // A PrivateLink private DNS hostname has no `_couchbases._tcp` SRV record (only
+  // Capella's public DNS does), so SRV-based bootstrap discovery must be disabled
+  // even though the cluster otherwise looks like Capella.
+  const resolveDnsSrv = isCapella && !cluster.privateEndpoint;
 
   const clusterAccess: PieceData = {
     defaultHostname: cluster.defaultHostname,
@@ -188,7 +192,7 @@ export function generatedFitConfigurationPiece(
     tls: cluster.tls,
     rest: {
       hostname: isCapella ? "${defaultHostname}" : firstHostname(cluster.defaultHostname),
-      resolveDnsSrv: isCapella,
+      resolveDnsSrv,
       ...(isCapella ? { port: 18091 } : {}),
     },
     ssh: null,

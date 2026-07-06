@@ -158,6 +158,7 @@ const STUB_DEFAULTS = {
   capellaClusterVersion: "7.6",
   defaultCapellaEnvironment: "dev",
   defaultResultsEnvironment: "dev",
+  aws: { region: "us-west-2", vpcId: "vpc-stub", subnetId: "subnet-stub" },
 };
 
 const TEST_ENVIRONMENTS = {

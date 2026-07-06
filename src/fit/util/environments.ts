@@ -40,6 +40,20 @@ export interface FitCliRoleEnvironment {
   roleName: string;
 }
 
+export interface AwsDefaults {
+  /** The single AWS region fit-cli operates in. */
+  region: string;
+  /** The VPC fit-cli launches instances into. */
+  vpcId: string;
+  /** Public subnet within that VPC (MapPublicIpOnLaunch=true). */
+  subnetId: string;
+  /**
+   * Default SG of the fit-cli VPC; Capella's PrivateLink endpoint lands here, so
+   * instances need to be in it too (see `aws.privateEndpoint` on an instance).
+   */
+  privateEndpointVpcSgId?: string | null;
+}
+
 /** Global version defaults for cbdinocluster and related tools (not per-environment). */
 export interface Defaults {
   /** Default Couchbase Server version, e.g. "8.0-stable" or a pinned build. */
@@ -58,6 +72,8 @@ export interface Defaults {
   defaultCapellaEnvironment: string;
   /** Default results environment key (a key under `results` in this file). */
   defaultResultsEnvironment: string;
+  /** AWS account and network settings. */
+  aws: AwsDefaults;
 }
 
 export interface EnvironmentsFile {

@@ -53,7 +53,7 @@ export async function runClusterDiag(cluster: SelectedCluster, opts?: ClusterDia
     return true;
   }
   const url = clusterDiagUrl(cluster);
-  const command = `curl -k -u <username>:<password> -X GET ${url}`;
+  const command = `curl -k --connect-timeout 5 -u <username>:<password> -X GET ${url}`;
   const retryTimeoutMs = opts?.retryTimeoutMs ?? 30_000;
   const captureCommand = opts?.captureCommand ?? capture;
   const deadline = Date.now() + retryTimeoutMs;
@@ -64,9 +64,15 @@ export async function runClusterDiag(cluster: SelectedCluster, opts?: ClusterDia
     try {
       // For convenience in testing e.g. Capella, always use -k (insecure).
       // Use quiet on retries to avoid spamming the terminal with repeated curl echoes.
+      // --connect-timeout bounds each attempt so a single slow/unreachable attempt
+      // can't silently eat the whole retry budget — without it curl falls back to
+      // the OS's default TCP connect timeout (~130s on Linux), which is longer than
+      // retryTimeoutMs itself and defeats the retry loop entirely (one hung attempt,
+      // no actual retries). Bounding it matters especially for a freshly-linked
+      // PrivateLink connection, which can need a few retries before it's reachable.
       await captureCommand(
         "curl",
-        ["-k", "-u", `${cluster.credentials.username}:${cluster.credentials.password}`, "-X", "GET", url],
+        ["-k", "--connect-timeout", "5", "-u", `${cluster.credentials.username}:${cluster.credentials.password}`, "-X", "GET", url],
         undefined,
         attempt > 0 ? { quiet: true } : undefined,
       );

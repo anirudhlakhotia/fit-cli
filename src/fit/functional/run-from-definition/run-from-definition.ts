@@ -59,6 +59,7 @@ import { DEFAULT_CAPELLA_ENV, resolveCapellaConfig, resolveFitPerformerDir, reso
 import { terminateInstanceCommand } from "../../util/aws/lifecycle-warning.js";
 import { maybeUploadRunArtifacts } from "../../util/aws/upload-run-artifacts.js";
 import { AWS_REGION } from "../../../cloud/util/aws/aws-target.js";
+import { deleteVpcEndpointsForCluster } from "../../../cloud/util/aws/delete-vpc-endpoints.js";
 import { checkAwsCredentials, type AwsCredentials } from "../../../cloud/util/aws/identity.js";
 import {
   localClusterCommandExecutor,
@@ -167,6 +168,13 @@ import {
 } from "./resume-state.js";
 import { appendRunSummaryToGhaSummary } from "../../util/gha.js";
 import { junitToPlainTextFromDir } from "../../shared/run-test-driver/junit-to-markdown.js";
+
+/**
+ * A freshly-linked AWS PrivateLink connection can take longer than the default
+ * cluster-sanity retry budget (30s) to become reachable, even after cbdinocluster
+ * reports the endpoint as "available" — so give it more room to retry.
+ */
+const PRIVATE_ENDPOINT_SANITY_RETRY_TIMEOUT_MS = 120_000;
 
 /** True for a functional iteration that has resolved to a concrete cluster. */
 function functionalWithCluster(
@@ -560,6 +568,8 @@ export async function setupCluster(
           ...(outcome.clusterId ? { clusterId: outcome.clusterId } : {}),
           ...(outcome.cbdinocluster ? { cbdinoclusterCommand: outcome.cbdinocluster } : {}),
           logsDir: join(clusterDir, "server-logs"),
+          ...(outcome.couchbaseClusterUuid ? { couchbaseClusterUuid: outcome.couchbaseClusterUuid } : {}),
+          ...(outcome.privateEndpointEnabled ? { privateEndpointEnabled: true } : {}),
         }
       : undefined;
     return {
@@ -655,7 +665,12 @@ export async function runTests(
   const artifacts: Artifact[] = [];
   const details: Detail[] = [];
 
-  if (!(await runClusterDiagFn(run.cluster, { captureCommand: (cmd, args, cwd, runOpts) => execution.capture(cmd, args, cwd, runOpts) }))) {
+  if (
+    !(await runClusterDiagFn(run.cluster, {
+      captureCommand: (cmd, args, cwd, runOpts) => execution.capture(cmd, args, cwd, runOpts),
+      ...(run.cluster.privateEndpoint ? { retryTimeoutMs: PRIVATE_ENDPOINT_SANITY_RETRY_TIMEOUT_MS } : {}),
+    }))
+  ) {
     throwFatalToCluster("Cluster sanity test failed; this execution group cannot continue.");
   }
 
@@ -1046,7 +1061,12 @@ async function resumeCluster(
   console.log(
     `\n→ resume: reusing cluster ${clusterState.clusterId ?? clusterState.cluster.defaultHostname} from the run state.`,
   );
-  if (!(await runClusterDiag(clusterState.cluster, { captureCommand: (cmd, args, cwd, runOpts) => execution.capture(cmd, args, cwd, runOpts) }))) {
+  if (
+    !(await runClusterDiag(clusterState.cluster, {
+      captureCommand: (cmd, args, cwd, runOpts) => execution.capture(cmd, args, cwd, runOpts),
+      ...(clusterState.cluster.privateEndpoint ? { retryTimeoutMs: PRIVATE_ENDPOINT_SANITY_RETRY_TIMEOUT_MS } : {}),
+    }))
+  ) {
     throw new Error(
       "resume: the saved cluster is no longer reachable. Re-run without --resume-at to allocate a fresh one.",
     );
@@ -1181,6 +1201,24 @@ interface TeardownInputs {
 }
 
 /**
+ * Delete a Capella cluster's AWS PrivateLink VPC endpoint(s), if any. Runs
+ * against fit-cli's own AWS credentials (not the remote box) — cbdinocluster's
+ * `remove` only tears down the cluster itself, never a successfully-linked
+ * ("available") VPC endpoint, so this must run separately or the endpoint leaks.
+ * `couchbaseClusterUuid` is the Couchbase cluster's own UUID (see
+ * {@link ResumeClusterState.couchbaseClusterUuid}), not cbdinocluster's own
+ * cluster id — the VPC endpoint is tagged with the former.
+ * Best-effort: failure here doesn't fail the run's teardown.
+ */
+async function deleteClusterPrivateEndpoint(couchbaseClusterUuid: string): Promise<void> {
+  try {
+    await deleteVpcEndpointsForCluster(couchbaseClusterUuid);
+  } catch (err) {
+    fitCliWarn(`⚠ Failed to delete the private endpoint's VPC endpoint for cluster ${couchbaseClusterUuid}: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+/**
  * Tear down just an execution group's own cluster and performers (not the box):
  * stop its performers and remove a cluster it allocated. Used when the box is shared
  * with later execution groups from the same definition instance, so the instance is
@@ -1204,6 +1242,9 @@ async function disposeGroupClusterAndPerformers(
       await collectClusterLogs(clusterState.cbdinoclusterCommand, clusterState.clusterId, clusterState.logsDir, execution);
     }
     await removeCluster(clusterState.cbdinoclusterCommand, clusterState.clusterId, execution);
+    if (clusterState.privateEndpointEnabled && clusterState.couchbaseClusterUuid) {
+      await deleteClusterPrivateEndpoint(clusterState.couchbaseClusterUuid);
+    }
     popLogContext("cluster");
   }
 }
@@ -1376,6 +1417,9 @@ async function teardownRun(inputs: TeardownInputs): Promise<{ leftUp: boolean }>
         await collectClusterLogs(clusterState.cbdinoclusterCommand, clusterState.clusterId, clusterState.logsDir, execution);
       }
       await removeCluster(clusterState.cbdinoclusterCommand, clusterState.clusterId, execution);
+      if (clusterState.privateEndpointEnabled && clusterState.couchbaseClusterUuid) {
+        await deleteClusterPrivateEndpoint(clusterState.couchbaseClusterUuid);
+      }
       popLogContext("cluster");
     }
   }
@@ -1834,6 +1878,12 @@ export async function runFromDefinition(
                 );
               }
               await uploadRemoteCapellaConfig(execution.target, execution.rootDir, capella);
+              // Private endpoint setup needs cbdinocluster's own AWS block enabled (it calls
+              // the EC2 API directly for CreateVpcEndpoint) — forward the same fit-cli-role
+              // credentials the situational branch uses, so setup-link can authenticate.
+              if (capellaSetup.privateEndpoint && awsCredentials) {
+                await uploadRemoteAwsCredentials(execution.target, execution.rootDir, awsCredentials);
+              }
             }
             // Inject the derived init args and deployer into the cbdinocluster plan.
             // Neither lives in the definition file — both are derived from capella.cloudProvider.
@@ -1841,7 +1891,7 @@ export async function runFromDefinition(
               ...functionalCycle,
               cbdinocluster: {
                 ...functionalCycle.cbdinocluster!,
-                init: { args: capellaFunctionalCbdinoclusterInitArgs(capellaSetup.cloudProvider) },
+                init: { args: capellaFunctionalCbdinoclusterInitArgs(capellaSetup.cloudProvider, undefined, capellaSetup.privateEndpoint !== undefined) },
                 deployer: "cloud",
               },
             };

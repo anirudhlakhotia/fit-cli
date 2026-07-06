@@ -41,6 +41,18 @@ export interface ResumeClusterState {
   cbdinoclusterCommand?: string;
   /** The cluster's artifacts dir, where cbcollect diagnostics are gathered before removal. */
   logsDir?: string;
+  /**
+   * The Couchbase cluster's own UUID (distinct from cbdinocluster's own tracking
+   * id, `clusterId`) — a generic concept that applies beyond Capella/PE. Populated
+   * for any cloud (Capella) cluster, PE or not.
+   */
+  couchbaseClusterUuid?: string;
+  /**
+   * True only when this cluster has an AWS PrivateLink endpoint that must also be
+   * deleted on teardown. Not implied by `couchbaseClusterUuid` alone, since that's
+   * populated for every cloud cluster.
+   */
+  privateEndpointEnabled?: boolean;
 }
 
 /** A performer a previous run left running, per run. */

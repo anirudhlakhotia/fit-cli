@@ -23,11 +23,19 @@ import { loadEnvironments } from "../../fit/util/environments.js";
 import { buildClusterDef } from "./build-cluster-def.js";
 import { ensureCbdinocluster } from "./ensure-cbdinocluster.js";
 import { parseAllocatedId } from "./parse-allocated-id.js";
+import { parseCloudClusterUuid } from "./parse-cloud-cluster-uuid.js";
 
 /** A cluster cbdinocluster has just allocated. */
 export type AllocatedCluster = RunOutput & {
-  /** The new cluster's UUID, as passed to `cbdinocluster connstr <id>`. */
+  /** cbdino's own cluster id, as passed to `cbdinocluster connstr <id>`.  Distinct from the `couchbaseClusterUuid` */
   clusterId: string;
+  /**
+   * The Couchbase cluster's own UUID — distinct from `clusterId` above (cbdinocluster's
+   * own tracking id). Present for the `cloud` (Capella) deployer only: cbdinocluster's
+   * `--verbose allocate` logs it (`cloud-id`) whenever that deployer is used, so this
+   * is always captured for a fresh Capella allocation, not just PE ones.
+   */
+  couchbaseClusterUuid?: string;
   /**
    * For CAO/CNG clusters: the management-UI hostname and CNG-gateway connection
    * string host, fetched via `cbdinocluster mgmt <id>` and
@@ -178,6 +186,17 @@ export async function allocateCluster(
   if (!clusterId) {
     throw new Error("cbdinocluster allocate didn't print a cluster id");
   }
+  // Only the `cloud` (Capella) deployer prints this; cbdinocluster logs it on every
+  // cloud allocation, so capture it here rather than a separate `cloud get-cloud-id`
+  // round-trip when we already have it for free.
+  const couchbaseClusterUuid = deployer === "cloud" ? parseCloudClusterUuid(localOutput) ?? undefined : undefined;
+  if (deployer === "cloud") {
+    console.log(
+      couchbaseClusterUuid
+        ? `  Couchbase cluster UUID: ${couchbaseClusterUuid}`
+        : `  ⚠ cbdinocluster allocate didn't print a Couchbase cluster UUID for this cloud cluster.`,
+    );
+  }
    // Only CNG/CAO clusters expose a couchbase2 gateway + management-UI route that we
   // need to fetch here; a non-CNG cluster (e.g. a self-managed Enterprise Analytics
   // one) has no couchbase2 endpoint, so skip the probe — running it anyway just emits
@@ -204,7 +223,13 @@ export async function allocateCluster(
       // Non-CAO deployer or commands not supported — caoHosts stays undefined.
     }
   }
-  return { artifacts: [artifact], details: [], clusterId, ...(caoHosts ? { caoHosts } : {}) };
+  return {
+    artifacts: [artifact],
+    details: [],
+    clusterId,
+    ...(caoHosts ? { caoHosts } : {}),
+    ...(couchbaseClusterUuid ? { couchbaseClusterUuid } : {}),
+  };
 }
 
 if (isMain(import.meta.url)) {
