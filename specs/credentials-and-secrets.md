@@ -4,6 +4,12 @@ This is a human-written doc.  Targeted, specific, reviewed LLM edits are permitt
 # Credentials
 The basic goal with clean EC2 testing is that as long as the user has some level of AWS access, we bootstrap into (assume) a `fit-cli-role` that has permissions to do everything.
 
+We use:
+* Github PAT for accessing private repos (transactions-fit-performer) and for container images.
+* Gerrit creds only if accessing Gerrit patchsets.
+* AWS credentials for creating EC2 instances etc.
+* Capella creds for Capella testing.
+
 ## Secrets
 [SECRETS1] We store all credentials for clean cloud testing in AWS secrets.
 A core goal is to have the same environment easily spunup from both localhost and CI, and so we want to avoid encoding the secrets into e.g. GHA. 
