@@ -91,7 +91,7 @@ export interface ResultsTarget {
 export async function chooseResultsTarget(promptIdPrefix?: string): Promise<ResultsTarget> {
   const results = loadEnvironments().results;
   const hostedChoices = Object.entries(results).map(([name, env]) => {
-    const recommended = name === DEFAULT_RESULTS_ENV ? " (for iterating)" : " (for 'production' results)";
+    const recommended = name === "dev" ? " (for iterating)" : " (for 'production' results)";
     return { name: `Hosted "${name}" results database at ${env.host ?? "(host not set)"}${recommended}`, value: `hosted:${name}` };
   });
   const choice = await select<string>({
