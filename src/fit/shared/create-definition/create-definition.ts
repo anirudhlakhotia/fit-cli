@@ -108,7 +108,7 @@ async function chooseFunctionalConnectivity(promptIdPrefix: string): Promise<Fun
     choices: [
       { name: "On-prem operational", value: "operational" },
       { name: "Capella operational", value: "capella" },
-      { name: "Cloud Native Gateway (couchbase2://)", value: "cng" },
+      { name: "Cloud Native Gateway (couchbase2://, running on ROSA OpenShift)", value: "cng" },
       { name: "Enterprise Analytics (self-hosted, requires Enterprise Analytics SDKs)", value: "enterprise-analytics" },
       { name: "Capella Analytics (cloud, previously called Columnar, requires Columnar SDKs)", value: "capella-analytics" },
     ],
