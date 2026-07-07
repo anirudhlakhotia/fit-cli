@@ -25,6 +25,8 @@ export interface FailingTestCase {
   name: string;
   timeMs: number;
   issues: TestIssue[];
+  stdout?: string;
+  stderr?: string;
 }
 
 export interface PackageStats {
@@ -66,6 +68,14 @@ function unwrapCdata(s: string): string {
   return s.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1");
 }
 
+/** Extract the (single) `<tag>...</tag>` content from a `<testcase>` body, e.g. `system-out`/`system-err`. */
+function extractTagContent(inner: string, tag: string): string | undefined {
+  const m = inner.match(new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)</${tag}>`));
+  if (!m) return undefined;
+  const content = unwrapCdata(m[1]).trim();
+  return content.length > 0 ? content : undefined;
+}
+
 /** Parse failing/erroring <testcase> elements from a single TEST-*.xml file. */
 export function parseFailingTestCases(xml: string): FailingTestCase[] {
   const cases: FailingTestCase[] = [];
@@ -89,7 +99,9 @@ export function parseFailingTestCases(xml: string): FailingTestCase[] {
       const classname = getAttr(attrs, "classname");
       const name = getAttr(attrs, "name");
       const timeMs = Math.round(parseFloat(getAttr(attrs, "time") || "0") * 1000);
-      cases.push({ classname, name, timeMs, issues });
+      const stdout = extractTagContent(inner, "system-out");
+      const stderr = extractTagContent(inner, "system-err");
+      cases.push({ classname, name, timeMs, issues, stdout, stderr });
     }
   }
   return cases;
@@ -172,6 +184,13 @@ function truncate(s: string, max = 8 * 1024): string {
   return s.substring(0, half) + "\n[...truncated...]\n" + s.substring(s.length - half);
 }
 
+/** Keep only the last `maxLines` lines of `s` — the failure context is usually near the end of a test's output. */
+function tailLines(s: string, maxLines: number): { text: string; omittedCount: number } {
+  const lines = s.split("\n");
+  if (lines.length <= maxLines) return { text: s, omittedCount: 0 };
+  return { text: lines.slice(-maxLines).join("\n"), omittedCount: lines.length - maxLines };
+}
+
 function removePackage(name: string): string {
   const idx = name.lastIndexOf(".");
   return idx === -1 ? name : name.substring(idx + 1);
@@ -237,6 +256,21 @@ export function renderJunitMarkdown(data: JunitMarkdownData): string {
         lines.push("");
       }
     }
+    for (const [label, output] of [
+      ["stdout", tc.stdout],
+      ["stderr", tc.stderr],
+    ] as const) {
+      if (!output) continue;
+      lines.push("<details>");
+      lines.push(`<summary>Test output (${label})</summary>`);
+      lines.push("");
+      lines.push("```");
+      lines.push(truncate(output));
+      lines.push("```");
+      lines.push("");
+      lines.push("</details>");
+      lines.push("");
+    }
     lines.push("---");
     lines.push("");
   }
@@ -248,7 +282,7 @@ const RED = "\x1b[31m";
 const RESET = "\x1b[0m";
 
 /** Render a JunitMarkdownData object as a plain-text table for terminal output. */
-export function renderJunitPlainText(data: JunitMarkdownData, maxFailuresPerPackage = 3): string {
+export function renderJunitPlainText(data: JunitMarkdownData, maxFailuresPerPackage = 3, maxOutputLines = 20): string {
   const { packages, failingCases, totalPassed, totalFailed, totalSkipped, totalTimeMs } = data;
   const lines: string[] = [];
 
@@ -314,6 +348,17 @@ export function renderJunitPlainText(data: JunitMarkdownData, maxFailuresPerPack
             for (const line of truncate(issue.body).split("\n").slice(0, 13)) {
               lines.push(`      ${line}`);
             }
+          }
+        }
+        for (const [label, output] of [
+          ["stdout", tc.stdout],
+          ["stderr", tc.stderr],
+        ] as const) {
+          if (!output) continue;
+          const { text, omittedCount } = tailLines(output, maxOutputLines);
+          lines.push(`    Test output (${label})${omittedCount > 0 ? ` [${omittedCount} earlier line(s) omitted]` : ""}:`);
+          for (const line of text.split("\n")) {
+            lines.push(`      ${line}`);
           }
         }
       }

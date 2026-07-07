@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseFailingTestCases, parseJunitData, renderJunitMarkdown } from "../junit-to-markdown.js";
+import { parseFailingTestCases, parseJunitData, renderJunitMarkdown, renderJunitPlainText } from "../junit-to-markdown.js";
 
 const PASSING_SUITE = `<?xml version="1.0" encoding="UTF-8"?>
 <testsuite name="com.example.FooTest" tests="3" failures="0" errors="0" skipped="1" time="2.345">
@@ -134,4 +134,54 @@ test("renderJunitMarkdown: all-passing run produces no failure blocks", () => {
   const md = renderJunitMarkdown(data);
   assert.ok(!md.includes("Stack trace"), "no stack trace for passing suite");
   assert.ok(!md.includes("#### ❌"), "no failure headers");
+});
+
+const SUITE_WITH_OUTPUT = `<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.example.OutputTest" tests="1" failures="1" errors="0" skipped="0" time="1.0">
+  <testcase name="doThing" classname="com.example.OutputTest" time="1.0">
+    <failure message="expected true but was false">java.lang.AssertionError: expected true but was false</failure>
+    <system-out><![CDATA[line1
+line2
+line3]]></system-out>
+    <system-err><![CDATA[warn: something]]></system-err>
+  </testcase>
+</testsuite>`;
+
+test("parseFailingTestCases: captures per-testcase system-out and system-err", () => {
+  const cases = parseFailingTestCases(SUITE_WITH_OUTPUT);
+  assert.equal(cases.length, 1);
+  assert.equal(cases[0].stdout, "line1\nline2\nline3");
+  assert.equal(cases[0].stderr, "warn: something");
+});
+
+test("parseFailingTestCases: stdout/stderr are undefined when absent", () => {
+  const cases = parseFailingTestCases(FAILING_SUITE);
+  assert.equal(cases[0].stdout, undefined);
+  assert.equal(cases[0].stderr, undefined);
+});
+
+test("renderJunitMarkdown: test output rendered under its own chevron", () => {
+  const data = parseJunitData([{ filename: "TEST-com.example.OutputTest.xml", xml: SUITE_WITH_OUTPUT }]);
+  const md = renderJunitMarkdown(data);
+  assert.ok(md.includes("Test output (stdout)"), "should include stdout chevron summary");
+  assert.ok(md.includes("Test output (stderr)"), "should include stderr chevron summary");
+  assert.ok(md.includes("line1\nline2\nline3"), "should include stdout content");
+  assert.ok(md.includes("warn: something"), "should include stderr content");
+});
+
+test("renderJunitPlainText: caps test output to the last N lines", () => {
+  const manyLines = Array.from({ length: 30 }, (_, i) => `line${i}`).join("\n");
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.example.OutputTest" tests="1" failures="1" errors="0" skipped="0" time="1.0">
+  <testcase name="doThing" classname="com.example.OutputTest" time="1.0">
+    <failure message="boom">boom</failure>
+    <system-out><![CDATA[${manyLines}]]></system-out>
+  </testcase>
+</testsuite>`;
+  const data = parseJunitData([{ filename: "TEST-com.example.OutputTest.xml", xml }]);
+  const text = renderJunitPlainText(data, 3, 10);
+
+  assert.ok(text.includes("[20 earlier line(s) omitted]"), "should note omitted line count");
+  assert.ok(text.includes("line29"), "should include the last line");
+  assert.ok(!text.includes("line0\n") && !text.includes("line0)"), "should not include early lines");
 });
