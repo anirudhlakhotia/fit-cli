@@ -24,10 +24,13 @@ There should be a cleanup job that clears up dangling clusters after some time. 
 The cleanup job is cbdc-cleanup-cronjob, in namespace cbdc-shared (schedule */15 * * * *). To see its logs:
 
 Recent runs:
-oc get jobs -n cbdc-shared --sort-by=.status.startTime
+oc get jobs -n cbdc-shared --sort-by=.status.startTime -o custom-columns=NAME:.metadata.name,START_TIME:.status.startTime,COMPLETIONS:.status.succeeded
 
 Logs from the most recent run:
 oc logs -n cbdc-shared job/$(oc get jobs -n cbdc-shared --sort-by=.status.startTime -o name | tail -1 | cut -d/ -f2)
 
 For reference, the job itself just runs `cbdinocluster init -v --auto && cbdinocluster cleanup -v` from a fresh alpine container each time.
 
+To force remove all cbdino clusters (note this is an emergency operation, as it will get rid of everything including active healthy clusters that just happen to be being created):
+
+cbdinocluster -v ls 2>&1 | grep 'State: creating' | awk '{print $1}' | xargs -I{} cbdinocluster remove {}
