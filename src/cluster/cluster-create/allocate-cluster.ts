@@ -150,7 +150,11 @@ export async function allocateCluster(
   // if the user leaves the instance up, they get this confusing error when they come back and bring the instance down
   // after cbdino has expired:
   // "[11:12:07·aws1·8.0.2-5503] FitCliError: Failed to remove cluster af698c6b9cd64570a1c209bd5cbc7914: ssh exited with code 1"
-  args.push("--expiry=31h");
+  // But `cloud` (Capella) and `cao` (CNG on the shared ROSA cluster) allocate against
+  // shared infrastructure rather than the user's own throwaway instance, so a dangling
+  // 31h claim can starve other users. Expire those quickly instead.
+  const sharedResourceDeployer = deployer === "cloud" || cng;
+  args.push(sharedResourceDeployer ? "--expiry=3h" : "--expiry=31h");
   args.push(`--def-file=${defFile}`);
 
   mkdirSync(cycleDir, { recursive: true, mode: 0o700 });
