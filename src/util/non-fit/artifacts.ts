@@ -178,15 +178,27 @@ export function combineDetails(...groups: ReadonlyArray<readonly Detail[] | unde
   return combined;
 }
 
-/** Merge run outputs while preserving first-seen order within each output type. */
+/**
+ * Merge run outputs while preserving first-seen order within each output type.
+ * `worstFailure` is the most severe failure across all groups (not just the
+ * first with one set), and `failureCount` sums every group's count — this is
+ * what lets multiple independent runs (e.g. a comma-separated preset list) be
+ * combined into a single, accurate exit-code decision.
+ */
 export function combineRunOutputs(...groups: ReadonlyArray<Partial<RunOutput> | undefined>): RunOutput {
-  const worstFailure = groups.find((g) => g?.worstFailure !== undefined)?.worstFailure;
-  const failureCount = groups.find((g) => g?.failureCount !== undefined)?.failureCount;
+  let worstFailure: RecordedFailure | undefined;
+  let failureCount = 0;
+  for (const group of groups) {
+    if (group?.worstFailure === undefined) continue;
+    failureCount += group.failureCount ?? 1;
+    if (!worstFailure || FAILURE_SEVERITY[group.worstFailure.classification] > FAILURE_SEVERITY[worstFailure.classification]) {
+      worstFailure = group.worstFailure;
+    }
+  }
   return {
     artifacts: combineArtifacts(...groups.map((group) => group?.artifacts)),
     details: combineDetails(...groups.map((group) => group?.details)),
-    ...(worstFailure !== undefined ? { worstFailure } : {}),
-    ...(failureCount !== undefined ? { failureCount } : {}),
+    ...(worstFailure !== undefined ? { worstFailure, failureCount } : {}),
   };
 }
 

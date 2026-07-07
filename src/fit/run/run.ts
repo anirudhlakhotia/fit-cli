@@ -32,7 +32,7 @@ import {
 import { applyDotPathOverride, generatePreset, isPresetType, PRESET_TYPES } from "../definition/generate-preset/generate-preset.js";
 import { analysePerformerImage, performerImageShortName } from "../performers/util/performer-image.js";
 import { formatFitDefinition } from "../shared/definition/generate-definition.js";
-import type { RunOutput } from "../../util/non-fit/artifacts.js";
+import { combineRunOutputs, type RunOutput } from "../../util/non-fit/artifacts.js";
 import { printVersion } from "../version/version.js";
 import { runScriptPrefix } from "../../util/non-fit/fit-cli-log.js";
 
@@ -45,12 +45,13 @@ function buildHelp(): string {
   return `Run FIT tests from a preset or a definition file.
 
 Usage:
-  ${run} preset <preset> --performer <image> [resume flags] [--cbcollect]
+  ${run} preset <preset>[,<preset>...] --performer <image> [resume flags] [--cbcollect]
   ${run} definition <file.json5> [--override <dotpath>=<value>] [--resume-at=<point>] [resume selectors] [--cbcollect]
   ${run} --help
 
 Subcommands:
   preset      Generate a preset definition file and run it immediately.
+              A comma-separated list of presets runs them one after another.
   definition  Run an existing definition file (path or URL). Both .json5 and .yaml are accepted.
 
 Known presets:
@@ -173,14 +174,19 @@ export async function runDispatch(argv: string[]): Promise<RunOutput | void> {
     const { runOpts, positionals: afterRunOpts } = extractRunOptions(rest);
     const { overrides, positionals: afterOverrides } = extractOverrides(afterRunOpts);
     const { performerImageName, positionals } = extractPerformerImageName(afterOverrides);
-    const [type, ...extra] = positionals;
-    if (!type || extra.length > 0) {
-      console.error(`Usage: ${runScriptPrefix("run")} preset <preset> --performer <image>\nKnown presets: ${PRESET_TYPES.join(", ")}`);
+    const [typeList, ...extra] = positionals;
+    if (!typeList || extra.length > 0) {
+      console.error(
+        `Usage: ${runScriptPrefix("run")} preset <preset>[,<preset>...] --performer <image>\nKnown presets: ${PRESET_TYPES.join(", ")}`,
+      );
       process.exit(2);
     }
-    if (!isPresetType(type)) {
-      console.error(`Unknown preset: ${type}\nKnown presets: ${PRESET_TYPES.join(", ")}`);
-      process.exit(2);
+    const types = typeList.split(",").map((type) => type.trim());
+    for (const type of types) {
+      if (!isPresetType(type)) {
+        console.error(`Unknown preset: ${type}\nKnown presets: ${PRESET_TYPES.join(", ")}`);
+        process.exit(2);
+      }
     }
     if (!performerImageName) {
       console.error("--performer is required, e.g. java-fit-performer:main");
@@ -191,13 +197,21 @@ export async function runDispatch(argv: string[]): Promise<RunOutput | void> {
       console.error(`--performer-image-name: ${parsed.error}`);
       process.exit(2);
     }
-    const { path: definitionPath } = await generatePreset({
-      type,
-      image: performerImageShortName(parsed.sdk, parsed.tag),
-      skipGuidance: true,
-      ...(Object.keys(overrides).length > 0 ? { overrides } : {}),
-    });
-    return runFromDefinition(definitionPath, runOpts);
+    const outputs: RunOutput[] = [];
+    for (const [index, type] of types.entries()) {
+      if (types.length > 1) {
+        console.log(`\n=== Running preset ${index + 1}/${types.length}: ${type} ===\n`);
+      }
+      const { path: definitionPath } = await generatePreset({
+        type,
+        image: performerImageShortName(parsed.sdk, parsed.tag),
+        skipGuidance: true,
+        ...(Object.keys(overrides).length > 0 ? { overrides } : {}),
+      });
+      const output = await runFromDefinition(definitionPath, runOpts);
+      if (output) outputs.push(output);
+    }
+    return combineRunOutputs(...outputs);
   }
 
   // definition

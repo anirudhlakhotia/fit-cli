@@ -110,6 +110,33 @@ test("combineRunOutputs merges artifacts and details", () => {
   );
 });
 
+test("combineRunOutputs picks the most severe failure and sums failure counts", () => {
+  const result = combineRunOutputs(
+    {
+      artifacts: [],
+      details: [],
+      worstFailure: { classification: "NonFatal", message: "flaky", context: { instanceIndex: 0 } },
+      failureCount: 2,
+    },
+    {
+      artifacts: [],
+      details: [],
+      worstFailure: { classification: "FatalToInstance", message: "boom", context: { instanceIndex: 1 } },
+      failureCount: 1,
+    },
+  );
+
+  assert.equal(result.worstFailure?.classification, "FatalToInstance");
+  assert.equal(result.worstFailure?.message, "boom");
+  assert.equal(result.failureCount, 3);
+});
+
+test("combineRunOutputs omits worstFailure/failureCount when no group has a failure", () => {
+  const result = combineRunOutputs({ artifacts: [], details: [] }, { artifacts: [], details: [] });
+  assert.equal(result.worstFailure, undefined);
+  assert.equal(result.failureCount, undefined);
+});
+
 test("formatArtifactsSection renders a table", () => {
   const runDir = mkdtempSync(join(tmpdir(), "fit-cli-artifacts-"));
   const performerPath = join(runDir, "performer.log");
