@@ -398,9 +398,12 @@ function announce(
   group: ResolvedExecutionGroup,
   run: ResolvedExecutionRun,
   fitPerformerGerritRef: string | undefined,
+  globalIterationIndex: number,
+  totalGlobalIterations: number,
 ): void {
   const cng = group.type === "functional" ? group.cng : undefined;
   setLogContext({
+    progress: `${globalIterationIndex + 1}/${totalGlobalIterations}`,
     performer: performerLabel(run.path, run.sdk.value, run.performerVersion),
     run: runLabel(run.path, run.type, run.testSelection.presets, cng),
   });
@@ -1747,11 +1750,14 @@ export async function runFromDefinition(
   let activePerformers: RunningPerformer[] = [];
   let activePerformerStates: ResumePerformerState[] = [];
   try {
+    const countGroupIterations = (group: (typeof executionGroups)[number]): number =>
+      group.type === "functional"
+        ? group.sessions.reduce((s, session) => s + session.runs.length, 0)
+        : group.runs.length;
+    const totalGlobalIterations = executionGroups.reduce((total, group) => total + countGroupIterations(group), 0);
     let globalIterationIndex = executionGroups
       .slice(0, startCycleIndex)
-      .reduce((total, group) => total + (group.type === "functional"
-        ? group.sessions.reduce((s, session) => s + session.runs.length, 0)
-        : group.runs.length), 0);
+      .reduce((total, group) => total + countGroupIterations(group), 0);
 
     try {
     for (let cycleIndex = startCycleIndex; cycleIndex < executionGroups.length; cycleIndex++) {
@@ -1795,9 +1801,7 @@ export async function runFromDefinition(
         if (!targetOutcome.ready) {
           fitCliError({ classification: "FatalToInstance" }, `\n✗ Could not acquire an execution target for execution group ${cycleIndex + 1}; skipping it.`);
           tracker.record("FatalToInstance", `Could not acquire an execution target for execution group ${cycleIndex + 1}`, failureContextFromPath(group.path, failureLabel(group)));
-          globalIterationIndex += group.type === "functional"
-            ? group.sessions.reduce((s, session) => s + session.runs.length, 0)
-            : group.runs.length;
+          globalIterationIndex += countGroupIterations(group);
           continue;
         }
         cycleTeardown = targetOutcome.teardown;
@@ -2014,7 +2018,7 @@ export async function runFromDefinition(
             activeSessionIndex = currentSessionIndex;
           }
 
-          announce(activeCycle, iteration, resolved.fitPerformerGerritRef);
+          announce(activeCycle, iteration, resolved.fitPerformerGerritRef, globalIterationIndex, totalGlobalIterations);
           const isStartIteration = cycleIndex === startCycleIndex && cycleIterationIndex === startIterationIndex;
           const setupPerformerPhase = isStartIteration ? phases.setupPerformer : true;
           try {
@@ -2070,9 +2074,7 @@ export async function runFromDefinition(
         if (err instanceof ClassifiedFailure && err.classification === "FatalToCluster") {
           fitCliError({ classification: "FatalToCluster" }, `\n✗ ${err.message}`);
           tracker.record("FatalToCluster", err.message, failureContextFromPath(group.path, failureLabel(activeCycle)));
-          globalIterationIndex += activeCycle.type === "functional"
-            ? activeCycle.sessions.reduce((s, session) => s + session.runs.length, 0)
-            : activeCycle.runs.length;
+          globalIterationIndex += countGroupIterations(activeCycle);
 
           // Promote this cycle as the active set so that stopping here lets
           // teardownRun offer to leave its instance/cluster/performers up.

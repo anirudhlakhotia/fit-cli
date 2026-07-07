@@ -106,6 +106,14 @@ test("formatTimestampedChunk omits missing context fields", () => {
   );
 });
 
+test("formatTimestampedChunk puts the global progress segment right after the timestamp", () => {
+  const ctx = { progress: "5/13", env: "aws1", cluster: "cbdino1", performer: "java:main", run: "functional" };
+  assert.deepEqual(
+    formatTimestampedChunk("hello", true, () => "12:34:56", () => ctx),
+    { text: "[12:34:56·5/13·aws1·cbdino1·java:main·functional] hello", atLineStart: false },
+  );
+});
+
 test("installFitCliConsoleFormatting timestamps console output and direct stdout writes", async () => {
   const fitCliLogModule = new URL("../fit-cli-log.ts", import.meta.url).href;
   const driver = [

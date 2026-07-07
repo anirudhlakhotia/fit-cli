@@ -45,6 +45,8 @@ const DIM = colourOn ? "[90m" : "";
 const PREFIX_SEPARATOR = "·";
 
 export interface LogContext {
+  /** Global run progress, e.g. "5/13", counting across every instance/cluster/session/run in the definition. Set at the start of each iteration. */
+  progress?: string;
   /** Execution target label, e.g. "local" or "aws1". Set once the target is acquired. */
   env?: string;
   /** Cluster label, e.g. "cbdino1". Set once a cluster is allocated/resumed. */
@@ -177,7 +179,7 @@ export function formatTimestampedChunk(
   for (const char of text) {
     if (nextLineStart && char !== "\n") {
       const ctx = getContext();
-      const segments = [ctx.env, ctx.cluster, ctx.performer, ctx.run].filter(
+      const segments = [ctx.progress, ctx.env, ctx.cluster, ctx.performer, ctx.run].filter(
         (segment): segment is string => Boolean(segment),
       );
       formatted += `[${[getTimestamp(), ...segments].join(separator)}] `;
@@ -201,7 +203,7 @@ function currentPrefixWidth(
 ): number {
   const ts = getTimestamp();
   const ctx = getContext();
-  const segments = [ctx.env, ctx.cluster, ctx.performer, ctx.run].filter(
+  const segments = [ctx.progress, ctx.env, ctx.cluster, ctx.performer, ctx.run].filter(
     (s): s is string => Boolean(s),
   );
   return `[${[ts, ...segments].join(PREFIX_SEPARATOR)}] `.length;
