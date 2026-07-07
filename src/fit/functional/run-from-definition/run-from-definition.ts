@@ -574,7 +574,18 @@ export async function setupCluster(
   if (group.cbdinocluster) {
     const clusterDir = clusterRunDir(group.path);
     const outcome = await setupDeclarativeClusterFn(
-      { ...group.cbdinocluster, cng: group.cng, cngSharedCluster: group.cng && cngKubernetesBackend() === "openshift", githubCredentials, source: group.cbdinoclusterSource },
+      {
+        ...group.cbdinocluster,
+        cng: group.cng,
+        cngSharedCluster: group.cng && cngKubernetesBackend() === "openshift",
+        githubCredentials,
+        source: group.cbdinoclusterSource,
+        // The cluster's own `capella.environment` takes precedence when set (it's what
+        // actually got uploaded to the box — see the Capella-functional branch above);
+        // group.capellaEnvironment (the instance-level default) covers Capella Analytics
+        // clusters, whose credentials are uploaded keyed off that field instead.
+        capellaEnvironment: group.cbdinocluster.capella?.environment ?? group.capellaEnvironment,
+      },
       execution,
       clusterDir,
     );

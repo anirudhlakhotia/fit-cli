@@ -33,7 +33,8 @@ import {
   localClusterCommandExecutor,
   type ClusterCommandExecutor,
 } from "./allocate-cluster.js";
-import { CBDINOCLUSTER_URL } from "../../fit/util/config.js";
+import { CBDINOCLUSTER_URL, DEFAULT_CAPELLA_ENV } from "../../fit/util/config.js";
+import { printCapellaDebugLinks } from "./capella-debug-links.js";
 import { buildCbdinoclusterFromPr, installCbdinoclusterRemote } from "./install-cbdinocluster.js";
 import { installCaoCrdsAndAdmission } from "./install-cao-tools.js";
 import { enableIngresses } from "./cao-ingress.js";
@@ -928,6 +929,7 @@ async function allocate(
   cng: boolean,
   loadBalanced: boolean,
   privateEndpoint = false,
+  capellaEnvironment?: string,
 ): Promise<SetupDeclarativeClusterResult> {
   const resolvedConfig = {
     ...config,
@@ -941,7 +943,15 @@ async function allocate(
 
   let allocated;
   try {
-    allocated = await allocateCluster(cbdinocluster, YAML.stringify(resolvedConfig), deployer, execution, cycleDir, cng);
+    allocated = await allocateCluster(
+      cbdinocluster,
+      YAML.stringify(resolvedConfig),
+      deployer,
+      execution,
+      cycleDir,
+      cng,
+      capellaEnvironment,
+    );
     console.log("\n✓ setup-cluster: cbdinocluster allocated the cluster");
   } catch (err) {
     console.error(`\n✗ setup-cluster: cbdinocluster failed to allocate the cluster: ${(err as Error).message}`);
@@ -1053,6 +1063,15 @@ export async function setupDeclarativeCluster(plan: {
   source?: CbdinoclusterSource;
   /** Present when this is a Capella cloud cluster; `privateEndpoint` triggers PrivateLink setup after allocation. */
   capella?: CapellaClusterSetup;
+  /**
+   * The Capella environment (a key under `capella` in environments.json5) this cluster's
+   * credentials were actually uploaded under — used only to build the debug links printed
+   * alongside the Couchbase cluster UUID (see capella-debug-links.ts). Callers should pass
+   * whatever value they resolved for uploading Capella credentials, not just `capella.environment`,
+   * since some cluster types (e.g. Capella Analytics) key credential upload off a different field.
+   * Defaults to {@link DEFAULT_CAPELLA_ENV} so standalone/manual callers still get a best-effort link.
+   */
+  capellaEnvironment?: string;
 }, execution: ClusterCommandExecutor = localClusterCommandExecutor(), cycleDir: string = ensureRunDir()): Promise<SetupDeclarativeClusterResult> {
   const cng = plan.cng ?? false;
   // A self-managed Enterprise Analytics cluster is fronted by an nginx load
@@ -1123,6 +1142,9 @@ export async function setupDeclarativeCluster(plan: {
           ? `  Couchbase cluster UUID: ${couchbaseClusterUuid}`
           : `  ⚠ couldn't resolve a Couchbase cluster UUID for the reused cloud cluster ${decision.cluster.id}.`,
       );
+      if (couchbaseClusterUuid) {
+        printCapellaDebugLinks(plan.capellaEnvironment ?? DEFAULT_CAPELLA_ENV, couchbaseClusterUuid);
+      }
     }
     let cluster = await selectedClusterFor(
       cbdinocluster,
@@ -1172,7 +1194,17 @@ export async function setupDeclarativeCluster(plan: {
   if (effectiveDeployer === "docker") {
     warnIfDockerNotEnabled(execution);
   }
-  return allocate(cbdinocluster, plan.config, effectiveDeployer, execution, cycleDir, cng, loadBalanced, plan.capella?.privateEndpoint !== undefined);
+  return allocate(
+    cbdinocluster,
+    plan.config,
+    effectiveDeployer,
+    execution,
+    cycleDir,
+    cng,
+    loadBalanced,
+    plan.capella?.privateEndpoint !== undefined,
+    effectiveDeployer === "cloud" ? (plan.capellaEnvironment ?? DEFAULT_CAPELLA_ENV) : undefined,
+  );
 }
 
 if (isMain(import.meta.url)) {

@@ -1,0 +1,62 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { capellaDebugLinks } from "../capella-debug-links.js";
+import type { EnvironmentsFile } from "../../../fit/util/environments.js";
+
+const environments: EnvironmentsFile = {
+  defaults: {
+    clusterVersion: "8.0-stable",
+    cngClusterVersion: "8.0.2-5503",
+    enterpriseAnalyticsVersion: "2.2.0-1166",
+    caoOperatorVersion: "2.9.2",
+    cngVersion: "1.2.1-123",
+    capellaClusterVersion: "7.6",
+    defaultCapellaEnvironment: "prod",
+    defaultResultsEnvironment: "prod",
+    aws: { region: "us-west-2", vpcId: "vpc-x", subnetId: "subnet-x" },
+  },
+  capella: {
+    prod: { endpoint: "https://api.cloud.couchbase.com", oid: "62488bdd-d416-467e-84f7-fc7c1583a083" },
+    dev: { endpoint: "https://api.dev.nonprod-project-avengers.com", oid: "6af08c0a-8cab-4c1c-b257-b521575c16d0" },
+    noOid: { endpoint: "https://api.no-oid.example.com" },
+  },
+  results: {},
+  awsTenants: {},
+  fitCliRole: { accountId: "958525475024", roleName: "fit-cli-role" },
+};
+
+const uuid = "b0652a58-45d4-4cf7-afff-343ca735c6c6";
+
+test("capellaDebugLinks derives the dev UI, Fleet Manager and DataDog hosts from the endpoint", () => {
+  const links = capellaDebugLinks("dev", uuid, environments);
+  assert.deepEqual(links, {
+    capellaUiUrl: "https://dev.nonprod-project-avengers.com/databases?oid=6af08c0a-8cab-4c1c-b257-b521575c16d0",
+    fleetManagerUrl: `https://fm.dev.nonprod-project-avengers.com/clusters/${uuid}`,
+    datadogLogsUrl:
+      `https://app.datadoghq.com/logs?query=env%3Adev%20%40clusterId%3A${uuid}%20-status%3Ainfo` +
+      `&agg_m=count&agg_m_source=base&agg_t=count&cols=host%2Cservice&messageDisplay=inline` +
+      `&refresh_mode=sliding&storage=hot&stream_sort=desc&viz=stream&live=true`,
+  });
+});
+
+test("capellaDebugLinks derives the prod UI, Fleet Manager and DataDog hosts from the endpoint", () => {
+  const links = capellaDebugLinks("prod", uuid, environments);
+  assert.deepEqual(links, {
+    capellaUiUrl: "https://cloud.couchbase.com/databases?oid=62488bdd-d416-467e-84f7-fc7c1583a083",
+    fleetManagerUrl: `https://fm.cloud.couchbase.com/clusters/${uuid}`,
+    datadogLogsUrl:
+      `https://app.datadoghq.com/logs?query=env%3Aprod%20%40clusterId%3A${uuid}%20-status%3Ainfo` +
+      `&agg_m=count&agg_m_source=base&agg_t=count&cols=host%2Cservice&messageDisplay=inline` +
+      `&refresh_mode=sliding&storage=hot&stream_sort=desc&viz=stream&live=true`,
+  });
+});
+
+test("capellaDebugLinks omits capellaUiUrl when the environment has no oid", () => {
+  const links = capellaDebugLinks("noOid", uuid, environments);
+  assert.equal(links?.capellaUiUrl, undefined);
+  assert.ok(links?.fleetManagerUrl);
+});
+
+test("capellaDebugLinks returns undefined for an unconfigured environment", () => {
+  assert.equal(capellaDebugLinks("staging", uuid, environments), undefined);
+});
