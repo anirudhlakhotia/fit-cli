@@ -156,6 +156,7 @@ import {
   phasesForResumePoint,
   type ResumePoint,
   type ResumeSelector,
+  type RunPhases,
 } from "./resume.js";
 import {
   readRunState,
@@ -363,6 +364,19 @@ function isCapellaAnalyticsGroup(group: ResolvedExecutionGroup): boolean {
 
 function isCapellaGroup(group: ResolvedExecutionGroup): boolean {
   return group.type === "functional" && group.cbdinocluster?.capella !== undefined;
+}
+
+/**
+ * GitHub creds are only needed so cbdinocluster/CAO can pull private ghcr.io/cb-rhcc
+ * images. Only true when some upcoming group will actually provision via cbdinocluster —
+ * groups on `clusterMode: "connection"` or `"useExisting"`, or a resumed run that skips
+ * cluster setup entirely, never touch it.
+ */
+function needsGithubCredentials(phases: RunPhases, executionGroups: ResolvedExecutionGroup[], startCycleIndex: number): boolean {
+  return (
+    phases.setupCluster &&
+    executionGroups.slice(startCycleIndex).some((group) => group.type === "functional" && group.clusterMode === "cbdinocluster")
+  );
 }
 
 /**
@@ -1614,12 +1628,7 @@ export async function runFromDefinition(
 
   // Resolve GitHub credentials upfront so we fail before provisioning an instance.
   let githubCredentials: { user: string; token: string } | undefined;
-  if (
-    phases.setupCluster &&
-    executionGroups
-      .slice(startCycleIndex)
-      .some((group) => group.type === "functional" && group.clusterMode === "cbdinocluster")
-  ) {
+  if (needsGithubCredentials(phases, executionGroups, startCycleIndex)) {
     const result = await resolveGithubCredentials();
     if (typeof result === "string") {
       fitCliError({ classification: "FatalToAll" }, `\n✗ ${result}`);
