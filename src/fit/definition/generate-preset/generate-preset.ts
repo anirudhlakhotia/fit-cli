@@ -61,6 +61,8 @@ async function loadPresetMap(): Promise<Record<string, string>> {
     "situational-quick-sanity":    ((await import("../../../../presets/situational-quick-sanity.json5",   { with: { type: "text" } })) as { default: string }).default,
     "situational-everything":    ((await import("../../../../presets/situational-everything.json5",   { with: { type: "text" } })) as { default: string }).default,
     "private-endpoint-quick-sanity":    ((await import("../../../../presets/private-endpoint-quick-sanity.json5",   { with: { type: "text" } })) as { default: string }).default,
+    "private-endpoint-everything":    ((await import("../../../../presets/private-endpoint-everything.json5",   { with: { type: "text" } })) as { default: string }).default,
+    "private-endpoint-situational":    ((await import("../../../../presets/private-endpoint-situational.json5",   { with: { type: "text" } })) as { default: string }).default,
   };
 }
 

@@ -98,7 +98,7 @@
             {
               type: 'situational',
               tests: {
-                presets: ['all'],
+                presets: ['standard-qe'],
               },
               situational: {
                 database: {

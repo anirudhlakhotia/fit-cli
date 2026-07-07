@@ -1,0 +1,39 @@
+{
+  preset: {
+    order: 15,
+    description: 'Situational testing for private endpoint (PrivateLink) testing against a real Capella cluster on AWS.',
+    expectedTime: 'Medium',
+  },
+  version: 1,
+  type: 'fit',
+  instances: [
+    {
+      aws: {
+        privateEndpoint: {},
+      },
+      clusters: [],
+      clusterlessSessions: [
+        {
+          performer: {
+            image: '{{PERFORMER_IMAGE}}',
+            onPortInUse: 'reuse',
+          },
+          runs: [
+            {
+              type: 'situational',
+              tests: {
+                presets: ['standard-qe']
+              },
+              situational: {
+                database: {
+                  mode: 'hosted',
+                  resultsEnvironment: 'prod',
+                },
+              },
+            },
+          ],
+        },
+      ]
+    },
+  ]
+}
