@@ -21,6 +21,7 @@ import { posixQuote, teeToFileCommand } from "../../util/non-fit/remote-target.j
 import { findOnPath } from "../../util/non-fit/which.js";
 import { loadEnvironments } from "../../fit/util/environments.js";
 import { buildClusterDef } from "./build-cluster-def.js";
+import { printCapellaDebugLinks, printCapellaUiLink } from "./capella-debug-links.js";
 import { ensureCbdinocluster } from "./ensure-cbdinocluster.js";
 import { parseAllocatedId } from "./parse-allocated-id.js";
 import { parseCloudClusterUuid } from "./parse-cloud-cluster-uuid.js";
@@ -134,6 +135,8 @@ export async function allocateCluster(
   execution: ClusterCommandExecutor = localClusterCommandExecutor(),
   cycleDir: string = ensureRunDir(),
   cng = false,
+  /** Only used (to print debug links) when `deployer` is "cloud" — see {@link printCapellaDebugLinks}. */
+  capellaEnvironment?: string,
 ): Promise<AllocatedCluster> {
   const runDir = ensureRunDir();
   const { path: localDefFile, artifact } = writeClusterDef(def, cycleDir, runDir);
@@ -181,6 +184,12 @@ export async function allocateCluster(
     // best-effort: file may not exist if SSH itself never started
   }
   if (runError !== undefined) {
+    // Allocation failed before cbdinocluster could log a Couchbase cluster UUID, so
+    // there's nothing to build the other debug links from — but the Capella UI link
+    // needs no UUID, letting the user browse to (and clean up) the cluster by hand.
+    if (deployer === "cloud" && capellaEnvironment) {
+      printCapellaUiLink(capellaEnvironment);
+    }
     // Deferred rethrow of the original caught error after collecting output —
     // rethrow it verbatim so its type/stack are preserved.
     // eslint-disable-next-line @typescript-eslint/only-throw-error
@@ -188,6 +197,9 @@ export async function allocateCluster(
   }
   const clusterId = parseAllocatedId(localOutput);
   if (!clusterId) {
+    if (deployer === "cloud" && capellaEnvironment) {
+      printCapellaUiLink(capellaEnvironment);
+    }
     throw new Error("cbdinocluster allocate didn't print a cluster id");
   }
   // Only the `cloud` (Capella) deployer prints this; cbdinocluster logs it on every
@@ -200,6 +212,13 @@ export async function allocateCluster(
         ? `  Couchbase cluster UUID: ${couchbaseClusterUuid}`
         : `  ⚠ cbdinocluster allocate didn't print a Couchbase cluster UUID for this cloud cluster.`,
     );
+    if (capellaEnvironment) {
+      if (couchbaseClusterUuid) {
+        printCapellaDebugLinks(capellaEnvironment, couchbaseClusterUuid);
+      } else {
+        printCapellaUiLink(capellaEnvironment);
+      }
+    }
   }
    // Only CNG/CAO clusters expose a couchbase2 gateway + management-UI route that we
   // need to fetch here; a non-CNG cluster (e.g. a self-managed Enterprise Analytics
