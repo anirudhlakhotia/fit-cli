@@ -153,7 +153,7 @@ function printAwsFailureGuidance(profiles: AwsProfilesInfo, _environments: Envir
       Install aws cli (https://aws.amazon.com/cli/).
       Create an IT ticket asking for access to the "cb-sdk" tenant.`);
   console.log(`  2. Make sure you've logged into AWS recently so your cached credentials are up-to-date:`);
-  console.log(`       aws credentials`);
+  console.log(`       aws configure --profile cb-sdk`);
   console.log(`       aws sso login    (if you use AWS SSO)`);
   if (profiles.profiles.length > 1) {
     console.log(`  3. You have multiple AWS profiles configured (note you have ${profiles.profiles.map((p) => p.name).join(", ")}).`);
