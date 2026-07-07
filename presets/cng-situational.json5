@@ -1,0 +1,39 @@
+{
+  preset: {
+    order: 21,
+    description: 'Run all situational tests for a given SDK against a CNG / Protostellar (OpenShift) cluster.',
+    expectedTime: '< 10 minutes',
+  },
+  version: 1,
+  type: 'fit',
+  description: 'CNG situational tests',
+  instances: [
+    {
+      aws: {},
+      clusters: [],
+      clusterlessSessions: [
+        {
+          performer: {
+            image: '{{PERFORMER_IMAGE}}',
+            onPortInUse: 'reuse',
+          },
+          runs: [
+            {
+              type: 'situational',
+              tests: {
+                presets: ['all'],
+              },
+              situational: {
+                database: {
+                  mode: 'hosted',
+                  resultsEnvironment: 'prod',
+                },
+                cng: {},
+              },
+            },
+          ],
+        },
+      ],
+    },
+  ],
+}

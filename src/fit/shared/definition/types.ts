@@ -210,8 +210,17 @@ export interface SituationalDatabaseSetup {
   resultsEnvironment?: string;
 }
 
+/** Object marker, matching {@link PrivateEndpointSetup}'s empty-object convention. */
+export type SituationalCngSetup = Record<string, never>;
+
 export interface SituationalSection {
   database: SituationalDatabaseSetup;
+  /**
+   * When present, situational's cbdino-managed cluster is built via the Couchbase
+   * Autonomous Operator (CAO) / CNG gateway (OpenShift) instead of a Capella cloud
+   * cluster.
+   */
+  cng?: SituationalCngSetup;
 }
 
 export interface FunctionalRun {

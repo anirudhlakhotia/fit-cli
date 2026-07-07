@@ -48,6 +48,7 @@ import {
   type SituationalDatabaseMode,
   type SituationalDatabaseSetup,
   type CapellaClusterSetup,
+  type SituationalCngSetup,
   type SituationalSection,
   type TestPreset,
   type TestsSection,
@@ -484,13 +485,24 @@ function validateSituationalDatabase(value: unknown, path: string): SituationalD
   return { mode: record.mode, ...(resultsEnvironment !== undefined ? { resultsEnvironment } : {}) };
 }
 
+function validateSituationalCng(value: unknown, path: string): SituationalCngSetup {
+  const record = requireRecord(value, path);
+  if (Object.keys(record).length > 0) {
+    throw new InvalidDefinitionError(`"${path}" must be empty.`);
+  }
+  return {};
+}
+
 function validateSituationalSection(value: unknown, path: string): SituationalSection {
   const record = requireRecord(value, path);
-  rejectUnknown(record, ["database"], path);
+  rejectUnknown(record, ["database", "cng"], path);
   if (record.database === undefined) {
     throw new InvalidDefinitionError(`Missing required field: ${path}.database`);
   }
-  return { database: validateSituationalDatabase(record.database, `${path}.database`) };
+  return {
+    database: validateSituationalDatabase(record.database, `${path}.database`),
+    ...(record.cng !== undefined ? { cng: validateSituationalCng(record.cng, `${path}.cng`) } : {}),
+  };
 }
 
 function validateRunFitConfig(value: unknown, path: string): ResolvedFitConfig | string {

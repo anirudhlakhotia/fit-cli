@@ -93,6 +93,8 @@ import type { PieceData } from "../../../util/non-fit/config-pieces.js";
 import { generateFitConfiguration } from "../../shared/fit-configuration/generate-fit-configuration.js";
 import { resourceCreationPiece, type ClusterCreatingConfig } from "../util/build-fit-configuration.js";
 import { generateSituationalConfiguration } from "../../situational/configuration/generate-situational-configuration.js";
+import { DEFAULT_CBDINO_SETTINGS, type CbdinoSettings } from "../../situational/configuration/build-situational-configuration.js";
+import { loadEnvironments } from "../../util/environments.js";
 import {
   createFitExecutionContext,
   uploadRemoteAwsCredentials,
@@ -108,6 +110,7 @@ import {
   type ResolvedFitConfig,
   type ResolvedFunctionalExecutionGroup,
   type ResolvedFunctionalExecutionRun,
+  type ResolvedSituationalExecutionGroup,
   type ResolvedSituationalExecutionRun,
 } from "../../shared/definition/resolve-definition.js";
 import {
@@ -187,7 +190,9 @@ function functionalWithCluster(
 /** Describe one execution group's cluster for the run header / setup-cluster step. */
 function clusterLabel(group: ResolvedExecutionGroup): string {
   if (group.type === "situational") {
-    return "none — situational runs build their own cluster via FIT/SIT";
+    return group.cng
+      ? "none — situational CNG runs build their own cbdino/CAO cluster via FIT/SIT"
+      : "none — situational runs build their own cluster via FIT/SIT";
   }
   const cluster = group.sessions.flatMap((s) => s.runs).find(functionalWithCluster)?.cluster;
   if (cluster) {
@@ -515,15 +520,38 @@ function withRemoteK8sInit(
 }
 
 /**
- * Make a functional cycle's execution target CNG-ready. Non-CNG cycles pass
- * through untouched. For CNG on a clean instance the Kubernetes backend is chosen
- * by {@link cngKubernetesBackend}: by default we prepare OpenShift/ROSA (the only
- * tested CNG path — install oc, log into the shared cluster, run the pre-flight
- * cleanup) and point the uploaded ~/.cbdinocluster at the logged-in context; with
- * `FIT_CNG_K8S=k3d` we fall back to the legacy local k3d cluster. On localhost we
- * only verify the operator's own ~/.cbdinocluster has Kubernetes enabled (we don't
- * manage it).
+ * Make an execution target CNG-ready and return the `k8s` config-patch block to
+ * merge onto `~/.cbdinocluster`, or `undefined` when nothing needs patching (the
+ * localhost path — we only verify it, not manage it). For CNG on a clean instance
+ * the Kubernetes backend is chosen by {@link cngKubernetesBackend}: by default we
+ * prepare OpenShift/ROSA (the only tested CNG path — install oc, log into the
+ * shared cluster, run the pre-flight cleanup); with `FIT_CNG_K8S=k3d` we fall back
+ * to the legacy local k3d cluster. Shared by both functional and situational CNG
+ * cycles — {@link prepareFunctionalCngCycle} and {@link prepareSituationalCngCycle}.
  */
+async function resolveCngK8sConfigPatch(execution: FitExecutionContext): Promise<PieceData | undefined> {
+  if (execution.kind === "remote") {
+    const home = remoteHomeFromWorkspace(execution.rootDir);
+    if (cngKubernetesBackend() === "k3d") {
+      await provisionRemoteK3d(execution, home);
+      return buildRemoteK8sBlock(home);
+    }
+    const creds = await resolveRosaCredentials();
+    if (typeof creds === "string") {
+      throwFatalToCluster(creds);
+    }
+    const { context } = await provisionRemoteOpenShift(execution, home, creds, resolveOcVersion());
+    return buildOpenShiftK8sBlock(home, context);
+  }
+  const check = checkLocalhostCngKubernetes();
+  if (!check.ok) {
+    throwFatalToCluster(check.message);
+  }
+  console.log("→ setup-cluster: this machine's ~/.cbdinocluster has Kubernetes enabled — CNG-ready.");
+  return undefined;
+}
+
+/** Make a functional cycle's execution target CNG-ready. Non-CNG cycles pass through untouched. */
 async function prepareFunctionalCngCycle(
   group: ResolvedFunctionalExecutionGroup,
   execution: FitExecutionContext,
@@ -531,25 +559,29 @@ async function prepareFunctionalCngCycle(
   if (!group.cng) {
     return group;
   }
-  if (execution.kind === "remote") {
-    const home = remoteHomeFromWorkspace(execution.rootDir);
-    if (cngKubernetesBackend() === "k3d") {
-      await provisionRemoteK3d(execution, home);
-      return withRemoteK8sInit(group, buildRemoteK8sBlock(home));
-    }
-    const creds = await resolveRosaCredentials();
-    if (typeof creds === "string") {
-      throwFatalToCluster(creds);
-    }
-    const { context } = await provisionRemoteOpenShift(execution, home, creds, resolveOcVersion());
-    return withRemoteK8sInit(group, buildOpenShiftK8sBlock(home, context));
+  const k8sBlock = await resolveCngK8sConfigPatch(execution);
+  return k8sBlock ? withRemoteK8sInit(group, k8sBlock) : group;
+}
+
+/**
+ * Make a situational cycle's execution target CNG-ready. Non-CNG cycles pass
+ * through untouched. Unlike functional CNG (which patches a fresh
+ * `cbdinocluster.init`), situational's `cbdinoclusterInit` may already carry
+ * definition-supplied `args`/`config`, so the k8s block is merged in rather than
+ * replacing it outright.
+ */
+async function prepareSituationalCngCycle(
+  group: ResolvedSituationalExecutionGroup,
+  execution: FitExecutionContext,
+): Promise<ResolvedSituationalExecutionGroup> {
+  if (!group.cng) {
+    return group;
   }
-  const check = checkLocalhostCngKubernetes();
-  if (!check.ok) {
-    throwFatalToCluster(check.message);
+  const k8sBlock = await resolveCngK8sConfigPatch(execution);
+  if (!k8sBlock) {
+    return group;
   }
-  console.log("→ setup-cluster: this machine's ~/.cbdinocluster has Kubernetes enabled — CNG-ready.");
-  return group;
+  return { ...group, cbdinoclusterInit: { ...group.cbdinoclusterInit, configPatch: k8sBlock } };
 }
 
 /**
@@ -876,6 +908,26 @@ async function withResolvedSituationalCbdino(
 }
 
 /**
+ * The cbdino settings for a situational run. A CNG run deploys via the Couchbase
+ * Autonomous Operator instead of a Capella cloud cluster, so it needs the CNG
+ * server/operator/gateway versions (from environments.json5) rather than the
+ * Capella-cluster default — the driver's CbDinoYamlWrangler only writes an
+ * `operator-version`/`gateway-version` into cbdinocluster's config when it sees a
+ * `cao` deployer.
+ */
+function situationalCbdinoSettings(cng: boolean): CbdinoSettings {
+  if (!cng) {
+    return DEFAULT_CBDINO_SETTINGS;
+  }
+  const { cngClusterVersion, caoOperatorVersion, cngVersion } = loadEnvironments().defaults;
+  return {
+    ...DEFAULT_CBDINO_SETTINGS,
+    version: cngClusterVersion,
+    cao: { operatorVersion: caoOperatorVersion, gatewayVersion: cngVersion },
+  };
+}
+
+/**
  * The run step for a situational iteration. cbdino builds and manages the
  * cluster from inside the test-driver, so there's no cluster to diagnose or
  * sanity-check up front — instead we resolve the results database the file named,
@@ -909,7 +961,7 @@ export async function runSituationalTests(
 
   const fitConfig = generateSituationalConfiguration(
     database.database,
-    undefined,
+    situationalCbdinoSettings(run.cng),
     execution.fitPerformerDir,
     run.path,
     run.performerPort,
@@ -1966,6 +2018,21 @@ export async function runFromDefinition(
               cluster: clusterSegmentLabel(activeCycle.path, activeCycle.clusterMode, clusterVersionLabel(activeCycle), isEnterpriseAnalyticsGroup(activeCycle), isCapellaGroup(activeCycle), isCapellaAnalyticsGroup(activeCycle)),
             });
           }
+        } else if (group.cng) {
+          // CNG situational: cbdino deploys the cluster via the Couchbase
+          // Autonomous Operator, not the Capella cloud deployer, so there are no
+          // Capella/AWS credentials to forward — just a working Kubernetes.
+          if (execution.kind === "remote" && !group.cbdinoclusterSource && !(await execution.commandAvailable("cbdinocluster"))) {
+            await installCbdinoclusterRemote(execution);
+          }
+          const cngGroup = await prepareSituationalCngCycle(group, execution);
+          await prepareCbdinoclusterInit(
+            execution,
+            cngGroup.cbdinoclusterInit,
+            githubCredentials,
+            instanceRunDir(group.path),
+            group.cbdinoclusterSource,
+          );
         } else {
           const capellaEnvironment = group.type === "situational" ? group.capellaEnvironment : DEFAULT_CAPELLA_ENV;
           let capellaEndpoint: string | undefined;

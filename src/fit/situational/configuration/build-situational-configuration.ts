@@ -39,6 +39,15 @@ export interface CbdinoSettings {
   /** Name (or path) of the cbdinocluster binary the driver should invoke. */
   cbDinoClusterAppPath: string;
   enablePrivateEndpoint: boolean;
+  /**
+   * When present, cbdino builds the cluster via the Couchbase Autonomous Operator
+   * (CAO) / CNG gateway (OpenShift) instead of a Capella cloud cluster — the
+   * situational counterpart of functional's `cao` cbdinocluster block.
+   */
+  cao?: {
+    operatorVersion: string;
+    gatewayVersion: string;
+  };
 }
 
 export const DEFAULT_CBDINO_SETTINGS: CbdinoSettings = {
@@ -84,6 +93,9 @@ export function situationalConfigPiece(database: ResultsDatabase, cbdino: Cbdino
           version: cbdino.version,
           cbDinoClusterAppPath: cbdino.cbDinoClusterAppPath,
           enablePrivateEndpoint: cbdino.enablePrivateEndpoint,
+          ...(cbdino.cao
+            ? { deployer: "cao", operatorVersion: cbdino.cao.operatorVersion, gatewayVersion: cbdino.cao.gatewayVersion }
+            : {}),
         },
         database: {
           jdbc: database.jdbc,

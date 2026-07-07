@@ -54,6 +54,8 @@ async function loadPresetMap(): Promise<Record<string, string>> {
     "capella-quick-sanity":        ((await import("../../../../presets/capella-quick-sanity.json5",        { with: { type: "text" } })) as { default: string }).default,
     "cng-functional":              ((await import("../../../../presets/cng-functional.json5",              { with: { type: "text" } })) as { default: string }).default,
     "cng-functional-quick-sanity": ((await import("../../../../presets/cng-functional-quick-sanity.json5", { with: { type: "text" } })) as { default: string }).default,
+    "cng-situational":             ((await import("../../../../presets/cng-situational.json5",             { with: { type: "text" } })) as { default: string }).default,
+    "cng-everything":              ((await import("../../../../presets/cng-everything.json5",              { with: { type: "text" } })) as { default: string }).default,
     "enterprise-analytics-functional": ((await import("../../../../presets/enterprise-analytics-functional.json5", { with: { type: "text" } })) as { default: string }).default,
     "enterprise-analytics-functional-quick-sanity": ((await import("../../../../presets/enterprise-analytics-functional-quick-sanity.json5", { with: { type: "text" } })) as { default: string }).default,
     "enterprise-analytics-qe-set":     ((await import("../../../../presets/enterprise-analytics-qe-set.json5",     { with: { type: "text" } })) as { default: string }).default,
