@@ -10,6 +10,7 @@
  *   bun src/cluster/cluster-create/allocate-cluster.ts
  */
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import { artifactFromPath, type RunOutput, type Artifact } from "../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../util/non-fit/cli.js";
@@ -123,6 +124,18 @@ export async function askDeployer(): Promise<string | undefined> {
 }
 
 /**
+ * Purpose string every `cbdinocluster allocate` call is tagged with, matching the
+ * `fit-cli-<username>` convention already used for AWS role session names and EC2
+ * instance tags (see `aws-cli.ts`). `cbdinocluster` stores this as the
+ * `cbdc2.purpose` namespace label on shared (Capella/CNG) deployers — without it,
+ * a leaked or stuck cluster on the shared ROSA cluster is untraceable to whoever
+ * created it.
+ */
+export function allocatePurpose(): string {
+  return `fit-cli-${userInfo().username}`;
+}
+
+/**
  * Allocate a cluster: write `def` to a file and run
  * `cbdinocluster --verbose allocate [--deployer=<deployer>] --def-file=<file>`.
  * Progress is streamed; resolves with the new cluster's id when allocation
@@ -158,6 +171,7 @@ export async function allocateCluster(
   // 31h claim can starve other users. Expire those quickly instead.
   const sharedResourceDeployer = deployer === "cloud" || cng;
   args.push(sharedResourceDeployer ? "--expiry=3h" : "--expiry=31h");
+  args.push(`--purpose=${allocatePurpose()}`);
   args.push(`--def-file=${defFile}`);
 
   mkdirSync(cycleDir, { recursive: true, mode: 0o700 });

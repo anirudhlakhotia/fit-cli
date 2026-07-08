@@ -1,0 +1,95 @@
+{
+  preset: {
+    order: 22,
+    description: 'Functional and situational testing against CNG / Protostellar (OpenShift) for a given SDK.',
+    expectedTime: '< 1 hour',
+    tags: ['cng', 'functional', 'situational'],
+  },
+  version: 1,
+  type: 'fit',
+  description: 'CNG functional and situational tests',
+  instances: [
+    {
+      aws: {},
+      clusters: [
+        {
+          clusterConfig: 'cluster-0',
+          sessions: [
+            {
+              performer: {
+                image: '{{PERFORMER_IMAGE}}',
+                onPortInUse: 'reuse',
+              },
+              runs: [
+                {
+                  type: 'functional',
+                  fitConfig: 'fit-config-0',
+                  tests: {
+                    presets: ['all'],
+                    addToDefaultExcludedGroups: ['protostellarWillWorkLater'],
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      clusterlessSessions: [
+        {
+          performer: {
+            image: '{{PERFORMER_IMAGE}}',
+            onPortInUse: 'reuse',
+          },
+          runs: [
+            {
+              type: 'situational',
+              tests: {
+                presets: ['all'],
+              },
+              situational: {
+                database: {
+                  mode: 'hosted',
+                  resultsEnvironment: 'prod',
+                },
+                cng: {},
+              },
+            },
+          ],
+        },
+      ],
+    },
+  ],
+  clusterConfigs: [
+    {
+      id: 'cluster-0',
+      cbdinocluster: {
+        config: {
+          nodes: [
+            {
+              count: 3,
+              version: "8.0.2-5503",
+              services: ['kv', 'n1ql', 'index', 'fts'],
+            },
+          ],
+          cao: {
+            'operator-version': '2.9.2',
+            'gateway-version': '1.1.0-135',
+          },
+        },
+        onClusterExists: 'useExisting',
+      },
+    },
+  ],
+  fitConfigs: [
+    {
+      id: 'fit-config-0',
+      connection: {
+        scheme: 'couchbase2',
+        tls: { insecure: true },
+      },
+      config: {
+        excludeTests: ['ssh', 'openshift'],
+      },
+    },
+  ],
+}

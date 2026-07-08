@@ -19,6 +19,9 @@ import {
   ANALYTICS_MAVEN_TEST_ARGS,
   DEFAULT_EXCLUDED_GROUPS,
   DEFAULT_MAVEN_TEST_ARGS,
+  SITUATIONAL_CNG_DEFAULT_EXCLUDED_GROUPS,
+  SITUATIONAL_CNG_MAVEN_GROUPS_ARG,
+  SITUATIONAL_CNG_MAVEN_TEST_ARGS,
   SITUATIONAL_DEFAULT_EXCLUDED_GROUPS,
   SITUATIONAL_MAVEN_GROUPS_ARG,
   SITUATIONAL_MAVEN_TEST_ARGS,
@@ -95,6 +98,7 @@ export interface ResolvedSituationalRun extends ResolvedRunCommon {
   databaseMode: SituationalDatabaseMode;
   /** Results environment (key under `results` in environments.json5); default "dev". */
   resultsEnvironment: string;
+  cng: boolean;
 }
 
 export type ResolvedRun = ResolvedFunctionalRun | ResolvedSituationalRun;
@@ -159,6 +163,7 @@ export interface ResolvedSituationalExecutionRun extends ResolvedExecutionRunCom
   type: "situational";
   databaseMode: SituationalDatabaseMode;
   resultsEnvironment: string;
+  cng: boolean;
 }
 
 export type ResolvedExecutionRun = ResolvedFunctionalExecutionRun | ResolvedSituationalExecutionRun;
@@ -195,6 +200,8 @@ export interface ResolvedSituationalExecutionGroup {
   /** Where to get the cbdinocluster binary. Absent means latest release. */
   cbdinoclusterSource?: CbdinoclusterSource;
   capellaEnvironment: string;
+  /** True when any run in this group is a CNG run (see {@link ResolvedSituationalExecutionRun.cng}). */
+  cng: boolean;
   runs: ResolvedSituationalExecutionRun[];
 }
 
@@ -318,11 +325,13 @@ export function resolveMavenArgs(tests: TestsSection): string[] {
   return [...base, ...resolveMavenSuffix(tests)];
 }
 
-export function resolveSituationalMavenArgs(tests: TestsSection): string[] {
-  const excluded = resolveExcludedGroups(tests, SITUATIONAL_DEFAULT_EXCLUDED_GROUPS);
+export function resolveSituationalMavenArgs(tests: TestsSection, cng: boolean): string[] {
+  const groupsArg = cng ? SITUATIONAL_CNG_MAVEN_GROUPS_ARG : SITUATIONAL_MAVEN_GROUPS_ARG;
+  const defaultExcluded = cng ? SITUATIONAL_CNG_DEFAULT_EXCLUDED_GROUPS : SITUATIONAL_DEFAULT_EXCLUDED_GROUPS;
+  const excluded = resolveExcludedGroups(tests, defaultExcluded);
   const base = excluded === undefined
-    ? [...SITUATIONAL_MAVEN_TEST_ARGS]
-    : [SITUATIONAL_MAVEN_GROUPS_ARG, `-DexcludedGroups=${excluded.join(",")}`];
+    ? [...(cng ? SITUATIONAL_CNG_MAVEN_TEST_ARGS : SITUATIONAL_MAVEN_TEST_ARGS)]
+    : [groupsArg, `-DexcludedGroups=${excluded.join(",")}`];
   return [...base, ...resolveMavenSuffix(tests)];
 }
 
@@ -447,9 +456,10 @@ function resolveRun(run: FitRun, stripClusterAccess: boolean): ResolvedRunWithou
       type: "situational",
       ...(fitConfig !== undefined ? { fitConfig } : {}),
       testSelection: resolveTestsSelection(run.tests),
-      extraMavenArgs: resolveSituationalMavenArgs(run.tests),
+      extraMavenArgs: resolveSituationalMavenArgs(run.tests, run.situational.cng !== undefined),
       databaseMode: run.situational.database.mode,
       resultsEnvironment: run.situational.database.resultsEnvironment ?? DEFAULT_RESULTS_ENV,
+      cng: run.situational.cng !== undefined,
     };
   }
   if (run.type === "analytics-functional") {
@@ -658,6 +668,9 @@ export function buildExecutionGroups(instances: ResolvedInstancePlan[]): Resolve
             cbdinoclusterInit: instance.cbdinoclusterInit,
             ...(instance.cbdinoclusterSource ? { cbdinoclusterSource: instance.cbdinoclusterSource } : {}),
             capellaEnvironment: instance.capellaEnvironment,
+            cng: instance.clusterlessSessions.some((session) =>
+              session.runs.some((run) => run.type === "situational" && run.cng),
+            ),
             runs: instance.clusterlessSessions.flatMap((session) =>
               session.runs
                 .filter((run): run is ResolvedSituationalRun => run.type === "situational")
@@ -673,6 +686,7 @@ export function buildExecutionGroups(instances: ResolvedInstancePlan[]): Resolve
                   extraMavenArgs: run.extraMavenArgs,
                   databaseMode: run.databaseMode,
                   resultsEnvironment: run.resultsEnvironment,
+                  cng: run.cng,
                 })),
             ),
           },

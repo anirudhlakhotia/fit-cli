@@ -39,6 +39,7 @@ import { prepareAwsCli } from "../../cloud/util/aws/aws-cli.js";
 import { AWS_REGION } from "../../cloud/util/aws/aws-target.js";
 import { describeInstance } from "../../cloud/util/aws/describe-instance.js";
 import { resolveRosaCredentials, type ResolvedRosaCredentials } from "../../fit/util/config.js";
+import { throwFatalToCluster } from "../../fit/shared/failure-classification.js";
 import { CAO_TOOLS_VERSION, installCaoToolsRemote } from "./install-cao-tools.js";
 
 export { CAO_TOOLS_VERSION } from "./install-cao-tools.js";
@@ -218,6 +219,119 @@ export async function runOpenShiftPreflight(execution: OpenShiftExecutor): Promi
 }
 
 /**
+ * CPU a single CAO-deployed Couchbase Server pod requests — confirmed live
+ * 2026-07-08 from a `cbdc2-*` pod spec on the shared ROSA cluster
+ * (`resources.requests.cpu: "2"`; the `cloud-native-gateway` sidecar has no
+ * explicit request). The shared cluster's nodes were 3500m allocatable each, so
+ * in practice each node fits at most one Couchbase Server pod. Hardcoded rather
+ * than derived, since fit-cli has no way to introspect CAO's pod template ahead
+ * of an allocate — if CAO's resource requests change, update this.
+ */
+export const CNG_CPU_MILLICORES_PER_NODE = 2000;
+
+/** One-liner to force-remove every cbdinocluster stuck `creating` on the box (emergency capacity relief). */
+export const CNG_EMERGENCY_CLEANUP_COMMAND =
+  "cbdinocluster -v ls 2>&1 | grep 'State: creating' | awk '{print $1}' | xargs -I{} cbdinocluster remove {}";
+
+function parseCpuMillicores(value: string | undefined): number {
+  if (!value) return 0;
+  return value.endsWith("m") ? parseInt(value, 10) : Math.round(parseFloat(value) * 1000);
+}
+
+/** Free vs. required CPU on the shared ROSA cluster for a CNG allocate of `requiredNodes` size. */
+export interface CngCapacity {
+  ok: boolean;
+  freeMillicores: number;
+  requiredMillicores: number;
+  nodeCount: number;
+}
+
+/**
+ * Measure free CPU headroom on the OpenShift cluster `execution` is logged into:
+ * sum of node-allocatable CPU minus CPU requested by every non-terminated pod,
+ * compared against `requiredNodes * `{@link CNG_CPU_MILLICORES_PER_NODE}. Doesn't
+ * account for memory or other resources — CPU is what's exhausted the shared
+ * cluster every time we've hit this in practice (`Insufficient cpu` scheduling
+ * failures), so it's the cheapest useful signal.
+ */
+export async function checkCngCapacity(execution: OpenShiftExecutor, requiredNodes: number): Promise<CngCapacity> {
+  const [nodesJson, podsJson] = await Promise.all([
+    execution.capture("oc", ["get", "nodes", "-o", "json"], undefined, { quiet: true }),
+    execution.capture(
+      "oc",
+      ["get", "pods", "-A", "-o", "json", "--field-selector", "status.phase!=Succeeded,status.phase!=Failed"],
+      undefined,
+      { quiet: true },
+    ),
+  ]);
+  const nodes = JSON.parse(nodesJson) as { items: { status?: { allocatable?: { cpu?: string } } }[] };
+  const pods = JSON.parse(podsJson) as {
+    items: { spec?: { containers?: { resources?: { requests?: { cpu?: string } } }[] } }[];
+  };
+  const allocatable = nodes.items.reduce((sum, n) => sum + parseCpuMillicores(n.status?.allocatable?.cpu), 0);
+  const requested = pods.items.reduce(
+    (sum, p) =>
+      sum + (p.spec?.containers ?? []).reduce((s, c) => s + parseCpuMillicores(c.resources?.requests?.cpu), 0),
+    0,
+  );
+  const freeMillicores = allocatable - requested;
+  const requiredMillicores = requiredNodes * CNG_CPU_MILLICORES_PER_NODE;
+  return { ok: freeMillicores >= requiredMillicores, freeMillicores, requiredMillicores, nodeCount: nodes.items.length };
+}
+
+/**
+ * Human-readable capacity-shortfall message with pointers to diagnose and
+ * (manually) clear it. `target` identifies the box to run those commands on
+ * (`user@host`, from {@link OpenShiftExecutor.description}) — `oc`/`cbdinocluster`
+ * are only logged in and installed there, not on the machine invoking fit-cli;
+ * see the "SSH ACCESS" block printed earlier in this run for the full `ssh -i
+ * ...` command.
+ */
+export function formatCngCapacityShortfall(capacity: CngCapacity, requiredNodes: number, target: string): string {
+  return [
+    `The shared ROSA cluster doesn't have enough free CPU for a ${requiredNodes}-node CNG cluster right now.`,
+    `  Free:    ${(capacity.freeMillicores / 1000).toFixed(1)} CPU across ${capacity.nodeCount} nodes.`,
+    `  Needed:  ~${(capacity.requiredMillicores / 1000).toFixed(1)} CPU (${requiredNodes} nodes × ${CNG_CPU_MILLICORES_PER_NODE / 1000} CPU/node).`,
+    "",
+    "This is usually leaked/stuck clusters from previous failed runs — cbdinocluster's cleanup only reaps",
+    "*expired* clusters, and a failed allocate can leave one running indefinitely otherwise.",
+    "",
+    `Run the following on ${target} (where oc/cbdinocluster are installed and logged in — see the SSH`,
+    "ACCESS block printed earlier in this run for the full ssh command), NOT on your own machine:",
+    "  See what's using capacity:  cbdinocluster -v ls",
+    "  Emergency cleanup (removes every cluster stuck 'creating' — check none belong to someone else's active run first):",
+    `    ${CNG_EMERGENCY_CLEANUP_COMMAND}`,
+    "  Note: cbdc-cleanup-cronjob (namespace cbdc-shared) also runs every 15 minutes, but only reaps clusters",
+    "  that have already expired — it won't free capacity immediately if everything is still within its expiry window.",
+  ].join("\n");
+}
+
+/**
+ * Preflight capacity check before a CNG allocate. Only checks and reports —
+ * never removes anything itself; see {@link formatCngCapacityShortfall} for the
+ * manual cleanup commands it points at. Best-effort: if `oc` itself fails (e.g.
+ * a permissions issue unrelated to capacity), warns and lets the run proceed
+ * rather than blocking on the check itself. A capacity shortfall is reported via
+ * {@link throwFatalToCluster} so it's printed immediately (before the "leave
+ * everything up?" prompt), matching every other cluster-setup failure.
+ */
+export async function preflightCngCapacity(execution: OpenShiftExecutor, requiredNodes: number): Promise<void> {
+  let capacity: CngCapacity;
+  try {
+    capacity = await checkCngCapacity(execution, requiredNodes);
+  } catch (err) {
+    console.warn(`→ setup-cluster: couldn't check ROSA capacity (non-fatal): ${(err as Error).message}`);
+    return;
+  }
+  if (!capacity.ok) {
+    throwFatalToCluster(formatCngCapacityShortfall(capacity, requiredNodes, execution.description));
+  }
+  console.log(
+    `→ setup-cluster: ROSA capacity check passed (${(capacity.freeMillicores / 1000).toFixed(1)} CPU free across ${capacity.nodeCount} nodes, need ~${(capacity.requiredMillicores / 1000).toFixed(1)}).`,
+  );
+}
+
+/**
  * Post-login sanity diagnostics: `oc get nodes` and `oc get couchbaseclusters -A`.
  * Both are NonFatal — failures are logged but don't block the setup.
  */
@@ -307,6 +421,7 @@ export async function provisionRemoteOpenShift(
   home: string,
   creds: ResolvedRosaCredentials,
   version: string = DEFAULT_OC_VERSION,
+  requiredNodes?: number,
 ): Promise<{ context: string }> {
   console.log(`\n→ setup-cluster: preparing OpenShift (ROSA) on ${execution.description} for CNG…`);
   await installOcRemote(execution, version);
@@ -315,6 +430,9 @@ export async function provisionRemoteOpenShift(
   const context = await currentOcContext(execution);
   // Pre-flight temporarily disabled — see https://github.com/couchbaselabs/fit-cli/issues/TBD
   // await runOpenShiftPreflight(execution);
+  if (requiredNodes !== undefined) {
+    await preflightCngCapacity(execution, requiredNodes);
+  }
   await installCaoToolsRemote(execution, `${home}/.dinotools/cao/${CAO_TOOLS_VERSION}`);
   console.log(`→ setup-cluster: OpenShift (context ${context}) is ready for CNG.`);
   return { context };
@@ -349,6 +467,8 @@ if (isMain(import.meta.url)) {
       return;
     }
 
+    const requiredNodes = Number(flag(argv, "required-nodes") ?? "3");
+
     // Otherwise: provision a saved instance dir end-to-end (needs ROSA creds).
     const instanceDir = flag(argv, "dir");
     const user = flag(argv, "user") ?? DEFAULT_INSTANCE_USER;
@@ -371,8 +491,8 @@ if (isMain(import.meta.url)) {
           "  cng-openshift.ts print-oc-install [--version 4.10.67]\n" +
           "  cng-openshift.ts print-preflight\n" +
           "  cng-openshift.ts k8s-block <home-dir> <context>\n" +
-          "  cng-openshift.ts --dir <instance-dir> [--user ubuntu] [--version 4.10.67]\n" +
-          "  cng-openshift.ts --instance <ec2-id> --key <path.pem> [--user ubuntu] [--version 4.10.67]",
+          "  cng-openshift.ts --dir <instance-dir> [--user ubuntu] [--version 4.10.67] [--required-nodes 3]\n" +
+          "  cng-openshift.ts --instance <ec2-id> --key <path.pem> [--user ubuntu] [--version 4.10.67] [--required-nodes 3]",
       );
       process.exit(1);
     }
@@ -401,7 +521,7 @@ if (isMain(import.meta.url)) {
 
     const target = new RemoteTarget(host);
     const home = `/home/${user}`;
-    const { context } = await provisionRemoteOpenShift(target, home, creds, version);
+    const { context } = await provisionRemoteOpenShift(target, home, creds, version, requiredNodes);
     return {
       details: [
         { label: "Instance", value: `${instanceId} (${user}@${address})` },

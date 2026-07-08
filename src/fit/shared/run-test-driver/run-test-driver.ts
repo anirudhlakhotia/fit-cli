@@ -64,6 +64,22 @@ export const SITUATIONAL_MAVEN_TEST_ARGS = [
   `-DexcludedGroups=${SITUATIONAL_DEFAULT_EXCLUDED_GROUPS.join(",")}`,
 ] as const;
 
+/**
+ * The `-Dgroups` filter that selects CNG/OpenShift situational tests (e.g.
+ * CngTest, tagged `@Tag("openshift")` — see transactions-fit-performer). Distinct
+ * from {@link SITUATIONAL_MAVEN_GROUPS_ARG}'s `cbDino` tag, which selects the
+ * Capella-cbdino situational tests instead; the two tag sets are disjoint.
+ */
+export const SITUATIONAL_CNG_MAVEN_GROUPS_ARG = "-Dgroups=situational,openshift";
+
+/** The Maven groups excluded by default on a situational CNG run. */
+export const SITUATIONAL_CNG_DEFAULT_EXCLUDED_GROUPS = ["cbDino", "capella"] as const;
+
+export const SITUATIONAL_CNG_MAVEN_TEST_ARGS = [
+  SITUATIONAL_CNG_MAVEN_GROUPS_ARG,
+  `-DexcludedGroups=${SITUATIONAL_CNG_DEFAULT_EXCLUDED_GROUPS.join(",")}`,
+] as const;
+
 export interface TestRunResult extends RunOutput {
   ok: boolean;
   logFile: string;

@@ -14,6 +14,7 @@ import {
 import {
   ANALYTICS_MAVEN_TEST_ARGS,
   DEFAULT_MAVEN_TEST_ARGS,
+  SITUATIONAL_CNG_MAVEN_TEST_ARGS,
   SITUATIONAL_MAVEN_TEST_ARGS,
 } from "../../run-test-driver/run-test-driver.js";
 import { DEFAULT_PERFORMER_PORT } from "../../../performers/util/performer-port.js";
@@ -243,17 +244,25 @@ test("addToDefaultExcludedGroups appends to the default functional exclusions", 
 });
 
 test("addToDefaultExcludedGroups appends to the default situational exclusions", () => {
-  assert.deepEqual(resolveSituationalMavenArgs({ addToDefaultExcludedGroups: ["protostellarWillWorkLater"] }), [
+  assert.deepEqual(resolveSituationalMavenArgs({ addToDefaultExcludedGroups: ["protostellarWillWorkLater"] }, false), [
     "-Dgroups=situational,cbDino",
     "-DexcludedGroups=openshift,capella,protostellarWillWorkLater",
   ]);
 });
 
 test("situational runs use the situational Maven args", () => {
-  assert.deepEqual(resolveSituationalMavenArgs({}), [...SITUATIONAL_MAVEN_TEST_ARGS]);
-  assert.deepEqual(resolveSituationalMavenArgs({ excludedGroups: ["openshift"] }), [
+  assert.deepEqual(resolveSituationalMavenArgs({}, false), [...SITUATIONAL_MAVEN_TEST_ARGS]);
+  assert.deepEqual(resolveSituationalMavenArgs({ excludedGroups: ["openshift"] }, false), [
     "-Dgroups=situational,cbDino",
     "-DexcludedGroups=openshift",
+  ]);
+});
+
+test("situational CNG runs select the openshift-tagged tests instead of cbDino", () => {
+  assert.deepEqual(resolveSituationalMavenArgs({}, true), [...SITUATIONAL_CNG_MAVEN_TEST_ARGS]);
+  assert.deepEqual(resolveSituationalMavenArgs({ addToDefaultExcludedGroups: ["protostellarWillWorkLater"] }, true), [
+    "-Dgroups=situational,openshift",
+    "-DexcludedGroups=cbDino,capella,protostellarWillWorkLater",
   ]);
 });
 

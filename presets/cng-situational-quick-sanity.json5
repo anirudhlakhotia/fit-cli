@@ -1,0 +1,40 @@
+{
+  preset: {
+    order: 21,
+    description: 'Run a single sanity situational tests for a given SDK against a CNG / Protostellar cluster.',
+    expectedTime: '< 10 minutes',
+    tags: ['cng', 'situational'],
+  },
+  version: 1,
+  type: 'fit',
+  description: 'CNG situational tests',
+  instances: [
+    {
+      aws: {},
+      clusters: [],
+      clusterlessSessions: [
+        {
+          performer: {
+            image: '{{PERFORMER_IMAGE}}',
+            onPortInUse: 'reuse',
+          },
+          runs: [
+            {
+              type: 'situational',
+              tests: {
+                classes: ['com.couchbase.situational.tests.CngTest#rebalance3To4NodesDuringMixedKv'],
+              },
+              situational: {
+                database: {
+                  mode: 'hosted',
+                  resultsEnvironment: 'prod',
+                },
+                cng: {},
+              },
+            },
+          ],
+        },
+      ],
+    },
+  ],
+}

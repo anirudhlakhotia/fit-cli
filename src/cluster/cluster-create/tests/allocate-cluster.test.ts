@@ -3,7 +3,7 @@ import { readFileSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { allocateCluster, type ClusterCommandExecutor, writeClusterDef } from "../allocate-cluster.js";
+import { allocateCluster, allocatePurpose, type ClusterCommandExecutor, writeClusterDef } from "../allocate-cluster.js";
 import { ensureRunDir } from "../../../util/non-fit/replay.js";
 
 test("writeClusterDef writes into the provided cluster directory", () => {
@@ -52,4 +52,11 @@ test("allocateCluster sets a short expiry for shared resources (Capella, CNG) an
   const dockerExecutor = fakeExecutor();
   await allocateCluster("cbdinocluster", "def", "docker", dockerExecutor, cycleDir);
   assert.ok(dockerExecutor.capturedArgs.includes("--expiry=31h"));
+});
+
+test("allocateCluster always tags the allocate call with --purpose", async () => {
+  const cycleDir = join(ensureRunDir(), "instances", "0", "clusters", "0");
+  const executor = fakeExecutor();
+  await allocateCluster("cbdinocluster", "def", "docker", executor, cycleDir);
+  assert.ok(executor.capturedArgs.includes(`--purpose=${allocatePurpose()}`));
 });
