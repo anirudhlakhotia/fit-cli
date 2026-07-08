@@ -30,6 +30,7 @@ import { main as replayMain } from "../../util/non-fit/replay-entry.js";
 import { isFitBinary, runScriptPrefix } from "../../util/non-fit/fit-cli-log.js";
 import { printLogo } from "./logo.js";
 import { runRecentDefinitionsWizard } from "./recent-definitions-wizard.js";
+import { checkPlatform } from "./check-platform.js";
 
 const WORKFLOW_PROMPT_MESSAGE = "What would you like to do?";
 
@@ -160,18 +161,7 @@ function extractOutputFormat(argv: readonly string[]): { format: DefinitionForma
   return { format: format ?? resolveOutputFormat(), positionals };
 }
 
-function checkPlatform(): void {
-  const platform = process.platform;
-  if (platform === "win32") {
-    console.error("FIT CLI does not support Windows. Please use Linux or macOS.");
-    process.exit(1);
-  }
-
-}
-
 async function runWizard(): Promise<RunOutput> {
-  checkPlatform();
-
   printLogo("making FIT easier to use, one vibe-coding session at a time.");
   console.log(
     "This wizard guides you through building a FIT definition file — a single, reusable\n" +
@@ -242,6 +232,8 @@ function printHelp(): void {
 // import.meta.main is true in compiled Bun binaries where isMain() can't
 // compare virtual /$bunfs/ paths against the real executable path.
 if (isMain(import.meta.url) || import.meta.main) {
+  checkPlatform();
+
   const cmd = process.argv[2];
 
   const command = cmd && COMMANDS[cmd] ? COMMANDS[cmd].fn : undefined;
