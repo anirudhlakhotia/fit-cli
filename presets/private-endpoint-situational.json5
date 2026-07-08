@@ -3,6 +3,7 @@
     order: 15,
     description: 'Situational testing for private endpoint (PrivateLink) testing against a real Capella cluster on AWS.',
     expectedTime: 'Medium',
+    tags: ['private-endpoint', 'situational'],
   },
   version: 1,
   type: 'fit',

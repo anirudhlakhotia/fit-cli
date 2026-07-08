@@ -22,10 +22,14 @@ import type { FitDefinition } from "../../shared/definition/types.js";
 import { printDefinitionRunGuidance } from "../../shared/definition/run-guidance.js";
 import { pushGist, type GistVisibility } from "../../shared/definition/push-gist.js";
 
+/** `presets/tags.json5` holds tag metadata, not a preset — never treat it as one. */
+const TAGS_FILENAME = "tags.json5";
+
 /**
  * Returns a map of { "<name>": "<contents>" } for every preset in `presets/`.
  *
- * Dev mode (bun run): reads `presets/` from disk — any .json5 file is picked up automatically.
+ * Dev mode (bun run): reads `presets/` from disk — any .json5 file (other than
+ * `tags.json5`) is picked up automatically.
  *
  * Compiled binary (/$bunfs/): `bun build --compile` embeds files referenced by static import()
  * calls at bundle time; import.meta.glob is not supported in compiled binaries. Add one line
@@ -36,7 +40,7 @@ async function loadPresetMap(): Promise<Record<string, string>> {
     const presetsDir = join(dirname(fileURLToPath(import.meta.url)), "../../../../presets");
     return Object.fromEntries(
       readdirSync(presetsDir)
-        .filter(f => f.endsWith(".json5"))
+        .filter(f => f.endsWith(".json5") && f !== TAGS_FILENAME)
         .map(f => [f.replace(/\.json5$/, ""), readFileSync(join(presetsDir, f), "utf8")]),
     );
   }
@@ -68,6 +72,38 @@ async function loadPresetMap(): Promise<Record<string, string>> {
 
 const PRESET_MAP = await loadPresetMap();
 
+interface TagMeta {
+  order: number;
+  description: string;
+}
+
+/**
+ * Returns { "<tag>": { order, description } } from `presets/tags.json5` — metadata for
+ * the tags referenced by presets' `preset.tags`. A tag used by a preset but missing here
+ * simply displays without a description and sorts after every tag that is listed.
+ */
+async function loadTagMeta(): Promise<Record<string, TagMeta>> {
+  const raw = !import.meta.url.includes("/$bunfs/")
+    ? readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../../../presets", TAGS_FILENAME), "utf8")
+    : ((await import("../../../../presets/tags.json5", { with: { type: "text" } })) as { default: string }).default;
+  return JSON5.parse(raw) as Record<string, TagMeta>;
+}
+
+const TAG_META = await loadTagMeta();
+
+/** Tags without an `order` in `presets/tags.json5` sort after every tag that has one. */
+const UNKNOWN_TAG_ORDER = Number.MAX_SAFE_INTEGER;
+
+/** Long-form description of a tag from `presets/tags.json5`, if one is defined. */
+export function describeTag(tag: string): string | undefined {
+  return TAG_META[tag]?.description;
+}
+
+/** Display order of a tag from `presets/tags.json5`; unlisted tags sort last. */
+function tagOrder(tag: string): number {
+  return TAG_META[tag]?.order ?? UNKNOWN_TAG_ORDER;
+}
+
 export const PRESET_TYPES: string[] = Object.entries(PRESET_MAP)
   .map(([name, content]) => {
     const { order } = extractPresetMeta(content);
@@ -86,20 +122,24 @@ interface PresetMeta {
   order: number;
   description: string;
   expectedTime?: string;
+  tags: string[];
 }
 
 /** Extract metadata from a preset template's `preset` block. */
 function extractPresetMeta(raw: string): PresetMeta {
   try {
     const filled = raw.replace(/\{\{PERFORMER_IMAGE\}\}/g, "placeholder");
-    const parsed = JSON5.parse(filled) as { preset?: { order?: number; description?: string; expectedTime?: string } };
+    const parsed = JSON5.parse(filled) as {
+      preset?: { order?: number; description?: string; expectedTime?: string; tags?: string[] };
+    };
     return {
       order: parsed.preset?.order ?? 50,
       description: parsed.preset?.description ?? "(no description)",
       expectedTime: parsed.preset?.expectedTime,
+      tags: parsed.preset?.tags ?? [],
     };
   } catch {
-    return { order: 50, description: "(no description)" };
+    return { order: 50, description: "(no description)", tags: [] };
   }
 }
 
@@ -127,29 +167,75 @@ function sortedPresetItems<T extends { order: number; type: PresetType }>(items:
   return [...items].sort((a, b) => a.order - b.order || a.type.localeCompare(b.type));
 }
 
-/** Available preset types paired with their descriptions and expected run time, for menus. */
-export function presetDescriptions(): { type: PresetType; description: string; expectedTime?: string }[] {
-  const items = PRESET_TYPES.map((type) => {
-    const { order, description, expectedTime } = extractPresetMeta(loadPresetTemplate(type));
-    return { type, description, expectedTime, order };
-  });
-  return sortedPresetItems(items).map(({ type, description, expectedTime }) => ({ type, description, expectedTime }));
+const UNTAGGED = "(untagged)";
+
+/**
+ * Group presets by tag for display. A preset with multiple tags (e.g. a
+ * private-endpoint preset that's also functional) appears under each of its
+ * tags' groups, since tags here represent cross-cutting concerns rather than
+ * a strict single category.
+ */
+export function groupPresetsByTag<T extends { order: number; type: PresetType; tags: string[] }>(
+  items: T[],
+): { tag: string; items: T[] }[] {
+  const byTag = new Map<string, T[]>();
+  for (const item of items) {
+    for (const tag of item.tags.length > 0 ? item.tags : [UNTAGGED]) {
+      const list = byTag.get(tag) ?? [];
+      list.push(item);
+      byTag.set(tag, list);
+    }
+  }
+  // Groups are ordered by each tag's `order` in presets/tags.json5 (ties broken
+  // alphabetically); tags with no metadata there sort after every known tag, and
+  // the untagged bucket always sorts last.
+  return [...byTag.entries()]
+    .map(([tag, tagItems]) => ({ tag, items: sortedPresetItems(tagItems) }))
+    .sort((a, b) => {
+      if (a.tag === UNTAGGED) return 1;
+      if (b.tag === UNTAGGED) return -1;
+      return tagOrder(a.tag) - tagOrder(b.tag) || a.tag.localeCompare(b.tag);
+    });
 }
 
-/** Print a table of available preset types and their descriptions. */
-export function listPresets(): void {
+interface PresetDescription {
+  type: PresetType;
+  description: string;
+  expectedTime?: string;
+  tags: string[];
+  order: number;
+}
+
+function allPresetDescriptions(): PresetDescription[] {
   const items = PRESET_TYPES.map((type) => {
-    const { order, description, expectedTime } = extractPresetMeta(loadPresetTemplate(type));
-    return { type, description, expectedTime, order };
+    const { order, description, expectedTime, tags } = extractPresetMeta(loadPresetTemplate(type));
+    return { type, description, expectedTime, tags, order };
   });
-  const sorted = sortedPresetItems(items);
-  const col = sorted.reduce((max, { type }) => Math.max(max, type.length), 0);
+  return sortedPresetItems(items);
+}
+
+/** Available preset types paired with their descriptions, tags, and expected run time, for menus. */
+export function presetDescriptions(): PresetDescription[] {
+  return allPresetDescriptions();
+}
+
+/** Print a table of available preset types and their descriptions, grouped by tag. */
+export function listPresets(): void {
+  const groups = groupPresetsByTag(allPresetDescriptions());
+  const col = groups.reduce(
+    (max, { items }) => items.reduce((m, { type }) => Math.max(m, type.length), max),
+    0,
+  );
   console.log(`\nAvailable presets:\n`);
-  for (const { type, description, expectedTime } of sorted) {
-    const time = expectedTime ? `  (${expectedTime})` : "";
-    console.log(`  ${type.padEnd(col)}  ${description}${time}`);
+  for (const { tag, items } of groups) {
+    const tagDescription = describeTag(tag);
+    console.log(tagDescription ? `${tag}: ${tagDescription}` : `${tag}:`);
+    for (const { type, description, expectedTime } of items) {
+      const time = expectedTime ? `  (${expectedTime})` : "";
+      console.log(`  ${type.padEnd(col)}  ${description}${time}`);
+    }
+    console.log();
   }
-  console.log();
 }
 
 function resolvePresetOutputFormat(outputPath: string | undefined, format: DefinitionFormat | undefined): DefinitionFormat {

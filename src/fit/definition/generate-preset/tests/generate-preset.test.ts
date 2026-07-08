@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyDotPathOverride, generatePreset, parseGeneratePresetArgs, presetUsesAnalyticsDriver } from "../generate-preset.js";
+import {
+  applyDotPathOverride,
+  describeTag,
+  generatePreset,
+  groupPresetsByTag,
+  parseGeneratePresetArgs,
+  presetDescriptions,
+  presetUsesAnalyticsDriver,
+} from "../generate-preset.js";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -158,4 +166,54 @@ test("presetUsesAnalyticsDriver detects analytics presets but not operational on
   assert.equal(presetUsesAnalyticsDriver("enterprise-analytics-functional"), true);
   assert.equal(presetUsesAnalyticsDriver("enterprise-analytics-functional-quick-sanity"), true);
   assert.equal(presetUsesAnalyticsDriver("functional"), false);
+});
+
+test("presetDescriptions reports every preset with at least one tag", () => {
+  const presets = presetDescriptions();
+  assert.ok(presets.length > 0);
+  for (const preset of presets) {
+    assert.ok(preset.tags.length > 0, `${preset.type} has no tags`);
+  }
+});
+
+test("every tag used by a preset has a description in presets/tags.json5", () => {
+  const usedTags = new Set(presetDescriptions().flatMap((p) => p.tags));
+  for (const tag of usedTags) {
+    assert.ok(describeTag(tag), `tag "${tag}" is missing a description in presets/tags.json5`);
+  }
+});
+
+test("describeTag returns undefined for a tag with no metadata", () => {
+  assert.equal(describeTag("not-a-real-tag"), undefined);
+});
+
+test("groupPresetsByTag puts a multi-tagged preset under each of its tags", () => {
+  const groups = groupPresetsByTag([
+    { type: "a", order: 10, tags: ["functional", "situational"] },
+    { type: "b", order: 20, tags: ["functional"] },
+  ]);
+  const byTag = new Map(groups.map(({ tag, items }) => [tag, items.map((i) => i.type)]));
+  assert.deepEqual(byTag.get("functional"), ["a", "b"]);
+  assert.deepEqual(byTag.get("situational"), ["a"]);
+});
+
+test("groupPresetsByTag orders groups by each tag's order in presets/tags.json5, with unknown tags after known ones and untagged last", () => {
+  const groups = groupPresetsByTag([
+    { type: "z", order: 10, tags: [] },
+    { type: "a", order: 20, tags: ["not-a-real-tag"] },
+    // Preset order here is deliberately the opposite of tag order (functional=10,
+    // situational=20 in tags.json5), to assert groups sort by *tag* order, not by
+    // any member preset's own order.
+    { type: "b", order: 5, tags: ["situational"] },
+    { type: "c", order: 30, tags: ["functional"] },
+  ]);
+  assert.deepEqual(groups.map((g) => g.tag), ["functional", "situational", "not-a-real-tag", "(untagged)"]);
+});
+
+test("groupPresetsByTag breaks a group-order tie alphabetically by tag", () => {
+  const groups = groupPresetsByTag([
+    { type: "a", order: 10, tags: ["zzz"] },
+    { type: "b", order: 10, tags: ["aaa"] },
+  ]);
+  assert.deepEqual(groups.map((g) => g.tag), ["aaa", "zzz"]);
 });

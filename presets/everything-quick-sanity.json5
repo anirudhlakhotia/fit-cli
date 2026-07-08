@@ -3,6 +3,7 @@
     order: 15,
     description: 'Quick sanity testing across all testing axes against a given SDK.',
     expectedTime: '< 60 minutes',
+    tags: ['functional', 'cng', 'private-endpoint', 'situational'],
   },
   version: 1,
   type: 'fit',
