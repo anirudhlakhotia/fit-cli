@@ -57,8 +57,8 @@ async function resolveCbdinoclusterCommand(
   execution: ClusterCommandExecutor,
   source?: CbdinoclusterSource,
 ): Promise<string | undefined> {
-  // When a PR source is specified, always build from that PR on the remote box —
-  // even if some other cbdinocluster binary happens to be on PATH already.
+  // When a git source (PR or branch) is specified, always build from it on the
+  // remote box — even if some other cbdinocluster binary happens to be on PATH already.
   if (source?.git !== undefined) {
     if (execution.description === "this machine") {
       console.error(

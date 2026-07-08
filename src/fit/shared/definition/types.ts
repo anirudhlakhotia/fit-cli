@@ -43,19 +43,18 @@ export interface CbdinoclusterInitSetup {
 }
 
 /**
- * Build cbdinocluster from a pull request instead of downloading the latest
- * release. `pr` is the PR number against the canonical `couchbaselabs/cbdinocluster`
- * repo; `repo` overrides to a fork (`owner/repo`).
+ * Build cbdinocluster from a pull request or branch instead of downloading the
+ * latest release. Exactly one of `pr` (PR number) or `branch` (branch name) must
+ * be given, against the canonical `couchbaselabs/cbdinocluster` repo; `repo`
+ * overrides to a fork (`owner/repo`).
  */
-export interface CbdinoclusterSourceGit {
-  pr: number;
-  repo?: string;
-}
+export type CbdinoclusterSourceGit = { repo?: string } & ({ pr: number; branch?: never } | { pr?: never; branch: string });
 
 /**
  * Where to get the cbdinocluster binary. When absent the latest published GitHub
  * release is used (default behaviour). When present, the binary is built from the
- * PR's HEAD on the remote box itself — always the right OS/arch, no local binary needed.
+ * PR's or branch's HEAD on the remote box itself — always the right OS/arch, no
+ * local binary needed.
  */
 export interface CbdinoclusterSource {
   git: CbdinoclusterSourceGit;
@@ -100,8 +99,6 @@ export interface CbdinoclusterSetup {
  */
 export interface InstanceSetup {
   cbdinocluster?: {
-    /** Where to get the binary. Omit to use the latest published release. */
-    source?: CbdinoclusterSource;
     /** How to init ~/.cbdinocluster. Omit to run the standard docker-only init. */
     init?: CbdinoclusterInitSetup;
   };
@@ -147,6 +144,10 @@ export interface ReposSetup {
 
 export interface SharedSetup {
   repos?: ReposSetup;
+  cbdinocluster?: {
+    /** Where to get the binary, applied to every instance in this run. Omit to use the latest published release. */
+    source?: CbdinoclusterSource;
+  };
 }
 
 export interface PerformerSetup {
