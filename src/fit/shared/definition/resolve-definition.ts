@@ -565,7 +565,11 @@ export function resolveCluster(cluster: ClusterLifetime, path: DefinitionRunPath
   };
 }
 
-export function resolveInstancePlan(instance: InstanceLifetime, instanceIndex: number): ResolvedInstancePlan {
+export function resolveInstancePlan(
+  instance: InstanceLifetime,
+  instanceIndex: number,
+  sharedCbdinoclusterSource?: CbdinoclusterSource,
+): ResolvedInstancePlan {
   const resolvedInstance = resolveInstance(instance);
   const instanceSeg = instanceLabel({ instanceIndex }, resolvedInstance.kind);
   const path: DefinitionRunPath = { instanceIndex, dirSegments: { instance: instanceSeg } };
@@ -575,7 +579,9 @@ export function resolveInstancePlan(instance: InstanceLifetime, instanceIndex: n
   // An empty CbdinoclusterInitSetup ({}) signals "run default init" — the actual args
   // are generated at runtime (defaultCbdinoclusterInitArgs / situationalCbdinoclusterInitArgs).
   let cbdinoclusterInit: CbdinoclusterInitSetup | undefined;
-  const cbdinoclusterSource = instance.setup?.cbdinocluster?.source;
+  // Which cbdinocluster binary to build/install is a top-level (`setup.cbdinocluster.source`)
+  // choice applied to every instance in the run — unlike `init`, which is genuinely per-box.
+  const cbdinoclusterSource = sharedCbdinoclusterSource;
   if (instance.setup?.cbdinocluster !== undefined) {
     cbdinoclusterInit = { ...instance.setup.cbdinocluster.init };
   } else if (
@@ -600,7 +606,9 @@ export function resolveInstancePlan(instance: InstanceLifetime, instanceIndex: n
 
 export function resolveDefinition(definition: FitDefinition): ResolvedDefinition {
   const resolved = resolveDefinitionRefs(definition);
-  const instances = resolved.instances.map(resolveInstancePlan);
+  const cbdinoclusterSource = resolved.setup?.cbdinocluster?.source;
+  const instances = resolved.instances.map((instance, instanceIndex) =>
+    resolveInstancePlan(instance, instanceIndex, cbdinoclusterSource));
   return {
     ...(resolved.setup?.repos?.["transactions-fit-performer"]?.gerritRef !== undefined
       ? { fitPerformerGerritRef: resolved.setup.repos["transactions-fit-performer"].gerritRef }

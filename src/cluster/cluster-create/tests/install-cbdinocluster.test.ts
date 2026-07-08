@@ -96,3 +96,15 @@ test("remoteBuildFromPrScript: respects custom Go version", () => {
   assert.ok(script.includes("1.21.0"));
   assert.ok(!script.includes(PINNED_GO_VERSION));
 });
+
+test("remoteBuildFromPrScript: fetches a branch by name when given instead of a PR", () => {
+  const script = remoteBuildFromPrScript({ branch: "retry-cluster-poll-network-errors" });
+  assert.ok(script.includes("git -C \"$clonedir\" fetch origin retry-cluster-poll-network-errors"));
+  assert.ok(script.includes("FETCH_HEAD"));
+  assert.ok(!script.includes("refs/pull/"));
+});
+
+test("remoteBuildFromPrScript: branch build clones fork when repo is specified", () => {
+  const script = remoteBuildFromPrScript({ branch: "my-fix", repo: "myfork/cbdinocluster" });
+  assert.ok(script.includes("https://github.com/myfork/cbdinocluster"));
+});

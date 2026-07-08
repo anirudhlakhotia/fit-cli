@@ -1,15 +1,17 @@
 /**
  * Step: install cbdinocluster on a remote box — either by downloading the
  * matching binary from the couchbaselabs/cbdinocluster GitHub releases (default),
- * or by cloning a specific PR and building the binary from source on the box.
+ * or by cloning a specific PR or branch and building the binary from source on
+ * the box.
  *
  * The release-download path: detects the remote's OS/arch, fetches the latest
  * release asset, makes it executable, and returns the absolute path — ready to
  * hand to `cbdinocluster <args>` over the same executor.
  *
- * The PR build path: clones the repo, fetches `refs/pull/<N>/head`, builds with
- * `go build`, installs the same binary location. Go is auto-installed on the box
- * if missing. The build is arch-correct by construction since it runs on the box.
+ * The source-build path: clones the repo, fetches `refs/pull/<N>/head` (PR) or
+ * the branch, builds with `go build`, installs the same binary location. Go is
+ * auto-installed on the box if missing. The build is arch-correct by
+ * construction since it runs on the box.
  *
  * Both paths run as a single remote shell script so they work through any
  * executor that can `capture` a command.
@@ -20,6 +22,8 @@
  *   # From a PR (builds from source on the box):
  *   bun src/cluster/cluster-create/install-cbdinocluster.ts --dir /tmp/fit-cli/<run>/instances/0 --pr 123
  *   bun src/cluster/cluster-create/install-cbdinocluster.ts --dir /tmp/fit-cli/<run>/instances/0 --pr 123 --repo myfork/cbdinocluster
+ *   # From a branch (builds from source on the box):
+ *   bun src/cluster/cluster-create/install-cbdinocluster.ts --dir /tmp/fit-cli/<run>/instances/0 --branch my-fix
  *   # With explicit flags:
  *   bun src/cluster/cluster-create/install-cbdinocluster.ts \
  *     --instance i-0123456789abcdef0 --key ~/.ssh/my-key.pem [--user ubuntu] [--pr 123]
@@ -86,9 +90,10 @@ export function remoteInstallScript(binDir: string = DEFAULT_REMOTE_BIN_DIR): st
 }
 
 /**
- * The shell script that builds cbdinocluster from a PR on the remote box. It:
+ * The shell script that builds cbdinocluster from a PR or branch on the remote
+ * box. It:
  *   1. Ensures Go is available, auto-installing a pinned version if not.
- *   2. Clones the repo and checks out `refs/pull/<pr>/head`.
+ *   2. Clones the repo and checks out `refs/pull/<pr>/head` (PR) or the branch.
  *   3. Builds the binary with `go build` and installs it to `binDir`.
  *   4. Prints the absolute installed path (same contract as {@link remoteInstallScript}).
  *
@@ -101,7 +106,8 @@ export function remoteBuildFromPrScript(
 ): string {
   const repo = source.repo ?? CBDINOCLUSTER_CANONICAL_REPO;
   const cloneUrl = `https://github.com/${repo}`;
-  const pr = source.pr;
+  const fetchRef = source.pr !== undefined ? `refs/pull/${source.pr}/head` : source.branch;
+  const label = source.pr !== undefined ? `PR #${source.pr}` : `branch ${source.branch}`;
 
   return [
     "set -e",
@@ -123,18 +129,18 @@ export function remoteBuildFromPrScript(
     `  rm -f "/tmp/$gotar"`,
     `  export PATH="$HOME/.local/go-dist/bin:$PATH"`,
     `fi`,
-    // Clone and check out the PR.
+    // Clone and check out the PR/branch.
     `clonedir="$(mktemp -d)/cbdinocluster"`,
     `echo "→ Cloning ${cloneUrl} ..."`,
     `git clone --depth=1 ${cloneUrl} "$clonedir"`,
-    `echo "→ Fetching PR #${pr} (refs/pull/${pr}/head) ..."`,
-    `git -C "$clonedir" fetch origin refs/pull/${pr}/head`,
+    `echo "→ Fetching ${label} (${fetchRef}) ..."`,
+    `git -C "$clonedir" fetch origin ${fetchRef}`,
     `git -C "$clonedir" checkout FETCH_HEAD`,
     // Build.
     `bindir="${binDir}"`,
     `mkdir -p "$bindir"`,
     `target="$bindir/cbdinocluster"`,
-    `echo "→ Building cbdinocluster from PR #${pr} ..."`,
+    `echo "→ Building cbdinocluster from ${label} ..."`,
     `cd "$clonedir" && go build -o "$target" .`,
     `chmod 755 "$target"`,
     `rm -rf "$clonedir"`,
@@ -162,8 +168,9 @@ export async function installCbdinoclusterRemote(
 }
 
 /**
- * Build cbdinocluster from a PR on the remote box and return the absolute path
- * to the installed binary. Go is auto-installed on the box if absent.
+ * Build cbdinocluster from a PR or branch on the remote box and return the
+ * absolute path to the installed binary. Go is auto-installed on the box if
+ * absent.
  */
 export async function buildCbdinoclusterFromPr(
   execution: CaptureExecutor,
@@ -171,14 +178,13 @@ export async function buildCbdinoclusterFromPr(
   binDir: string = DEFAULT_REMOTE_BIN_DIR,
 ): Promise<string> {
   const repo = source.repo ?? CBDINOCLUSTER_CANONICAL_REPO;
-  console.log(
-    `→ Building cbdinocluster from PR #${source.pr} (${repo}) on ${execution.description}...`,
-  );
+  const label = source.pr !== undefined ? `PR #${source.pr}` : `branch ${source.branch}`;
+  console.log(`→ Building cbdinocluster from ${label} (${repo}) on ${execution.description}...`);
   const output = await execution.capture("sh", ["-lc", remoteBuildFromPrScript(source, binDir)], undefined, {
-    display: `build cbdinocluster from PR #${source.pr} (${repo})`,
+    display: `build cbdinocluster from ${label} (${repo})`,
   });
   const installedPath = parseInstalledPath(output, "cbdinocluster build script didn't print where it installed the binary");
-  console.log(`✓ Built cbdinocluster (PR #${source.pr}) on ${execution.description} at ${installedPath}`);
+  console.log(`✓ Built cbdinocluster (${label}) on ${execution.description} at ${installedPath}`);
   return installedPath;
 }
 
@@ -215,8 +221,8 @@ if (isMain(import.meta.url)) {
     if (argv.includes("--help") || argv.includes("-h")) {
       console.log(
         "Usage:\n" +
-          "  install-cbdinocluster.ts --dir <instance-dir> [--user ubuntu] [--pr <N>] [--repo owner/repo]\n" +
-          "  install-cbdinocluster.ts --instance <ec2-id> --key <path.pem> [--user ubuntu] [--pr <N>] [--repo owner/repo]\n" +
+          "  install-cbdinocluster.ts --dir <instance-dir> [--user ubuntu] [--pr <N> | --branch <name>] [--repo owner/repo]\n" +
+          "  install-cbdinocluster.ts --instance <ec2-id> --key <path.pem> [--user ubuntu] [--pr <N> | --branch <name>] [--repo owner/repo]\n" +
           "\n" +
           "Options:\n" +
           "  --dir        path to an instance dir (reads ec2-instance.json + .pem automatically)\n" +
@@ -224,7 +230,8 @@ if (isMain(import.meta.url)) {
           "  --key        path to SSH private key (.pem)\n" +
           "  --user       SSH user on the box (default: ubuntu)\n" +
           "  --pr         PR number to build from source instead of using the latest release\n" +
-          "  --repo       GitHub repo for the PR, as owner/repo (default: couchbaselabs/cbdinocluster)\n",
+          "  --branch     branch name to build from source instead of using the latest release\n" +
+          "  --repo       GitHub repo for the PR/branch, as owner/repo (default: couchbaselabs/cbdinocluster)\n",
       );
       process.exit(0);
     }
@@ -234,7 +241,13 @@ if (isMain(import.meta.url)) {
     let address: string | undefined;
     const user = flag(argv, "user") ?? DEFAULT_INSTANCE_USER;
     const prStr = flag(argv, "pr");
+    const branch = flag(argv, "branch");
     const repo = flag(argv, "repo");
+
+    if (prStr !== undefined && branch !== undefined) {
+      fitCliError("--pr and --branch are mutually exclusive");
+      process.exit(1);
+    }
 
     const instanceDir = flag(argv, "dir");
     if (instanceDir) {
@@ -288,6 +301,8 @@ if (isMain(import.meta.url)) {
         process.exit(1);
       }
       installedPath = await buildCbdinoclusterFromPr(target, { pr, repo });
+    } else if (branch !== undefined) {
+      installedPath = await buildCbdinoclusterFromPr(target, { branch, repo });
     } else {
       installedPath = await installCbdinoclusterRemote(target);
     }
@@ -302,6 +317,7 @@ if (isMain(import.meta.url)) {
         { label: "cbdinocluster path", value: installedPath },
         { label: "SSH debug command", value: `ssh -i ${identityFile} ${user}@${address}` },
         ...(prStr ? [{ label: "Built from PR", value: `${repo ?? CBDINOCLUSTER_CANONICAL_REPO}#${prStr}` }] : []),
+        ...(branch ? [{ label: "Built from branch", value: `${repo ?? CBDINOCLUSTER_CANONICAL_REPO}@${branch}` }] : []),
       ],
     };
   });

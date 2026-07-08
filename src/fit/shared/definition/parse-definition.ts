@@ -27,6 +27,7 @@ import {
   type PrivateEndpointSetup,
   type CbdinoclusterInitSetup,
   type CbdinoclusterSetup,
+  type CbdinoclusterSource,
   type ClusterConfigRef,
   type ClusterLifetime,
   type ClusterTls,
@@ -325,13 +326,22 @@ function validateRepos(value: unknown): SharedSetup["repos"] {
 
 function validateSharedSetup(value: unknown): SharedSetup {
   const record = requireRecord(value, "setup");
-  rejectUnknown(record, ["repos", "cluster"], "setup");
+  rejectUnknown(record, ["repos", "cluster", "cbdinocluster"], "setup");
   const setup: SharedSetup = {};
   if (record.cluster !== undefined) {
     throw new InvalidDefinitionError(`"setup.cluster" is no longer supported.`);
   }
   if (record.repos !== undefined) {
     setup.repos = validateRepos(record.repos);
+  }
+  if (record.cbdinocluster !== undefined) {
+    const cbdinocluster = requireRecord(record.cbdinocluster, "setup.cbdinocluster");
+    rejectUnknown(cbdinocluster, ["source"], "setup.cbdinocluster");
+    setup.cbdinocluster = {
+      ...(cbdinocluster.source !== undefined
+        ? { source: validateCbdinoclusterSource(cbdinocluster.source, "setup.cbdinocluster.source") }
+        : {}),
+    };
   }
   return setup;
 }
@@ -728,6 +738,29 @@ function validateFitConfigs(value: unknown): FitConfigRef[] {
   });
 }
 
+/** Parses a `{ source: { git: { pr | branch, repo? } } }` block, shared by instance and top-level setup. */
+function validateCbdinoclusterSource(value: unknown, path: string): CbdinoclusterSource {
+  const src = requireRecord(value, path);
+  rejectUnknown(src, ["git"], path);
+  const git = requireRecord(src.git, `${path}.git`);
+  rejectUnknown(git, ["pr", "branch", "repo"], `${path}.git`);
+  const repo = validateOptionalString(git, "repo", `${path}.git.repo`);
+  if (git.pr !== undefined && git.branch !== undefined) {
+    throw new InvalidDefinitionError(`"${path}.git" must specify only one of "pr" or "branch"`);
+  }
+  if (git.pr !== undefined) {
+    if (typeof git.pr !== "number" || !Number.isInteger(git.pr) || git.pr <= 0) {
+      throw new InvalidDefinitionError(`"${path}.git.pr" must be a positive integer; got ${JSON.stringify(git.pr)}`);
+    }
+    return { git: { pr: git.pr, ...(repo !== undefined ? { repo } : {}) } };
+  }
+  const branch = validateOptionalString(git, "branch", `${path}.git.branch`);
+  if (branch === undefined) {
+    throw new InvalidDefinitionError(`"${path}.git" must specify one of "pr" or "branch"`);
+  }
+  return { git: { branch, ...(repo !== undefined ? { repo } : {}) } };
+}
+
 function validateInstanceSetup(value: unknown, path: string): InstanceSetup | undefined {
   if (value === undefined) {
     return undefined;
@@ -737,19 +770,8 @@ function validateInstanceSetup(value: unknown, path: string): InstanceSetup | un
   const setup: InstanceSetup = {};
   if (record.cbdinocluster !== undefined) {
     const cbdinocluster = requireRecord(record.cbdinocluster, `${path}.cbdinocluster`);
-    rejectUnknown(cbdinocluster, ["source", "init"], `${path}.cbdinocluster`);
+    rejectUnknown(cbdinocluster, ["init"], `${path}.cbdinocluster`);
     const cbdinoclusterSetup: InstanceSetup["cbdinocluster"] = {};
-    if (cbdinocluster.source !== undefined) {
-      const src = requireRecord(cbdinocluster.source, `${path}.cbdinocluster.source`);
-      rejectUnknown(src, ["git"], `${path}.cbdinocluster.source`);
-      const git = requireRecord(src.git, `${path}.cbdinocluster.source.git`);
-      rejectUnknown(git, ["pr", "repo"], `${path}.cbdinocluster.source.git`);
-      if (typeof git.pr !== "number" || !Number.isInteger(git.pr) || git.pr <= 0) {
-        throw new InvalidDefinitionError(`"${path}.cbdinocluster.source.git.pr" must be a positive integer; got ${JSON.stringify(git.pr)}`);
-      }
-      const repo = validateOptionalString(git, "repo", `${path}.cbdinocluster.source.git.repo`);
-      cbdinoclusterSetup.source = { git: { pr: git.pr, ...(repo !== undefined ? { repo } : {}) } };
-    }
     if (cbdinocluster.init !== undefined) {
       cbdinoclusterSetup.init = validateCbdinoclusterInit(cbdinocluster.init, `${path}.cbdinocluster.init`);
     }
