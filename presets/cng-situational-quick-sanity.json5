@@ -21,7 +21,7 @@
             {
               type: 'situational',
               tests: {
-                classes: ['CngTest.rebalance3To4NodesDuringMixedKv'],
+                classes: ['com.couchbase.situational.tests.CngTest#rebalance3To4NodesDuringMixedKv'],
               },
               situational: {
                 database: {

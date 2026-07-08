@@ -16,11 +16,13 @@ import {
   DEFAULT_OC_VERSION,
   formatCngCapacityShortfall,
   ocInstallScript,
+  preflightCngCapacity,
   resolveOcVersion,
   withOpenShiftK8sBlock,
   type OpenShiftExecutor,
 } from "../cng-openshift.js";
 import { CAO_TOOLS_VERSION } from "../install-cao-tools.js";
+import { ClassifiedFailure } from "../../../fit/shared/failure-classification.js";
 
 /** Fake executor returning canned `oc get nodes`/`oc get pods` JSON. */
 function fakeOcExecutor(nodesJson: string, podsJson: string): OpenShiftExecutor {
@@ -118,10 +120,32 @@ test("formatCngCapacityShortfall reports the shortfall and points at the emergen
   const message = formatCngCapacityShortfall(
     { ok: false, freeMillicores: 3000, requiredMillicores: 10000, nodeCount: 2 },
     5,
+    "ubuntu@ec2-1-2-3-4.compute.amazonaws.com",
   );
   assert.match(message, /5-node CNG cluster/);
   assert.match(message, /Free:\s+3\.0 CPU across 2 nodes/);
   assert.match(message, /Needed:\s+~10\.0 CPU/);
   assert.equal(message.includes(CNG_EMERGENCY_CLEANUP_COMMAND), true);
   assert.match(message, /cbdc-cleanup-cronjob/);
+  // Must direct the user to run these on the remote box, not their own machine.
+  assert.match(message, /Run the following on ubuntu@ec2-1-2-3-4\.compute\.amazonaws\.com/);
+  assert.match(message, /NOT on your own machine/);
+});
+
+test("preflightCngCapacity throws a FatalToCluster ClassifiedFailure on insufficient capacity, so it's reported immediately rather than after the leave-up prompt", async () => {
+  const executor = fakeOcExecutor(nodesJson(["2000m"]), podsJson([]));
+  await assert.rejects(
+    () => preflightCngCapacity(executor, 5),
+    (err: unknown) => {
+      assert.ok(err instanceof ClassifiedFailure);
+      assert.equal(err.classification, "FatalToCluster");
+      assert.match(err.message, /doesn't have enough free CPU/);
+      return true;
+    },
+  );
+});
+
+test("preflightCngCapacity resolves without throwing when capacity is sufficient", async () => {
+  const executor = fakeOcExecutor(nodesJson(["3500m", "3500m", "3500m"]), podsJson([]));
+  await assert.doesNotReject(() => preflightCngCapacity(executor, 3));
 });

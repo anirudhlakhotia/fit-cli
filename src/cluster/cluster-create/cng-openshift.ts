@@ -39,6 +39,7 @@ import { prepareAwsCli } from "../../cloud/util/aws/aws-cli.js";
 import { AWS_REGION } from "../../cloud/util/aws/aws-target.js";
 import { describeInstance } from "../../cloud/util/aws/describe-instance.js";
 import { resolveRosaCredentials, type ResolvedRosaCredentials } from "../../fit/util/config.js";
+import { throwFatalToCluster } from "../../fit/shared/failure-classification.js";
 import { CAO_TOOLS_VERSION, installCaoToolsRemote } from "./install-cao-tools.js";
 
 export { CAO_TOOLS_VERSION } from "./install-cao-tools.js";
@@ -278,8 +279,15 @@ export async function checkCngCapacity(execution: OpenShiftExecutor, requiredNod
   return { ok: freeMillicores >= requiredMillicores, freeMillicores, requiredMillicores, nodeCount: nodes.items.length };
 }
 
-/** Human-readable capacity-shortfall message with pointers to diagnose and (manually) clear it. */
-export function formatCngCapacityShortfall(capacity: CngCapacity, requiredNodes: number): string {
+/**
+ * Human-readable capacity-shortfall message with pointers to diagnose and
+ * (manually) clear it. `target` identifies the box to run those commands on
+ * (`user@host`, from {@link OpenShiftExecutor.description}) — `oc`/`cbdinocluster`
+ * are only logged in and installed there, not on the machine invoking fit-cli;
+ * see the "SSH ACCESS" block printed earlier in this run for the full `ssh -i
+ * ...` command.
+ */
+export function formatCngCapacityShortfall(capacity: CngCapacity, requiredNodes: number, target: string): string {
   return [
     `The shared ROSA cluster doesn't have enough free CPU for a ${requiredNodes}-node CNG cluster right now.`,
     `  Free:    ${(capacity.freeMillicores / 1000).toFixed(1)} CPU across ${capacity.nodeCount} nodes.`,
@@ -287,6 +295,9 @@ export function formatCngCapacityShortfall(capacity: CngCapacity, requiredNodes:
     "",
     "This is usually leaked/stuck clusters from previous failed runs — cbdinocluster's cleanup only reaps",
     "*expired* clusters, and a failed allocate can leave one running indefinitely otherwise.",
+    "",
+    `Run the following on ${target} (where oc/cbdinocluster are installed and logged in — see the SSH`,
+    "ACCESS block printed earlier in this run for the full ssh command), NOT on your own machine:",
     "  See what's using capacity:  cbdinocluster -v ls",
     "  Emergency cleanup (removes every cluster stuck 'creating' — check none belong to someone else's active run first):",
     `    ${CNG_EMERGENCY_CLEANUP_COMMAND}`,
@@ -300,7 +311,9 @@ export function formatCngCapacityShortfall(capacity: CngCapacity, requiredNodes:
  * never removes anything itself; see {@link formatCngCapacityShortfall} for the
  * manual cleanup commands it points at. Best-effort: if `oc` itself fails (e.g.
  * a permissions issue unrelated to capacity), warns and lets the run proceed
- * rather than blocking on the check itself.
+ * rather than blocking on the check itself. A capacity shortfall is reported via
+ * {@link throwFatalToCluster} so it's printed immediately (before the "leave
+ * everything up?" prompt), matching every other cluster-setup failure.
  */
 export async function preflightCngCapacity(execution: OpenShiftExecutor, requiredNodes: number): Promise<void> {
   let capacity: CngCapacity;
@@ -311,7 +324,7 @@ export async function preflightCngCapacity(execution: OpenShiftExecutor, require
     return;
   }
   if (!capacity.ok) {
-    throw new Error(formatCngCapacityShortfall(capacity, requiredNodes));
+    throwFatalToCluster(formatCngCapacityShortfall(capacity, requiredNodes, execution.description));
   }
   console.log(
     `→ setup-cluster: ROSA capacity check passed (${(capacity.freeMillicores / 1000).toFixed(1)} CPU free across ${capacity.nodeCount} nodes, need ~${(capacity.requiredMillicores / 1000).toFixed(1)}).`,
