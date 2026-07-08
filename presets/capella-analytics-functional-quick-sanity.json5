@@ -6,6 +6,7 @@
     order: 33,
     description: 'Quick sanity for Analytics functional tests against a Capella Analytics (cloud) cluster.',
     expectedTime: '< 10 minutes',
+    tags: ['capella-analytics', 'functional'],
   },
   version: 1,
   type: 'fit',

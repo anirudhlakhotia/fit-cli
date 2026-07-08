@@ -2,7 +2,8 @@
   preset: {
     order: 12,
     description: 'Quick sanity testing for functional tests against a given SDK.',
-    expectedTime: '< 10 minutes'
+    expectedTime: '< 10 minutes',
+    tags: ['functional'],
   },
   version: 1,
   type: 'fit',

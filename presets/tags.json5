@@ -1,0 +1,16 @@
+// Metadata for the tags referenced by `preset.tags` in the other presets/*.json5 files.
+// Used to group, order, and describe presets in `fit definition list-presets` and the
+// preset wizard. `order` controls display order of the tag's group (lower first, ties
+// broken alphabetically); a preset tag missing here just displays without a
+// description and sorts after every tag that is listed here.
+{
+  functional: { order: 10, description: 'Runs FIT functional tests — CRUD, queries, transactions, and other core SDK operations — against a live cluster.' },
+  situational: { order: 20, description: 'Runs FIT situational tests, which exercise SDK behaviour under specific operational conditions (e.g. node failures, topology changes).' },
+  'qe-set': { order: 30, description: 'A broader, longer-running test suite intended for pre-release sign-off rather than everyday iteration.' },
+  release: { order: 40, description: 'The full release sign-off run, covering multiple testing axes (on-prem functional, CNG, situational) in one preset.' },
+  'private-endpoint': { order: 50, description: 'Tests Capella Private Endpoint (PrivateLink) connectivity.' },
+  cng: { order: 60, description: 'Runs against Cloud Native Gateway (CNG) / Protostellar instead of the operational SDK path.' },
+  capella: { order: 70, description: 'Runs against a real Capella cluster, rather than an on-prem/self-managed one.' },
+  'enterprise-analytics': { order: 80, description: 'Analytics testing against a self-managed Enterprise Analytics cluster.' },
+  'capella-analytics': { order: 90, description: 'Analytics testing against a Capella Analytics (cloud) cluster.' },
+}

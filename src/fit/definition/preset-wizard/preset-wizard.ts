@@ -10,6 +10,7 @@
  * Run on its own:
  *   bun src/fit/definition/preset-wizard/preset-wizard.ts
  */
+import { Separator } from "@inquirer/prompts";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { type RunOutput } from "../../../util/non-fit/artifacts.js";
 import { select } from "../../../util/non-fit/prompts.js";
@@ -19,7 +20,14 @@ import { performerImageShortName } from "../../performers/util/performer-image.j
 import { runFromDefinition } from "../../functional/run-from-definition/run-from-definition.js";
 import type { DefinitionFormat } from "../../shared/definition/generate-definition.js";
 import type { GistVisibility } from "../../shared/definition/push-gist.js";
-import { generatePreset, presetDescriptions, presetUsesAnalyticsDriver, type PresetType } from "../generate-preset/generate-preset.js";
+import {
+  describeTag,
+  generatePreset,
+  groupPresetsByTag,
+  presetDescriptions,
+  presetUsesAnalyticsDriver,
+  type PresetType,
+} from "../generate-preset/generate-preset.js";
 
 const PROMPT_PREFIX = "preset";
 const ACTION_PROMPT_ID = `${PROMPT_PREFIX}.action`;
@@ -43,16 +51,25 @@ async function choosePresetAction(): Promise<PresetAction> {
   });
 }
 
-async function choosePresetType(): Promise<PresetType> {
-  const presets = await presetDescriptions();
+/** Build the preset picker's choice list, grouped by tag with a separator header per group. */
+export function buildPresetTypeChoices(): unknown[] {
+  const presets = presetDescriptions();
   const col = presets.reduce((max, p) => Math.max(max, p.type.length), 0);
-  return select<PresetType>({
-    promptId: TYPE_PROMPT_ID,
-    message: "Which preset?",
-    choices: presets.map((p) => {
+  const groups = groupPresetsByTag(presets);
+  return groups.flatMap(({ tag, items }) => [
+    new Separator(`── ${tag}${describeTag(tag) ? `: ${describeTag(tag)}` : ""} ──`),
+    ...items.map((p) => {
       const time = p.expectedTime ? `  (${p.expectedTime})` : "";
       return { name: `${p.type.padEnd(col)}  ${p.description}${time}`, value: p.type };
     }),
+  ]);
+}
+
+async function choosePresetType(): Promise<PresetType> {
+  return select<PresetType>({
+    promptId: TYPE_PROMPT_ID,
+    message: "Which preset?",
+    choices: buildPresetTypeChoices(),
   });
 }
 

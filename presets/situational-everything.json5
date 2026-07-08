@@ -2,7 +2,8 @@
   preset: {
     order: 12,
     description: 'Run all situational tests for a given SDK.',
-    expectedTime: '< 10 minutes'
+    expectedTime: '< 10 minutes',
+    tags: ['situational'],
   },
   version: 1,
   type: 'fit',
