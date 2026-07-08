@@ -41,6 +41,15 @@ function loginTarget(host: RemoteHost): string {
  * and known-hosts entirely: these are throwaway hosts whose key changes every
  * launch, so prompting or caching the key would only get in the way. The port
  * flag differs between the two tools (`-p` for ssh, `-P` for scp), hence `scp`.
+ *
+ * We also force connection multiplexing off. Otherwise a user's `~/.ssh/config`
+ * with `ControlMaster auto` for `*.compute.amazonaws.com` makes every command
+ * reuse one master connection opened at first contact — before `usermod -aG
+ * docker ubuntu` runs. Later commands (notably `cbdinocluster init`, which pings
+ * the Docker socket directly) then ride that stale session and never see the
+ * docker group, so the deployer detection fails with "permission denied" and the
+ * run dies with "no deployers configured". Fresh connections per command keep us
+ * hermetic and reproducible — matching how CI (with no such config) behaves.
  */
 function connectionOptions(host: RemoteHost, scp = false): string[] {
   const options = [
@@ -48,6 +57,10 @@ function connectionOptions(host: RemoteHost, scp = false): string[] {
     "StrictHostKeyChecking=no",
     "-o",
     "UserKnownHostsFile=/dev/null",
+    "-o",
+    "ControlMaster=no",
+    "-o",
+    "ControlPath=none",
     "-o",
     `ConnectTimeout=${host.connectTimeoutSeconds ?? 10}`,
     "-o",
