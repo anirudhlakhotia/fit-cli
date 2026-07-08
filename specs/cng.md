@@ -18,7 +18,16 @@ But we have seen cases where that does not happen.  [source](https://couchbase.s
 Cloud Native Gateway gets installed from: 
 https://github.com/orgs/cb-rhcc/packages/container/package/cloud-native-gateway
 
-# Cleanup on ROSA OpenShift
+# ROSA OpenShift
+You can install the OpenShift CLI (`oc`) and then interact with the shared ROSA OpenShift cluster for debugging:
+
+```
+# Login - request password on #protostellar
+oc login https://api.sdkqe-rosa.rmuu.p3.openshiftapps.com:443 -u cluster-admin
+
+```
+
+## Cleanup on ROSA OpenShift
 There should be a cleanup job that clears up dangling clusters after some time.  [source](https://couchbase.slack.com/archives/C04DB7P157T/p1781868246427409)
 
 The cleanup job is cbdc-cleanup-cronjob, in namespace cbdc-shared (schedule */15 * * * *). To see its logs:
