@@ -25,6 +25,13 @@ You can install the OpenShift CLI (`oc`) and then interact with the shared ROSA 
 # Login - request password on #protostellar
 oc login https://api.sdkqe-rosa.rmuu.p3.openshiftapps.com:443 -u cluster-admin
 
+# Couchbase clusters
+oc get couchbaseclusters.couchbase.com --all-namespaces \
+  -o 'custom-columns=NAMESPACE:.metadata.namespace,NAME:.metadata.name,STARTED:.metadata.creationTimestamp,STATUS:.status.conditions[-1].type' \
+  --sort-by=.metadata.creationTimestamp
+
+# Emergency cleanup - delete a cluster (really it's deleting the only cluster in a particular namespace).
+oc delete couchbasecluster cluster -n cbdc2-f92ba....ed03ea
 ```
 
 ## Cleanup on ROSA OpenShift
