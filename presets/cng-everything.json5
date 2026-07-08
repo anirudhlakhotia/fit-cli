@@ -3,6 +3,7 @@
     order: 22,
     description: 'Functional and situational testing against CNG / Protostellar (OpenShift) for a given SDK.',
     expectedTime: '< 1 hour',
+    tags: ['cng', 'functional', 'situational'],
   },
   version: 1,
   type: 'fit',

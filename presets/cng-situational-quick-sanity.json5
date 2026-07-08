@@ -3,6 +3,7 @@
     order: 21,
     description: 'Run a single sanity situational tests for a given SDK against a CNG / Protostellar cluster.',
     expectedTime: '< 10 minutes',
+    tags: ['cng', 'situational'],
   },
   version: 1,
   type: 'fit',
