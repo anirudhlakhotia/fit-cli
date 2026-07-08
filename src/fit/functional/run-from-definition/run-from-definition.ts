@@ -2111,17 +2111,13 @@ export async function runFromDefinition(
           // keep the box up and clean only this group's cluster/performers.
           const nextGroupSharesBox =
             executionGroups[cycleIndex + 1]?.path.instanceIndex === group.path.instanceIndex;
-          const continueToNextCycle = await confirm({
-            promptId: "run-from-definition.fatal-to-cycle.continue",
-            message: nextGroupSharesBox
-              ? "Continue to the next execution group? (this group's cluster and performers are cleaned up first; the shared instance is kept)"
-              : "Continue to the next execution group? (this instance and its resources are cleaned up first)",
-            default: true,
-          });
-
-          if (!continueToNextCycle) {
-            break;
-          }
+          // Don't prompt here even in --interactive mode: prompts mid-run interrupt
+          // an otherwise hands-off run every time a cluster fails (e.g. broken shared
+          // infra), and the only prompt a user wants mid-run is the final leave-up
+          // decision. Always continue, matching the old default answer.
+          console.log(
+            `\n→ Continuing to the next execution group (${nextGroupSharesBox ? "this group's cluster and performers are cleaned up first; the shared instance is kept" : "this instance and its resources are cleaned up first"}).`,
+          );
 
           if (nextGroupSharesBox) {
             // The next group reuses this box: clean just this group's cluster and
