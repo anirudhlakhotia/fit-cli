@@ -125,6 +125,14 @@ export const SITUATIONAL_TEST_DOMAIN: FitTestDomain = {
 export const STANDARD_QE_REBALANCE_CLASS = "com.couchbase.situational.tests.cbdino_tests.CbDinoRebalanceTest";
 
 /**
+ * CNG counterpart of {@link STANDARD_QE_REBALANCE_CLASS} — `CbDinoRebalanceTest`
+ * is `@Tag("cbDino")`, which a situational CNG run's Maven groups filter
+ * excludes, so it would silently select zero tests. `CngTest` is the
+ * `@Tag("openshift")` class with the equivalent rebalance coverage.
+ */
+export const STANDARD_QE_CNG_REBALANCE_CLASS = "com.couchbase.situational.tests.CngTest";
+
+/**
  * Load all FIT test-driver test paths from the committed cache file and apply
  * domain filtering. To regenerate the cache file, run:
  *   bunx tsx src/fit/shared/select-fit-tests/generate-fit-tests-cache.ts --root /path/to/transactions-fit-performer

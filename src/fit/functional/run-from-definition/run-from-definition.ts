@@ -125,6 +125,7 @@ import {
   FUNCTIONAL_TEST_DOMAIN,
   isTransactionsTest,
   listFitTests,
+  STANDARD_QE_CNG_REBALANCE_CLASS,
   STANDARD_QE_REBALANCE_CLASS,
   type FitTestSelection,
 } from "../../shared/select-fit-tests/select-fit-tests.js";
@@ -380,7 +381,13 @@ function isCapellaGroup(group: ResolvedExecutionGroup): boolean {
 function needsGithubCredentials(phases: RunPhases, executionGroups: ResolvedExecutionGroup[], startCycleIndex: number): boolean {
   return (
     phases.setupCluster &&
-    executionGroups.slice(startCycleIndex).some((group) => group.type === "functional" && group.clusterMode === "cbdinocluster")
+    executionGroups
+      .slice(startCycleIndex)
+      .some(
+        (group) =>
+          (group.type === "functional" && group.clusterMode === "cbdinocluster") ||
+          (group.type === "situational" && group.cng),
+      )
   );
 }
 
@@ -519,6 +526,17 @@ function withRemoteK8sInit(
   };
 }
 
+/** Node count to preflight for when a functional CNG cluster's own def is unavailable. */
+const FUNCTIONAL_CNG_DEFAULT_NODE_COUNT = 3;
+
+/**
+ * The largest cluster situational CNG (`CngTest`'s rebalance5To3/rebalance3To5
+ * methods) is known to build, per transactions-fit-performer. Situational's
+ * cluster shape is otherwise opaque to fit-cli, so this is the conservative
+ * preflight target rather than a derived per-run figure.
+ */
+const SITUATIONAL_CNG_MAX_NODE_COUNT = 5;
+
 /**
  * Make an execution target CNG-ready and return the `k8s` config-patch block to
  * merge onto `~/.cbdinocluster`, or `undefined` when nothing needs patching (the
@@ -529,7 +547,10 @@ function withRemoteK8sInit(
  * to the legacy local k3d cluster. Shared by both functional and situational CNG
  * cycles — {@link prepareFunctionalCngCycle} and {@link prepareSituationalCngCycle}.
  */
-async function resolveCngK8sConfigPatch(execution: FitExecutionContext): Promise<PieceData | undefined> {
+async function resolveCngK8sConfigPatch(
+  execution: FitExecutionContext,
+  requiredNodes: number,
+): Promise<PieceData | undefined> {
   if (execution.kind === "remote") {
     const home = remoteHomeFromWorkspace(execution.rootDir);
     if (cngKubernetesBackend() === "k3d") {
@@ -540,7 +561,7 @@ async function resolveCngK8sConfigPatch(execution: FitExecutionContext): Promise
     if (typeof creds === "string") {
       throwFatalToCluster(creds);
     }
-    const { context } = await provisionRemoteOpenShift(execution, home, creds, resolveOcVersion());
+    const { context } = await provisionRemoteOpenShift(execution, home, creds, resolveOcVersion(), requiredNodes);
     return buildOpenShiftK8sBlock(home, context);
   }
   const check = checkLocalhostCngKubernetes();
@@ -559,7 +580,9 @@ async function prepareFunctionalCngCycle(
   if (!group.cng) {
     return group;
   }
-  const k8sBlock = await resolveCngK8sConfigPatch(execution);
+  const requiredNodes =
+    group.cbdinocluster?.config.nodes.reduce((sum, n) => sum + n.count, 0) ?? FUNCTIONAL_CNG_DEFAULT_NODE_COUNT;
+  const k8sBlock = await resolveCngK8sConfigPatch(execution, requiredNodes);
   return k8sBlock ? withRemoteK8sInit(group, k8sBlock) : group;
 }
 
@@ -577,7 +600,12 @@ async function prepareSituationalCngCycle(
   if (!group.cng) {
     return group;
   }
-  const k8sBlock = await resolveCngK8sConfigPatch(execution);
+  // Situational's cluster shape is opaque to fit-cli (decided by whichever Java
+  // test class the driver runs, e.g. CngTest's rebalance5To3/3To5 methods build a
+  // 5-node cluster) — there's no per-run node count to inspect ahead of time like
+  // functional has, so preflight for the largest cluster situational CNG is known
+  // to build rather than trying to derive it.
+  const k8sBlock = await resolveCngK8sConfigPatch(execution, SITUATIONAL_CNG_MAX_NODE_COUNT);
   if (!k8sBlock) {
     return group;
   }
@@ -814,12 +842,12 @@ export async function runTests(
 }
 
 /** Expand situational named presets into concrete class selectors. */
-function expandSituationalPresets(selection: FitTestSelection): FitTestSelection {
+function expandSituationalPresets(selection: FitTestSelection, cng: boolean): FitTestSelection {
   if (!selection.presets?.length) return selection;
   const classes: string[] = [];
   for (const preset of selection.presets) {
     if (preset === "standard-qe") {
-      classes.push(STANDARD_QE_REBALANCE_CLASS);
+      classes.push(cng ? STANDARD_QE_CNG_REBALANCE_CLASS : STANDARD_QE_REBALANCE_CLASS);
     }
   }
   return buildFitTestSelectionFromClassNames(classes);
@@ -970,7 +998,7 @@ export async function runSituationalTests(
   artifacts.push(...fitConfig.artifacts);
   details.push(...fitConfig.details);
 
-  const testSelection = expandSituationalPresets(run.testSelection);
+  const testSelection = expandSituationalPresets(run.testSelection, run.cng);
   const testRun = await runTestDriver(
     execution,
     testSelection,
@@ -1690,6 +1718,10 @@ export async function runFromDefinition(
   }
 
   // Resolve GitHub credentials upfront so we fail before provisioning an instance.
+  // Needed for functional cbdinocluster groups, and for situational CNG groups too
+  // (cbdinocluster's own GitHub config is what CAO uses to pull the private
+  // ghcr.io/cb-rhcc images — without it, cbdinocluster init runs with
+  // --disable-github and CAO can't authenticate the image pull).
   let githubCredentials: { user: string; token: string } | undefined;
   if (needsGithubCredentials(phases, executionGroups, startCycleIndex)) {
     const result = await resolveGithubCredentials();

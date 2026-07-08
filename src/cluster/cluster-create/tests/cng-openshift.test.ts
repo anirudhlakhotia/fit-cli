@@ -9,13 +9,31 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   buildOpenShiftK8sBlock,
+  checkCngCapacity,
+  CNG_CPU_MILLICORES_PER_NODE,
+  CNG_EMERGENCY_CLEANUP_COMMAND,
   cngKubernetesBackend,
   DEFAULT_OC_VERSION,
+  formatCngCapacityShortfall,
   ocInstallScript,
   resolveOcVersion,
   withOpenShiftK8sBlock,
+  type OpenShiftExecutor,
 } from "../cng-openshift.js";
 import { CAO_TOOLS_VERSION } from "../install-cao-tools.js";
+
+/** Fake executor returning canned `oc get nodes`/`oc get pods` JSON. */
+function fakeOcExecutor(nodesJson: string, podsJson: string): OpenShiftExecutor {
+  return {
+    description: "fake",
+    run: () => Promise.resolve(),
+    capture: (command, args) => {
+      if (command === "oc" && args[1] === "nodes") return Promise.resolve(nodesJson);
+      if (command === "oc" && args[1] === "pods") return Promise.resolve(podsJson);
+      throw new Error(`unexpected command: ${command} ${args.join(" ")}`);
+    },
+  };
+}
 
 test("cngKubernetesBackend defaults to openshift and only switches to k3d on FIT_CNG_K8S=k3d", () => {
   assert.equal(cngKubernetesBackend({}), "openshift");
@@ -55,4 +73,55 @@ test("ocInstallScript pins the version, verifies a checksum, and is idempotent",
   // Checksum verification against the mirror's sha256sum.txt (or pinned OC_SHA256).
   assert.match(script, /sha256sum\.txt/);
   assert.match(script, /sha256 mismatch/);
+});
+
+function nodesJson(allocatableCpu: string[]): string {
+  return JSON.stringify({ items: allocatableCpu.map((cpu) => ({ status: { allocatable: { cpu } } })) });
+}
+
+function podsJson(requestedCpu: string[]): string {
+  return JSON.stringify({
+    items: requestedCpu.map((cpu) => ({ spec: { containers: [{ resources: { requests: { cpu } } }] } })),
+  });
+}
+
+test("checkCngCapacity sums allocatable minus requested CPU, in millicores", async () => {
+  // 3 nodes at 3.5 CPU each = 10500m allocatable; one pod requesting 2 CPU = 2000m
+  // requested; 8500m free. 4 nodes needed at 2000m/node = 8000m required — fits.
+  const executor = fakeOcExecutor(nodesJson(["3500m", "3500m", "3500m"]), podsJson(["2"]));
+  const capacity = await checkCngCapacity(executor, 4);
+  assert.equal(capacity.freeMillicores, 8500);
+  assert.equal(capacity.requiredMillicores, 4 * CNG_CPU_MILLICORES_PER_NODE);
+  assert.equal(capacity.nodeCount, 3);
+  assert.equal(capacity.ok, true);
+});
+
+test("checkCngCapacity reports insufficient capacity when free CPU is below the requirement", async () => {
+  const executor = fakeOcExecutor(nodesJson(["3500m", "3500m"]), podsJson(["2", "2"]));
+  // 7000m allocatable - 4000m requested = 3000m free; 5 nodes needed = 10000m required.
+  const capacity = await checkCngCapacity(executor, 5);
+  assert.equal(capacity.freeMillicores, 3000);
+  assert.equal(capacity.ok, false);
+});
+
+test("checkCngCapacity treats missing allocatable/requests fields as zero rather than throwing", async () => {
+  const executor = fakeOcExecutor(
+    JSON.stringify({ items: [{ status: {} }] }),
+    JSON.stringify({ items: [{ spec: {} }] }),
+  );
+  const capacity = await checkCngCapacity(executor, 1);
+  assert.equal(capacity.freeMillicores, 0);
+  assert.equal(capacity.nodeCount, 1);
+});
+
+test("formatCngCapacityShortfall reports the shortfall and points at the emergency cleanup one-liner and cronjob", () => {
+  const message = formatCngCapacityShortfall(
+    { ok: false, freeMillicores: 3000, requiredMillicores: 10000, nodeCount: 2 },
+    5,
+  );
+  assert.match(message, /5-node CNG cluster/);
+  assert.match(message, /Free:\s+3\.0 CPU across 2 nodes/);
+  assert.match(message, /Needed:\s+~10\.0 CPU/);
+  assert.equal(message.includes(CNG_EMERGENCY_CLEANUP_COMMAND), true);
+  assert.match(message, /cbdc-cleanup-cronjob/);
 });

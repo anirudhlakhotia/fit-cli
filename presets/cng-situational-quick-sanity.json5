@@ -1,8 +1,8 @@
 {
   preset: {
     order: 21,
-    description: 'Run all situational tests for a given SDK against a CNG / Protostellar cluster.',
-    expectedTime: 'Long',
+    description: 'Run a single sanity situational tests for a given SDK against a CNG / Protostellar cluster.',
+    expectedTime: '< 10 minutes',
   },
   version: 1,
   type: 'fit',
@@ -21,7 +21,7 @@
             {
               type: 'situational',
               tests: {
-                presets: ['standard-qe'],
+                classes: ['CngTest.rebalance3To4NodesDuringMixedKv'],
               },
               situational: {
                 database: {
