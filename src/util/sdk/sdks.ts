@@ -56,12 +56,15 @@ export function isAnalyticsSdk(sdk: Sdk): boolean {
 
 /**
  * True if this SDK currently publishes a prebuilt performer Docker image to
- * GHCR. The operational JVM SDKs (Java, Scala, Kotlin), C++ and .NET do, as do
- * the Analytics SDKs (Columnar + Enterprise Analytics); fit-cli only runs
- * performers from prebuilt images, so these are the only SDKs it can test.
+ * GHCR. The operational JVM SDKs (Java, Scala, Kotlin), C++, .NET, Go, Ruby
+ * and Rust do, as do the Analytics SDKs (Columnar + Enterprise Analytics);
+ * fit-cli only runs performers from prebuilt images, so these are the only
+ * SDKs it can test. Node.js and Python don't yet publish prebuilt images.
  */
+const PERFORMER_IMAGE_SDK_VALUES: SdkValue[] = ["cpp", "dotnet", "go", "ruby", "rust"];
+
 export function sdkPublishesPerformerImage(sdk: Sdk): boolean {
-  return isAnalyticsSdk(sdk) || sdk.jvm || sdk.value === "cpp" || sdk.value === "dotnet";
+  return isAnalyticsSdk(sdk) || sdk.jvm || PERFORMER_IMAGE_SDK_VALUES.includes(sdk.value);
 }
 
 /** All SDKs fit-cli can test — those with prebuilt performer images. */
