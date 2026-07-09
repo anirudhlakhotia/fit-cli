@@ -1586,6 +1586,9 @@ async function resolveExecutionOverride(
       ? groups[0].instance.kind
       : groups.map((g, i) => `group ${i + 1}: ${g.instance.kind}`).join(", ");
   const allLocalhost = groups.every((g) => g.instance.kind === "localhost");
+  const requiresCloudCluster = groups.some(
+    (g) => g.cng || (g.instance.kind === "aws" && g.instance.privateEndpoint !== undefined),
+  );
   for (let attempt = 1; ; attempt++) {
     const choice = await select<ExecutionOverride["kind"]>({
       promptId: `run-from-definition.execution-override.attempt-${attempt}`,
@@ -1594,7 +1597,13 @@ async function resolveExecutionOverride(
       choices: [
         { name: `Where the definition says: ${definitionDestination}`, value: "definition" },
         ...(allLocalhost ? [{ name: "On a fresh EC2 instance (provision a new one)", value: "aws" as const }] : []),
-        { name: "Everything on localhost (good for testing and local development)", value: "localhost" },
+        {
+          name: "Everything on localhost (good for testing and local development)",
+          value: "localhost",
+          ...(requiresCloudCluster
+            ? { disabled: "can't test CNG or a Private Endpoint locally" }
+            : {}),
+        },
         { name: "Everything on an existing EC2 instance (good for rapid iteration)", value: "existing" },
       ],
     });
