@@ -99,6 +99,8 @@ export interface ResolvedSituationalRun extends ResolvedRunCommon {
   /** Results environment (key under `results` in environments.json5); default "dev". */
   resultsEnvironment: string;
   cng: boolean;
+  /** Present when this run should connect to cbdino's Capella cluster over AWS PrivateLink. */
+  privateEndpoint?: PrivateEndpointSetup;
 }
 
 export type ResolvedRun = ResolvedFunctionalRun | ResolvedSituationalRun;
@@ -164,6 +166,8 @@ export interface ResolvedSituationalExecutionRun extends ResolvedExecutionRunCom
   databaseMode: SituationalDatabaseMode;
   resultsEnvironment: string;
   cng: boolean;
+  /** Present when this run should connect to cbdino's Capella cluster over AWS PrivateLink. */
+  privateEndpoint?: PrivateEndpointSetup;
 }
 
 export type ResolvedExecutionRun = ResolvedFunctionalExecutionRun | ResolvedSituationalExecutionRun;
@@ -460,6 +464,7 @@ function resolveRun(run: FitRun, stripClusterAccess: boolean): ResolvedRunWithou
       databaseMode: run.situational.database.mode,
       resultsEnvironment: run.situational.database.resultsEnvironment ?? DEFAULT_RESULTS_ENV,
       cng: run.situational.cng !== undefined,
+      ...(run.situational.privateEndpoint !== undefined ? { privateEndpoint: run.situational.privateEndpoint } : {}),
     };
   }
   if (run.type === "analytics-functional") {
@@ -695,6 +700,7 @@ export function buildExecutionGroups(instances: ResolvedInstancePlan[]): Resolve
                   databaseMode: run.databaseMode,
                   resultsEnvironment: run.resultsEnvironment,
                   cng: run.cng,
+                  ...(run.privateEndpoint !== undefined ? { privateEndpoint: run.privateEndpoint } : {}),
                 })),
             ),
           },

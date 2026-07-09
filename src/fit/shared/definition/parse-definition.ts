@@ -505,13 +505,16 @@ function validateSituationalCng(value: unknown, path: string): SituationalCngSet
 
 function validateSituationalSection(value: unknown, path: string): SituationalSection {
   const record = requireRecord(value, path);
-  rejectUnknown(record, ["database", "cng"], path);
+  rejectUnknown(record, ["database", "cng", "privateEndpoint"], path);
   if (record.database === undefined) {
     throw new InvalidDefinitionError(`Missing required field: ${path}.database`);
   }
   return {
     database: validateSituationalDatabase(record.database, `${path}.database`),
     ...(record.cng !== undefined ? { cng: validateSituationalCng(record.cng, `${path}.cng`) } : {}),
+    ...(record["privateEndpoint"] !== undefined
+      ? { privateEndpoint: validatePrivateEndpointSetup(record["privateEndpoint"], `${path}.privateEndpoint`) }
+      : {}),
   };
 }
 

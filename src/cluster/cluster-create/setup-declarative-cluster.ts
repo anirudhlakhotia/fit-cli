@@ -46,6 +46,7 @@ import type { CapellaClusterSetup, CbdinoclusterInitSetup, CbdinoclusterSource }
 import { defaultCbdinoclusterInitArgs, situationalCbdinoclusterInitArgs } from "./default-cbdinocluster-init-config.js";
 import { throwFatalToCluster } from "../../fit/shared/failure-classification.js";
 import { deleteVpcEndpointsForCluster } from "../../cloud/util/aws/delete-vpc-endpoints.js";
+import { fitCliWarn } from "../../util/non-fit/fit-cli-log.js";
 
 /** The bare command name we look for on the PATH. */
 const CBDINOCLUSTER = "cbdinocluster";
@@ -1018,7 +1019,9 @@ async function allocate(
     console.error(`✗ setup-cluster: private endpoint setup failed — removing the newly-allocated cluster ${allocated.clusterId} to avoid leaking it.`);
     await removeCluster(cbdinocluster, allocated.clusterId, execution);
     if (couchbaseClusterUuid) {
-      await deleteVpcEndpointsForCluster(couchbaseClusterUuid).catch(() => {});
+      await deleteVpcEndpointsForCluster(couchbaseClusterUuid).catch((err: unknown) => {
+        fitCliWarn(`⚠ Failed to delete the private endpoint's VPC endpoint for cluster ${couchbaseClusterUuid}: ${err instanceof Error ? err.message : String(err)}`);
+      });
     }
     return FAILED({ cbdinocluster });
   }

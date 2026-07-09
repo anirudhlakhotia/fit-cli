@@ -222,6 +222,19 @@ export interface SituationalSection {
    * cluster.
    */
   cng?: SituationalCngSetup;
+  /**
+   * Set up an AWS PrivateLink connection to the Capella cluster cbdino creates
+   * for this situational run, and connect the test-driver over it instead of
+   * the public endpoint. Requires the instance to have `aws.privateEndpoint`
+   * set (see {@link AwsInstanceSetup}). Unlike {@link CapellaClusterSetup.privateEndpoint},
+   * this doesn't drive fit-cli's own PrivateLink setup — it's wired straight
+   * into the FIT test-driver's `situational.cbdino.enablePrivateEndpoint`
+   * flag, and the driver's own CbDinoManager does the private-endpoint setup
+   * and connection-string swap. AWS only for now. Empty for now (just a
+   * marker) but kept as an object — not a boolean — for consistency with
+   * {@link PrivateEndpointSetup}'s other uses.
+   */
+  privateEndpoint?: PrivateEndpointSetup;
 }
 
 export interface FunctionalRun {

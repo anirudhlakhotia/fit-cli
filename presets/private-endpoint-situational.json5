@@ -30,6 +30,7 @@
                   mode: 'hosted',
                   resultsEnvironment: 'prod',
                 },
+                privateEndpoint: {},
               },
             },
           ],
