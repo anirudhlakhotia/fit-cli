@@ -107,3 +107,25 @@ test("performerImageName builds a GHCR reference for columnar-java", () => {
   assert.ok(sdk);
   assert.equal(performerImageName(sdk, "main"), "ghcr.io/couchbase/columnar-java-fit-performer:main");
 });
+
+for (const value of ["go", "ruby", "rust"] as const) {
+  test(`${value} performerImageName uses the ${value}-fit-performer GHCR package`, () => {
+    const sdk = sdkByValue(value);
+    assert.ok(sdk);
+    assert.equal(performerImageName(sdk), `ghcr.io/couchbase/${value}-fit-performer:main`);
+  });
+
+  test(`analysePerformerImage accepts the ${value} performer image`, () => {
+    const result = analysePerformerImage(`${value}-fit-performer:main`);
+    assert.ok(!("error" in result));
+    if ("error" in result) return;
+    assert.equal(result.sdk.value, value);
+  });
+}
+
+test("analysePerformerImage rejects node, which doesn't yet publish a prebuilt image", () => {
+  const result = analysePerformerImage("node-fit-performer:main");
+  assert.ok("error" in result);
+  if (!("error" in result)) return;
+  assert.match(result.error, /does not/);
+});
