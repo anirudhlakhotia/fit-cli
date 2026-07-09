@@ -88,7 +88,7 @@ export function printCapellaDebugLinks(environment: string, couchbaseClusterUuid
     console.log(`  Capella UI (${environment}): ${links.capellaUiUrl}`);
   }
   console.log(
-    `  Fleet Manager (${environment} — AI-guessed host from the control-plane endpoint, may not resolve; likely needs VPN): ${links.fleetManagerUrl}`,
+    `  Fleet Manager (needs VPN): ${links.fleetManagerUrl}`,
   );
   console.log(`  DataDog logs: ${links.datadogLogsUrl}`);
 }
