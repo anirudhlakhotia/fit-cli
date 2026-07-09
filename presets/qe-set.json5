@@ -2,7 +2,6 @@
   preset: {
     order: 5,
     description: 'This is the set SDKQE-that-was like to run before signing off on a release.',
-    expectedTime: 'Quite long',
     tags: ['qe-set'],
   },
   version: 1,
