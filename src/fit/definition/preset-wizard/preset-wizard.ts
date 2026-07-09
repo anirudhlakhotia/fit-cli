@@ -58,10 +58,7 @@ export function buildPresetTypeChoices(): unknown[] {
   const groups = groupPresetsByTag(presets);
   return groups.flatMap(({ tag, items }) => [
     new Separator(`── ${tag}${describeTag(tag) ? `: ${describeTag(tag)}` : ""} ──`),
-    ...items.map((p) => {
-      const time = p.expectedTime ? `  (${p.expectedTime})` : "";
-      return { name: `${p.type.padEnd(col)}  ${p.description}${time}`, value: p.type };
-    }),
+    ...items.map((p) => ({ name: `${p.type.padEnd(col)}  ${p.description}`, value: p.type })),
   ]);
 }
 

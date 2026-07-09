@@ -3,7 +3,6 @@
   preset: {
     order: 40,
     description: 'Quick sanity testing for FIT functional for a given SDK, against CNG.',
-    expectedTime: '< 10 minutes',
     tags: ['cng', 'functional'],
   },
   version: 1,

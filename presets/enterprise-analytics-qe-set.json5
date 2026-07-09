@@ -3,7 +3,6 @@
   preset: {
     order: 30,
     description: 'Analytics testing against a self-managed Enterprise Analytics cluster',
-    expectedTime: 'Long',
     tags: ['enterprise-analytics', 'qe-set'],
   },
   version: 1,

@@ -2,7 +2,6 @@
   preset: {
     order: 31,
     description: 'Analytics functional tests against a Capella Analytics (cloud) cluster',
-    expectedTime: '< 30 min',
     tags: ['capella-analytics', 'functional'],
   },
   version: 1,

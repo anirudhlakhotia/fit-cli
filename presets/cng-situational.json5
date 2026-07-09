@@ -2,7 +2,6 @@
   preset: {
     order: 21,
     description: 'Run all situational tests for a given SDK against a CNG / Protostellar cluster.',
-    expectedTime: 'Long',
     tags: ['cng', 'situational'],
   },
   version: 1,

@@ -2,7 +2,6 @@
   preset: {
     order: 15,
     description: 'Quick sanity for private endpoint (PrivateLink) testing against a real Capella cluster on AWS. Runs in the normal fit-cli AWS account.',
-    expectedTime: '~15 minutes',
     tags: ['private-endpoint'],
   },
   version: 1,

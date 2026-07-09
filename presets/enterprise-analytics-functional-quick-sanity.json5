@@ -6,7 +6,6 @@
   preset: {
     order: 32,
     description: 'Quick sanity for Analytics functional tests against a self-managed Enterprise Analytics cluster.',
-    expectedTime: '< 10 minutes',
     tags: ['enterprise-analytics', 'functional'],
   },
   version: 1,

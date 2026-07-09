@@ -2,7 +2,6 @@
   preset: {
     order: 30,
     description: 'Analytics functional tests against a self-managed Enterprise Analytics cluster',
-    expectedTime: '< 30 min',
     tags: ['enterprise-analytics', 'functional'],
   },
   version: 1,

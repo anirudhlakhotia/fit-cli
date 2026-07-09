@@ -2,7 +2,6 @@
   preset: {
     order: 12,
     description: 'Quick sanity testing for situational tests against a given SDK.',
-    expectedTime: '< 10 minutes',
     tags: ['situational'],
   },
   version: 1,
