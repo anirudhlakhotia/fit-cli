@@ -82,16 +82,16 @@ export function performerLabel(path: DefinitionRunPath, sdkValue?: string, versi
   return `s${(path.sessionIndex ?? 0) + 1}`;
 }
 
-/** The run type label: `functional` / `functional:cng` / `functional:analytics` / `situational`. */
+/** The run type label: `functional` / `functional:cng` / `functional:analytics` / `situational` / `situational:cng`. */
 function typeLabel(type: NonNullable<RunLabelParts["type"]>, cng?: boolean): string {
   if (type === "analytics-functional") return "functional:analytics";
   if (type === "functional") return cng ? "functional:cng" : "functional";
-  return "situational";
+  return cng ? "situational:cng" : "situational";
 }
 
 /**
  * The run, named by its single preset (qualified by type, e.g. `situational:standard-qe`),
- * else its type (`functional`/`functional:cng`/`situational`), else `r1`. A preset without a known type falls
+ * else its type (`functional`/`functional:cng`/`situational`/`situational:cng`), else `r1`. A preset without a known type falls
  * back to the bare preset name.
  */
 export function runLabel(

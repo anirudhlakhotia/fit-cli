@@ -47,11 +47,11 @@ test("runLabel qualifies a single preset with its type, then the type, then rN",
   assert.equal(runLabel({ instanceIndex: 0 }), undefined);
 });
 
-test("runLabel appends :cng for CNG functional runs", () => {
+test("runLabel appends :cng for CNG functional and situational runs", () => {
   assert.equal(runLabel(path, "functional", undefined, true), "functional:cng");
   assert.equal(runLabel(path, "functional", ["all-transactions"], true), "functional:cng:all-transactions");
-  // cng has no effect on situational runs
-  assert.equal(runLabel(path, "situational", undefined, true), "situational");
+  assert.equal(runLabel(path, "situational", undefined, true), "situational:cng");
+  assert.equal(runLabel(path, "situational", ["standard-qe"], true), "situational:cng:standard-qe");
 });
 
 test("formatRunLabel joins the four segments, dropping absent ones", () => {

@@ -427,7 +427,7 @@ function announce(
   globalIterationIndex: number,
   totalGlobalIterations: number,
 ): void {
-  const cng = group.type === "functional" ? group.cng : undefined;
+  const cng = group.cng;
   setLogContext({
     progress: `${globalIterationIndex + 1}/${totalGlobalIterations}`,
     performer: performerLabel(run.path, run.sdk.value, run.performerVersion),
@@ -1009,7 +1009,7 @@ export async function runSituationalTests(
   artifacts.push(...testRun.artifacts);
   const pathLabel = formatRunLabel(
     run.path,
-    runLabelParts(execution.kind === "remote" ? "aws" : "localhost", undefined, run),
+    runLabelParts(execution.kind === "remote" ? "aws" : "localhost", undefined, run, undefined, run.cng),
   );
   const iterationLabel = (label: string) => `Run ${run.path.runIndex ?? 0} ${label}`;
   details.push(
@@ -1273,7 +1273,7 @@ function failureLabel(group: ResolvedExecutionGroup, run?: ResolvedExecutionRun)
   const instanceKind = group.instance.kind;
   const clusterMode = group.type === "functional" ? group.clusterMode : undefined;
   const clusterVersion = clusterVersionLabel(group);
-  const cng = group.type === "functional" ? group.cng : undefined;
+  const cng = group.cng;
   const capella = isCapellaGroup(group);
   if (run) {
     const isRunCapella = run.type === "functional" && (run.cluster?.flavour === "internal-capella" || run.cluster?.flavour === "production-capella");
