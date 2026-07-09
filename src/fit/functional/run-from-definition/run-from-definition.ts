@@ -136,6 +136,11 @@ import {
   situationalResultsUrl,
 } from "../../situational/choose-results-database/choose-results-database.js";
 import {
+  checkObservabilityCollectorConnectivity,
+  OBSERVABILITY_COLLECTOR_HOST,
+  OBSERVABILITY_COLLECTOR_PORT,
+} from "../util/check-observability-collector.js";
+import {
   detectClusterDockerEnvironment,
   runPerformerClusterSanityCheck,
 } from "../../shared/util/performer-cluster-sanity.js";
@@ -1957,6 +1962,23 @@ export async function runFromDefinition(
             }
             console.log(`  ✓ Reached ${host} from the remote instance.`);
           }
+        }
+
+        // Functional observability tests (ClusterLabelsTest, GetOrNullObservabilityTest,
+        // etc.) send traces/metrics to a shared collector and then poll it back; if it's
+        // unreachable from wherever the tests actually run, every one of those tests only
+        // discovers that after burning its full 60s-per-assertion retry budget. Check from
+        // the box itself (local or remote) so this fails in seconds instead.
+        if (group.type === "functional") {
+          console.log(`\nChecking observability collector connectivity from the ${execution.kind === "remote" ? "remote instance" : "local machine"}...`);
+          if (!(await checkObservabilityCollectorConnectivity((cmd, args) => execution.capture(cmd, args)))) {
+            throwFatalToCluster(
+              `Cannot reach the observability collector at ${OBSERVABILITY_COLLECTOR_HOST}:${OBSERVABILITY_COLLECTOR_PORT} ` +
+                `from the ${execution.kind === "remote" ? "remote instance" : "local machine"}. Functional observability ` +
+                `tests will hang until they time out if it's unreachable.`,
+            );
+          }
+          console.log(`  ✓ Reached ${OBSERVABILITY_COLLECTOR_HOST}.`);
         }
 
         if (group.type === "functional") {
