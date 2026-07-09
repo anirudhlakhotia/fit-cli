@@ -13,7 +13,7 @@ import { isMain, runCli } from "../../util/non-fit/cli.js";
 import { extractInteractiveFlag, extractReplayFlag, markNonInteractiveByDefault } from "../../util/non-fit/replay.js";
 import { cacheDefinition, definitionSummary, isDefinitionUrl, loadDefinition, resolveAndLoadDefinition } from "../shared/definition/parse-definition.js";
 import { describeDefinition } from "../shared/definition/generate-desc.js";
-import { generatePreset, listPresets, parseGeneratePresetArgs, PRESET_TYPES } from "./generate-preset/generate-preset.js";
+import { generatePreset, listPresets, parseGeneratePresetArgs } from "./generate-preset/generate-preset.js";
 import { runDispatch } from "../run/run.js";
 import type { RunOutput } from "../../util/non-fit/artifacts.js";
 import { runScriptPrefix } from "../../util/non-fit/fit-cli-log.js";
@@ -44,7 +44,7 @@ Subcommands:
   list-presets    List all available preset types with descriptions.
 
 generate-preset options:
-  --type <preset>               Preset to generate. Known presets: ${PRESET_TYPES.join(", ")}
+  --type <preset>               Preset to generate. Run \`${def} list-presets\` to see known presets.
   --performer-image-name <image>  SDK-specific performer image ref (e.g. java-fit-performer:refs-changes-67-246067-3 or ghcr.io/couchbase/java-fit-performer:refs-changes-67-246067-3).
   --output <path>               Write to an explicit path instead of the default run dir.
   --push-gist [public|private]  Create a GitHub Gist after writing. Requires a GitHub token in the fit-cli config or GITHUB_TOKEN / GH_TOKEN.`;

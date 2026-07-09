@@ -29,7 +29,7 @@ import {
   extractResumeSelector,
   parseResumePoint,
 } from "../functional/run-from-definition/resume.js";
-import { applyDotPathOverride, generatePreset, isPresetType, PRESET_TYPES } from "../definition/generate-preset/generate-preset.js";
+import { applyDotPathOverride, formatKnownPresetsByTag, generatePreset, isPresetType } from "../definition/generate-preset/generate-preset.js";
 import { analysePerformerImage, performerImageShortName } from "../performers/util/performer-image.js";
 import { formatFitDefinition } from "../shared/definition/generate-definition.js";
 import { combineRunOutputs, type RunOutput } from "../../util/non-fit/artifacts.js";
@@ -55,7 +55,7 @@ Subcommands:
   definition  Run an existing definition file (path or URL). Both .json5 and .yaml are accepted.
 
 Known presets:
-  ${PRESET_TYPES.join("\n  ")}
+${formatKnownPresetsByTag()}
 
 preset options:
   --performer <image>             SDK-specific performer image ref (e.g. java-fit-performer:refs-changes-67-246067-3 or ghcr.io/couchbase/java-fit-performer:refs-changes-67-246067-3). Alias: --performer-image-name.
@@ -177,14 +177,14 @@ export async function runDispatch(argv: string[]): Promise<RunOutput | void> {
     const [typeList, ...extra] = positionals;
     if (!typeList || extra.length > 0) {
       console.error(
-        `Usage: ${runScriptPrefix("run")} preset <preset>[,<preset>...] --performer <image>\nKnown presets: ${PRESET_TYPES.join(", ")}`,
+        `Usage: ${runScriptPrefix("run")} preset <preset>[,<preset>...] --performer <image>\nKnown presets:\n${formatKnownPresetsByTag()}`,
       );
       process.exit(2);
     }
     const types = typeList.split(",").map((type) => type.trim());
     for (const type of types) {
       if (!isPresetType(type)) {
-        console.error(`Unknown preset: ${type}\nKnown presets: ${PRESET_TYPES.join(", ")}`);
+        console.error(`Unknown preset: ${type}\nKnown presets:\n${formatKnownPresetsByTag()}`);
         process.exit(2);
       }
     }

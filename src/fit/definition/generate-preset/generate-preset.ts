@@ -241,6 +241,15 @@ export function listPresets(): void {
   }
 }
 
+/**
+ * Bare preset names grouped by tag (no descriptions/times), for embedding in
+ * "unknown preset" error and usage messages. Mirrors `listPresets()`'s grouping.
+ */
+export function formatKnownPresetsByTag(): string {
+  const groups = groupPresetsByTag(allPresetDescriptions());
+  return groups.map(({ tag, items }) => `  ${tag}: ${items.map(({ type }) => type).join(", ")}`).join("\n");
+}
+
 function resolvePresetOutputFormat(outputPath: string | undefined, format: DefinitionFormat | undefined): DefinitionFormat {
   if (format) {
     return format;
@@ -257,7 +266,7 @@ function resolvePresetOutputFormat(outputPath: string | undefined, format: Defin
 
 function loadPresetTemplate(type: string): string {
   const content = PRESET_MAP[type];
-  if (content === undefined) throw new Error(`Unknown preset: ${type}\nKnown presets: ${PRESET_TYPES.join(", ")}`);
+  if (content === undefined) throw new Error(`Unknown preset: ${type}\nKnown presets:\n${formatKnownPresetsByTag()}`);
   return content;
 }
 
@@ -408,9 +417,9 @@ export function parseGeneratePresetArgs(argv: string[]): GeneratePresetArgs {
     }
   }
 
-  if (!type) throw new Error(`--type is required.\nAvailable presets: ${PRESET_TYPES.join(", ")}`);
+  if (!type) throw new Error(`--type is required.\nAvailable presets:\n${formatKnownPresetsByTag()}`);
   if (!isPresetType(type)) {
-    throw new Error(`Unknown preset type: ${type}\nKnown types: ${PRESET_TYPES.join(", ")}`);
+    throw new Error(`Unknown preset type: ${type}\nKnown types:\n${formatKnownPresetsByTag()}`);
   }
   if (!performerImageName) {
     throw new Error("--performer-image-name is required, e.g. java-fit-performer:main");
