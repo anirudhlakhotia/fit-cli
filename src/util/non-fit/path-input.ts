@@ -25,8 +25,8 @@ import {
   useState,
 } from "@inquirer/core";
 import { readdirSync } from "node:fs";
-import { homedir } from "node:os";
 import { basename, dirname } from "node:path";
+import { expandTilde } from "./expand-tilde.js";
 
 // ─── Pure completion logic (unit-testable, no FS) ────────────────────────────
 
@@ -75,13 +75,6 @@ function longestCommonPrefix(strs: string[]): string {
 }
 
 // ─── FS-layer: resolve completions for a typed value ─────────────────────────
-
-function expandTilde(value: string): string {
-  if (value === "~" || value.startsWith("~/")) {
-    return homedir() + value.slice(1);
-  }
-  return value;
-}
 
 interface ResolvedCompletions {
   /** The new full value to put in the input (dir part + completed name). */
