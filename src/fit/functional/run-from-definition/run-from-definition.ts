@@ -345,6 +345,7 @@ function runLabelParts(
     type: run.type,
     ...(run.testSelection.presets ? { presets: run.testSelection.presets } : {}),
     ...(cng ? { cng } : {}),
+    ...(run.type === "situational" && run.privateEndpoint !== undefined ? { privateEndpoint: true } : {}),
   };
 }
 
@@ -948,15 +949,16 @@ async function withResolvedSituationalCbdino(
  * `operator-version`/`gateway-version` into cbdinocluster's config when it sees a
  * `cao` deployer.
  */
-function situationalCbdinoSettings(cng: boolean): CbdinoSettings {
+function situationalCbdinoSettings(cng: boolean, privateEndpoint: boolean): CbdinoSettings {
   if (!cng) {
-    return DEFAULT_CBDINO_SETTINGS;
+    return { ...DEFAULT_CBDINO_SETTINGS, enablePrivateEndpoint: privateEndpoint };
   }
   const { cngClusterVersion, caoOperatorVersion, cngVersion } = loadEnvironments().defaults;
   return {
     ...DEFAULT_CBDINO_SETTINGS,
     version: cngClusterVersion,
     cao: { operatorVersion: caoOperatorVersion, gatewayVersion: cngVersion },
+    enablePrivateEndpoint: privateEndpoint,
   };
 }
 
@@ -994,7 +996,7 @@ export async function runSituationalTests(
 
   const fitConfig = generateSituationalConfiguration(
     database.database,
-    situationalCbdinoSettings(run.cng),
+    situationalCbdinoSettings(run.cng, run.privateEndpoint !== undefined),
     execution.fitPerformerDir,
     run.path,
     run.performerPort,

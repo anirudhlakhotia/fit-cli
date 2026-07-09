@@ -31,6 +31,8 @@ export interface RunLabelParts {
   capella?: boolean;
   /** Whether the cluster is a Capella Analytics cloud cluster (prefixes the cluster segment with `CA:`). */
   capellaAnalytics?: boolean;
+  /** Whether this situational run connects to cbdino's Capella cluster over AWS PrivateLink. */
+  privateEndpoint?: boolean;
 }
 
 /** `local` / `aws1` / (fallback) `instance1`. */
@@ -99,12 +101,14 @@ export function runLabel(
   type?: RunLabelParts["type"],
   presets?: readonly string[],
   cng?: boolean,
+  privateEndpoint?: boolean,
 ): string | undefined {
+  const peSuffix = privateEndpoint ? "+PE" : "";
   if (presets && presets.length === 1) {
-    return type ? `${typeLabel(type, cng)}:${presets[0]}` : presets[0];
+    return type ? `${typeLabel(type, cng)}:${presets[0]}${peSuffix}` : `${presets[0]}${peSuffix}`;
   }
   if (type) {
-    return typeLabel(type, cng);
+    return `${typeLabel(type, cng)}${peSuffix}`;
   }
   return path.runIndex !== undefined ? `r${path.runIndex + 1}` : undefined;
 }
@@ -115,7 +119,7 @@ export function formatRunLabel(path: DefinitionRunPath, parts: RunLabelParts = {
     instanceLabel(path, parts.instanceKind),
     clusterLabel(path, parts.clusterMode, parts.clusterVersion, parts.enterpriseAnalytics, parts.capella, parts.capellaAnalytics),
     performerLabel(path, parts.sdkValue, parts.performerVersion),
-    runLabel(path, parts.type, parts.presets, parts.cng),
+    runLabel(path, parts.type, parts.presets, parts.cng, parts.privateEndpoint),
   ]
     .filter((segment): segment is string => Boolean(segment))
     .join(" / ");

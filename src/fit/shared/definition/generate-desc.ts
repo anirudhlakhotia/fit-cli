@@ -42,6 +42,9 @@ function describeRunTests(run: FitRun): string {
   } else if (classes && classes.length > 1) {
     parts.push(`${classes.length} tests`);
   }
+  if (run.type === "situational" && run.situational.privateEndpoint) {
+    parts.push("PE");
+  }
   return parts.length ? `,${parts.join("+")}` : "";
 }
 
