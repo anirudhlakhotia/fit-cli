@@ -346,6 +346,7 @@ function runLabelParts(
     ...(run.testSelection.presets ? { presets: run.testSelection.presets } : {}),
     ...(cng ? { cng } : {}),
     ...(run.type === "situational" && run.privateEndpoint !== undefined ? { privateEndpoint: true } : {}),
+    ...(run.type === "functional" && run.cluster?.privateEndpoint ? { privateEndpoint: true } : {}),
   };
 }
 
