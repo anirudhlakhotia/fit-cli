@@ -2,7 +2,6 @@
   preset: {
     order: 5,
     description: 'Full release sign-off: functional on-prem (8.0-stable + 7.6-stable), functional CNG, and situational against a real Capella (AWS) cluster.',
-    expectedTime: 'Quite long',
     tags: ['qe-set', 'release', 'functional', 'cng', 'situational', 'capella'],
   },
   version: 1,

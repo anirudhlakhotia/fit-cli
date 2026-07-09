@@ -3,7 +3,6 @@
   preset: {
     order: 20,
     description: 'Run all FIT functional tests for a given SDK against a CNG / Protostellar',
-    expectedTime: '< 1 hour',
     tags: ['cng', 'functional'],
   },
   version: 1,

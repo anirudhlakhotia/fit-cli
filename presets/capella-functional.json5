@@ -2,7 +2,6 @@
   preset: {
     order: 35,
     description: 'Quick sanity testing for FIT functional against a real Capella cluster.',
-    expectedTime: '~15 minutes',
     tags: ['capella', 'functional'],
   },
   version: 1,

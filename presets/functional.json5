@@ -2,7 +2,6 @@
   preset: {
     order: 10,
     description: 'Run all FIT functional tests for a given SDK.',
-    expectedTime: '< 1 hour',
     tags: ['functional'],
   },
   version: 1,

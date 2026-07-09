@@ -124,7 +124,6 @@ export function isPresetType(value: string): value is PresetType {
 interface PresetMeta {
   order: number;
   description: string;
-  expectedTime?: string;
   tags: string[];
 }
 
@@ -133,12 +132,11 @@ function extractPresetMeta(raw: string): PresetMeta {
   try {
     const filled = raw.replace(/\{\{PERFORMER_IMAGE\}\}/g, "placeholder");
     const parsed = JSON5.parse(filled) as {
-      preset?: { order?: number; description?: string; expectedTime?: string; tags?: string[] };
+      preset?: { order?: number; description?: string; tags?: string[] };
     };
     return {
       order: parsed.preset?.order ?? 50,
       description: parsed.preset?.description ?? "(no description)",
-      expectedTime: parsed.preset?.expectedTime,
       tags: parsed.preset?.tags ?? [],
     };
   } catch {
@@ -204,20 +202,19 @@ export function groupPresetsByTag<T extends { order: number; type: PresetType; t
 interface PresetDescription {
   type: PresetType;
   description: string;
-  expectedTime?: string;
   tags: string[];
   order: number;
 }
 
 function allPresetDescriptions(): PresetDescription[] {
   const items = PRESET_TYPES.map((type) => {
-    const { order, description, expectedTime, tags } = extractPresetMeta(loadPresetTemplate(type));
-    return { type, description, expectedTime, tags, order };
+    const { order, description, tags } = extractPresetMeta(loadPresetTemplate(type));
+    return { type, description, tags, order };
   });
   return sortedPresetItems(items);
 }
 
-/** Available preset types paired with their descriptions, tags, and expected run time, for menus. */
+/** Available preset types paired with their descriptions and tags, for menus. */
 export function presetDescriptions(): PresetDescription[] {
   return allPresetDescriptions();
 }
@@ -233,16 +230,15 @@ export function listPresets(): void {
   for (const { tag, items } of groups) {
     const tagDescription = describeTag(tag);
     console.log(tagDescription ? `${tag}: ${tagDescription}` : `${tag}:`);
-    for (const { type, description, expectedTime } of items) {
-      const time = expectedTime ? `  (${expectedTime})` : "";
-      console.log(`  ${type.padEnd(col)}  ${description}${time}`);
+    for (const { type, description } of items) {
+      console.log(`  ${type.padEnd(col)}  ${description}`);
     }
     console.log();
   }
 }
 
 /**
- * Bare preset names grouped by tag (no descriptions/times), for embedding in
+ * Bare preset names grouped by tag (no descriptions), for embedding in
  * "unknown preset" error and usage messages. Mirrors `listPresets()`'s grouping.
  */
 export function formatKnownPresetsByTag(): string {
