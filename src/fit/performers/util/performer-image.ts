@@ -91,9 +91,9 @@ export function analysePerformerImage(image: string): ParsedPerformerImage | { e
   if (!sdkPublishesPerformerImage(sdk)) {
     return {
       error:
-        `Only the JVM SDKs (java, scala, kotlin), C++ (cxx), .NET (dotnet) and the Analytics SDKs` +
-        ` for Java (columnar-java, analytics-java) publish prebuilt performer images, and ${sdk.name}` +
-        ` (${sdk.value}) does not. Pick one of those SDKs.`,
+        `Only the JVM SDKs (java, scala, kotlin), C++ (cxx), .NET (dotnet), Go, Ruby, Rust and the` +
+        ` Analytics SDKs for Java (columnar-java, analytics-java) publish prebuilt performer images,` +
+        ` and ${sdk.name} (${sdk.value}) does not. Pick one of those SDKs.`,
     };
   }
   return { sdk, tag: match.groups.tag };
