@@ -156,7 +156,7 @@ export async function ensureRemoteRepos(target: ExecutionTarget, rootDir: string
       continue;
     }
     console.log(`\nCloning ${repo.name} onto ${target.description}...\n`);
-    await target.run("git", ["clone", repo.url, repo.dir], rootDir);
+    await target.run("git", ["clone", repo.httpsUrl, repo.dir], rootDir);
   }
 }
 

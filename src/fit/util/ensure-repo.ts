@@ -15,7 +15,7 @@ import { run } from "../../util/non-fit/proc.js";
 import { FIT_PERFORMER, type Repo } from "./repos.js";
 
 export function cloneRepoChoiceLabel(repo: Repo, targetDir: string): string {
-  return `Clone it from ${repo.url} to ${targetDir}`;
+  return `Clone it from ${repo.sshUrl} to ${targetDir}`;
 }
 
 /**
@@ -47,7 +47,7 @@ export async function ensureRepo(repo: Repo, targetDir: string): Promise<boolean
 
   console.log(`\nCloning ${repo.name} into ${targetDir}...\n`);
   try {
-    await run("git", ["clone", repo.url, targetDir]);
+    await run("git", ["clone", repo.sshUrl, targetDir]);
     console.log(`\n✓ Cloned ${repo.name} to ${targetDir}`);
     return true;
   } catch (err) {

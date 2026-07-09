@@ -10,14 +10,20 @@ export interface Repo {
   name: string;
   /** Directory name used when cloning under a workspace root (remote layout). */
   dir: string;
-  /** Git URL used to clone the repo if it is missing. */
-  url: string;
+  /** SSH URL used to clone the repo locally, using the user's own SSH key. */
+  sshUrl: string;
+  /**
+   * HTTPS URL used to clone the repo on a throwaway remote box, which has no
+   * github SSH key and authenticates with an injected token instead.
+   */
+  httpsUrl: string;
 }
 
 export const FIT_PERFORMER: Repo = {
   name: "transactions-fit-performer",
   dir: "transactions-fit-performer",
-  url: "https://github.com/couchbaselabs/transactions-fit-performer/",
+  sshUrl: "git@github.com:couchbaselabs/transactions-fit-performer.git",
+  httpsUrl: "https://github.com/couchbaselabs/transactions-fit-performer/",
 };
 
 /**
