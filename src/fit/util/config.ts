@@ -4,6 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import JSON5 from "json5";
 import YAML from "yaml";
 import { confirm } from "../../util/non-fit/prompts.js";
+import { expandTilde } from "../../util/non-fit/expand-tilde.js";
 import { runScriptPrefix } from "../../util/non-fit/fit-cli-log.js";
 import { loadEnvironments, type EnvironmentsFile } from "./environments.js";
 import { getJsonSecret } from "../../cloud/util/aws/secrets.js";
@@ -604,7 +605,8 @@ export function resolveFitPerformerDir(
   options: { config?: FitCliConfig; path?: string } = {},
 ): string | undefined {
   const config = options.config ?? loadFitCliConfig(options.path).config;
-  return config?.localhost?.repos?.["transactions-fit-performer"]?.dir;
+  const dir = config?.localhost?.repos?.["transactions-fit-performer"]?.dir;
+  return dir === undefined ? undefined : expandTilde(dir);
 }
 
 /**
