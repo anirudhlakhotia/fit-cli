@@ -482,6 +482,9 @@ async function addSituationalRun(
 
   const currentInstance = lastSituationalInstance(state);
   if (currentInstance?.clusterlessSessions) {
+    // The instance's execution mode (and its aws.privateEndpoint, if any) was fixed
+    // when it was created, so reuse whatever PE-ness that instance already has.
+    const privateEndpoint = "aws" in currentInstance && currentInstance.aws.privateEndpoint !== undefined;
     const subDef = buildFitSituationalDefinitionFrom({
       sdk,
       ...(version ? { version } : {}),
@@ -490,13 +493,18 @@ async function addSituationalRun(
       ...(resultsEnvironment ? { resultsEnvironment } : {}),
       capellaEnvironment,
       selection,
+      ...(privateEndpoint ? { privateEndpoint } : {}),
     });
     currentInstance.clusterlessSessions.push(collectSubDefClusterlessSession(subDef));
     return;
   }
 
+  const privateEndpoint = await askCapellaPrivateEndpoint(promptIdPrefix);
+
   console.log("\nStarting a new FIT situational instance. FIT/SIT creates its own clusters.");
-  const instance = await chooseInstanceExecution(promptIdPrefix);
+  // PE testing requires an AWS EC2 instance in the fit-cli VPC — skip the usual
+  // localhost/AWS choice and fix the instance accordingly.
+  const instance = privateEndpoint ? { aws: { privateEndpoint: {} } } : await chooseInstanceExecution(promptIdPrefix);
   const subDef = buildFitSituationalDefinitionFrom({
     sdk,
     instance,
@@ -506,6 +514,7 @@ async function addSituationalRun(
     ...(resultsEnvironment ? { resultsEnvironment } : {}),
     capellaEnvironment,
     selection,
+    ...(privateEndpoint ? { privateEndpoint } : {}),
   });
   const generatedInstance = collectSubDefInstance(state, subDef);
   if (!generatedInstance) {

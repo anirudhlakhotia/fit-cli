@@ -87,6 +87,11 @@ export interface SituationalDefinitionInputs {
   /** Capella environment to create clusters in (key under `capella` in environments.json5). Omitted ⇒ "dev". */
   capellaEnvironment?: string;
   instance?: InstanceMode;
+  /**
+   * Set up an AWS PrivateLink connection to the Capella cluster cbdino creates for
+   * this run. The instance must also be a fixed AWS + `privateEndpoint` instance.
+   */
+  privateEndpoint?: boolean;
 }
 
 
@@ -262,6 +267,7 @@ function buildSituationalInstance(inputs: SituationalDefinitionInputs): Instance
                 mode: inputs.databaseMode,
                 ...(includeResultsEnv ? { resultsEnvironment: inputs.resultsEnvironment } : {}),
               },
+              ...(inputs.privateEndpoint ? { privateEndpoint: {} } : {}),
             },
           },
         ],

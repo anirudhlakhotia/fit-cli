@@ -83,6 +83,30 @@ test("buildFitSituationalDefinitionFrom emits clusterless sessions", () => {
   assert.equal(definition.instances[0]?.clusterlessSessions?.[0]?.runs[0]?.type, "situational");
 });
 
+test("buildFitSituationalDefinitionFrom emits situational.privateEndpoint when requested", () => {
+  const definition = buildFitSituationalDefinitionFrom({
+    sdk,
+    instance: { aws: { privateEndpoint: {} } },
+    databaseMode: "hosted",
+    selection: buildDefaultFitTestSelection(),
+    privateEndpoint: true,
+  });
+  const run = definition.instances[0]?.clusterlessSessions?.[0]?.runs[0];
+  assert.equal(run?.type, "situational");
+  assert.deepEqual(run?.type === "situational" ? run.situational.privateEndpoint : undefined, {});
+});
+
+test("buildFitSituationalDefinitionFrom omits situational.privateEndpoint by default", () => {
+  const definition = buildFitSituationalDefinitionFrom({
+    sdk,
+    databaseMode: "hosted",
+    selection: buildDefaultFitTestSelection(),
+  });
+  const run = definition.instances[0]?.clusterlessSessions?.[0]?.runs[0];
+  assert.equal(run?.type, "situational");
+  assert.equal(run?.type === "situational" ? run.situational.privateEndpoint : undefined, undefined);
+});
+
 test("buildFitDefinition remains round-trippable through the parser (JSON5)", () => {
   const functionalDef = buildFitFunctionalDefinitionFrom({
     cluster: { kind: "connection", cluster },
