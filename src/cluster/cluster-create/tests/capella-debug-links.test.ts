@@ -32,10 +32,7 @@ test("capellaDebugLinks derives the dev UI, Fleet Manager and DataDog hosts from
   assert.deepEqual(links, {
     capellaUiUrl: "https://dev.nonprod-project-avengers.com/databases?oid=6af08c0a-8cab-4c1c-b257-b521575c16d0",
     fleetManagerUrl: `https://fm.dev.nonprod-project-avengers.com/clusters/${uuid}`,
-    datadogLogsUrl:
-      `https://app.datadoghq.com/logs?query=env%3Adev%20%40clusterId%3A${uuid}%20-status%3Ainfo` +
-      `&agg_m=count&agg_m_source=base&agg_t=count&cols=host%2Cservice&messageDisplay=inline` +
-      `&refresh_mode=sliding&storage=hot&stream_sort=desc&viz=stream&live=true`,
+    datadogLogsUrl: `https://app.datadoghq.com/logs?query=env%3Adev%20%40clusterId%3A${uuid}`,
   });
 });
 
@@ -44,10 +41,7 @@ test("capellaDebugLinks derives the prod UI, Fleet Manager and DataDog hosts fro
   assert.deepEqual(links, {
     capellaUiUrl: "https://cloud.couchbase.com/databases?oid=62488bdd-d416-467e-84f7-fc7c1583a083",
     fleetManagerUrl: `https://fm.cloud.couchbase.com/clusters/${uuid}`,
-    datadogLogsUrl:
-      `https://app.datadoghq.com/logs?query=env%3Aprod%20%40clusterId%3A${uuid}%20-status%3Ainfo` +
-      `&agg_m=count&agg_m_source=base&agg_t=count&cols=host%2Cservice&messageDisplay=inline` +
-      `&refresh_mode=sliding&storage=hot&stream_sort=desc&viz=stream&live=true`,
+    datadogLogsUrl: `https://app.datadoghq.com/logs?query=env%3Aprod%20%40clusterId%3A${uuid}`,
   });
 });
 

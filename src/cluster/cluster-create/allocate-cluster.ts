@@ -127,9 +127,11 @@ export async function askDeployer(): Promise<string | undefined> {
  * Purpose string every `cbdinocluster allocate` call is tagged with, matching the
  * `fit-cli-<username>` convention already used for AWS role session names and EC2
  * instance tags (see `aws-cli.ts`). `cbdinocluster` stores this as the
- * `cbdc2.purpose` namespace label on shared (Capella/CNG) deployers — without it,
- * a leaked or stuck cluster on the shared ROSA cluster is untraceable to whoever
- * created it.
+ * `cbdc2.purpose` namespace label on CNG/Docker deployers — without it, a leaked
+ * or stuck cluster on the shared ROSA cluster is untraceable to whoever created
+ * it. Note this is a no-op for the `cloud` (Capella) deployer: cbdinocluster
+ * never threads purpose into the Capella project/cluster name it auto-generates,
+ * so it won't show up anywhere in the Capella UI.
  */
 export function allocatePurpose(): string {
   return `fit-cli-${userInfo().username}`;
