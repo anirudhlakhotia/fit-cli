@@ -19,7 +19,7 @@ export async function chooseSdk(
   // choices offered here. (Columnar SDKs are chosen via their own columnar flow.)
   const value = await select<SdkValue>({
     promptId: qualifyPromptId("sdk.choose", promptIdPrefix),
-    message: `${message} (only JVM, .NET and C++ SDKs currently publish prebuilt performer images)`,
+    message: `${message} (only SDKs that publish prebuilt performer images are supported)`,
     choices: OPERATIONAL_PREBUILT_SDKS.map((sdk) => ({ name: sdk.name, value: sdk.value })),
   });
   // The selected value always comes from OPERATIONAL_PREBUILT_SDKS, so this is never undefined.
