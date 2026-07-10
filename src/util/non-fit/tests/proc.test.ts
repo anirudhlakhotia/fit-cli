@@ -7,7 +7,7 @@ import { capture, captureValueSync, createLogFile, streamToFile } from "../proc.
 
 test("createLogFile writes under the shared fit-cli temp directory", () => {
   const path = createLogFile("performer");
-  assert.match(path, /^\/tmp\/fit-cli\/\d{8}-\d{6}(?:-\d+)?\/performer\.log$/);
+  assert.match(path, /^\/tmp\/fit-cli\/\d{8}-\d{6}-[0-9a-f]{4}(?:-\d+)?\/performer\.log$/);
 });
 
 test("createLogFile appends a numeric suffix when a log name is reused", () => {

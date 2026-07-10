@@ -1,4 +1,5 @@
 import * as prompts from "@inquirer/prompts";
+import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -241,10 +242,14 @@ function createRunDir(): string {
     String(now.getMonth() + 1).padStart(2, "0"),
     String(now.getDate()).padStart(2, "0"),
   ].join("") + `-${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}${String(now.getSeconds()).padStart(2, "0")}`;
+  // Random suffix (not just the EEXIST retry below) so concurrent `fit run` invocations on
+  // different hosts — e.g. parallel CI matrix jobs — can't land on the same session id and
+  // silently overwrite each other's S3 archive (both are keyed off this directory's basename).
+  const base = `${timestamp}-${randomBytes(2).toString("hex")}`;
 
   for (let attempt = 1; ; attempt++) {
     const suffix = attempt === 1 ? "" : `-${attempt}`;
-    const runDir = join(RUN_ROOT_DIR, `${timestamp}${suffix}`);
+    const runDir = join(RUN_ROOT_DIR, `${base}${suffix}`);
     try {
       mkdirSync(runDir, { mode: 0o700 });
       return runDir;

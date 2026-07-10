@@ -188,7 +188,7 @@ test("definition runs reject prompts without a synthesized default", async () =>
 test("prompt sessions create a per-run directory under /tmp/fit-cli", () => {
   const session = PromptSession.fromArgv([]);
 
-  assert.match(session.runDir, /^\/tmp\/fit-cli\/\d{8}-\d{6}(?:-\d+)?$/);
+  assert.match(session.runDir, /^\/tmp\/fit-cli\/\d{8}-\d{6}-[0-9a-f]{4}(?:-\d+)?$/);
   assert.equal(statSync(session.runDir).isDirectory(), true);
   assert.equal(session.logFile, join(session.runDir, "prompts.json"));
 });
