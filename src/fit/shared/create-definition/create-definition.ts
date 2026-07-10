@@ -10,6 +10,7 @@ import { printFileContent } from "../../../util/non-fit/fit-cli-log.js";
 import { qualifyPromptId, select, confirm, input } from "../../../util/non-fit/prompts.js";
 import { loadFitCliConfig, resolveOutputFormat } from "../../util/config.js";
 import { chooseAnalyticsFunctionalSdk, chooseSdk } from "../../../util/sdk/choose-sdk.js";
+import type { Sdk } from "../../../util/sdk/sdks.js";
 import { askClusterDef } from "../../../cluster/cluster-create/ask-cluster-def.js";
 import { CAPELLA_CLOUD_PROVIDERS, type CapellaCloudProvider } from "../../../cluster/cluster-create/build-cluster-def.js";
 import { askClusterExistsPolicy } from "../../../cluster/cluster-create/ask-cluster-exists-policy.js";
@@ -308,11 +309,26 @@ async function addFunctionalRun(
   const execution = createLocalFitExecutionContext();
   const connectivity = await chooseFunctionalConnectivity(promptIdPrefix);
   const analytics = connectivity === "enterprise-analytics" || connectivity === "capella-analytics";
-  const sdk = analytics
-    ? await chooseAnalyticsFunctionalSdk("Which Analytics SDK do you want to test?", promptIdPrefix,
-        connectivity === "capella-analytics" ? "columnar-java" : undefined)
-    : await chooseSdk("Which SDK do you want to test with FIT functional?", promptIdPrefix);
-  const version = await askPerformerTag(sdk, promptIdPrefix);
+
+  // Every SDK selected here runs the same set of tests (chosen once below), so
+  // collect all the SDKs first before asking which tests to run.
+  const sdks: { sdk: Sdk; version: string }[] = [];
+  do {
+    const sdkPromptIdPrefix = qualifyPromptId(`sdk${sdks.length}`, promptIdPrefix);
+    const sdk = analytics
+      ? await chooseAnalyticsFunctionalSdk("Which Analytics SDK do you want to test?", sdkPromptIdPrefix,
+          connectivity === "capella-analytics" ? "columnar-java" : undefined)
+      : await chooseSdk("Which SDK do you want to test with FIT functional?", sdkPromptIdPrefix);
+    const version = await askPerformerTag(sdk, sdkPromptIdPrefix);
+    sdks.push({ sdk, version });
+  } while (
+    await confirm({
+      promptId: qualifyPromptId(`sdk.another.${sdks.length}`, promptIdPrefix),
+      message: "Add another SDK to test?",
+      default: false,
+    })
+  );
+
   const onPortInUse = await askPortInUsePolicy(promptIdPrefix);
   // The Analytics tests run via the columnar-test-driver, whose test list we can't
   // enumerate through the operational test domain, so default to running them all.
@@ -320,68 +336,70 @@ async function addFunctionalRun(
     ? ({ allTests: [], selectedTests: [] } satisfies FitTestSelection)
     : await selectFitTests(execution, FUNCTIONAL_TEST_DOMAIN, promptIdPrefix);
 
-  const currentInstance = lastFunctionalInstance(state);
-  if (currentInstance && functionalInstanceConnectivity(currentInstance, state.clusterConfigs) === connectivity) {
+  for (const { sdk, version } of sdks) {
+    const currentInstance = lastFunctionalInstance(state);
+    if (currentInstance && functionalInstanceConnectivity(currentInstance, state.clusterConfigs) === connectivity) {
+      const subDef = buildFitFunctionalDefinitionFrom({
+        cluster: functionalDefinitionCluster(currentInstance, state.clusterConfigs),
+        sdk,
+        ...(version ? { version } : {}),
+        onPortInUse,
+        selection,
+        ...(analytics ? { analytics: true } : {}),
+      });
+      const fitConfigMap = collectSubDefFitConfigs(state, subDef);
+      currentInstance.clusters[0]?.sessions.push(remapSessionFitConfigRefs(collectSubDefSession(subDef), fitConfigMap));
+      continue;
+    }
+
+    // Capella provider and environment are only needed when starting a new instance.
+    let capellaCloudProvider: CapellaCloudProvider | undefined;
+    let capellaEnvironment: string | undefined;
+    let capellaPrivateEndpoint = false;
+    if (connectivity === "capella") {
+      capellaCloudProvider = await chooseCapellaCloudProvider(promptIdPrefix);
+      capellaEnvironment = await chooseCapellaEnvironment(promptIdPrefix);
+      if (capellaCloudProvider === "aws") {
+        capellaPrivateEndpoint = await askCapellaPrivateEndpoint(promptIdPrefix);
+      }
+    }
+
+    console.log(
+      connectivity === "cng"
+        ? "\nStarting a new FIT functional CNG instance. cbdinocluster installs the gateway via the Couchbase Kubernetes Operator, so this needs Kubernetes."
+        : connectivity === "enterprise-analytics"
+          ? "\nStarting a new FIT Analytics instance. cbdinocluster builds a self-managed Enterprise Analytics cluster (fronted by an nginx load balancer)."
+          : connectivity === "capella"
+            ? `\nStarting a new FIT Capella instance. cbdinocluster creates a real Capella cluster on ${capellaCloudProvider!.toUpperCase()} via the Capella control-plane API.`
+          : connectivity === "capella-analytics"
+            ? "\nStarting a new FIT Capella Analytics instance. cbdinocluster creates a real Capella Analytics cluster via the Capella control-plane API (cloud deployer)."
+            : "\nStarting a new FIT functional instance. Runs added now will share one cluster lifetime on that instance.",
+    );
+    // PE testing requires an AWS EC2 instance in the fit-cli VPC — skip the usual
+    // localhost/AWS choice and fix the instance accordingly.
+    const instance = capellaPrivateEndpoint
+      ? { aws: { privateEndpoint: {} } }
+      : await chooseInstanceExecution(promptIdPrefix);
+    const cluster = await chooseFunctionalDefinitionCluster(connectivity, capellaCloudProvider);
+    const onClusterExists = cluster.kind === "cbdinocluster" ? await askClusterExistsPolicy() : undefined;
     const subDef = buildFitFunctionalDefinitionFrom({
-      cluster: functionalDefinitionCluster(currentInstance, state.clusterConfigs),
+      cluster,
+      instance,
+      ...(onClusterExists ? { onClusterExists } : {}),
       sdk,
       ...(version ? { version } : {}),
       onPortInUse,
       selection,
       ...(analytics ? { analytics: true } : {}),
+      ...(capellaEnvironment ? { capellaEnvironment } : {}),
+      ...(capellaPrivateEndpoint ? { capellaPrivateEndpoint } : {}),
     });
-    const fitConfigMap = collectSubDefFitConfigs(state, subDef);
-    currentInstance.clusters[0]?.sessions.push(remapSessionFitConfigRefs(collectSubDefSession(subDef), fitConfigMap));
-    return;
-  }
-
-  // Capella provider and environment are only needed when starting a new instance.
-  let capellaCloudProvider: CapellaCloudProvider | undefined;
-  let capellaEnvironment: string | undefined;
-  let capellaPrivateEndpoint = false;
-  if (connectivity === "capella") {
-    capellaCloudProvider = await chooseCapellaCloudProvider(promptIdPrefix);
-    capellaEnvironment = await chooseCapellaEnvironment(promptIdPrefix);
-    if (capellaCloudProvider === "aws") {
-      capellaPrivateEndpoint = await askCapellaPrivateEndpoint(promptIdPrefix);
+    const generatedInstance = collectSubDefInstance(state, subDef);
+    if (!generatedInstance) {
+      throw new Error("Expected a generated functional definition to contain one instance.");
     }
+    state.instances.push(generatedInstance);
   }
-
-  console.log(
-    connectivity === "cng"
-      ? "\nStarting a new FIT functional CNG instance. cbdinocluster installs the gateway via the Couchbase Kubernetes Operator, so this needs Kubernetes."
-      : connectivity === "enterprise-analytics"
-        ? "\nStarting a new FIT Analytics instance. cbdinocluster builds a self-managed Enterprise Analytics cluster (fronted by an nginx load balancer)."
-        : connectivity === "capella"
-          ? `\nStarting a new FIT Capella instance. cbdinocluster creates a real Capella cluster on ${capellaCloudProvider!.toUpperCase()} via the Capella control-plane API.`
-        : connectivity === "capella-analytics"
-          ? "\nStarting a new FIT Capella Analytics instance. cbdinocluster creates a real Capella Analytics cluster via the Capella control-plane API (cloud deployer)."
-          : "\nStarting a new FIT functional instance. Runs added now will share one cluster lifetime on that instance.",
-  );
-  // PE testing requires an AWS EC2 instance in the fit-cli VPC — skip the usual
-  // localhost/AWS choice and fix the instance accordingly.
-  const instance = capellaPrivateEndpoint
-    ? { aws: { privateEndpoint: {} } }
-    : await chooseInstanceExecution(promptIdPrefix);
-  const cluster = await chooseFunctionalDefinitionCluster(connectivity, capellaCloudProvider);
-  const onClusterExists = cluster.kind === "cbdinocluster" ? await askClusterExistsPolicy() : undefined;
-  const subDef = buildFitFunctionalDefinitionFrom({
-    cluster,
-    instance,
-    ...(onClusterExists ? { onClusterExists } : {}),
-    sdk,
-    ...(version ? { version } : {}),
-    onPortInUse,
-    selection,
-    ...(analytics ? { analytics: true } : {}),
-    ...(capellaEnvironment ? { capellaEnvironment } : {}),
-    ...(capellaPrivateEndpoint ? { capellaPrivateEndpoint } : {}),
-  });
-  const generatedInstance = collectSubDefInstance(state, subDef);
-  if (!generatedInstance) {
-    throw new Error("Expected a generated functional definition to contain one instance.");
-  }
-  state.instances.push(generatedInstance);
 }
 
 function functionalDefinitionCluster(instance: InstanceLifetime, clusterConfigs: ClusterConfigRef[]): DefinitionCluster {
