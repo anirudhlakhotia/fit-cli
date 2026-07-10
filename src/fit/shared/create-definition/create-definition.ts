@@ -180,7 +180,7 @@ async function chooseInstanceExecution(promptIdPrefix: string): Promise<Instance
 async function askCapellaPrivateEndpoint(promptIdPrefix: string): Promise<boolean> {
   return confirm({
     promptId: qualifyPromptId("capella.private-endpoint", promptIdPrefix),
-    message: "Set up an AWS PrivateLink connection to this Capella cluster? (Requires an AWS EC2 test instance in the fit-cli VPC.)",
+    message: "Set up an AWS PrivateLink connection to Capella?",
     default: false,
   });
 }
