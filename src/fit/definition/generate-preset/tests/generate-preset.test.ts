@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   applyDotPathOverride,
+  autoDescribeName,
   describeTag,
   generatePreset,
   groupPresetsByTag,
@@ -16,7 +17,7 @@ import { tmpdir } from "node:os";
 test("parseGeneratePresetArgs derives sdk from performer image and accepts output", () => {
   const args = parseGeneratePresetArgs([
     "--type",
-    "functional",
+    "op-onprem-func-lite",
     "--performer-image-name",
     "java-fit-performer:refs-changes-67-246067-3",
     "--output",
@@ -24,7 +25,7 @@ test("parseGeneratePresetArgs derives sdk from performer image and accepts outpu
   ]);
 
   assert.deepEqual(args, {
-    type: "functional",
+    type: "op-onprem-func-lite",
     image: "java-fit-performer:refs-changes-67-246067-3",
     outputPath: "/tmp/generated-fit.yaml",
     pushGistVisibility: undefined,
@@ -33,12 +34,12 @@ test("parseGeneratePresetArgs derives sdk from performer image and accepts outpu
 
 test("parseGeneratePresetArgs normalises a fully-qualified GHCR image to short form", () => {
   const args = parseGeneratePresetArgs([
-    "--type=functional",
+    "--type=op-onprem-func-lite",
     "--performer-image-name=ghcr.io/couchbase/java-fit-performer:refs-changes-67-246067-3",
     "--output=/tmp/generated-fit.yaml",
   ]);
 
-  assert.equal(args.type, "functional");
+  assert.equal(args.type, "op-onprem-func-lite");
   assert.equal(args.image, "java-fit-performer:refs-changes-67-246067-3");
   assert.equal(args.outputPath, "/tmp/generated-fit.yaml");
 });
@@ -47,7 +48,7 @@ test("parseGeneratePresetArgs requires a performer image name", () => {
   assert.throws(
     () =>
       parseGeneratePresetArgs([
-        "--type=functional",
+        "--type=op-onprem-func-lite",
       ]),
     /--performer-image-name is required/,
   );
@@ -57,7 +58,7 @@ test("parseGeneratePresetArgs rejects an SDK without prebuilt images", () => {
   assert.throws(
     () =>
       parseGeneratePresetArgs([
-        "--type=functional",
+        "--type=op-onprem-func-lite",
         "--performer-image-name=python-fit-performer:main",
       ]),
     /publish prebuilt performer images/,
@@ -68,7 +69,7 @@ test("parseGeneratePresetArgs rejects the removed sdk flag", () => {
   assert.throws(
     () =>
       parseGeneratePresetArgs([
-        "--type=functional",
+        "--type=op-onprem-func-lite",
         "--sdk=java",
         "--performer-image-name=java-fit-performer:refs-changes-67-246067-3",
       ]),
@@ -80,7 +81,7 @@ test("parseGeneratePresetArgs rejects the removed cluster-version flag", () => {
   assert.throws(
     () =>
       parseGeneratePresetArgs([
-        "--type=functional",
+        "--type=op-onprem-func-lite",
         "--cluster-version=8.0-stable",
         "--performer-image-name=java-fit-performer:refs-changes-67-246067-3",
       ]),
@@ -119,7 +120,7 @@ test("applyDotPathOverride handles a single-segment path", () => {
 
 test("parseGeneratePresetArgs collects --override flags", () => {
   const args = parseGeneratePresetArgs([
-    "--type=functional",
+    "--type=op-onprem-func-lite",
     "--performer-image-name=java-fit-performer:main",
     "--override",
     "setup.repos.transactions-fit-performer.gerritRef=refs/changes/32/247532/1",
@@ -136,7 +137,7 @@ test("generatePreset writes YAML when the output path ends in .yaml", async () =
   const outputPath = join(dir, "generated.yaml");
 
   await generatePreset({
-    type: "functional",
+    type: "op-onprem-func-lite",
     image: "java-fit-performer:refs-changes-67-246067-3",
     outputPath,
   });
@@ -152,7 +153,7 @@ test("generatePreset applies overrides to the written file", async () => {
   const outputPath = join(dir, "generated.yaml");
 
   await generatePreset({
-    type: "functional",
+    type: "op-onprem-func-lite",
     image: "java-fit-performer:refs-changes-67-246067-3",
     outputPath,
     overrides: { "setup.repos.transactions-fit-performer.gerritRef": "refs/changes/32/247532/1" },
@@ -163,9 +164,9 @@ test("generatePreset applies overrides to the written file", async () => {
 });
 
 test("presetUsesAnalyticsDriver detects analytics presets but not operational ones", () => {
-  assert.equal(presetUsesAnalyticsDriver("enterprise-analytics-functional"), true);
-  assert.equal(presetUsesAnalyticsDriver("enterprise-analytics-functional-quick-sanity"), true);
-  assert.equal(presetUsesAnalyticsDriver("functional"), false);
+  assert.equal(presetUsesAnalyticsDriver("enterprise-analytics-func-lite"), true);
+  assert.equal(presetUsesAnalyticsDriver("enterprise-analytics-func-sanity"), true);
+  assert.equal(presetUsesAnalyticsDriver("op-onprem-func-lite"), false);
 });
 
 test("presetDescriptions reports every preset with at least one tag", () => {
@@ -189,31 +190,90 @@ test("describeTag returns undefined for a tag with no metadata", () => {
 
 test("groupPresetsByTag puts a multi-tagged preset under each of its tags", () => {
   const groups = groupPresetsByTag([
-    { type: "a", order: 10, tags: ["functional", "situational"] },
-    { type: "b", order: 20, tags: ["functional"] },
+    { type: "a", tags: ["cng", "capella"] },
+    { type: "b", tags: ["cng"] },
   ]);
   const byTag = new Map(groups.map(({ tag, items }) => [tag, items.map((i) => i.type)]));
-  assert.deepEqual(byTag.get("functional"), ["a", "b"]);
-  assert.deepEqual(byTag.get("situational"), ["a"]);
+  assert.deepEqual(byTag.get("cng"), ["a", "b"]);
+  assert.deepEqual(byTag.get("capella"), ["a"]);
 });
 
 test("groupPresetsByTag orders groups by each tag's order in presets/tags.json5, with unknown tags after known ones and untagged last", () => {
   const groups = groupPresetsByTag([
-    { type: "z", order: 10, tags: [] },
-    { type: "a", order: 20, tags: ["not-a-real-tag"] },
-    // Preset order here is deliberately the opposite of tag order (functional=10,
-    // situational=20 in tags.json5), to assert groups sort by *tag* order, not by
-    // any member preset's own order.
-    { type: "b", order: 5, tags: ["situational"] },
-    { type: "c", order: 30, tags: ["functional"] },
+    { type: "z", tags: [] },
+    { type: "a", tags: ["not-a-real-tag"] },
+    // Item name order here is deliberately the opposite of tag order (cng=30,
+    // pe=50 in tags.json5), to assert groups sort by *tag* order.
+    { type: "b", tags: ["pe"] },
+    { type: "c", tags: ["cng"] },
   ]);
-  assert.deepEqual(groups.map((g) => g.tag), ["functional", "situational", "not-a-real-tag", "(untagged)"]);
+  assert.deepEqual(groups.map((g) => g.tag), ["cng", "pe", "not-a-real-tag", "(untagged)"]);
 });
 
 test("groupPresetsByTag breaks a group-order tie alphabetically by tag", () => {
   const groups = groupPresetsByTag([
-    { type: "a", order: 10, tags: ["zzz"] },
-    { type: "b", order: 10, tags: ["aaa"] },
+    { type: "a", tags: ["zzz"] },
+    { type: "b", tags: ["aaa"] },
   ]);
   assert.deepEqual(groups.map((g) => g.tag), ["aaa", "zzz"]);
+});
+
+test("groupPresetsByTag sorts items within a tag alphabetically", () => {
+  const groups = groupPresetsByTag([
+    { type: "zebra", tags: ["cng"] },
+    { type: "apple", tags: ["cng"] },
+  ]);
+  assert.deepEqual(groups[0].items.map((i) => i.type), ["apple", "zebra"]);
+});
+
+test("groupPresetsByTag hides a tag marked hiddenFromList in presets/tags.json5 by default, but shows it when showHidden is passed", () => {
+  const items = [{ type: "a", tags: ["functional", "cng"] }];
+  const hidden = groupPresetsByTag(items);
+  assert.deepEqual(hidden.map((g) => g.tag), ["cng"]);
+  const shown = groupPresetsByTag(items, { showHidden: true });
+  assert.deepEqual(shown.map((g) => g.tag).sort(), ["cng", "functional"]);
+});
+
+test("autoDescribeName describes a preset from its name and tags, leading with the SDK family", () => {
+  assert.equal(
+    autoDescribeName("op-capella-sit-lite", ["capella", "situational"]),
+    "Operational SDK situational testing against a real Capella cluster (lite-tier testing).",
+  );
+  assert.equal(
+    autoDescribeName("op-capella-pe-func-release", ["pe", "functional"]),
+    "Operational SDK functional testing against a real Capella cluster via Private Endpoint (PrivateLink) (release sign-off testing).",
+  );
+  assert.equal(
+    autoDescribeName("columnar-func-lite", ["columnar", "functional"]),
+    "Columnar SDK functional testing against a Capella Analytics (cloud) cluster (lite-tier testing).",
+  );
+});
+
+test("autoDescribeName describes an on-prem preset/group with its own explicit cluster token, distinguishing it from op-all-*", () => {
+  assert.equal(
+    autoDescribeName("op-onprem-sanity", ["onprem", "functional"]),
+    "Operational SDK functional testing against an on-prem cluster (quick sanity testing).",
+  );
+});
+
+test("autoDescribeName describes a group from its tags, not by parsing a func/sit token out of its name", () => {
+  assert.equal(
+    autoDescribeName("op-cng-lite", ["cng", "functional", "situational"]),
+    "Operational SDK functional and situational testing against a CNG cluster (lite-tier testing).",
+  );
+});
+
+test("autoDescribeName scopes a cross-axis 'all' group to one SDK family, never mixing families", () => {
+  assert.equal(
+    autoDescribeName("op-all-sanity", ["operational", "functional", "situational"]),
+    "Operational SDK functional and situational testing across every axis (quick sanity testing).",
+  );
+  assert.equal(
+    autoDescribeName("op-all-func-lite", ["operational", "functional"]),
+    "Operational SDK functional testing across every axis (lite-tier testing).",
+  );
+  assert.equal(
+    autoDescribeName("columnar-all-func-release", ["columnar", "functional"]),
+    "Columnar SDK functional testing across every axis (release sign-off testing).",
+  );
 });

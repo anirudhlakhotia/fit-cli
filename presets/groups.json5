@@ -1,0 +1,106 @@
+// Named groups of presets — a single group name stands in for a comma-separated
+// list of presets when listing or running them (see `fit definition list-presets`
+// and `fit definition expand-preset-group`). A group's `presets` list may name
+// other groups as well as plain presets — `expand-preset-group` and `fit run
+// preset` resolve those recursively down to concrete preset names.
+//
+// There are 3 SDK/performer-image families, each with its own clusters:
+//   op            (operational SDK): onprem, cng, capella, capella-pe
+//   enterprise-analytics (Enterprise Analytics SDK): enterprise-analytics
+//   columnar      (Columnar SDK): columnar
+// A single `fit run preset <group> --performer <image>` passes ONE performer image
+// to every preset the group expands to, so a group must never mix families —
+// that's why the cross-cluster groups below are `<family>-all-*`, scoped to one
+// family, rather than one group spanning all 3.
+//
+// Naming: `op-<cluster>-<func|sit>-<tier>`, where `<cluster>` is `onprem`/`cng`/
+// `capella`/`capella-pe`. The on-prem cluster is spelled out (`onprem`), not
+// omitted, precisely so it can't be confused with `op-all-*` — if the default
+// cluster had no name, `op-func-sanity` (one specific cluster) and `op-all-func-
+// sanity` (every cluster) would share the same "op-" look despite meaning
+// different scopes. `enterprise-analytics`/`columnar` still omit their cluster
+// name, since each has only one — there's no second cluster name they could be
+// confused with, so the ambiguity this convention exists to avoid can't arise.
+//
+// Levels, from narrowest to broadest:
+//   1. per-cluster (op-onprem/op-cng/op-capella/op-capella-pe/enterprise-analytics/
+//      columnar), crossing functional+situational within that one cluster where both exist.
+//   2. per-family, per-type (<family>-all-func-*/<family>-all-sit-*), crossing
+//      every cluster of one family within one test type.
+//   3. per-family, everything (<family>-all-*), crossing every cluster and type
+//      within that one family.
+// Each tier (sanity/lite/release) is built the same way at every level.
+//
+// No `description` here — with this naming convention, a good description can be
+// generated from the name and tags (see generate-preset.ts's `autoDescribeName`),
+// so none is hand-authored. Add one to any entry below if auto-generation ever
+// stops being adequate for it (e.g. a genuinely irregular group, like `qe-set` below).
+{
+  // Level 1: per-cluster.
+  'op-onprem-sanity':   { tags: ['onprem', 'functional'], order: 15, presets: ['op-onprem-func-sanity'] },
+  'op-onprem-lite':     { tags: ['onprem', 'functional'], order: 25, presets: ['op-onprem-func-lite'] },
+  'op-onprem-release':  { tags: ['onprem', 'functional'], order: 35, presets: ['op-onprem-func-release'] },
+
+  'op-cng-sanity':  { tags: ['cng', 'functional', 'situational'], order: 15, presets: ['op-cng-func-sanity', 'op-cng-sit-sanity'] },
+  'op-cng-lite':    { tags: ['cng', 'functional', 'situational'], order: 25, presets: ['op-cng-func-lite', 'op-cng-sit-lite'] },
+  'op-cng-release': { tags: ['cng', 'functional', 'situational'], order: 35, presets: ['op-cng-func-release', 'op-cng-sit-release'] },
+
+  'op-capella-sanity':  { tags: ['capella', 'functional', 'situational'], order: 15, presets: ['op-capella-func-sanity', 'op-capella-sit-sanity'] },
+  'op-capella-lite':    { tags: ['capella', 'functional', 'situational'], order: 25, presets: ['op-capella-func-lite', 'op-capella-sit-lite'] },
+  'op-capella-release': { tags: ['capella', 'functional', 'situational'], order: 35, presets: ['op-capella-func-release', 'op-capella-sit-release'] },
+
+  'op-capella-pe-sanity':  { tags: ['pe', 'functional', 'situational'], order: 15, presets: ['op-capella-pe-func-sanity', 'op-capella-pe-sit-sanity'] },
+  'op-capella-pe-lite':    { tags: ['pe', 'functional', 'situational'], order: 25, presets: ['op-capella-pe-func-lite', 'op-capella-pe-sit-lite'] },
+  'op-capella-pe-release': { tags: ['pe', 'functional', 'situational'], order: 35, presets: ['op-capella-pe-func-release', 'op-capella-pe-sit-release'] },
+
+  'enterprise-analytics-sanity':  { tags: ['enterprise-analytics', 'functional'], order: 15, presets: ['enterprise-analytics-func-sanity'] },
+  'enterprise-analytics-lite':    { tags: ['enterprise-analytics', 'functional'], order: 25, presets: ['enterprise-analytics-func-lite'] },
+  'enterprise-analytics-release': { tags: ['enterprise-analytics', 'functional'], order: 35, presets: ['enterprise-analytics-func-release'] },
+
+  'columnar-sanity':  { tags: ['columnar', 'functional'], order: 15, presets: ['columnar-func-sanity'] },
+  'columnar-lite':    { tags: ['columnar', 'functional'], order: 25, presets: ['columnar-func-lite'] },
+  'columnar-release': { tags: ['columnar', 'functional'], order: 35, presets: ['columnar-func-release'] },
+
+  // Level 2: per-family, per-type, across that family's clusters.
+  'op-all-func-sanity':  { tags: ['operational', 'functional'], order: 15, presets: ['op-onprem-func-sanity', 'op-cng-func-sanity', 'op-capella-func-sanity', 'op-capella-pe-func-sanity'] },
+  'op-all-func-lite':    { tags: ['operational', 'functional'], order: 25, presets: ['op-onprem-func-lite', 'op-cng-func-lite', 'op-capella-func-lite', 'op-capella-pe-func-lite'] },
+  'op-all-func-release': { tags: ['operational', 'functional'], order: 35, presets: ['op-onprem-func-release', 'op-cng-func-release', 'op-capella-func-release', 'op-capella-pe-func-release'] },
+
+  'op-all-sit-sanity':  { tags: ['operational', 'situational'], order: 15, presets: ['op-cng-sit-sanity', 'op-capella-sit-sanity', 'op-capella-pe-sit-sanity'] },
+  'op-all-sit-lite':    { tags: ['operational', 'situational'], order: 25, presets: ['op-cng-sit-lite', 'op-capella-sit-lite', 'op-capella-pe-sit-lite'] },
+  'op-all-sit-release': { tags: ['operational', 'situational'], order: 35, presets: ['op-cng-sit-release', 'op-capella-sit-release', 'op-capella-pe-sit-release'] },
+
+  // enterprise-analytics and columnar each have exactly one cluster today, so their
+  // "-all-func-*" is a trivial single-member wrapper — kept for naming consistency
+  // with the op family, and as the natural place to add a second cluster later. Tagged
+  // with their own axis (not `operational`) since they don't actually cross multiple tags.
+  'enterprise-analytics-all-func-sanity':  { tags: ['enterprise-analytics', 'functional'], order: 16, presets: ['enterprise-analytics-func-sanity'] },
+  'enterprise-analytics-all-func-lite':    { tags: ['enterprise-analytics', 'functional'], order: 26, presets: ['enterprise-analytics-func-lite'] },
+  'enterprise-analytics-all-func-release': { tags: ['enterprise-analytics', 'functional'], order: 36, presets: ['enterprise-analytics-func-release'] },
+
+  'columnar-all-func-sanity':  { tags: ['columnar', 'functional'], order: 16, presets: ['columnar-func-sanity'] },
+  'columnar-all-func-lite':    { tags: ['columnar', 'functional'], order: 26, presets: ['columnar-func-lite'] },
+  'columnar-all-func-release': { tags: ['columnar', 'functional'], order: 36, presets: ['columnar-func-release'] },
+
+  // Level 3: per-family, everything.
+  'op-all-sanity':  { tags: ['operational', 'functional', 'situational'], order: 45, presets: ['op-all-func-sanity', 'op-all-sit-sanity'] },
+  'op-all-lite':    { tags: ['operational', 'functional', 'situational'], order: 55, presets: ['op-all-func-lite', 'op-all-sit-lite'] },
+  'op-all-release': { tags: ['operational', 'functional', 'situational'], order: 65, presets: ['op-all-func-release', 'op-all-sit-release'] },
+
+  'enterprise-analytics-all-sanity':  { tags: ['enterprise-analytics', 'functional'], order: 46, presets: ['enterprise-analytics-all-func-sanity'] },
+  'enterprise-analytics-all-lite':    { tags: ['enterprise-analytics', 'functional'], order: 56, presets: ['enterprise-analytics-all-func-lite'] },
+  'enterprise-analytics-all-release': { tags: ['enterprise-analytics', 'functional'], order: 66, presets: ['enterprise-analytics-all-func-release'] },
+
+  'columnar-all-sanity':  { tags: ['columnar', 'functional'], order: 46, presets: ['columnar-all-func-sanity'] },
+  'columnar-all-lite':    { tags: ['columnar', 'functional'], order: 56, presets: ['columnar-all-func-lite'] },
+  'columnar-all-release': { tags: ['columnar', 'functional'], order: 66, presets: ['columnar-all-func-release'] },
+
+  // Back-compat: `qe-set` was a single preset (on-prem functional + hosted
+  // situational) before the axis/tier split. `op-all-lite` is the closest
+  // equivalent under the new naming — kept as an alias so old CI/scripts
+  // referencing "qe-set" keep working. Not a mechanically-describable name, so
+  // it hand-authors its own description rather than relying on autoDescribeName.
+  // `removalDate` drives the deprecation notice appended to the description and
+  // the warning printed wherever this group gets expanded — see generate-preset.ts.
+  'qe-set': { description: 'Legacy alias for op-all-lite, kept for back-compat.', tags: ['deprecated'], order: 10, presets: ['op-all-lite'], removalDate: '2027-01-10' },
+}

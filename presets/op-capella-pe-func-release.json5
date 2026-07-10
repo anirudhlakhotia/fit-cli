@@ -1,0 +1,62 @@
+// TODO: no second-cluster variant yet (see op-capella-func-release) — for now this
+// differs from op-capella-pe-func-lite only in the Capella environment used.
+{
+  preset: {
+    order: 30,
+    tags: ['pe', 'functional'],
+  },
+  version: 1,
+  type: 'fit',
+  instances: [
+    {
+      aws: {
+        privateEndpoint: {},
+      },
+      clusters: [
+        {
+          clusterConfig: 'cluster-0',
+          sessions: [
+            {
+              performer: {
+                image: '{{PERFORMER_IMAGE}}',
+                onPortInUse: 'reuse',
+              },
+              runs: [
+                {
+                  type: 'functional',
+                  tests: {
+                    presets: ['all'],
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+  clusterConfigs: [
+    {
+      id: 'cluster-0',
+      cbdinocluster: {
+        config: {
+          nodes: [
+            {
+              count: 3,
+              version: '{{environments.defaults.capellaClusterVersion}}',
+            },
+          ],
+          cloud: {
+            'cloud-provider': 'aws',
+          },
+        },
+        onClusterExists: 'useExisting',
+        capella: {
+          cloudProvider: 'aws',
+          environment: 'prod',
+          privateEndpoint: {},
+        },
+      },
+    },
+  ],
+}

@@ -1,8 +1,7 @@
 {
   preset: {
-    order: 15,
-    description: 'Quick sanity for private endpoint (PrivateLink) testing against a real Capella cluster on AWS. Runs in the normal fit-cli AWS account.',
-    tags: ['private-endpoint'],
+    order: 10,
+    tags: ['pe', 'functional'],
   },
   version: 1,
   type: 'fit',
@@ -34,31 +33,6 @@
           ],
         },
       ],
-      clusterlessSessions: [
-        {
-          performer: {
-            image: '{{PERFORMER_IMAGE}}',
-            onPortInUse: 'reuse',
-          },
-          runs: [
-            {
-              type: 'situational',
-              tests: {
-                classes: ['com.couchbase.situational.tests.SanityTest'],
-                addToDefaultExcludedGroups: ['protostellarWillWorkLater']
-              },
-              situational: {
-                database: {
-                  mode: 'hosted',
-                  // 'dev' as quick sanity testing
-                  resultsEnvironment: 'dev',
-                },
-                privateEndpoint: {},
-              },
-            },
-          ],
-        },
-      ]
     },
   ],
   clusterConfigs: [
@@ -69,7 +43,7 @@
           nodes: [
             {
               count: 3,
-              version: '7.6',
+              version: '{{environments.defaults.capellaClusterVersion}}',
             },
           ],
           cloud: {

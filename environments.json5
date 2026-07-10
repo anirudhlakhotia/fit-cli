@@ -31,6 +31,11 @@
     // a pinned build if you need a specific patch or the alias is temporarily broken.
     clusterVersion: "8.0-stable",
 
+    // The previous server release line, for presets that deliberately span two
+    // release lines (e.g. an on-prem "release" tier tested against both the
+    // latest and the previous line before sign-off).
+    previousClusterVersion: "7.6-stable",
+
     // CNG generally uses OpenShift which uses server builds from cb-rhcc (rather than
     // cb-vanilla). The same builds _should_ be available on both, but see:
     // https://couchbase.slack.com/archives/C04DB7P157T/p1781783413258219

@@ -1,13 +1,10 @@
-// Currently that runs against ROSA OpenShift, but that could change in future
 {
   preset: {
     order: 20,
-    description: 'Run all FIT functional tests for a given SDK against a CNG / Protostellar',
-    tags: ['cng', 'functional'],
+    tags: ['capella', 'functional'],
   },
   version: 1,
   type: 'fit',
-  description: 'CNG functional tests',
   instances: [
     {
       aws: {},
@@ -18,14 +15,13 @@
             {
               performer: {
                 image: '{{PERFORMER_IMAGE}}',
+                onPortInUse: 'reuse',
               },
               runs: [
                 {
                   type: 'functional',
-                  fitConfig: 'fit-config-0',
                   tests: {
                     presets: ['all'],
-                    addToDefaultExcludedGroups: ['protostellarWillWorkLater'],
                   },
                 },
               ],
@@ -43,28 +39,18 @@
           nodes: [
             {
               count: 3,
-              version: "8.0.2-5503",
-              services: ['kv', 'n1ql', 'index', 'fts'],
+              version: '{{environments.defaults.capellaClusterVersion}}',
             },
           ],
-          cao: {
-            'operator-version': '2.9.2',
-            'gateway-version': '1.1.0-135',
+          cloud: {
+            'cloud-provider': 'aws',
           },
         },
         onClusterExists: 'useExisting',
-      },
-    },
-  ],
-  fitConfigs: [
-    {
-      id: 'fit-config-0',
-      connection: {
-        scheme: 'couchbase2',
-        tls: { insecure: true },
-      },
-      config: {
-        excludeTests: ['ssh', 'openshift'],
+        capella: {
+          cloudProvider: 'aws',
+          environment: 'dev',
+        },
       },
     },
   ],

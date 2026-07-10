@@ -1,18 +1,16 @@
+// Only one Enterprise Analytics build/topology is currently supported, so this is
+// identical to enterprise-analytics-func-lite — kept separate for naming
+// consistency across axes, and as the natural place to add situational coverage later.
 {
   preset: {
-    order: 31,
-    description: 'Analytics testing against a Capella Analytics (cloud) cluster',
-    tags: ['capella-analytics', 'qe-set'],
+    order: 30,
+    tags: ['enterprise-analytics', 'functional'],
   },
   version: 1,
   type: 'fit',
-  description: 'Capella Analytics functional tests',
   instances: [
     {
       aws: {},
-      setup: {
-        capellaEnvironment: 'prod',
-      },
       clusters: [
         {
           clusterConfig: 'cluster-0',
@@ -41,18 +39,16 @@
       id: 'cluster-0',
       cbdinocluster: {
         config: {
-          // cbdino wire flag: `columnar: true` with `deployer: cloud` builds a
-          // Capella Analytics cluster in the Capella cloud. Capella credentials
-          // come from your cbdinocluster init config (~/.cbdinocluster).
           columnar: true,
           nodes: [
             {
-              count: 4,
+              count: 3,
+              version: '{{environments.defaults.enterpriseAnalyticsVersion}}',
             },
           ],
-          deployer: 'cloud',
-          cloud: {
-            'cloud-provider': 'aws',
+          docker: {
+            'passive-load-balancer': true,
+            'use-dino-certs': true,
           },
         },
         onClusterExists: 'useExisting',
@@ -64,10 +60,14 @@
       id: 'fit-config-0',
       config: {
         clusterAccess: {
-          // The Columnar SDK performer connects directly to the Capella Analytics endpoint.
+          clusterParams: {
+            loadBalancedCluster: {
+              ports: [8095, 18095],
+            },
+          },
           performer: {
-            connectionString: 'couchbases://${defaultHostname}',
-            tls: {insecure: true},
+            connectionString: 'http://${defaultHostname}:8095',
+            tls: null,
           },
         },
       },

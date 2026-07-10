@@ -1,12 +1,10 @@
 {
   preset: {
-    order: 21,
-    description: 'Run all situational tests for a given SDK against a CNG / Protostellar cluster.',
+    order: 30,
     tags: ['cng', 'situational'],
   },
   version: 1,
   type: 'fit',
-  description: 'CNG situational tests',
   instances: [
     {
       aws: {},
@@ -21,7 +19,7 @@
             {
               type: 'situational',
               tests: {
-                presets: ['standard-qe'],
+                presets: ['all'],
               },
               situational: {
                 database: {

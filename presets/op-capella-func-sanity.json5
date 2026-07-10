@@ -1,0 +1,57 @@
+{
+  preset: {
+    order: 10,
+    tags: ['capella', 'functional'],
+  },
+  version: 1,
+  type: 'fit',
+  instances: [
+    {
+      aws: {},
+      clusters: [
+        {
+          clusterConfig: 'cluster-0',
+          sessions: [
+            {
+              performer: {
+                image: '{{PERFORMER_IMAGE}}',
+                onPortInUse: 'reuse',
+              },
+              runs: [
+                {
+                  type: 'functional',
+                  tests: {
+                    classes: ['com.couchbase.client.kv.SanityTest'],
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+  clusterConfigs: [
+    {
+      id: 'cluster-0',
+      cbdinocluster: {
+        config: {
+          nodes: [
+            {
+              count: 3,
+              version: '{{environments.defaults.capellaClusterVersion}}',
+            },
+          ],
+          cloud: {
+            'cloud-provider': 'aws',
+          },
+        },
+        onClusterExists: 'useExisting',
+        capella: {
+          cloudProvider: 'aws',
+          environment: 'prod',
+        },
+      },
+    },
+  ],
+}

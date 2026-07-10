@@ -1,0 +1,39 @@
+{
+  preset: {
+    order: 20,
+    tags: ['pe', 'situational'],
+  },
+  version: 1,
+  type: 'fit',
+  instances: [
+    {
+      aws: {
+        privateEndpoint: {},
+      },
+      clusters: [],
+      clusterlessSessions: [
+        {
+          performer: {
+            image: '{{PERFORMER_IMAGE}}',
+            onPortInUse: 'reuse',
+          },
+          runs: [
+            {
+              type: 'situational',
+              tests: {
+                presets: ['standard-qe'],
+              },
+              situational: {
+                database: {
+                  mode: 'hosted',
+                  resultsEnvironment: 'dev',
+                },
+                privateEndpoint: {},
+              },
+            },
+          ],
+        },
+      ],
+    },
+  ],
+}

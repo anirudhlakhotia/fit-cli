@@ -8,17 +8,19 @@
  * bun run definition generate-desc <file.yaml>
  * bun run definition generate-preset --type <preset> --performer-image-name <image>
  * bun run definition list-presets
+ * bun run definition expand-preset-group all-release
  */
 import { isMain, runCli } from "../../util/non-fit/cli.js";
 import { extractInteractiveFlag, extractReplayFlag, markNonInteractiveByDefault } from "../../util/non-fit/replay.js";
 import { cacheDefinition, definitionSummary, isDefinitionUrl, loadDefinition, resolveAndLoadDefinition } from "../shared/definition/parse-definition.js";
 import { describeDefinition } from "../shared/definition/generate-desc.js";
-import { generatePreset, listPresets, parseGeneratePresetArgs } from "./generate-preset/generate-preset.js";
+import { generatePreset, parseGeneratePresetArgs, presetDescriptions } from "./generate-preset/generate-preset.js";
+import { expandPresetGroupNames, listPresetsAndGroups } from "./generate-preset/preset-groups.js";
 import { runDispatch } from "../run/run.js";
 import type { RunOutput } from "../../util/non-fit/artifacts.js";
 import { runScriptPrefix } from "../../util/non-fit/fit-cli-log.js";
 
-const SUBCOMMANDS = ["validate", "generate-desc", "generate-preset", "list-presets"] as const;
+const SUBCOMMANDS = ["validate", "generate-desc", "generate-preset", "list-presets", "expand-preset-group"] as const;
 type Subcommand = (typeof SUBCOMMANDS)[number];
 
 function buildHelp(): string {
@@ -33,15 +35,21 @@ Usage:
   ${def} generate-desc <file.json5>
   ${def} generate-preset --type <preset> --performer-image-name <image> [--output <path>]
   ${def} list-presets
+  ${def} expand-preset-group <preset-or-group>[,<preset-or-group>...] [--json | --verbose]
   ${def} --help
 
 Both .json5 and .yaml definition files are accepted.
 
 Subcommands:
-  validate        Parse and validate a definition file without running it.
-  generate-desc   Print a compact description of a definition file (useful for CI labels).
-  generate-preset Emit a ready-to-run definition file from a preset template.
-  list-presets    List all available preset types with descriptions.
+  validate            Parse and validate a definition file without running it.
+  generate-desc       Print a compact description of a definition file (useful for CI labels).
+  generate-preset     Emit a ready-to-run definition file from a preset template.
+  list-presets        List all available preset types and preset groups, with descriptions.
+  expand-preset-group Expand a comma-separated list of presets/preset groups into a flat, comma-separated preset list.
+
+expand-preset-group options:
+  --json     Print the flat list as a JSON array instead of a comma-separated string.
+  --verbose  Print one expanded preset per line, each with its own description (for humans; --json/machine output is the default).
 
 generate-preset options:
   --type <preset>               Preset to generate. Run \`${def} list-presets\` to see known presets.
@@ -81,20 +89,6 @@ function legacyExecutePresetToRunPreset(rest: string[]): string[] {
  * subcommand and its flags/positionals).
  */
 export async function definitionDispatch(argv: string[]): Promise<RunOutput | void> {
-  // generate-desc output must be machine-parseable — use process.stdout.write
-  // directly so it is never affected by console.log timestamp formatting.
-  if (argv[0] === "generate-desc") {
-    const path = argv[1];
-    if (!path) {
-      process.stderr.write(`Usage: ${runScriptPrefix("definition")} generate-desc <file.json5>\n`);
-      process.exit(2);
-    }
-    const resolvedPath = isDefinitionUrl(path) ? await cacheDefinition(path) : path;
-    const definition = loadDefinition(resolvedPath);
-    process.stdout.write(describeDefinition(definition) + "\n");
-    return;
-  }
-
   // The global --interactive / --replay flags are read straight from
   // process.argv by the prompt session, so strip them here before we pick the
   // subcommand off the front.
@@ -137,7 +131,7 @@ export async function definitionDispatch(argv: string[]): Promise<RunOutput | vo
   }
 
   if (subcommand === "list-presets") {
-    await listPresets();
+    listPresetsAndGroups();
     return;
   }
 
@@ -149,6 +143,53 @@ export async function definitionDispatch(argv: string[]): Promise<RunOutput | vo
   }
   const { definition } = await resolveAndLoadDefinition(path);
   console.log(definitionSummary(definition));
+}
+
+/**
+ * `generate-desc` and `expand-preset-group` print machine-parseable output
+ * meant for CI to consume directly (e.g. building a GHA matrix). runCli's
+ * session setup unconditionally prints timestamp-prefixed banners and a
+ * closing artifact table to stdout, which would corrupt that output — so
+ * these two run here, before runCli is ever invoked, and write straight to
+ * the real stdout/stderr.
+ */
+async function runRawSubcommand(argv: string[]): Promise<void> {
+  if (argv[0] === "generate-desc") {
+    const path = argv[1];
+    if (!path) {
+      process.stderr.write(`Usage: ${runScriptPrefix("definition")} generate-desc <file.json5>\n`);
+      process.exit(2);
+    }
+    const resolvedPath = isDefinitionUrl(path) ? await cacheDefinition(path) : path;
+    const definition = loadDefinition(resolvedPath);
+    process.stdout.write(describeDefinition(definition) + "\n");
+    return;
+  }
+
+  // expand-preset-group
+  const json = argv.includes("--json");
+  const verbose = argv.includes("--verbose");
+  const [namesCsv, ...extra] = argv.slice(1).filter((a) => a !== "--json" && a !== "--verbose");
+  if (!namesCsv || extra.length > 0 || (json && verbose)) {
+    process.stderr.write(`Usage: ${runScriptPrefix("definition")} expand-preset-group <preset-or-group>[,<preset-or-group>...] [--json | --verbose]\n`);
+    process.exit(2);
+  }
+  let expanded: string[];
+  try {
+    expanded = expandPresetGroupNames(namesCsv);
+  } catch (err) {
+    process.stderr.write((err as Error).message + "\n");
+    process.exit(2);
+  }
+  if (verbose) {
+    const descriptionByType = new Map(presetDescriptions().map((p) => [p.type, p.description]));
+    const col = expanded.reduce((max, type) => Math.max(max, type.length), 0);
+    for (const type of expanded) {
+      process.stdout.write(`${type.padEnd(col)}  ${descriptionByType.get(type) ?? "(no description)"}\n`);
+    }
+    return;
+  }
+  process.stdout.write((json ? JSON.stringify(expanded) : expanded.join(",")) + "\n");
 }
 
 export function runDefinitionMain(): void {
@@ -164,6 +205,13 @@ export function runDefinitionMain(): void {
   if (positionals.length === 0 || helpFlags.has(positionals[0]) || positionals.some(a => helpFlags.has(a))) {
     console.log(buildHelp());
     process.exit(positionals.length === 0 ? 2 : 0);
+  }
+  if (argv[0] === "generate-desc" || argv[0] === "expand-preset-group") {
+    runRawSubcommand(argv).catch((err) => {
+      console.error(err instanceof Error ? err.message : err);
+      process.exit(1);
+    });
+    return;
   }
   runCli(() => definitionDispatch(argv));
 }

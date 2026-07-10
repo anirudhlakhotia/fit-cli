@@ -1,15 +1,13 @@
-// Quick sanity for Analytics functional tests against a Capella Analytics (cloud)
-// cluster — runs a connection test and a basic query test rather than the full
-// columnar-test-driver suite. See capella-analytics-functional for the full run.
+// Only one Capella Analytics topology is currently supported, so this is identical
+// to columnar-func-release — kept separate for naming consistency across
+// axes, and as the natural place to add situational coverage later.
 {
   preset: {
-    order: 33,
-    description: 'Quick sanity for Analytics functional tests against a Capella Analytics (cloud) cluster.',
-    tags: ['capella-analytics', 'functional'],
+    order: 20,
+    tags: ['columnar', 'functional'],
   },
   version: 1,
   type: 'fit',
-  description: 'Capella Analytics functional quick sanity',
   instances: [
     {
       aws: {},
@@ -23,14 +21,13 @@
             {
               performer: {
                 image: '{{PERFORMER_IMAGE}}',
-                onPortInUse: 'reuse',
               },
               runs: [
                 {
                   type: 'analytics-functional',
                   fitConfig: 'fit-config-0',
                   tests: {
-                    classes: ['com.couchbase.fit.columnar.tests.query.ClusterConnectionTest','com.couchbase.fit.columnar.tests.query.QueryTest'],
+                    presets: ['all'],
                   },
                 },
               ],
@@ -45,6 +42,9 @@
       id: 'cluster-0',
       cbdinocluster: {
         config: {
+          // cbdino wire flag: `columnar: true` with `deployer: cloud` builds a
+          // Capella Analytics cluster in the Capella cloud. Capella credentials
+          // come from your cbdinocluster init config (~/.cbdinocluster).
           columnar: true,
           nodes: [
             {
@@ -65,9 +65,10 @@
       id: 'fit-config-0',
       config: {
         clusterAccess: {
+          // The Columnar SDK performer connects directly to the Capella Analytics endpoint.
           performer: {
             connectionString: 'couchbases://${defaultHostname}',
-            tls: {insecure: true},
+            tls: { insecure: true },
           },
         },
       },
