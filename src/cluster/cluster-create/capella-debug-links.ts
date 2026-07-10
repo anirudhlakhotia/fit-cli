@@ -29,7 +29,7 @@ export interface CapellaDebugLinks {
   capellaUiUrl?: string;
   /** Best-guess Fleet Manager cluster page — see the caveat above. */
   fleetManagerUrl: string;
-  /** DataDog logs, filtered by env and clusterId, excluding info-level noise. */
+  /** DataDog logs, filtered by env and clusterId. */
   datadogLogsUrl: string;
 }
 
@@ -66,15 +66,12 @@ export function capellaDebugLinks(
     return undefined;
   }
   const fleetManagerHost = endpoint.replace(/^https:\/\/api\./, "https://fm.");
-  const datadogQuery = `env:${environment} @clusterId:${couchbaseClusterUuid} -status:info`;
+  const datadogQuery = `env:${environment} @clusterId:${couchbaseClusterUuid}`;
   const uiUrl = capellaUiUrl(environment, environments);
   return {
     ...(uiUrl ? { capellaUiUrl: uiUrl } : {}),
     fleetManagerUrl: `${fleetManagerHost}/clusters/${couchbaseClusterUuid}`,
-    datadogLogsUrl:
-      `https://app.datadoghq.com/logs?query=${encodeURIComponent(datadogQuery)}` +
-      `&agg_m=count&agg_m_source=base&agg_t=count&cols=host%2Cservice&messageDisplay=inline` +
-      `&refresh_mode=sliding&storage=hot&stream_sort=desc&viz=stream&live=true`,
+    datadogLogsUrl: `https://app.datadoghq.com/logs?query=${encodeURIComponent(datadogQuery)}`,
   };
 }
 
