@@ -117,7 +117,7 @@ export const FUNCTIONAL_TEST_DOMAIN: FitTestDomain = {
 /** The situational flow: only the situational package and its cbdino sanity test. */
 export const SITUATIONAL_TEST_DOMAIN: FitTestDomain = {
   includePrefix: SITUATIONAL_TEST_PATH_PREFIX,
-  sanitySelector: "com.couchbase.situational.tests.VolumeTest#steadyStateKvGets",
+  sanitySelector: "com.couchbase.situational.tests.SanityTest",
   showStandardQePreset: true,
 };
 
