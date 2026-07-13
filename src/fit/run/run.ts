@@ -192,6 +192,9 @@ export async function runDispatch(argv: string[]): Promise<RunOutput | void> {
       console.error((err as Error).message);
       process.exit(2);
     }
+    if (types.length > 1) {
+      console.log(`"${typeList}" expands to ${types.length} presets, run in sequence: ${types.join(", ")}\n`);
+    }
     if (!performerImageName) {
       console.error("--performer is required, e.g. java-fit-performer:main");
       process.exit(2);

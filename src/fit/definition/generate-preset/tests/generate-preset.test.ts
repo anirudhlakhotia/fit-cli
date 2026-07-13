@@ -249,7 +249,7 @@ test("autoDescribeName describes a preset from its name and tags, leading with t
   );
 });
 
-test("autoDescribeName describes an on-prem preset/group with its own explicit cluster token, distinguishing it from op-all-*", () => {
+test("autoDescribeName describes an on-prem preset/group with its own explicit cluster token, distinguishing it from op-multi-*", () => {
   assert.equal(
     autoDescribeName("op-onprem-sanity", ["onprem", "functional"]),
     "Operational SDK functional testing against an on-prem cluster (quick sanity testing).",
@@ -263,17 +263,17 @@ test("autoDescribeName describes a group from its tags, not by parsing a func/si
   );
 });
 
-test("autoDescribeName scopes a cross-axis 'all' group to one SDK family, never mixing families", () => {
+test("autoDescribeName scopes a cross-axis 'multi' group to one SDK family, never mixing families", () => {
   assert.equal(
-    autoDescribeName("op-all-sanity", ["operational", "functional", "situational"]),
+    autoDescribeName("op-multi-sanity", ["operational", "functional", "situational"]),
     "Operational SDK functional and situational testing across every axis (quick sanity testing).",
   );
   assert.equal(
-    autoDescribeName("op-all-func-lite", ["operational", "functional"]),
+    autoDescribeName("op-multi-func-lite", ["operational", "functional"]),
     "Operational SDK functional testing across every axis (lite-tier testing).",
   );
   assert.equal(
-    autoDescribeName("columnar-all-func-release", ["columnar", "functional"]),
+    autoDescribeName("columnar-multi-func-release", ["columnar", "functional"]),
     "Columnar SDK functional testing across every axis (release sign-off testing).",
   );
 });

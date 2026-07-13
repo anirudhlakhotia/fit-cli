@@ -129,7 +129,7 @@ export function listPresetsAndGroups(): void {
       return {
         type: g.name,
         tags: g.tags,
-        description: `[group: ${g.presets.join(", ")}]${notice ? ` ${notice}` : ""}`,
+        description: `[groups: ${g.presets.join(", ")}]${notice ? ` ${notice}` : ""}`,
         isGroup: true,
       };
     }),
@@ -137,6 +137,15 @@ export function listPresetsAndGroups(): void {
   const groups = groupPresetsByTag(entries);
   const col = groups.reduce((max, { items }) => items.reduce((m, { type }) => Math.max(m, type.length), max), 0);
   console.log(`\nAvailable presets and preset groups:\n`);
+  console.log(
+    "Naming convention: <SDK type>-<cluster type>[-<modifier>]-<test type>-<test effort>\n" +
+      "  Examples: op-onprem-func-lite, op-capella-pe-sit-release\n" +
+      '  SDK type      — "op" for operational; may be omitted for some cases, such as Analytics.\n' +
+      '  Cluster type  — "onprem", "capella", "enterprise-analytics", "columnar", and "multi" for multiple types.\n' +
+      '  Modifiers     — optional; e.g. "pe" for Private Endpoint.\n' +
+      '  Test type     — "func"tional or "sit"uational.\n' +
+      "  Test effort   — lite | release | sanity.\n",
+  );
   for (const { tag, items } of groups) {
     const tagDescription = describeTag(tag);
     console.log(tagDescription ? `${tag}: ${tagDescription}` : `${tag}:`);

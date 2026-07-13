@@ -187,13 +187,13 @@ function capitalize(s: string): string {
  * each axis token belongs to. `op-onprem`/`op-cng`/`op-capella` all use the same
  * operational SDK performer (PrivateLink doesn't change that); `enterprise-analytics`
  * and `columnar` each need their own Analytics-driver performer image — see
- * `presetUsesAnalyticsDriver`. This is why the `<family>-all-*` groups (below) are
+ * `presetUsesAnalyticsDriver`. This is why the `<family>-multi-*` groups (below) are
  * scoped per family rather than one universal group: mixing families would mean
  * a single `--performer` value is wrong for some of the group's members.
  *
- * The bare `op` entry is for the `op-all-*` cross-cluster groups specifically —
- * their name has no cluster token at all (e.g. `op-all-func-sanity`), so once
- * `all` is popped in `autoDescribeName`, the remaining axis is just `op`.
+ * The bare `op` entry is for the `op-multi-*` cross-cluster groups specifically —
+ * their name has no cluster token at all (e.g. `op-multi-func-sanity`), so once
+ * `multi` is popped in `autoDescribeName`, the remaining axis is just `op`.
  */
 const SDK_FAMILY_PHRASES: Record<string, string> = {
   op: "operational SDK",
@@ -207,7 +207,7 @@ const SDK_FAMILY_PHRASES: Record<string, string> = {
 /**
  * Generate a human-readable description from a preset/group name, for entries that
  * don't hand-author a `description` — the `<axis>[-pe]-<func|sit>-<tier>` naming
- * convention, and its `<family>-all-<func|sit>-<tier>` / `<family>-all-<tier>`
+ * convention, and its `<family>-multi-<func|sit>-<tier>` / `<family>-multi-<tier>`
  * cross-axis variant (see presets/groups.json5's header comment), are regular
  * enough to describe automatically. Whether it reads as functional, situational,
  * or both comes from `tags` (the entry's real composition), not from parsing the
@@ -227,7 +227,7 @@ export function autoDescribeName(name: string, tags: string[]): string {
     tokens.pop();
   }
   let crossAxis = false;
-  if (tokens.at(-1) === "all") {
+  if (tokens.at(-1) === "multi") {
     crossAxis = true;
     tokens.pop();
   }

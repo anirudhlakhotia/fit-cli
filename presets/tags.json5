@@ -4,8 +4,8 @@
 // of the tag's group (lower first, ties broken alphabetically); a tag missing here just
 // displays without a description and sorts after every tag that is listed here.
 {
-  // Only the op family's cross-cluster "-all-*" groups (op-all-func-*, op-all-sit-*,
-  // op-all-*) carry this tag — they span every cluster (onprem/cng/capella/capella-pe)
+  // Only the op family's cross-cluster "-multi-*" groups (op-multi-func-*, op-multi-sit-*,
+  // op-multi-*) carry this tag — they span every cluster (onprem/cng/capella/capella-pe)
   // within the operational SDK. A *specific* cluster's own presets/groups (including the
   // on-prem ones) live under their own cluster tag below (`onprem`/`cng`/`capella`/`pe`),
   // never here — keeping "operational" reserved for "spans more than one cluster" avoids
