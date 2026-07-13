@@ -74,12 +74,13 @@ export async function printClusterUiAccess(cluster: SelectedCluster, remote?: Re
   }
   const scheme = cluster.scheme === "couchbases" ? "https" : "http";
   const { host, port } = managementHostPort(cluster);
+  const login = `  Login: ${cluster.credentials.username} / ${cluster.credentials.password}`;
   if (!remote) {
     // Docker bridge-network container IPs are only directly routable from the
     // host on Linux (Mac/Windows Docker Desktop NATs them) — see the caveat in
     // this file's header comment.
     const platformNote = process.platform === "linux" ? "" : " (only reachable this way on Linux)";
-    console.log(`  Cluster UI: ${scheme}://${host}:${port}${platformNote}`);
+    console.log(`  Cluster UI: ${scheme}://${host}:${port}${platformNote}\n${login}`);
     return;
   }
   // The local port is independent of the cluster's own port — reusing it (e.g.
@@ -88,7 +89,7 @@ export async function printClusterUiAccess(cluster: SelectedCluster, remote?: Re
   console.log(
     `  Cluster UI (on a remote box — open a tunnel first):\n` +
       `    ssh -i ${remote.identityFile} -L ${localPort}:${host}:${port} ${remote.user}@${remote.address}\n` +
-      `    then browse to ${scheme}://localhost:${localPort}`,
+      `    then browse to ${scheme}://localhost:${localPort}\n${login}`,
   );
 }
 
