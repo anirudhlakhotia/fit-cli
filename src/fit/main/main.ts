@@ -27,7 +27,7 @@ import { runSecretsMain } from "../../cloud/util/aws/secrets-cli.js";
 import { printVersion } from "../version/version.js";
 import { runUpgradeMain } from "../upgrade/upgrade.js";
 import { main as replayMain } from "../../util/non-fit/replay-entry.js";
-import { echoCommand, formatCommandLine, isFitBinary, runScriptPrefix } from "../../util/non-fit/fit-cli-log.js";
+import { installFitCliConsoleFormatting, isFitBinary, printInvocationOnce, runScriptPrefix } from "../../util/non-fit/fit-cli-log.js";
 import { printLogo } from "./logo.js";
 import { runRecentDefinitionsWizard } from "./recent-definitions-wizard.js";
 import { checkPlatform } from "./check-platform.js";
@@ -232,10 +232,12 @@ function printHelp(): void {
 // import.meta.main is true in compiled Bun binaries where isMain() can't
 // compare virtual /$bunfs/ paths against the real executable path.
 if (isMain(import.meta.url) || import.meta.main) {
-  // Printed before anything else so a CI log always shows exactly how fit-cli
-  // was invoked, even if the run fails before any other output is produced.
-  const binTokens = isFitBinary() ? ["fit"] : ["bun", "run"];
-  echoCommand(formatCommandLine(binTokens[0], [...binTokens.slice(1), ...process.argv.slice(2)]));
+  // Printed before anything else — and before the subcommand token below is
+  // spliced out of process.argv — so a CI log always shows exactly how
+  // fit-cli was invoked, even if the run fails before any other output is
+  // produced.
+  installFitCliConsoleFormatting();
+  printInvocationOnce();
 
   checkPlatform();
 
