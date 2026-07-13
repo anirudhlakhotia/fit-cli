@@ -18,10 +18,24 @@ import { generatePreset, parseGeneratePresetArgs, presetDescriptions } from "./g
 import { expandPresetGroupNames, listPresetsAndGroups } from "./generate-preset/preset-groups.js";
 import { runDispatch } from "../run/run.js";
 import type { RunOutput } from "../../util/non-fit/artifacts.js";
-import { runScriptPrefix } from "../../util/non-fit/fit-cli-log.js";
+import { printWithoutTimestamps, runScriptPrefix } from "../../util/non-fit/fit-cli-log.js";
 
 const SUBCOMMANDS = ["validate", "generate-desc", "generate-preset", "list-presets", "expand-preset-group"] as const;
 type Subcommand = (typeof SUBCOMMANDS)[number];
+
+/**
+ * Subcommands whose stdout is machine-parseable and must therefore carry
+ * nothing but the payload — CI pipes them straight into things like
+ * `$GITHUB_OUTPUT`, where a stray `Ran with:` banner or `[HH:MM:SS]` prefix is
+ * not noise but a hard failure. `main.ts` consults this before it installs any
+ * console formatting; see runRawSubcommand.
+ */
+const MACHINE_OUTPUT_SUBCOMMANDS: readonly string[] = ["generate-desc", "expand-preset-group"];
+
+/** `args` is argv after the `definition` token, e.g. ["expand-preset-group", "all-release"]. */
+export function isMachineOutputDefinitionSubcommand(args: readonly string[]): boolean {
+  return args.length > 0 && MACHINE_OUTPUT_SUBCOMMANDS.includes(args[0]);
+}
 
 function buildHelp(): string {
   const def = runScriptPrefix("definition");
@@ -152,6 +166,11 @@ export async function definitionDispatch(argv: string[]): Promise<RunOutput | vo
  * closing artifact table to stdout, which would corrupt that output — so
  * these two run here, before runCli is ever invoked, and write straight to
  * the real stdout/stderr.
+ *
+ * `main.ts` keeps its side of that bargain by skipping console formatting for
+ * these subcommands (see isMachineOutputDefinitionSubcommand); the raw writes
+ * below are wrapped anyway so the payload survives even if some other
+ * entrypoint has already installed the timestamped stdout wrapper.
  */
 async function runRawSubcommand(argv: string[]): Promise<void> {
   if (argv[0] === "generate-desc") {
@@ -162,7 +181,7 @@ async function runRawSubcommand(argv: string[]): Promise<void> {
     }
     const resolvedPath = isDefinitionUrl(path) ? await cacheDefinition(path) : path;
     const definition = loadDefinition(resolvedPath);
-    process.stdout.write(describeDefinition(definition) + "\n");
+    printWithoutTimestamps(describeDefinition(definition));
     return;
   }
 
@@ -184,12 +203,12 @@ async function runRawSubcommand(argv: string[]): Promise<void> {
   if (verbose) {
     const descriptionByType = new Map(presetDescriptions().map((p) => [p.type, p.description]));
     const col = expanded.reduce((max, type) => Math.max(max, type.length), 0);
-    for (const type of expanded) {
-      process.stdout.write(`${type.padEnd(col)}  ${descriptionByType.get(type) ?? "(no description)"}\n`);
-    }
+    printWithoutTimestamps(
+      expanded.map((type) => `${type.padEnd(col)}  ${descriptionByType.get(type) ?? "(no description)"}`).join("\n"),
+    );
     return;
   }
-  process.stdout.write((json ? JSON.stringify(expanded) : expanded.join(",")) + "\n");
+  printWithoutTimestamps(json ? JSON.stringify(expanded) : expanded.join(","));
 }
 
 export function runDefinitionMain(): void {
@@ -206,7 +225,7 @@ export function runDefinitionMain(): void {
     console.log(buildHelp());
     process.exit(positionals.length === 0 ? 2 : 0);
   }
-  if (argv[0] === "generate-desc" || argv[0] === "expand-preset-group") {
+  if (isMachineOutputDefinitionSubcommand(argv)) {
     runRawSubcommand(argv).catch((err) => {
       console.error(err instanceof Error ? err.message : err);
       process.exit(1);
