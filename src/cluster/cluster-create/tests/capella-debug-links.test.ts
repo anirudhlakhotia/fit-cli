@@ -16,6 +16,14 @@ const environments: EnvironmentsFile = {
     defaultResultsEnvironment: "prod",
     aws: { region: "us-west-2", vpcId: "vpc-x", subnetId: "subnet-x" },
   },
+  testSets: {
+    SITUATIONAL_SET_SANITY: "com.couchbase.situational.tests.SanityTest",
+    SITUATIONAL_SET_LITE: "standard-qe",
+    SITUATIONAL_SET_RELEASE: "standard-qe",
+    FUNCTIONAL_SET_SANITY: "com.couchbase.client.kv.SanityTest",
+    FUNCTIONAL_SET_LITE: "all",
+    FUNCTIONAL_SET_RELEASE: "all",
+  },
   capella: {
     prod: { endpoint: "https://api.cloud.couchbase.com", oid: "62488bdd-d416-467e-84f7-fc7c1583a083" },
     dev: { endpoint: "https://api.dev.nonprod-project-avengers.com", oid: "6af08c0a-8cab-4c1c-b257-b521575c16d0" },

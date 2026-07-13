@@ -22,7 +22,7 @@
                   type: 'functional',
                   fitConfig: 'fit-config-0',
                   tests: {
-                    classes: ['com.couchbase.client.kv.SanityTest'],
+                    classes: ['{{environments.testSets.FUNCTIONAL_SET_SANITY}}'],
                     addToDefaultExcludedGroups: ['protostellarWillWorkLater'],
                   },
                 },

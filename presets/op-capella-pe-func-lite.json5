@@ -23,7 +23,7 @@
                 {
                   type: 'functional',
                   tests: {
-                    presets: ['all'],
+                    presets: ['{{environments.testSets.FUNCTIONAL_SET_LITE}}'],
                   },
                 },
               ],

@@ -25,7 +25,7 @@
                 {
                   type: 'functional',
                   tests: {
-                    classes: ['com.couchbase.client.kv.SanityTest'],
+                    classes: ['{{environments.testSets.FUNCTIONAL_SET_SANITY}}'],
                   },
                 },
               ],

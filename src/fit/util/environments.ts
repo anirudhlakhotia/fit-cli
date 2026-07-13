@@ -1,7 +1,8 @@
 /**
  * Loader for `environments.json5` (repo root): the non-secret, per-environment
- * settings selected from a definition file, plus global defaults. Three sections:
+ * settings selected from a definition file, plus global defaults. Sections:
  *   - defaults: global version strings for cbdinocluster (cluster, CNG, Analytics, CAO)
+ *   - testSets: the test set each preset tier runs (see TestSets)
  *   - capella: control-plane endpoint + org id per Capella environment (dev/stage/…)
  *   - results: the hosted results host per results environment (dev/prod/…), which
  *     serves both the Postgres DB and the results UI.
@@ -78,8 +79,23 @@ export interface Defaults {
   aws: AwsDefaults;
 }
 
+/**
+ * The test set each preset tier runs, referenced from preset templates as
+ * `{{environments.testSets.<NAME>}}`. Values are single selectors: a test-driver class
+ * name for the sanity tiers, a named test preset (TEST_PRESETS) for the others.
+ */
+export interface TestSets {
+  SITUATIONAL_SET_SANITY: string;
+  SITUATIONAL_SET_LITE: string;
+  SITUATIONAL_SET_RELEASE: string;
+  FUNCTIONAL_SET_SANITY: string;
+  FUNCTIONAL_SET_LITE: string;
+  FUNCTIONAL_SET_RELEASE: string;
+}
+
 export interface EnvironmentsFile {
   defaults: Defaults;
+  testSets: TestSets;
   capella: Record<string, CapellaEnvironment>;
   results: Record<string, ResultsEnvironment>;
   awsTenants: Record<string, AwsTenantEnvironment>;
@@ -110,13 +126,14 @@ export function loadEnvironments(path: string = DEFAULT_ENVIRONMENTS_PATH): Envi
     !parsed ||
     typeof parsed !== "object" ||
     typeof parsed.defaults !== "object" ||
+    typeof parsed.testSets !== "object" ||
     typeof parsed.capella !== "object" ||
     typeof parsed.results !== "object" ||
     typeof parsed.awsTenants !== "object" ||
     typeof parsed.fitCliRole !== "object"
   ) {
     throw new Error(
-      `Environments file at ${path} must define "defaults", "capella", "results", "awsTenants", and "fitCliRole" sections.`,
+      `Environments file at ${path} must define "defaults", "testSets", "capella", "results", "awsTenants", and "fitCliRole" sections.`,
     );
   }
   if (path === DEFAULT_ENVIRONMENTS_PATH) cached = parsed;

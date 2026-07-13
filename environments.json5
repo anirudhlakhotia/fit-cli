@@ -89,6 +89,25 @@
     },
   },
 
+  testSets: {
+    // A quick single test proving the basics work.
+    SITUATIONAL_SET_SANITY: "com.couchbase.situational.tests.SanityTest",
+
+    // The Standard QE Set: the cbdino rebalance test.
+    SITUATIONAL_SET_LITE: "standard-qe",
+
+    // Deliberately the same as the lite set for now: the remaining FIT/SIT tests are not
+    // all stable yet and need more work before a release tier can meaningfully run them.
+    SITUATIONAL_SET_RELEASE: "standard-qe",
+
+    // Functional counterparts. Note these cover the operational test-driver only; the
+    // Analytics presets (columnar, enterprise-analytics) run a different driver with its
+    // own sanity classes, so they don't use these.
+    FUNCTIONAL_SET_SANITY: "com.couchbase.client.kv.SanityTest",
+    FUNCTIONAL_SET_LITE: "all",
+    FUNCTIONAL_SET_RELEASE: "all",
+  },
+
   capella: {
     prod: {
       endpoint: "https://api.cloud.couchbase.com",

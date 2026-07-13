@@ -24,7 +24,7 @@
                   type: 'functional',
                   fitConfig: 'fit-config-0',
                   tests: {
-                    presets: ['all'],
+                    presets: ['{{environments.testSets.FUNCTIONAL_SET_RELEASE}}'],
                     addToDefaultExcludedGroups: ['protostellarWillWorkLater'],
                   },
                 },

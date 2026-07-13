@@ -21,7 +21,7 @@
                 {
                   type: 'functional',
                   tests: {
-                    presets: ['all'],
+                    presets: ['{{environments.testSets.FUNCTIONAL_SET_RELEASE}}'],
                   },
                 },
               ],
@@ -40,7 +40,7 @@
                 {
                   type: 'functional',
                   tests: {
-                    presets: ['all'],
+                    presets: ['{{environments.testSets.FUNCTIONAL_SET_RELEASE}}'],
                   },
                 },
               ],

@@ -21,7 +21,7 @@
             {
               type: 'situational',
               tests: {
-                classes: ['com.couchbase.situational.tests.SanityTest'],
+                classes: ['{{environments.testSets.SITUATIONAL_SET_SANITY}}'],
                 addToDefaultExcludedGroups: ['protostellarWillWorkLater'],
               },
               situational: {

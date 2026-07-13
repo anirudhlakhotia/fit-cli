@@ -162,8 +162,18 @@ const STUB_DEFAULTS = {
   aws: { region: "us-west-2", vpcId: "vpc-stub", subnetId: "subnet-stub" },
 };
 
+const STUB_TEST_SETS = {
+  SITUATIONAL_SET_SANITY: "com.couchbase.situational.tests.SanityTest",
+  SITUATIONAL_SET_LITE: "standard-qe",
+  SITUATIONAL_SET_RELEASE: "standard-qe",
+  FUNCTIONAL_SET_SANITY: "com.couchbase.client.kv.SanityTest",
+  FUNCTIONAL_SET_LITE: "all",
+  FUNCTIONAL_SET_RELEASE: "all",
+};
+
 const TEST_ENVIRONMENTS = {
   defaults: STUB_DEFAULTS,
+  testSets: STUB_TEST_SETS,
   capella: { dev: { endpoint: "https://dev.example", oid: "oid-dev", username: "sdk_qe@couchbase.com", secretId: "cap/dev" } },
   results: { dev: { host: "dev.db.example", secretId: "res/dev" } },
   awsTenants: { "cb-sdk": { accountId: "958525475024" } },
@@ -308,6 +318,7 @@ test("resolveCapellaConfig throws for an unprovisioned environment", async () =>
       block: "stage",
       environments: {
         defaults: STUB_DEFAULTS,
+        testSets: STUB_TEST_SETS,
         capella: { stage: { endpoint: null, oid: null, secretId: "cap/stage" } },
         results: {},
         awsTenants: {},
