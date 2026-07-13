@@ -10,14 +10,24 @@ import { capture, type RunOptions } from "../../util/non-fit/proc.js";
 import type { SelectedCluster } from "../cluster-select/cluster-select.js";
 import { classifyConnectionString } from "../cluster-select/classify-connection-string.js";
 
-/** Build the curl URL for the cluster's management endpoint. */
-export function clusterDiagUrl(cluster: SelectedCluster): string {
+/**
+ * The cluster's management-endpoint host and port. Shared by {@link clusterDiagUrl}
+ * and cluster-ui-link.ts, which points users at the same endpoint in a browser.
+ */
+export function managementHostPort(cluster: SelectedCluster): { host: string; port: string } {
   const secure = cluster.scheme === "couchbases";
-  const scheme = secure ? "https" : "http";
   const host = managementHost(cluster.defaultHostname);
   // CNG clusters on OpenShift expose management through a TLS-passthrough route
   // on the standard HTTPS port (443), not on Couchbase's native port (18091).
   const port = cluster.cng ? "443" : (secure ? "18091" : "8091");
+  return { host, port };
+}
+
+/** Build the curl URL for the cluster's management endpoint. */
+export function clusterDiagUrl(cluster: SelectedCluster): string {
+  const secure = cluster.scheme === "couchbases";
+  const scheme = secure ? "https" : "http";
+  const { host, port } = managementHostPort(cluster);
   return `${scheme}://${host}:${port}/pools/default`;
 }
 
