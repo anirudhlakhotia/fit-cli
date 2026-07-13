@@ -12,7 +12,7 @@ import {
   formatFailureSummaryLine,
   type RunOutput,
 } from "./artifacts.js";
-import { installFitCliConsoleFormatting, fitCliError, runScriptPrefix } from "./fit-cli-log.js";
+import { installFitCliConsoleFormatting, printInvocationOnce, fitCliError, runScriptPrefix } from "./fit-cli-log.js";
 import { startSessionLog, startDebugLog } from "./proc.js";
 import { ensurePromptSession } from "./replay.js";
 import { emitGhaArtifactNotice, appendArtifactFetchToGhaSummary } from "../../fit/util/gha.js";
@@ -76,6 +76,7 @@ export function isMain(metaUrl: string): boolean {
  */
 export function runCli(main: () => Promise<void | Partial<RunOutput>>): void {
   installFitCliConsoleFormatting();
+  printInvocationOnce();
   const promptSession = ensurePromptSession(process.argv.slice(2));
   const sessionLog = startSessionLog(join(promptSession.runDir, "session.info.log"));
   const debugLog = startDebugLog(join(promptSession.runDir, "session.debug.log"));

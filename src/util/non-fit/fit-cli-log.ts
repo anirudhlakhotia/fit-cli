@@ -1,4 +1,4 @@
-import { basename } from "node:path";
+import { basename, relative } from "node:path";
 
 /**
  * Decide whether to emit ANSI colour. Precedence:
@@ -431,6 +431,51 @@ export function formatCommandLine(command: string, args: readonly string[] = [])
 /** Tag a command line with where it runs, e.g. `cbdinocluster ps  (on ubuntu@1.2.3.4)`. */
 export function commandOn(line: string, where: string): string {
   return `${line}  (on ${where})`;
+}
+
+/**
+ * Reconstruct how this fit-cli process was actually started, for the
+ * "Ran with:" line printed at the top of every run. Called before `main.ts`'s
+ * command dispatcher splices the subcommand token out of `process.argv`, so
+ * `argv.slice(2)` below always still holds it.
+ *
+ * `bun run <script>` sets `npm_lifecycle_event` to the package.json script
+ * name — using it (rather than the resolved script path Bun put in argv[1])
+ * means this matches exactly what the user typed, e.g. `bun run wizard`
+ * rather than `bun src/fit/main/main.ts wizard`. Mini CLI tools invoked
+ * directly (`bun src/cluster/.../foo.ts`, no package.json script) have no
+ * such env var, so those fall back to the resolved script path.
+ */
+export function invocationLine(): string {
+  if (isFitBinary()) {
+    return formatCommandLine("fit", process.argv.slice(2));
+  }
+  const scriptName = process.env.npm_lifecycle_event;
+  if (scriptName) {
+    // For scripts that bake the subcommand into the package.json entry itself
+    // (e.g. "wizard": "bun src/fit/main/main.ts wizard"), argv[2] still holds
+    // that same token at print time — drop it so it isn't shown twice.
+    const rest = process.argv.slice(2);
+    const args = rest[0] === scriptName ? rest.slice(1) : rest;
+    return formatCommandLine("bun", ["run", scriptName, ...args]);
+  }
+  const scriptPath = process.argv[1] ? relative(process.cwd(), process.argv[1]) : "";
+  return formatCommandLine("bun", [scriptPath, ...process.argv.slice(2)]);
+}
+
+let invocationPrinted = false;
+
+/**
+ * Print the "Ran with:" line exactly once per process. Called both early in
+ * `main.ts` (before platform checks, so it survives an early failure there)
+ * and inside `runCli()` (for mini-CLI scripts invoked directly, bypassing
+ * `main.ts` entirely) — the guard keeps the two call sites from double-printing
+ * when a command goes through both.
+ */
+export function printInvocationOnce(): void {
+  if (invocationPrinted) return;
+  invocationPrinted = true;
+  console.log(`Ran with: ${invocationLine()}`);
 }
 
 /** Render a byte count as a short human-readable size, e.g. `4.2 MB`. */

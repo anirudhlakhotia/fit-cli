@@ -1,0 +1,5 @@
+[run]
+# fit-cli prints its own timestamped "Run with: ..." line at the top of every
+# run (see runCli() in src/util/non-fit/cli.ts) — Bun's own script echo would
+# otherwise duplicate it, un-timestamped, right above.
+silent = true
