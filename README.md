@@ -125,11 +125,13 @@ Everyone - AI and human - please follow these as best you can.
 
 ### Stability
 This project aims to strike a balance between actively encouraging collaboration, and the need for a stable and reliable tool - particularly as it is used from CI.
-There are three release channels, with installation instructions at https://github.com/couchbaselabs/fit-cli/releases:
+There are three kinds of release channel, with installation instructions at https://github.com/couchbaselabs/fit-cli/releases:
 - `ci` — manually promoted, infrequently, with advance notice. **Default for most users and CI.**
 - `latest` — built on every push to main. For development and testing of fit-cli itself.
+- branch channels — one per git branch (`CHANNEL=<branch>`), published and pruned automatically by the Maintenance workflow so you can install any branch's build. Ephemeral: removed when the branch is deleted.
 
 To promote to `ci`, run https://github.com/couchbaselabs/fit-cli/actions/workflows/promote-ci.yaml.
+Branch channels are managed by `fit maintenance channels` (see `--help`); the scheduled [Maintenance workflow](.github/workflows/maintenance.yaml) runs `channels sync --prune`.
 
 ### Documentation
 While this project is generally very LLM-friendly - please keep project docs such as this README human-written, clear and concise.
