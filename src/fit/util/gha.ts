@@ -1,6 +1,7 @@
 import * as core from "@actions/core";
 import { appendFileSync, existsSync, statSync } from "node:fs";
 import { junitToMarkdownFromDir } from "../shared/run-test-driver/junit-to-markdown.js";
+import { readSituationalResultsCsv, renderSituationalResultsMarkdown } from "../shared/run-test-driver/situational-results.js";
 
 /** Current size of the $GITHUB_STEP_SUMMARY file in bytes, or -1 if missing/unset. */
 function summaryFileSize(): number {
@@ -23,6 +24,8 @@ interface RunSummary {
   summary?: { testsRun: number; failures: number; errors: number; skipped: number };
   /** Local path to the surefire-reports dir for this run; appended as a JUnit table if present. */
   surefireDir?: string;
+  /** Local path to the collected situational-results CSV; appended as a table below the JUnit one if present. */
+  situationalResultsCsv?: string;
 }
 
 /**
@@ -36,7 +39,7 @@ export async function appendRunSummaryToGhaSummary(result: RunSummary): Promise<
     return;
   }
 
-  const { pathLabel, sdk, ok, summary, surefireDir } = result;
+  const { pathLabel, sdk, ok, summary, surefireDir, situationalResultsCsv } = result;
   const status = ok ? "✅ PASS" : "❌ FAIL";
   const sizeBefore = summaryFileSize();
 
@@ -65,6 +68,23 @@ export async function appendRunSummaryToGhaSummary(result: RunSummary): Promise<
         appendFileSync(summaryPath, "\n" + markdown + "\n");
       } catch (err) {
         console.warn(`Warning: failed to append JUnit table for "${pathLabel}": ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+  }
+
+  // Situational-only: the authoritative pass/fail signal for these scenarios comes from
+  // the performer's scoring, not JUnit assertions, so this table is the more meaningful
+  // one — appended below the JUnit table, matching fit-app-deployment's ordering.
+  if (situationalResultsCsv) {
+    const summaryPath = process.env.GITHUB_STEP_SUMMARY;
+    if (summaryPath) {
+      try {
+        const rows = readSituationalResultsCsv(situationalResultsCsv);
+        if (rows) {
+          appendFileSync(summaryPath, "\n" + renderSituationalResultsMarkdown(rows) + "\n");
+        }
+      } catch (err) {
+        console.warn(`Warning: failed to append situational results table for "${pathLabel}": ${err instanceof Error ? err.message : String(err)}`);
       }
     }
   }

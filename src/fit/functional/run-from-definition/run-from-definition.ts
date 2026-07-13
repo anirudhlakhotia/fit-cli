@@ -178,6 +178,7 @@ import {
 } from "./resume-state.js";
 import { appendRunSummaryToGhaSummary } from "../../util/gha.js";
 import { junitToPlainTextFromDir } from "../../shared/run-test-driver/junit-to-markdown.js";
+import { readSituationalResultsCsv, renderSituationalResultsPlainText } from "../../shared/run-test-driver/situational-results.js";
 
 /**
  * A freshly-linked AWS PrivateLink connection can take longer than the default
@@ -724,6 +725,8 @@ export interface RunResultSummary {
   summary?: FitTestDriverSummary;
   /** Local path to the surefire-reports dir for this run; absent if no test driver ran. */
   surefireDir?: string;
+  /** Local path to the collected situational-results CSV; set only for situational runs. */
+  situationalResultsCsv?: string;
 }
 
 /** Sink the run loop passes down so each run records its result as it finishes. */
@@ -1013,6 +1016,8 @@ export async function runSituationalTests(
     run.path,
     fitConfig.path,
     run.extraMavenArgs,
+    DEFAULT_TEST_DRIVER_MODULE,
+    true,
   );
   artifacts.push(...testRun.artifacts);
   const pathLabel = formatRunLabel(
@@ -1039,6 +1044,7 @@ export async function runSituationalTests(
     ok: testRun.ok,
     ...(testRun.summary ? { summary: testRun.summary } : {}),
     surefireDir: join(dirname(testRun.logFile), "surefire-reports"),
+    ...(testRun.situationalResultsCsv ? { situationalResultsCsv: testRun.situationalResultsCsv } : {}),
   });
   if (!testRun.ok) {
     throwFatalToSession("FIT tests failed — check the test-driver log for details.");
@@ -1447,6 +1453,13 @@ function printRunResultsTables(results: readonly RunResultSummary[]): void {
     } else {
       console.log(`${result.ok ? "PASS" : "FAIL"} — no test report available`);
     }
+    if (result.situationalResultsCsv) {
+      const rows = readSituationalResultsCsv(result.situationalResultsCsv);
+      if (rows) {
+        console.log("");
+        process.stdout.write(renderSituationalResultsPlainText(rows));
+      }
+    }
   }
 }
 
@@ -1821,6 +1834,13 @@ export async function runFromDefinition(
       process.stdout.write(junitToPlainTextFromDir(result.surefireDir));
     } else {
       console.log(`${result.ok ? "PASS" : "FAIL"} — no test report available`);
+    }
+    if (result.situationalResultsCsv) {
+      const rows = readSituationalResultsCsv(result.situationalResultsCsv);
+      if (rows) {
+        console.log("");
+        process.stdout.write(renderSituationalResultsPlainText(rows));
+      }
     }
     // Fire-and-forget, but surface failures: a void'd rejection here is invisible,
     // and @actions/core's summary writer can fail differently in the compiled binary.

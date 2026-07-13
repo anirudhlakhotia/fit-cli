@@ -15,7 +15,7 @@ import { artifactFromPath, combineArtifacts, type Detail, type RunOutput } from 
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { createLogFile } from "../../../util/non-fit/proc.js";
 import { sanitizePathSeg, type DefinitionRunPath } from "../../../util/non-fit/replay.js";
-import { surefireReportsDir } from "./collect-junit.js";
+import { surefireReportsDir, testResultsCsvPath } from "./collect-junit.js";
 import { createLocalFitExecutionContext, type FitExecutionContext } from "../util/remote-fit-run.js";
 import { selectFitTests, type FitTestSelection } from "../select-fit-tests/select-fit-tests.js";
 
@@ -85,6 +85,12 @@ export interface TestRunResult extends RunOutput {
   logFile: string;
   /** Parsed JUnit counts for this run, when the test-driver produced reports. */
   summary?: FitTestDriverSummary;
+  /**
+   * Local path to the collected situational-results CSV (timestamp, test case, status,
+   * results-viewer link), when `collectSituationalCsv` was requested and the test-driver
+   * produced one.
+   */
+  situationalResultsCsv?: string;
 }
 
 export interface FitTestDriverSummary {
@@ -249,6 +255,9 @@ export async function runTestDriver(
   fitConfigPath?: string,
   extraMavenArgs: readonly string[] = DEFAULT_MAVEN_TEST_ARGS,
   testDriverModule: string = DEFAULT_TEST_DRIVER_MODULE,
+  // Only situational runs produce test_results.csv (RunnerUtils.writeCsvRow); skip the
+  // extra purge/collect round-trip on the much more common functional path.
+  collectSituationalCsv: boolean = false,
 ): Promise<TestRunResult> {
   // The Maven test-driver runs from the performer checkout, so make sure it's
   // present first — cloning it locally if missing (idempotent on a remote box).
@@ -266,6 +275,13 @@ export async function runTestDriver(
   const runArtifactsDir = execution.runArtifactsDir(path);
   const sourceSurefireDir = surefireReportsDir(execution.fitPerformerDir, testDriverModule);
   await execution.removeTree(sourceSurefireDir);
+
+  // Situational runs also write test_results.csv (RunnerUtils.writeCsvRow appends), so
+  // purge it too — otherwise a resumed/reused checkout carries rows from a previous run.
+  const sourceCsvPath = testResultsCsvPath(execution.fitPerformerDir, testDriverModule);
+  if (collectSituationalCsv) {
+    await execution.removeTree(sourceCsvPath);
+  }
 
   const targetFitConfigPath = fitConfigPath
     ? await execution.stageFile(fitConfigPath, join(runArtifactsDir, basename(fitConfigPath)))
@@ -293,8 +309,22 @@ export async function runTestDriver(
   const durationMs = Date.now() - startMs;
 
   await execution.collectFile(targetLogFile, logFile);
+
+  // Best-effort: an old performer checkout without RunnerUtils.writeCsvRow, or a run
+  // that died before finalizeRun(), simply won't have this file — that must not fail
+  // the whole run.
+  let situationalResultsCsv: string | undefined;
+  if (collectSituationalCsv && (await execution.pathExists(sourceCsvPath))) {
+    const localCsvPath = join(dirname(logFile), "test_results.csv");
+    await execution.collectFile(sourceCsvPath, localCsvPath);
+    situationalResultsCsv = localCsvPath;
+  }
+
+  const csvArtifact = situationalResultsCsv
+    ? [artifactFromPath(situationalResultsCsv, "Situational test results (timestamp, test case, status, results-viewer link)")]
+    : [];
   const artifacts = combineArtifacts(
-    [logArtifact],
+    [logArtifact, ...csvArtifact],
     await execution.collectJunitArtifacts(sourceSurefireDir, path),
   );
   const rawSummary = extractFitTestDriverSummaryFromJunitReports(join(dirname(logFile), "surefire-reports"));
@@ -306,6 +336,7 @@ export async function runTestDriver(
     artifacts,
     details: summary ? fitTestDriverSummaryDetails(summary, path) : [],
     ...(summary ? { summary } : {}),
+    ...(situationalResultsCsv ? { situationalResultsCsv } : {}),
   };
 }
 
