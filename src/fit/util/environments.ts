@@ -86,6 +86,8 @@ export interface Defaults {
  */
 export interface TestSets {
   SITUATIONAL_SET_SANITY: string;
+  /** CNG-specific situational sanity: SanityTest can't run on CNG (it hardcodes cbdino). */
+  SITUATIONAL_CNG_SET_SANITY: string;
   SITUATIONAL_SET_LITE: string;
   SITUATIONAL_SET_RELEASE: string;
   FUNCTIONAL_SET_SANITY: string;

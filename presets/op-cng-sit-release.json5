@@ -19,7 +19,7 @@
             {
               type: 'situational',
               tests: {
-                presets: ['all'],
+                presets: ['{{environments.testSets.SITUATIONAL_SET_RELEASE}}'],
               },
               situational: {
                 database: {

@@ -164,6 +164,7 @@ const STUB_DEFAULTS = {
 
 const STUB_TEST_SETS = {
   SITUATIONAL_SET_SANITY: "com.couchbase.situational.tests.SanityTest",
+  SITUATIONAL_CNG_SET_SANITY: "com.couchbase.situational.tests.CngTest#rebalance3To4NodesDuringMixedKv",
   SITUATIONAL_SET_LITE: "standard-qe",
   SITUATIONAL_SET_RELEASE: "standard-qe",
   FUNCTIONAL_SET_SANITY: "com.couchbase.client.kv.SanityTest",

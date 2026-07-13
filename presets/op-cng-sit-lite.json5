@@ -19,7 +19,7 @@
             {
               type: 'situational',
               tests: {
-                presets: ['standard-qe'],
+                presets: ['{{environments.testSets.SITUATIONAL_SET_LITE}}'],
               },
               situational: {
                 database: {

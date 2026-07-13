@@ -93,6 +93,13 @@
     // A quick single test proving the basics work.
     SITUATIONAL_SET_SANITY: "com.couchbase.situational.tests.SanityTest",
 
+    // CNG can't run SITUATIONAL_SET_SANITY: SanityTest hardcodes a cbdino cluster
+    // (SituationalRunner.runCbDino) and is @Tag("cbDino"), which a CNG run's group filter
+    // excludes. This single rebalance method is the CNG-equivalent quick sanity check.
+    // (The CNG lite/release tiers reuse SITUATIONAL_SET_LITE/RELEASE below — 'standard-qe'
+    // auto-resolves to the whole CngTest class on a CNG run.)
+    SITUATIONAL_CNG_SET_SANITY: "com.couchbase.situational.tests.CngTest#rebalance3To4NodesDuringMixedKv",
+
     // The Standard QE Set: the cbdino rebalance test.
     SITUATIONAL_SET_LITE: "standard-qe",
 
