@@ -67,7 +67,7 @@ export async function selectOrCreateCluster(): Promise<ClusterOutcome> {
   // This workflow only ever runs against the local machine (no EC2 provisioning
   // here, unlike the definition-driven functional/situational flows), so there's
   // no remote SSH tunnel case to handle.
-  printClusterUiAccess(cluster);
+  await printClusterUiAccess(cluster);
   return { ready: true, cluster, artifacts: result.artifacts, details: result.details };
 }
 

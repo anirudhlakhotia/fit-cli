@@ -2119,7 +2119,7 @@ export async function runFromDefinition(
             }
           }
           if (clusterState) {
-            printClusterUiAccess(
+            await printClusterUiAccess(
               clusterState.cluster,
               cycleTeardown.kind === "remote" && cycleTeardown.address && cycleTeardown.user && cycleTeardown.identityFile
                 ? { address: cycleTeardown.address, user: cycleTeardown.user, identityFile: cycleTeardown.identityFile }

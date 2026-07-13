@@ -18,10 +18,32 @@
  *   bun src/cluster/cluster-diag/cluster-ui-link.ts couchbase://172.18.0.2
  *   bun src/cluster/cluster-diag/cluster-ui-link.ts couchbase://172.18.0.2 --remote 1.2.3.4 ubuntu ~/.ssh/key.pem
  */
+import { createServer } from "node:net";
 import { isMain, runCli } from "../../util/non-fit/cli.js";
 import type { SelectedCluster } from "../cluster-select/cluster-select.js";
 import { classifyConnectionString } from "../cluster-select/classify-connection-string.js";
 import { managementHostPort } from "./cluster-diag.js";
+
+/**
+ * Ask the OS for a currently-free local TCP port (bind to port 0, read back
+ * what it picked, release it). Used for the tunnel's local port so the
+ * suggested `-L` command doesn't collide with whatever's already bound to the
+ * cluster's own port (very likely for 8091, if the user has other local
+ * clusters or tunnels up). Falls back to a random port in the private range
+ * if the probe itself fails (e.g. a sandboxed environment with no loopback).
+ */
+function freeLocalPort(): Promise<number> {
+  return new Promise((resolve) => {
+    const server = createServer();
+    server.unref();
+    server.once("error", () => resolve(49152 + Math.floor(Math.random() * 16384)));
+    server.listen(0, () => {
+      const address = server.address();
+      const port = typeof address === "object" && address ? address.port : undefined;
+      server.close(() => resolve(port ?? 49152 + Math.floor(Math.random() * 16384)));
+    });
+  });
+}
 
 /** The SSH connection info needed to build a tunnel command to a remote box. */
 export interface RemoteSshInfo {
@@ -46,7 +68,7 @@ export function isDockerClusterUi(cluster: SelectedCluster): boolean {
  * when `remote` is omitted (the cluster runs on this machine), or an SSH
  * tunnel command when it runs on a remote box. No-op for Capella/CNG/EA clusters.
  */
-export function printClusterUiAccess(cluster: SelectedCluster, remote?: RemoteSshInfo): void {
+export async function printClusterUiAccess(cluster: SelectedCluster, remote?: RemoteSshInfo): Promise<void> {
   if (!isDockerClusterUi(cluster)) {
     return;
   }
@@ -60,15 +82,18 @@ export function printClusterUiAccess(cluster: SelectedCluster, remote?: RemoteSs
     console.log(`  Cluster UI: ${scheme}://${host}:${port}${platformNote}`);
     return;
   }
+  // The local port is independent of the cluster's own port — reusing it (e.g.
+  // 8091) is likely to collide with something already bound locally.
+  const localPort = await freeLocalPort();
   console.log(
     `  Cluster UI (on a remote box — open a tunnel first):\n` +
-      `    ssh -i ${remote.identityFile} -L ${port}:${host}:${port} ${remote.user}@${remote.address}\n` +
-      `    then browse to ${scheme}://localhost:${port}`,
+      `    ssh -i ${remote.identityFile} -L ${localPort}:${host}:${port} ${remote.user}@${remote.address}\n` +
+      `    then browse to ${scheme}://localhost:${localPort}`,
   );
 }
 
 if (isMain(import.meta.url)) {
-  runCli(() => {
+  runCli(async () => {
     const [raw, remoteFlag, address, user, identityFile] = process.argv.slice(2);
     if (!raw) {
       console.error(
@@ -90,7 +115,6 @@ if (isMain(import.meta.url)) {
     };
     const remote =
       remoteFlag === "--remote" && address && user && identityFile ? { address, user, identityFile } : undefined;
-    printClusterUiAccess(cluster, remote);
-    return Promise.resolve();
+    await printClusterUiAccess(cluster, remote);
   });
 }
