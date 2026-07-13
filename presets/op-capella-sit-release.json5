@@ -1,0 +1,39 @@
+{
+  preset: {
+    order: 30,
+    tags: ['capella', 'situational'],
+  },
+  version: 1,
+  type: 'fit',
+  instances: [
+    {
+      aws: {},
+      setup: {
+        capellaEnvironment: 'prod',
+      },
+      clusters: [],
+      clusterlessSessions: [
+        {
+          performer: {
+            image: '{{PERFORMER_IMAGE}}',
+            onPortInUse: 'reuse',
+          },
+          runs: [
+            {
+              type: 'situational',
+              tests: {
+                presets: ['all'],
+              },
+              situational: {
+                database: {
+                  mode: 'hosted',
+                  resultsEnvironment: 'prod',
+                },
+              },
+            },
+          ],
+        },
+      ],
+    },
+  ],
+}

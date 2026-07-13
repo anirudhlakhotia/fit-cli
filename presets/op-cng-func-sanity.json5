@@ -1,8 +1,8 @@
+// Currently that runs against ROSA OpenShift, but that could change in future
 {
   preset: {
-    order: 12,
-    description: 'Quick sanity testing for functional tests against a given SDK.',
-    tags: ['functional'],
+    order: 10,
+    tags: ['cng', 'functional'],
   },
   version: 1,
   type: 'fit',
@@ -16,13 +16,14 @@
             {
               performer: {
                 image: '{{PERFORMER_IMAGE}}',
-                onPortInUse: 'reuse',
               },
               runs: [
                 {
                   type: 'functional',
+                  fitConfig: 'fit-config-0',
                   tests: {
                     classes: ['com.couchbase.client.kv.SanityTest'],
+                    addToDefaultExcludedGroups: ['protostellarWillWorkLater'],
                   },
                 },
               ],
@@ -40,16 +41,28 @@
           nodes: [
             {
               count: 3,
-              version: '8.0-stable',
+              version: '{{environments.defaults.cngClusterVersion}}',
               services: ['kv', 'n1ql', 'index', 'fts'],
             },
           ],
-          docker: {
-            'kv-memory': 4096,
-            'fts-memory': 4096,
+          cao: {
+            'operator-version': '{{environments.defaults.caoOperatorVersion}}',
+            'gateway-version': '{{environments.defaults.cngVersion}}',
           },
         },
         onClusterExists: 'useExisting',
+      },
+    },
+  ],
+  fitConfigs: [
+    {
+      id: 'fit-config-0',
+      connection: {
+        scheme: 'couchbase2',
+        tls: { insecure: true },
+      },
+      config: {
+        excludeTests: ['ssh', 'openshift'],
       },
     },
   ],

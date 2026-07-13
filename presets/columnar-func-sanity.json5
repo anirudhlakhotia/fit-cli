@@ -1,12 +1,13 @@
+// Quick sanity for Analytics functional tests against a Capella Analytics (cloud)
+// cluster — runs a connection test and a basic query test rather than the full
+// columnar-test-driver suite. See columnar-func-lite for the full run.
 {
   preset: {
-    order: 31,
-    description: 'Analytics functional tests against a Capella Analytics (cloud) cluster',
-    tags: ['capella-analytics', 'functional'],
+    order: 10,
+    tags: ['columnar', 'functional'],
   },
   version: 1,
   type: 'fit',
-  description: 'Capella Analytics functional tests',
   instances: [
     {
       aws: {},
@@ -20,13 +21,14 @@
             {
               performer: {
                 image: '{{PERFORMER_IMAGE}}',
+                onPortInUse: 'reuse',
               },
               runs: [
                 {
                   type: 'analytics-functional',
                   fitConfig: 'fit-config-0',
                   tests: {
-                    presets: ['all'],
+                    classes: ['com.couchbase.fit.columnar.tests.query.ClusterConnectionTest', 'com.couchbase.fit.columnar.tests.query.QueryTest'],
                   },
                 },
               ],
@@ -41,9 +43,6 @@
       id: 'cluster-0',
       cbdinocluster: {
         config: {
-          // cbdino wire flag: `columnar: true` with `deployer: cloud` builds a
-          // Capella Analytics cluster in the Capella cloud. Capella credentials
-          // come from your cbdinocluster init config (~/.cbdinocluster).
           columnar: true,
           nodes: [
             {
@@ -64,10 +63,9 @@
       id: 'fit-config-0',
       config: {
         clusterAccess: {
-          // The Columnar SDK performer connects directly to the Capella Analytics endpoint.
           performer: {
             connectionString: 'couchbases://${defaultHostname}',
-            tls: {insecure: true},
+            tls: { insecure: true },
           },
         },
       },

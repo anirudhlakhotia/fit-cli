@@ -58,6 +58,8 @@ export interface AwsDefaults {
 export interface Defaults {
   /** Default Couchbase Server version, e.g. "8.0-stable" or a pinned build. */
   clusterVersion: string;
+  /** The previous server release line, for presets spanning two release lines. */
+  previousClusterVersion: string;
   /** Default Couchbase Server version for CNG/OpenShift (cb-rhcc registry). */
   cngClusterVersion: string;
   /** Default self-managed Enterprise Analytics build. */

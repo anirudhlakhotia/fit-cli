@@ -1,13 +1,13 @@
-// Currently that runs against ROSA OpenShift, but that could change in future
+// Currently that runs against ROSA OpenShift, but that could change in future.
+// Only one CNG build/version is currently supported, so this is identical to
+// op-cng-func-lite — kept as a separate preset for naming consistency across clusters.
 {
   preset: {
-    order: 40,
-    description: 'Quick sanity testing for FIT functional for a given SDK, against CNG.',
+    order: 30,
     tags: ['cng', 'functional'],
   },
   version: 1,
   type: 'fit',
-  description: 'CNG functional tests',
   instances: [
     {
       aws: {},
@@ -24,7 +24,7 @@
                   type: 'functional',
                   fitConfig: 'fit-config-0',
                   tests: {
-                    classes: ['com.couchbase.client.kv.SanityTest'],
+                    presets: ['all'],
                     addToDefaultExcludedGroups: ['protostellarWillWorkLater'],
                   },
                 },
@@ -43,13 +43,13 @@
           nodes: [
             {
               count: 3,
-              version: "8.0.2-5503",
+              version: '{{environments.defaults.cngClusterVersion}}',
               services: ['kv', 'n1ql', 'index', 'fts'],
             },
           ],
           cao: {
-            'operator-version': '2.9.2',
-            'gateway-version': '1.1.0-135',
+            'operator-version': '{{environments.defaults.caoOperatorVersion}}',
+            'gateway-version': '{{environments.defaults.cngVersion}}',
           },
         },
         onClusterExists: 'useExisting',

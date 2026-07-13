@@ -29,7 +29,8 @@ import {
   extractResumeSelector,
   parseResumePoint,
 } from "../functional/run-from-definition/resume.js";
-import { applyDotPathOverride, formatKnownPresetsByTag, generatePreset, isPresetType } from "../definition/generate-preset/generate-preset.js";
+import { applyDotPathOverride, formatKnownPresetsByTag, generatePreset } from "../definition/generate-preset/generate-preset.js";
+import { expandPresetGroupNames, formatKnownPresetGroups } from "../definition/generate-preset/preset-groups.js";
 import { analysePerformerImage, performerImageShortName } from "../performers/util/performer-image.js";
 import { formatFitDefinition } from "../shared/definition/generate-definition.js";
 import { combineRunOutputs, type RunOutput } from "../../util/non-fit/artifacts.js";
@@ -51,11 +52,14 @@ Usage:
 
 Subcommands:
   preset      Generate a preset definition file and run it immediately.
-              A comma-separated list of presets runs them one after another.
+              A comma-separated list of presets (or a preset group) runs them one after another.
   definition  Run an existing definition file (path or URL). Both .json5 and .yaml are accepted.
 
 Known presets:
 ${formatKnownPresetsByTag()}
+
+Known preset groups:
+${formatKnownPresetGroups()}
 
 preset options:
   --performer <image>             SDK-specific performer image ref (e.g. java-fit-performer:refs-changes-67-246067-3 or ghcr.io/couchbase/java-fit-performer:refs-changes-67-246067-3). Alias: --performer-image-name.
@@ -177,16 +181,19 @@ export async function runDispatch(argv: string[]): Promise<RunOutput | void> {
     const [typeList, ...extra] = positionals;
     if (!typeList || extra.length > 0) {
       console.error(
-        `Usage: ${runScriptPrefix("run")} preset <preset>[,<preset>...] --performer <image>\nKnown presets:\n${formatKnownPresetsByTag()}`,
+        `Usage: ${runScriptPrefix("run")} preset <preset-or-group>[,<preset-or-group>...] --performer <image>\nKnown presets:\n${formatKnownPresetsByTag()}\nKnown preset groups:\n${formatKnownPresetGroups()}`,
       );
       process.exit(2);
     }
-    const types = typeList.split(",").map((type) => type.trim());
-    for (const type of types) {
-      if (!isPresetType(type)) {
-        console.error(`Unknown preset: ${type}\nKnown presets:\n${formatKnownPresetsByTag()}`);
-        process.exit(2);
-      }
+    let types: string[];
+    try {
+      types = expandPresetGroupNames(typeList);
+    } catch (err) {
+      console.error((err as Error).message);
+      process.exit(2);
+    }
+    if (types.length > 1) {
+      console.log(`"${typeList}" expands to ${types.length} presets, run in sequence: ${types.join(", ")}\n`);
     }
     if (!performerImageName) {
       console.error("--performer is required, e.g. java-fit-performer:main");

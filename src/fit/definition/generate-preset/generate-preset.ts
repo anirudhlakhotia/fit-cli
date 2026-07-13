@@ -21,15 +21,19 @@ import { describeDefinition } from "../../shared/definition/generate-desc.js";
 import type { FitDefinition } from "../../shared/definition/types.js";
 import { printDefinitionRunGuidance } from "../../shared/definition/run-guidance.js";
 import { pushGist, type GistVisibility } from "../../shared/definition/push-gist.js";
+import { loadEnvironments } from "../../util/environments.js";
 
 /** `presets/tags.json5` holds tag metadata, not a preset — never treat it as one. */
 const TAGS_FILENAME = "tags.json5";
+/** `presets/groups.json5` holds preset-group definitions (see preset-groups.ts), not a preset. */
+const GROUPS_FILENAME = "groups.json5";
+const NON_PRESET_FILENAMES = new Set([TAGS_FILENAME, GROUPS_FILENAME]);
 
 /**
  * Returns a map of { "<name>": "<contents>" } for every preset in `presets/`.
  *
  * Dev mode (bun run): reads `presets/` from disk — any .json5 file (other than
- * `tags.json5`) is picked up automatically.
+ * `tags.json5` / `groups.json5`) is picked up automatically.
  *
  * Compiled binary (/$bunfs/): `bun build --compile` embeds files referenced by static import()
  * calls at bundle time; import.meta.glob is not supported in compiled binaries. Add one line
@@ -40,36 +44,40 @@ async function loadPresetMap(): Promise<Record<string, string>> {
     const presetsDir = join(dirname(fileURLToPath(import.meta.url)), "../../../../presets");
     return Object.fromEntries(
       readdirSync(presetsDir)
-        .filter(f => f.endsWith(".json5") && f !== TAGS_FILENAME)
+        .filter(f => f.endsWith(".json5") && !NON_PRESET_FILENAMES.has(f))
         .map(f => [f.replace(/\.json5$/, ""), readFileSync(join(presetsDir, f), "utf8")]),
     );
   }
   // Path AND import options must be literals — bun build --compile only embeds modules it can
   // see as static references; passing either through a variable hides them from the bundler.
   return {
-    "capella-analytics-qe-set": ((await import("../../../../presets/capella-analytics-qe-set.json5", { with: { type: "text" } })) as { default: string }).default,
-    "capella-analytics-functional": ((await import("../../../../presets/capella-analytics-functional.json5", { with: { type: "text" } })) as { default: string }).default,
-    "capella-analytics-functional-quick-sanity": ((await import("../../../../presets/capella-analytics-functional-quick-sanity.json5", { with: { type: "text" } })) as { default: string }).default,
-    "capella-functional":          ((await import("../../../../presets/capella-functional.json5",          { with: { type: "text" } })) as { default: string }).default,
-    "capella-quick-sanity":        ((await import("../../../../presets/capella-quick-sanity.json5",        { with: { type: "text" } })) as { default: string }).default,
-    "cng-functional":              ((await import("../../../../presets/cng-functional.json5",              { with: { type: "text" } })) as { default: string }).default,
-    "cng-functional-quick-sanity": ((await import("../../../../presets/cng-functional-quick-sanity.json5", { with: { type: "text" } })) as { default: string }).default,
-    "cng-situational":             ((await import("../../../../presets/cng-situational.json5",             { with: { type: "text" } })) as { default: string }).default,
-    "cng-situational-quick-sanity": ((await import("../../../../presets/cng-situational-quick-sanity.json5",             { with: { type: "text" } })) as { default: string }).default,
-    "cng-everything":              ((await import("../../../../presets/cng-everything.json5",              { with: { type: "text" } })) as { default: string }).default,
-    "enterprise-analytics-functional": ((await import("../../../../presets/enterprise-analytics-functional.json5", { with: { type: "text" } })) as { default: string }).default,
-    "enterprise-analytics-functional-quick-sanity": ((await import("../../../../presets/enterprise-analytics-functional-quick-sanity.json5", { with: { type: "text" } })) as { default: string }).default,
-    "enterprise-analytics-qe-set":     ((await import("../../../../presets/enterprise-analytics-qe-set.json5",     { with: { type: "text" } })) as { default: string }).default,
-    "everything-quick-sanity":     ((await import("../../../../presets/everything-quick-sanity.json5",     { with: { type: "text" } })) as { default: string }).default,
-    "functional":                  ((await import("../../../../presets/functional.json5",                  { with: { type: "text" } })) as { default: string }).default,
-    "functional-quick-sanity":     ((await import("../../../../presets/functional-quick-sanity.json5",     { with: { type: "text" } })) as { default: string }).default,
-    "qe-set":                      ((await import("../../../../presets/qe-set.json5",                     { with: { type: "text" } })) as { default: string }).default,
-    "qe-set-release":              ((await import("../../../../presets/qe-set-release.json5",             { with: { type: "text" } })) as { default: string }).default,
-    "situational-quick-sanity":    ((await import("../../../../presets/situational-quick-sanity.json5",   { with: { type: "text" } })) as { default: string }).default,
-    "situational-everything":    ((await import("../../../../presets/situational-everything.json5",   { with: { type: "text" } })) as { default: string }).default,
-    "private-endpoint-quick-sanity":    ((await import("../../../../presets/private-endpoint-quick-sanity.json5",   { with: { type: "text" } })) as { default: string }).default,
-    "private-endpoint-everything":    ((await import("../../../../presets/private-endpoint-everything.json5",   { with: { type: "text" } })) as { default: string }).default,
-    "private-endpoint-situational":    ((await import("../../../../presets/private-endpoint-situational.json5",   { with: { type: "text" } })) as { default: string }).default,
+    "op-onprem-func-sanity":       ((await import("../../../../presets/op-onprem-func-sanity.json5",       { with: { type: "text" } })) as { default: string }).default,
+    "op-onprem-func-lite":         ((await import("../../../../presets/op-onprem-func-lite.json5",         { with: { type: "text" } })) as { default: string }).default,
+    "op-onprem-func-release":      ((await import("../../../../presets/op-onprem-func-release.json5",      { with: { type: "text" } })) as { default: string }).default,
+    "op-cng-func-sanity":          ((await import("../../../../presets/op-cng-func-sanity.json5",          { with: { type: "text" } })) as { default: string }).default,
+    "op-cng-func-lite":            ((await import("../../../../presets/op-cng-func-lite.json5",            { with: { type: "text" } })) as { default: string }).default,
+    "op-cng-func-release":         ((await import("../../../../presets/op-cng-func-release.json5",         { with: { type: "text" } })) as { default: string }).default,
+    "op-cng-sit-sanity":           ((await import("../../../../presets/op-cng-sit-sanity.json5",           { with: { type: "text" } })) as { default: string }).default,
+    "op-cng-sit-lite":             ((await import("../../../../presets/op-cng-sit-lite.json5",             { with: { type: "text" } })) as { default: string }).default,
+    "op-cng-sit-release":          ((await import("../../../../presets/op-cng-sit-release.json5",          { with: { type: "text" } })) as { default: string }).default,
+    "op-capella-func-sanity":      ((await import("../../../../presets/op-capella-func-sanity.json5",      { with: { type: "text" } })) as { default: string }).default,
+    "op-capella-func-lite":        ((await import("../../../../presets/op-capella-func-lite.json5",        { with: { type: "text" } })) as { default: string }).default,
+    "op-capella-func-release":     ((await import("../../../../presets/op-capella-func-release.json5",     { with: { type: "text" } })) as { default: string }).default,
+    "op-capella-sit-sanity":       ((await import("../../../../presets/op-capella-sit-sanity.json5",       { with: { type: "text" } })) as { default: string }).default,
+    "op-capella-sit-lite":         ((await import("../../../../presets/op-capella-sit-lite.json5",         { with: { type: "text" } })) as { default: string }).default,
+    "op-capella-sit-release":      ((await import("../../../../presets/op-capella-sit-release.json5",      { with: { type: "text" } })) as { default: string }).default,
+    "op-capella-pe-func-sanity":   ((await import("../../../../presets/op-capella-pe-func-sanity.json5",   { with: { type: "text" } })) as { default: string }).default,
+    "op-capella-pe-func-lite":     ((await import("../../../../presets/op-capella-pe-func-lite.json5",     { with: { type: "text" } })) as { default: string }).default,
+    "op-capella-pe-func-release":  ((await import("../../../../presets/op-capella-pe-func-release.json5",  { with: { type: "text" } })) as { default: string }).default,
+    "op-capella-pe-sit-sanity":    ((await import("../../../../presets/op-capella-pe-sit-sanity.json5",    { with: { type: "text" } })) as { default: string }).default,
+    "op-capella-pe-sit-lite":      ((await import("../../../../presets/op-capella-pe-sit-lite.json5",      { with: { type: "text" } })) as { default: string }).default,
+    "op-capella-pe-sit-release":   ((await import("../../../../presets/op-capella-pe-sit-release.json5",   { with: { type: "text" } })) as { default: string }).default,
+    "enterprise-analytics-func-sanity":  ((await import("../../../../presets/enterprise-analytics-func-sanity.json5",  { with: { type: "text" } })) as { default: string }).default,
+    "enterprise-analytics-func-lite":    ((await import("../../../../presets/enterprise-analytics-func-lite.json5",    { with: { type: "text" } })) as { default: string }).default,
+    "enterprise-analytics-func-release": ((await import("../../../../presets/enterprise-analytics-func-release.json5", { with: { type: "text" } })) as { default: string }).default,
+    "columnar-func-sanity":              ((await import("../../../../presets/columnar-func-sanity.json5",              { with: { type: "text" } })) as { default: string }).default,
+    "columnar-func-lite":                ((await import("../../../../presets/columnar-func-lite.json5",                { with: { type: "text" } })) as { default: string }).default,
+    "columnar-func-release":             ((await import("../../../../presets/columnar-func-release.json5",             { with: { type: "text" } })) as { default: string }).default,
   };
 }
 
@@ -78,12 +86,17 @@ const PRESET_MAP = await loadPresetMap();
 interface TagMeta {
   order: number;
   description: string;
+  /** When true, this tag's heading is suppressed from `list-presets` (e.g. `functional`/
+   * `situational` — every entry already carries a more specific axis tag too). Items with
+   * only hidden tags still show under an `(untagged)` fallback; error-message listings
+   * (`formatKnownPresetsByTag`/`formatKnownPresetGroups`) ignore this and show everything. */
+  hiddenFromList?: boolean;
 }
 
 /**
- * Returns { "<tag>": { order, description } } from `presets/tags.json5` — metadata for
- * the tags referenced by presets' `preset.tags`. A tag used by a preset but missing here
- * simply displays without a description and sorts after every tag that is listed.
+ * Returns { "<tag>": { order, description, hiddenFromList } } from `presets/tags.json5` —
+ * metadata for the tags referenced by presets' `preset.tags`. A tag used by a preset but
+ * missing here simply displays without a description and sorts after every tag that is listed.
  */
 async function loadTagMeta(): Promise<Record<string, TagMeta>> {
   const raw = !import.meta.url.includes("/$bunfs/")
@@ -107,13 +120,18 @@ function tagOrder(tag: string): number {
   return TAG_META[tag]?.order ?? UNKNOWN_TAG_ORDER;
 }
 
-export const PRESET_TYPES: string[] = Object.entries(PRESET_MAP)
-  .map(([name, content]) => {
-    const { order } = extractPresetMeta(content);
-    return { name, order };
-  })
-  .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name))
-  .map(({ name }) => name);
+function isTagHiddenFromList(tag: string): boolean {
+  return TAG_META[tag]?.hiddenFromList ?? false;
+}
+
+// `preset.order` (and a group's `order` in groups.json5) is currently unused for
+// sorting — display order is alphabetical everywhere now, since with the
+// axis/type/tier naming convention alphabetical already reads cleanly (unlike
+// the old hand-picked preset names, where order carried real meaning). The field
+// stays in the schema/files rather than being ripped out, in case fine-grained
+// ordering is worth reintroducing later; `tags.json5`'s `order` is a *different*
+// field and is still very much live — it's the only thing controlling heading order.
+export const PRESET_TYPES: string[] = Object.keys(PRESET_MAP).sort();
 
 export type PresetType = string;
 
@@ -123,7 +141,8 @@ export function isPresetType(value: string): value is PresetType {
 
 interface PresetMeta {
   order: number;
-  description: string;
+  /** Hand-authored description, if the preset template has one — see `autoDescribeName` for the fallback. */
+  description?: string;
   tags: string[];
 }
 
@@ -136,12 +155,93 @@ function extractPresetMeta(raw: string): PresetMeta {
     };
     return {
       order: parsed.preset?.order ?? 50,
-      description: parsed.preset?.description ?? "(no description)",
+      description: parsed.preset?.description,
       tags: parsed.preset?.tags ?? [],
     };
   } catch {
-    return { order: 50, description: "(no description)", tags: [] };
+    return { order: 50, tags: [] };
   }
+}
+
+const TIER_PHRASES: Record<string, string> = {
+  sanity: "quick sanity testing",
+  lite: "lite-tier testing",
+  release: "release sign-off testing",
+};
+const AXIS_PHRASES: Record<string, string> = {
+  "op-onprem": "an on-prem cluster",
+  "op-cng": "a CNG cluster",
+  "op-capella": "a real Capella cluster",
+  "enterprise-analytics": "a self-managed Enterprise Analytics cluster",
+  columnar: "a Capella Analytics (cloud) cluster",
+};
+
+/** Capitalizes the first letter — used to make a mid-sentence phrase (like an SDK-family
+ * name) read correctly when it opens the sentence instead. */
+function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/**
+ * Which performer image family (and so which `--performer` a preset/group needs)
+ * each axis token belongs to. `op-onprem`/`op-cng`/`op-capella` all use the same
+ * operational SDK performer (PrivateLink doesn't change that); `enterprise-analytics`
+ * and `columnar` each need their own Analytics-driver performer image — see
+ * `presetUsesAnalyticsDriver`. This is why the `<family>-multi-*` groups (below) are
+ * scoped per family rather than one universal group: mixing families would mean
+ * a single `--performer` value is wrong for some of the group's members.
+ *
+ * The bare `op` entry is for the `op-multi-*` cross-cluster groups specifically —
+ * their name has no cluster token at all (e.g. `op-multi-func-sanity`), so once
+ * `multi` is popped in `autoDescribeName`, the remaining axis is just `op`.
+ */
+const SDK_FAMILY_PHRASES: Record<string, string> = {
+  op: "operational SDK",
+  "op-onprem": "operational SDK",
+  "op-cng": "operational SDK",
+  "op-capella": "operational SDK",
+  "enterprise-analytics": "Enterprise Analytics SDK",
+  columnar: "Columnar SDK",
+};
+
+/**
+ * Generate a human-readable description from a preset/group name, for entries that
+ * don't hand-author a `description` — the `<axis>[-pe]-<func|sit>-<tier>` naming
+ * convention, and its `<family>-multi-<func|sit>-<tier>` / `<family>-multi-<tier>`
+ * cross-axis variant (see presets/groups.json5's header comment), are regular
+ * enough to describe automatically. Whether it reads as functional, situational,
+ * or both comes from `tags` (the entry's real composition), not from parsing the
+ * name's func/sit token — that matters for groups, where the name alone can't
+ * tell you what's inside.
+ */
+export function autoDescribeName(name: string, tags: string[]): string {
+  const tokens = name.split("-");
+  const tier = tokens.pop();
+  if (!tier || !(tier in TIER_PHRASES)) return name;
+  // Strip the func/sit token (closest to the tier) before the `pe` sub-axis token
+  // (closer to the axis) — matches the `<axis>-pe-<func|sit>-<tier>` naming order.
+  if (tokens.at(-1) === "func" || tokens.at(-1) === "sit") tokens.pop();
+  let isPe = false;
+  if (tokens.at(-1) === "pe") {
+    isPe = true;
+    tokens.pop();
+  }
+  let crossAxis = false;
+  if (tokens.at(-1) === "multi") {
+    crossAxis = true;
+    tokens.pop();
+  }
+  const axis = tokens.join("-");
+  const hasFunc = tags.includes("functional");
+  const hasSit = tags.includes("situational");
+  const typeWord = hasFunc && hasSit ? "functional and situational" : hasFunc ? "functional" : hasSit ? "situational" : "general";
+  const peSuffix = isPe ? " via Private Endpoint (PrivateLink)" : "";
+  const tierPhrase = TIER_PHRASES[tier];
+  const familyPhrase = capitalize(SDK_FAMILY_PHRASES[axis] ?? axis);
+  if (crossAxis) {
+    return `${familyPhrase} ${typeWord} testing across every axis (${tierPhrase}).`;
+  }
+  return `${familyPhrase} ${typeWord} testing against ${AXIS_PHRASES[axis] ?? axis}${peSuffix} (${tierPhrase}).`;
 }
 
 /**
@@ -164,8 +264,14 @@ export function presetUsesAnalyticsDriver(type: PresetType): boolean {
   }
 }
 
-function sortedPresetItems<T extends { order: number; type: PresetType }>(items: T[]): T[] {
-  return [...items].sort((a, b) => a.order - b.order || a.type.localeCompare(b.type));
+/**
+ * Alphabetical by name (see the comment on `PRESET_TYPES` for why `order` isn't
+ * used here) — but plain presets always sort before groups, so a tag heading reads
+ * as "here are the presets, here are the groups that combine them" rather than
+ * interleaving the two by name.
+ */
+function sortedPresetItems<T extends { type: PresetType; isGroup?: boolean }>(items: T[]): T[] {
+  return [...items].sort((a, b) => Number(a.isGroup ?? false) - Number(b.isGroup ?? false) || a.type.localeCompare(b.type));
 }
 
 const UNTAGGED = "(untagged)";
@@ -175,13 +281,19 @@ const UNTAGGED = "(untagged)";
  * private-endpoint preset that's also functional) appears under each of its
  * tags' groups, since tags here represent cross-cutting concerns rather than
  * a strict single category.
+ *
+ * `showHidden` (default false) controls whether tags marked `hiddenFromList` in
+ * presets/tags.json5 get their own heading — off for the curated `list-presets`
+ * view, on for "unknown preset" error text, which should show everything.
  */
-export function groupPresetsByTag<T extends { order: number; type: PresetType; tags: string[] }>(
+export function groupPresetsByTag<T extends { type: PresetType; tags: string[]; isGroup?: boolean }>(
   items: T[],
+  { showHidden = false }: { showHidden?: boolean } = {},
 ): { tag: string; items: T[] }[] {
   const byTag = new Map<string, T[]>();
   for (const item of items) {
-    for (const tag of item.tags.length > 0 ? item.tags : [UNTAGGED]) {
+    const tags = showHidden ? item.tags : item.tags.filter((t) => !isTagHiddenFromList(t));
+    for (const tag of tags.length > 0 ? tags : [UNTAGGED]) {
       const list = byTag.get(tag) ?? [];
       list.push(item);
       byTag.set(tag, list);
@@ -209,7 +321,7 @@ interface PresetDescription {
 function allPresetDescriptions(): PresetDescription[] {
   const items = PRESET_TYPES.map((type) => {
     const { order, description, tags } = extractPresetMeta(loadPresetTemplate(type));
-    return { type, description, tags, order };
+    return { type, description: description ?? autoDescribeName(type, tags), tags, order };
   });
   return sortedPresetItems(items);
 }
@@ -219,30 +331,12 @@ export function presetDescriptions(): PresetDescription[] {
   return allPresetDescriptions();
 }
 
-/** Print a table of available preset types and their descriptions, grouped by tag. */
-export function listPresets(): void {
-  const groups = groupPresetsByTag(allPresetDescriptions());
-  const col = groups.reduce(
-    (max, { items }) => items.reduce((m, { type }) => Math.max(m, type.length), max),
-    0,
-  );
-  console.log(`\nAvailable presets:\n`);
-  for (const { tag, items } of groups) {
-    const tagDescription = describeTag(tag);
-    console.log(tagDescription ? `${tag}: ${tagDescription}` : `${tag}:`);
-    for (const { type, description } of items) {
-      console.log(`  ${type.padEnd(col)}  ${description}`);
-    }
-    console.log();
-  }
-}
-
 /**
  * Bare preset names grouped by tag (no descriptions), for embedding in
- * "unknown preset" error and usage messages. Mirrors `listPresets()`'s grouping.
+ * "unknown preset" error and usage messages. Mirrors `listPresetsAndGroups()`'s grouping.
  */
 export function formatKnownPresetsByTag(): string {
-  const groups = groupPresetsByTag(allPresetDescriptions());
+  const groups = groupPresetsByTag(allPresetDescriptions(), { showHidden: true });
   return groups.map(({ tag, items }) => `  ${tag}: ${items.map(({ type }) => type).join(", ")}`).join("\n");
 }
 
@@ -267,11 +361,33 @@ function loadPresetTemplate(type: string): string {
 }
 
 /**
- * Fill the `{{PERFORMER_IMAGE}}` placeholder with the performer image and return
- * a parsed FitDefinition. `image` is the short-form `<sdk>-fit-performer:<tag>`.
+ * Resolve every `{{environments.<dot.path>}}` placeholder in a preset template
+ * against `environments.json5`, e.g. `{{environments.defaults.clusterVersion}}`
+ * → `8.0-stable`. This is the single source of truth for cluster/tool versions —
+ * bumping a version in `environments.json5` updates every preset that references it.
+ */
+function resolveEnvironmentsPlaceholders(template: string): string {
+  return template.replace(/\{\{environments\.([\w.]+)\}\}/g, (match, dotPath: string) => {
+    let cursor: unknown = loadEnvironments();
+    for (const key of dotPath.split(".")) {
+      if (cursor === null || typeof cursor !== "object" || !(key in cursor)) {
+        throw new Error(`Unknown environments.json5 path in preset placeholder: ${match}`);
+      }
+      cursor = (cursor as Record<string, unknown>)[key];
+    }
+    if (typeof cursor !== "string" && typeof cursor !== "number") {
+      throw new Error(`Preset placeholder ${match} must resolve to a string or number, got: ${JSON.stringify(cursor)}`);
+    }
+    return String(cursor);
+  });
+}
+
+/**
+ * Fill the `{{PERFORMER_IMAGE}}` and `{{environments.*}}` placeholders and
+ * return a parsed FitDefinition. `image` is the short-form `<sdk>-fit-performer:<tag>`.
  */
 function applyPresetParams(template: string, image: string): FitDefinition {
-  const filled = template.replace(/\{\{PERFORMER_IMAGE\}\}/g, image);
+  const filled = resolveEnvironmentsPlaceholders(template.replace(/\{\{PERFORMER_IMAGE\}\}/g, image));
   const definition = JSON5.parse(filled) as FitDefinition & { preset?: unknown };
   delete definition.preset;
   // `preset.description` above is menu-only and already stripped; this is the separate,

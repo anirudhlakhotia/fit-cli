@@ -1,16 +1,28 @@
-// Metadata for the tags referenced by `preset.tags` in the other presets/*.json5 files.
-// Used to group, order, and describe presets in `fit definition list-presets` and the
-// preset wizard. `order` controls display order of the tag's group (lower first, ties
-// broken alphabetically); a preset tag missing here just displays without a
-// description and sorts after every tag that is listed here.
+// Metadata for the tags referenced by `preset.tags` (presets) and `group.tags` (preset
+// groups, see groups.json5) in the other presets/*.json5 files. Used to group, order,
+// and describe entries in `fit definition list-presets`. `order` controls display order
+// of the tag's group (lower first, ties broken alphabetically); a tag missing here just
+// displays without a description and sorts after every tag that is listed here.
 {
-  functional: { order: 10, description: 'Runs FIT functional tests — CRUD, queries, transactions, and other core SDK operations — against a live cluster.' },
-  situational: { order: 20, description: 'Runs FIT situational tests, which exercise SDK behaviour under specific operational conditions (e.g. node failures, topology changes).' },
-  'qe-set': { order: 30, description: 'A broader, longer-running test suite intended for pre-release sign-off rather than everyday iteration.' },
-  release: { order: 40, description: 'The full release sign-off run, covering multiple testing axes (on-prem functional, CNG, situational) in one preset.' },
-  'private-endpoint': { order: 50, description: 'Tests Capella Private Endpoint (PrivateLink) connectivity.' },
-  cng: { order: 60, description: 'Runs against Cloud Native Gateway (CNG) / Protostellar instead of the operational SDK path.' },
-  capella: { order: 70, description: 'Runs against a real Capella cluster, rather than an on-prem/self-managed one.' },
-  'enterprise-analytics': { order: 80, description: 'Analytics testing against a self-managed Enterprise Analytics cluster.' },
-  'capella-analytics': { order: 90, description: 'Analytics testing against a Capella Analytics (cloud) cluster.' },
+  // Only the op family's cross-cluster "-multi-*" groups (op-multi-func-*, op-multi-sit-*,
+  // op-multi-*) carry this tag — they span every cluster (onprem/cng/capella/capella-pe)
+  // within the operational SDK. A *specific* cluster's own presets/groups (including the
+  // on-prem ones) live under their own cluster tag below (`onprem`/`cng`/`capella`/`pe`),
+  // never here — keeping "operational" reserved for "spans more than one cluster" avoids
+  // the ambiguity that motivated the `op-onprem-*` naming (see groups.json5's header).
+  operational: { order: 5, description: 'Cross-cluster preset groups spanning every cluster the operational SDK supports (on-prem, CNG, Capella, Capella + PrivateLink).' },
+  // functional/situational describe every preset regardless of cluster, so their own heading
+  // would just be "everything" — hidden from list-presets; each preset's more specific cluster
+  // tag (onprem/cng/pe/capella/enterprise-analytics/columnar) carries the heading.
+  functional: { order: 10, description: 'Runs FIT functional tests — CRUD, queries, transactions, and other core SDK operations — against a live cluster.', hiddenFromList: true },
+  situational: { order: 20, description: 'Runs FIT situational tests, which exercise SDK behaviour under specific operational conditions (e.g. node failures, topology changes). Always targets a real, hosted Capella cluster for the test-results/coordination database, regardless of which cluster is under test.', hiddenFromList: true },
+  onprem: { order: 25, description: 'On-prem, self-managed testing using the operational SDK — the default cluster when no cloud/CNG feature is under test.' },
+  cng: { order: 30, description: 'Runs against Cloud Native Gateway (CNG) / Protostellar instead of the operational SDK path.' },
+  capella: { order: 40, description: 'Runs against a real Capella cluster, rather than an on-prem/self-managed one.' },
+  pe: { order: 50, description: 'Tests Capella Private Endpoint (PrivateLink) connectivity.' },
+  'enterprise-analytics': { order: 60, description: 'Analytics testing against a self-managed Enterprise Analytics cluster, using the Enterprise Analytics SDK.' },
+  columnar: { order: 70, description: 'Analytics testing against a Capella Analytics (cloud) cluster, using the Columnar SDK.' },
+  // Legacy aliases kept for back-compat, each carrying its own removal date — see
+  // groups.json5's `removalDate` field.
+  deprecated: { order: 200, description: 'Deprecated aliases kept for back-compat. Each names its replacement and a removal date; migrate off these before then.' },
 }

@@ -1,8 +1,7 @@
 {
   preset: {
-    order: 10,
-    description: 'Run all FIT functional tests for a given SDK.',
-    tags: ['functional'],
+    order: 30,
+    tags: ['onprem', 'functional'],
   },
   version: 1,
   type: 'fit',
@@ -11,7 +10,8 @@
       aws: {},
       clusters: [
         {
-          clusterConfig: '8.0-stable',
+          // Functional on-prem testing, latest release line.
+          clusterConfig: 'latest',
           sessions: [
             {
               performer: {
@@ -29,7 +29,8 @@
           ],
         },
         {
-          clusterConfig: '7.6-stable',
+          // Functional on-prem testing, previous release line.
+          clusterConfig: 'previous',
           sessions: [
             {
               performer: {
@@ -45,19 +46,19 @@
               ],
             },
           ],
-        }
+        },
       ],
     },
   ],
   clusterConfigs: [
     {
-      id: '8.0-stable',
+      id: 'latest',
       cbdinocluster: {
         config: {
           nodes: [
             {
               count: 3,
-              version: '8.0-stable',
+              version: '{{environments.defaults.clusterVersion}}',
               services: ['kv', 'n1ql', 'index', 'fts'],
             },
           ],
@@ -70,13 +71,13 @@
       },
     },
     {
-      id: '7.6-stable',
+      id: 'previous',
       cbdinocluster: {
         config: {
           nodes: [
             {
               count: 3,
-              version: '7.6-stable',
+              version: '{{environments.defaults.previousClusterVersion}}',
               services: ['kv', 'n1ql', 'index', 'fts'],
             },
           ],
@@ -87,6 +88,6 @@
         },
         onClusterExists: 'useExisting',
       },
-    }
+    },
   ],
 }

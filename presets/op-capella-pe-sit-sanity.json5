@@ -1,16 +1,14 @@
 {
   preset: {
-    order: 12,
-    description: 'Run all situational tests for a given SDK.',
-    tags: ['situational'],
+    order: 10,
+    tags: ['pe', 'situational'],
   },
   version: 1,
   type: 'fit',
   instances: [
     {
-      aws: {},
-      setup: {
-        capellaEnvironment: 'prod',
+      aws: {
+        privateEndpoint: {},
       },
       clusters: [],
       clusterlessSessions: [
@@ -23,13 +21,16 @@
             {
               type: 'situational',
               tests: {
-                presets: ['all'],
+                classes: ['com.couchbase.situational.tests.SanityTest'],
+                addToDefaultExcludedGroups: ['protostellarWillWorkLater'],
               },
               situational: {
                 database: {
                   mode: 'hosted',
-                  resultsEnvironment: 'prod',
+                  // 'dev' as quick sanity testing
+                  resultsEnvironment: 'dev',
                 },
+                privateEndpoint: {},
               },
             },
           ],

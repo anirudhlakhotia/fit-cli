@@ -1,16 +1,19 @@
-// Note this currently just runs functional tests, but the idea is to be an abstraction that allows adding situational and other testing later.
+// Only one Capella Analytics topology is currently supported, so this is identical
+// to columnar-func-lite — kept separate for naming consistency across
+// axes, and as the natural place to add situational coverage later.
 {
   preset: {
     order: 30,
-    description: 'Analytics testing against a self-managed Enterprise Analytics cluster',
-    tags: ['enterprise-analytics', 'qe-set'],
+    tags: ['columnar', 'functional'],
   },
   version: 1,
   type: 'fit',
-  description: 'Enterprise Analytics QE set',
   instances: [
     {
       aws: {},
+      setup: {
+        capellaEnvironment: 'prod',
+      },
       clusters: [
         {
           clusterConfig: 'cluster-0',
@@ -42,13 +45,12 @@
           columnar: true,
           nodes: [
             {
-              count: 3,
-              version: '2.2.0-1166',
+              count: 4,
             },
           ],
-          docker: {
-            'passive-load-balancer': true,
-            'use-dino-certs': true,
+          deployer: 'cloud',
+          cloud: {
+            'cloud-provider': 'aws',
           },
         },
         onClusterExists: 'useExisting',
@@ -60,14 +62,9 @@
       id: 'fit-config-0',
       config: {
         clusterAccess: {
-          clusterParams: {
-            loadBalancedCluster: {
-              ports: [8095, 18095],
-            },
-          },
           performer: {
-            connectionString: 'http://${defaultHostname}:8095',
-            tls: null,
+            connectionString: 'couchbases://${defaultHostname}',
+            tls: { insecure: true },
           },
         },
       },

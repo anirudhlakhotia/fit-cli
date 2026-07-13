@@ -1,12 +1,14 @@
+// Quick sanity for Analytics functional tests against a self-managed Enterprise
+// Analytics cluster — runs a single connection test (ClusterConnectionTest) rather
+// than the whole columnar-test-driver suite. See enterprise-analytics-func-lite
+// for the full run and notes on the cluster, SDK choice and TLS connection.
 {
   preset: {
-    order: 30,
-    description: 'Analytics functional tests against a self-managed Enterprise Analytics cluster',
+    order: 10,
     tags: ['enterprise-analytics', 'functional'],
   },
   version: 1,
   type: 'fit',
-  description: 'Enterprise Analytics functional tests',
   instances: [
     {
       aws: {},
@@ -17,13 +19,14 @@
             {
               performer: {
                 image: '{{PERFORMER_IMAGE}}',
+                onPortInUse: 'reuse',
               },
               runs: [
                 {
                   type: 'analytics-functional',
                   fitConfig: 'fit-config-0',
                   tests: {
-                    presets: ['all'],
+                    classes: ['com.couchbase.fit.columnar.tests.query.ClusterConnectionTest', 'com.couchbase.fit.columnar.tests.query.QueryTest'],
                   },
                 },
               ],
@@ -38,13 +41,11 @@
       id: 'cluster-0',
       cbdinocluster: {
         config: {
-          // cbdino wire flag: `columnar: true` builds a self-managed Enterprise
-          // Analytics cluster; the docker deployer fronts it with an nginx load balancer.
           columnar: true,
           nodes: [
             {
               count: 3,
-              version: '2.2.0-1166',
+              version: '{{environments.defaults.enterpriseAnalyticsVersion}}',
             },
           ],
           docker: {
@@ -61,8 +62,6 @@
       id: 'fit-config-0',
       config: {
         clusterAccess: {
-          // The driver connects classically for admin (filled in by fit-cli); the
-          // SDK/performer reaches Analytics through the load balancer's query port.
           clusterParams: {
             loadBalancedCluster: {
               ports: [8095, 18095],

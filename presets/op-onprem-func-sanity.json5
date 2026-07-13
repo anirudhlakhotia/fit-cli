@@ -1,8 +1,7 @@
 {
   preset: {
-    order: 35,
-    description: 'Quick sanity testing against a real Capella cluster.',
-    tags: ['capella'],
+    order: 10,
+    tags: ['onprem', 'functional'],
   },
   version: 1,
   type: 'fit',
@@ -40,18 +39,16 @@
           nodes: [
             {
               count: 3,
-              version: '7.6',
+              version: '{{environments.defaults.clusterVersion}}',
+              services: ['kv', 'n1ql', 'index', 'fts'],
             },
           ],
-          cloud: {
-            'cloud-provider': 'aws',
+          docker: {
+            'kv-memory': 4096,
+            'fts-memory': 4096,
           },
         },
         onClusterExists: 'useExisting',
-        capella: {
-          cloudProvider: 'aws',
-          environment: 'prod',
-        },
       },
     },
   ],
