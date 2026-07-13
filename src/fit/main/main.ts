@@ -26,6 +26,7 @@ import { runCloudInstancesMain } from "../../cloud/cloud-instances/cloud-instanc
 import { runSecretsMain } from "../../cloud/util/aws/secrets-cli.js";
 import { printVersion } from "../version/version.js";
 import { runUpgradeMain } from "../upgrade/upgrade.js";
+import { runMaintenanceMain } from "../maintenance/maintenance.js";
 import { main as replayMain } from "../../util/non-fit/replay-entry.js";
 import { echoCommand, formatCommandLine, isFitBinary, runScriptPrefix } from "../../util/non-fit/fit-cli-log.js";
 import { printLogo } from "./logo.js";
@@ -212,6 +213,7 @@ const COMMANDS: Record<string, { fn: () => void; description: string; hidden?: b
   "config":          { fn: runConfigMain,           description: "Manage fit-cli configuration" },
   "cloud-instances": { fn: runCloudInstancesMain,  description: "Manage cloud (EC2) instances" },
   "secrets":         { fn: runSecretsMain,          description: "Manage AWS secrets", hidden: true },
+  "maintenance":     { fn: runMaintenanceMain,       description: "Repo & release maintenance (branch channels)", hidden: true },
   "archive":         { fn: runArchiveMain,          description: "Archive run artifacts" },
   "replay":          { fn: runReplayMain,           description: "Replay a recorded session" },
   "version":         { fn: printVersion,            description: "Print the fit-cli version" },
