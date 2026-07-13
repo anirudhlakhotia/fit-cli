@@ -15,7 +15,7 @@ import { resolveOutputFormat } from "../util/config.js";
 import { runFromDefinition } from "../functional/run-from-definition/run-from-definition.js";
 import type { DefinitionFormat } from "../shared/definition/generate-definition.js";
 import { extractPushGistVisibility, type GistVisibility } from "../shared/definition/push-gist.js";
-import { runDefinitionMain } from "../definition/definition.js";
+import { isMachineOutputDefinitionSubcommand, runDefinitionMain } from "../definition/definition.js";
 import { runRunMain } from "../run/run.js";
 import { runPresetWizard } from "../definition/preset-wizard/preset-wizard.js";
 import { runArchiveMain } from "../archive/archive.js";
@@ -206,10 +206,17 @@ function runReplayMain(): void {
 
 // Single source of truth for all top-level commands.
 // Anything listed here is available as both `fit <cmd>` and `bun run <cmd>`.
-const COMMANDS: Record<string, { fn: () => void; description: string; hidden?: boolean }> = {
+/**
+ * `machineOutput` marks invocations whose stdout is parsed by a machine rather
+ * than read by a human — CI does `presets=$(fit definition expand-preset-group
+ * ... --json) >> $GITHUB_OUTPUT`. For those we install no console formatting
+ * and print no "Ran with:" banner, so stdout carries the payload and nothing
+ * else. It takes the command's args because it's the *sub*command that decides.
+ */
+const COMMANDS: Record<string, { fn: () => void; description: string; hidden?: boolean; machineOutput?: (args: string[]) => boolean }> = {
   "wizard":          { fn: runWizardMain,          description: "Interactive walkthrough (default when no command given)" },
   "run":             { fn: runRunMain,             description: "Run FIT tests from a preset or a definition file" },
-  "definition":      { fn: runDefinitionMain,      description: "Author or inspect a FIT definition file" },
+  "definition":      { fn: runDefinitionMain,      description: "Author or inspect a FIT definition file", machineOutput: isMachineOutputDefinitionSubcommand },
   "config":          { fn: runConfigMain,           description: "Manage fit-cli configuration" },
   "cloud-instances": { fn: runCloudInstancesMain,  description: "Manage cloud (EC2) instances" },
   "secrets":         { fn: runSecretsMain,          description: "Manage AWS secrets", hidden: true },
@@ -234,18 +241,23 @@ function printHelp(): void {
 // import.meta.main is true in compiled Bun binaries where isMain() can't
 // compare virtual /$bunfs/ paths against the real executable path.
 if (isMain(import.meta.url) || import.meta.main) {
+  const cmd = process.argv[2];
+  const entry = cmd ? COMMANDS[cmd] : undefined;
+  const machineOutput = entry?.machineOutput?.(process.argv.slice(3)) ?? false;
+
   // Printed before anything else — and before the subcommand token below is
   // spliced out of process.argv — so a CI log always shows exactly how
   // fit-cli was invoked, even if the run fails before any other output is
-  // produced.
-  installFitCliConsoleFormatting();
-  printInvocationOnce();
+  // produced. Both are suppressed for machine-output invocations, whose stdout
+  // must stay clean enough for a caller to parse.
+  if (!machineOutput) {
+    installFitCliConsoleFormatting();
+    printInvocationOnce();
+  }
 
   checkPlatform();
 
-  const cmd = process.argv[2];
-
-  const command = cmd && COMMANDS[cmd] ? COMMANDS[cmd].fn : undefined;
+  const command = entry?.fn;
 
   if (command) {
     process.argv.splice(2, 1);
