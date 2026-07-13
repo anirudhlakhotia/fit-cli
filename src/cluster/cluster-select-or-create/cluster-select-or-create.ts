@@ -15,6 +15,7 @@ import { type RunOutput } from "../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../util/non-fit/cli.js";
 import { createCluster } from "../cluster-create/cluster-create.js";
 import { runClusterDiag } from "../cluster-diag/cluster-diag.js";
+import { printClusterUiAccess } from "../cluster-diag/cluster-ui-link.js";
 import { classifyConnectionString } from "../cluster-select/classify-connection-string.js";
 import { buildSelectedCluster, selectCluster, type SelectedCluster } from "../cluster-select/cluster-select.js";
 
@@ -63,6 +64,10 @@ export async function selectOrCreateCluster(): Promise<ClusterOutcome> {
 
   console.log(`\n✓ Using your new cluster at ${result.connectionString}`);
   const cluster = await buildSelectedCluster(classification);
+  // This workflow only ever runs against the local machine (no EC2 provisioning
+  // here, unlike the definition-driven functional/situational flows), so there's
+  // no remote SSH tunnel case to handle.
+  printClusterUiAccess(cluster);
   return { ready: true, cluster, artifacts: result.artifacts, details: result.details };
 }
 

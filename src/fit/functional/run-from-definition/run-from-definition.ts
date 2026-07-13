@@ -66,6 +66,7 @@ import {
   type ClusterCommandExecutor,
 } from "../../../cluster/cluster-create/allocate-cluster.js";
 import { runClusterDiag } from "../../../cluster/cluster-diag/cluster-diag.js";
+import { printClusterUiAccess } from "../../../cluster/cluster-diag/cluster-ui-link.js";
 import { prepareCbdinoclusterInit, remoteCbdinoclusterCloudEnabled, removeCluster, setupDeclarativeCluster } from "../../../cluster/cluster-create/setup-declarative-cluster.js";
 import { capellaFunctionalCbdinoclusterInitArgs, capellaAnalyticsCbdinoclusterInitArgs } from "../../../cluster/cluster-create/default-cbdinocluster-init-config.js";
 import { isAlias, resolveAlias } from "../../../cluster/cluster-create/cb-alias.js";
@@ -2118,6 +2119,12 @@ export async function runFromDefinition(
             }
           }
           if (clusterState) {
+            printClusterUiAccess(
+              clusterState.cluster,
+              cycleTeardown.kind === "remote" && cycleTeardown.address && cycleTeardown.user && cycleTeardown.identityFile
+                ? { address: cycleTeardown.address, user: cycleTeardown.user, identityFile: cycleTeardown.identityFile }
+                : undefined,
+            );
             setLogContext({
               cluster: clusterSegmentLabel(activeCycle.path, activeCycle.clusterMode, clusterVersionLabel(activeCycle), isEnterpriseAnalyticsGroup(activeCycle), isCapellaGroup(activeCycle), isCapellaAnalyticsGroup(activeCycle)),
             });
