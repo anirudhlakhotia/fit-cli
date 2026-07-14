@@ -11,7 +11,8 @@ dist/
 working/
 .idea
 .factory
-.claude
+.claude/*
+!.claude/skills/
 .local/
 CLAUDE.local.md
 tests
