@@ -1,8 +1,8 @@
 // Named groups of presets — a single group name stands in for a comma-separated
-// list of presets when listing or running them (see `fit definition list-presets`
-// and `fit definition expand-preset-group`). A group's `presets` list may name
-// other groups as well as plain presets — `expand-preset-group` and `fit run
-// preset` resolve those recursively down to concrete preset names.
+// list of presets when listing or running them (see `fit preset list` and
+// `fit preset expand`). A group's `presets` list may name other groups as well
+// as plain presets — `fit preset expand` and `fit run preset` resolve those
+// recursively down to concrete preset names.
 //
 // There are 3 SDK/performer-image families, each with its own clusters:
 //   op            (operational SDK): onprem, cng, capella, capella-pe

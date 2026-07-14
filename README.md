@@ -106,7 +106,8 @@ User-facing (using the installed binary):
 - `fit wizard` — run the interactive wizard.
 - `fit run preset <preset>` — generate a preset definition file and run it.
 - `fit run definition <file>` — run an existing definition file (see Resuming for the resume flags).
-- `fit definition validate | generate-preset | generate-desc | list-presets` — author or inspect a definition file.
+- `fit definition validate | generate-desc` — author or inspect a definition file.
+- `fit preset list | expand | generate` — list, expand or generate presets.
 - `fit cloud-instances list | manage | delete | remove-all` — manage the EC2 instances fit-cli launched.
 - `fit caps table | sync` — show which FIT capabilities each SDK's performer reports (see Capabilities).
 

@@ -47,8 +47,8 @@ jobs:
 
       - name: Generate preset definition
         run: >
-          bun src/fit/definition/definition.ts generate-preset
-          --type "${{ inputs.preset }}"
+          bun src/fit/preset/preset.ts generate
+          "${{ inputs.preset }}"
           --performer-image-name "${{ inputs.performerImageName }}"
           --output .github/generated/preset-definition.yaml
 

@@ -2,26 +2,44 @@
 /**
  * Top-level dispatcher for the `definition` bun script and for the compiled
  * `fit definition [...]` subcommand. This namespace is for authoring and
- * inspecting definition files; to *run* one (or a preset), use `fit run`.
+ * inspecting definition files; to *run* one (or a preset), use `fit run`, and
+ * to list/expand/generate presets, use `fit preset`.
  *
  * bun run definition validate <file.yaml>
  * bun run definition generate-desc <file.yaml>
- * bun run definition generate-preset --type <preset> --performer-image-name <image>
- * bun run definition list-presets
- * bun run definition expand-preset-group all-release
  */
 import { isMain, runCli } from "../../util/non-fit/cli.js";
 import { extractInteractiveFlag, extractReplayFlag, markNonInteractiveByDefault } from "../../util/non-fit/replay.js";
 import { cacheDefinition, definitionSummary, isDefinitionUrl, loadDefinition, resolveAndLoadDefinition } from "../shared/definition/parse-definition.js";
 import { describeDefinition } from "../shared/definition/generate-desc.js";
-import { generatePreset, parseGeneratePresetArgs, presetDescriptions } from "./generate-preset/generate-preset.js";
-import { expandPresetGroupNames, listPresetsAndGroups } from "./generate-preset/preset-groups.js";
 import { runDispatch } from "../run/run.js";
+import { expandUsage, presetDispatch, runRawExpand } from "../preset/preset.js";
 import type { RunOutput } from "../../util/non-fit/artifacts.js";
 import { printWithoutTimestamps, runScriptPrefix } from "../../util/non-fit/fit-cli-log.js";
 
-const SUBCOMMANDS = ["validate", "generate-desc", "generate-preset", "list-presets", "expand-preset-group"] as const;
+const SUBCOMMANDS = ["validate", "generate-desc"] as const;
 type Subcommand = (typeof SUBCOMMANDS)[number];
+
+/**
+ * The preset subcommands that used to live here and now belong to `fit preset`.
+ * Kept working — undocumented, and absent from SUBCOMMANDS/HELP — because CI in
+ * other repos calls them (e.g. couchbase-jvm-clients does
+ * `fit definition expand-preset-group "$PRESETS" --json`). Each delegates to the
+ * `preset` dispatcher and warns on *stderr*: `expand-preset-group`'s stdout is
+ * parsed by those callers, so a warning there would corrupt it.
+ */
+const DEPRECATED_PRESET_ALIASES: Record<string, string> = {
+  "list-presets": "list",
+  "expand-preset-group": "expand",
+  "generate-preset": "generate",
+};
+
+function warnDeprecatedPresetAlias(subcommand: string): void {
+  const replacement = DEPRECATED_PRESET_ALIASES[subcommand];
+  process.stderr.write(
+    `Warning: \`${runScriptPrefix("definition")} ${subcommand}\` is deprecated — use \`${runScriptPrefix("preset")} ${replacement}\` instead.\n`,
+  );
+}
 
 /**
  * Subcommands whose stdout is machine-parseable and must therefore carry
@@ -40,36 +58,22 @@ export function isMachineOutputDefinitionSubcommand(args: readonly string[]): bo
 function buildHelp(): string {
   const def = runScriptPrefix("definition");
   const run = runScriptPrefix("run");
+  const preset = runScriptPrefix("preset");
   return `Author and inspect FIT definition files.
 
 To run a definition file or a preset, use \`${run}\` instead.
+To list, expand or generate presets, use \`${preset}\` instead.
 
 Usage:
   ${def} validate <file.json5>
   ${def} generate-desc <file.json5>
-  ${def} generate-preset --type <preset> --performer-image-name <image> [--output <path>]
-  ${def} list-presets
-  ${def} expand-preset-group <preset-or-group>[,<preset-or-group>...] [--json | --verbose]
   ${def} --help
 
 Both .json5 and .yaml definition files are accepted.
 
 Subcommands:
-  validate            Parse and validate a definition file without running it.
-  generate-desc       Print a compact description of a definition file (useful for CI labels).
-  generate-preset     Emit a ready-to-run definition file from a preset template.
-  list-presets        List all available preset types and preset groups, with descriptions.
-  expand-preset-group Expand a comma-separated list of presets/preset groups into a flat, comma-separated preset list.
-
-expand-preset-group options:
-  --json     Print the flat list as a JSON array instead of a comma-separated string.
-  --verbose  Print one expanded preset per line, each with its own description (for humans; --json/machine output is the default).
-
-generate-preset options:
-  --type <preset>               Preset to generate. Run \`${def} list-presets\` to see known presets.
-  --performer-image-name <image>  SDK-specific performer image ref (e.g. java-fit-performer:refs-changes-67-246067-3 or ghcr.io/couchbase/java-fit-performer:refs-changes-67-246067-3).
-  --output <path>               Write to an explicit path instead of the default run dir.
-  --push-gist [public|private]  Create a GitHub Gist after writing. Requires a GitHub token in the fit-cli config or GITHUB_TOKEN / GH_TOKEN.`;
+  validate       Parse and validate a definition file without running it.
+  generate-desc  Print a compact description of a definition file (useful for CI labels).`;
 }
 
 /**
@@ -126,27 +130,20 @@ export async function definitionDispatch(argv: string[]): Promise<RunOutput | vo
     return runDispatch(["preset", ...legacyExecutePresetToRunPreset(rest)]);
   }
 
+  // Deprecated preset subcommands, now under `fit preset`. `expand-preset-group`
+  // never reaches here — it's machine-output, so runDefinitionMain routes it to
+  // runRawSubcommand below before runCli installs any console formatting.
+  if (subcommand in DEPRECATED_PRESET_ALIASES) {
+    warnDeprecatedPresetAlias(subcommand);
+    // `generate-preset` took the preset via `--type`; `preset generate` takes it
+    // as a positional but still accepts `--type`, so `rest` passes straight through.
+    return presetDispatch([DEPRECATED_PRESET_ALIASES[subcommand], ...rest]);
+  }
+
   if (!SUBCOMMANDS.includes(subcommand as Subcommand)) {
     console.error(`Unknown subcommand: ${subcommand}\n`);
     console.error(buildHelp());
     process.exit(2);
-  }
-
-  if (subcommand === "generate-preset") {
-    let args;
-    try {
-      args = parseGeneratePresetArgs(rest);
-    } catch (err) {
-      console.error((err as Error).message);
-      process.exit(2);
-    }
-    await generatePreset(args);
-    return;
-  }
-
-  if (subcommand === "list-presets") {
-    listPresetsAndGroups();
-    return;
   }
 
   // validate
@@ -160,12 +157,12 @@ export async function definitionDispatch(argv: string[]): Promise<RunOutput | vo
 }
 
 /**
- * `generate-desc` and `expand-preset-group` print machine-parseable output
- * meant for CI to consume directly (e.g. building a GHA matrix). runCli's
- * session setup unconditionally prints timestamp-prefixed banners and a
- * closing artifact table to stdout, which would corrupt that output — so
- * these two run here, before runCli is ever invoked, and write straight to
- * the real stdout/stderr.
+ * `generate-desc` and the deprecated `expand-preset-group` print
+ * machine-parseable output meant for CI to consume directly (e.g. building a
+ * GHA matrix). runCli's session setup unconditionally prints
+ * timestamp-prefixed banners and a closing artifact table to stdout, which
+ * would corrupt that output — so these two run here, before runCli is ever
+ * invoked, and write straight to the real stdout/stderr.
  *
  * `main.ts` keeps its side of that bargain by skipping console formatting for
  * these subcommands (see isMachineOutputDefinitionSubcommand); the raw writes
@@ -185,30 +182,10 @@ async function runRawSubcommand(argv: string[]): Promise<void> {
     return;
   }
 
-  // expand-preset-group
-  const json = argv.includes("--json");
-  const verbose = argv.includes("--verbose");
-  const [namesCsv, ...extra] = argv.slice(1).filter((a) => a !== "--json" && a !== "--verbose");
-  if (!namesCsv || extra.length > 0 || (json && verbose)) {
-    process.stderr.write(`Usage: ${runScriptPrefix("definition")} expand-preset-group <preset-or-group>[,<preset-or-group>...] [--json | --verbose]\n`);
-    process.exit(2);
-  }
-  let expanded: string[];
-  try {
-    expanded = expandPresetGroupNames(namesCsv);
-  } catch (err) {
-    process.stderr.write((err as Error).message + "\n");
-    process.exit(2);
-  }
-  if (verbose) {
-    const descriptionByType = new Map(presetDescriptions().map((p) => [p.type, p.description]));
-    const col = expanded.reduce((max, type) => Math.max(max, type.length), 0);
-    printWithoutTimestamps(
-      expanded.map((type) => `${type.padEnd(col)}  ${descriptionByType.get(type) ?? "(no description)"}`).join("\n"),
-    );
-    return;
-  }
-  printWithoutTimestamps(json ? JSON.stringify(expanded) : expanded.join(","));
+  // Deprecated alias for `preset expand`. The warning goes to stderr so the
+  // stdout payload its CI callers parse stays clean.
+  warnDeprecatedPresetAlias("expand-preset-group");
+  runRawExpand(argv.slice(1), expandUsage("definition", "expand-preset-group"));
 }
 
 export function runDefinitionMain(): void {

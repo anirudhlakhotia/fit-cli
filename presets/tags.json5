@@ -1,6 +1,6 @@
 // Metadata for the tags referenced by `preset.tags` (presets) and `group.tags` (preset
 // groups, see groups.json5) in the other presets/*.json5 files. Used to group, order,
-// and describe entries in `fit definition list-presets`. `order` controls display order
+// and describe entries in `fit preset list`. `order` controls display order
 // of the tag's group (lower first, ties broken alphabetically); a tag missing here just
 // displays without a description and sorts after every tag that is listed here.
 {
@@ -12,7 +12,7 @@
   // the ambiguity that motivated the `op-onprem-*` naming (see groups.json5's header).
   operational: { order: 5, description: 'Cross-cluster preset groups spanning every cluster the operational SDK supports (on-prem, CNG, Capella, Capella + PrivateLink).' },
   // functional/situational describe every preset regardless of cluster, so their own heading
-  // would just be "everything" — hidden from list-presets; each preset's more specific cluster
+  // would just be "everything" — hidden from `preset list`; each preset's more specific cluster
   // tag (onprem/cng/pe/capella/enterprise-analytics/columnar) carries the heading.
   functional: { order: 10, description: 'Runs FIT functional tests — CRUD, queries, transactions, and other core SDK operations — against a live cluster.', hiddenFromList: true },
   situational: { order: 20, description: 'Runs FIT situational tests, which exercise SDK behaviour under specific operational conditions (e.g. node failures, topology changes). Always targets a real, hosted Capella cluster for the test-results/coordination database, regardless of which cluster is under test.', hiddenFromList: true },
