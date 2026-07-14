@@ -1321,6 +1321,18 @@ interface TeardownInputs {
   /** Per-run pass/fail outcomes so far, shown as a summary before the leave-up prompt. */
   results: readonly RunResultSummary[];
   cbcollect?: boolean;
+  /** See {@link RunFromDefinitionOptions.promptScope}. */
+  promptScope?: string;
+}
+
+/**
+ * Suffix a fixed prompt id with a per-run scope so that repeated runFromDefinition
+ * calls in a single process (a preset group running several presets in sequence)
+ * don't reuse the same id and trip the replay "used more than once" guard. Returns
+ * the base id unchanged when no scope is set, keeping single-run prompt ids stable.
+ */
+export function scopedPromptId(base: string, scope: string | undefined): string {
+  return scope ? `${base}.${scope}` : base;
 }
 
 /**
@@ -1472,7 +1484,7 @@ function printRunResultsTables(results: readonly RunResultSummary[]): void {
  * failed before it came up); only the instance is then up to leave or terminate.
  */
 async function teardownRun(inputs: TeardownInputs): Promise<{ leftUp: boolean }> {
-  const { definitionPath, runDir, executionGroupIndex, runIndex, resumePath, execution, teardown, forceLocalhost, forceAws, clusterState, performers, performerStates, results, cbcollect = false } = inputs;
+  const { definitionPath, runDir, executionGroupIndex, runIndex, resumePath, execution, teardown, forceLocalhost, forceAws, clusterState, performers, performerStates, results, cbcollect = false, promptScope } = inputs;
 
   const nothingToLeaveUp = !teardown.terminate && !clusterState && performerStates.length === 0;
   if (nothingToLeaveUp) {
@@ -1494,7 +1506,7 @@ async function teardownRun(inputs: TeardownInputs): Promise<{ leftUp: boolean }>
   let leaveUp: boolean;
   try {
     leaveUp = await confirm({
-      promptId: "run-from-definition.teardown.leave-up",
+      promptId: scopedPromptId("run-from-definition.teardown.leave-up", promptScope),
       message: "Leave everything up (instance, cluster, performer) for debugging and resuming?",
       default: false,
     });
@@ -1603,6 +1615,7 @@ function isInteractiveRun(): boolean {
 async function resolveExecutionOverride(
   groups: readonly ResolvedExecutionGroup[],
   savedState: RunState | undefined,
+  promptScope: string | undefined,
 ): Promise<ExecutionOverride> {
   if (savedState) {
     if (savedState.forceLocalhost) return { kind: "localhost" };
@@ -1623,7 +1636,7 @@ async function resolveExecutionOverride(
   );
   for (let attempt = 1; ; attempt++) {
     const choice = await select<ExecutionOverride["kind"]>({
-      promptId: `run-from-definition.execution-override.attempt-${attempt}`,
+      promptId: scopedPromptId(`run-from-definition.execution-override.attempt-${attempt}`, promptScope),
       message: "Where should this run execute?",
       default: "definition",
       choices: [
@@ -1668,6 +1681,14 @@ export interface RunFromDefinitionOptions {
   resumeAt?: ResumePoint;
   resumeSelector?: ResumeSelector;
   cbcollect?: boolean;
+  /**
+   * Disambiguator appended to prompt ids that are issued once per runFromDefinition
+   * call. When a preset group runs several presets in one process (see run.ts), each
+   * call would otherwise reuse the same fixed prompt id (e.g. the teardown leave-up
+   * prompt) and trip the "used more than once in this run" replay guard. Left unset
+   * for single-preset / single-definition runs so their prompt ids stay unchanged.
+   */
+  promptScope?: string;
 }
 
 /** Run FIT functional tests as described by the definition file at `definitionPath`. */
@@ -1676,7 +1697,7 @@ export async function runFromDefinition(
   options: RunFromDefinitionOptions = {},
 ): Promise<RunOutput> {
   const tracker = new RunFailureTracker();
-  const { resumeAt, resumeSelector = {}, cbcollect = false } = options;
+  const { resumeAt, resumeSelector = {}, cbcollect = false, promptScope } = options;
   const phases = phasesForResumePoint(resumeAt);
   const definition = loadDefinition(definitionPath);
   const resolved = resolveDefinition(definition);
@@ -1740,7 +1761,7 @@ export async function runFromDefinition(
   // needed at all before checking for it. Each group then provisions (or reconnects)
   // its own target accordingly. `forceLocalhost`/`forceAws` are the parts we persist
   // for resume; the existing-instance override is a within-run convenience and isn't saved.
-  const executionOverride = await resolveExecutionOverride(executionGroups.slice(startCycleIndex), savedState);
+  const executionOverride = await resolveExecutionOverride(executionGroups.slice(startCycleIndex), savedState, promptScope);
   const forceLocalhost = executionOverride.kind === "localhost";
   const forceAws = executionOverride.kind === "aws";
   const willRunOnAws =
@@ -2375,6 +2396,7 @@ export async function runFromDefinition(
       performerStates: activePerformerStates,
       results: runResults,
       cbcollect,
+      ...(promptScope ? { promptScope } : {}),
     });
     if (leftUp) {
       details.push(...instanceDetails);

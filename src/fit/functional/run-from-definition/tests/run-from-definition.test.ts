@@ -11,6 +11,7 @@ import {
   cbdinoclusterSetupFailed,
   finalizeRunFromDefinition,
   runTests,
+  scopedPromptId,
   setupCluster,
 } from "../run-from-definition.js";
 
@@ -253,3 +254,17 @@ test("runTests throws FatalToSession when performer sanity fails", async () => {
   );
 });
 
+
+test("scopedPromptId leaves ids unscoped for single-preset runs", () => {
+  // No scope: id must stay byte-for-byte identical so existing replay logs still match.
+  assert.equal(scopedPromptId("run-from-definition.teardown.leave-up", undefined), "run-from-definition.teardown.leave-up");
+});
+
+test("scopedPromptId suffixes with the preset scope so grouped presets don't collide", () => {
+  // A preset group reuses the same base id per preset; the scope keeps them distinct
+  // (this is what stops the replay "used more than once" guard from firing).
+  const a = scopedPromptId("run-from-definition.teardown.leave-up", "op-onprem-func-lite");
+  const b = scopedPromptId("run-from-definition.teardown.leave-up", "op-cng-func-lite");
+  assert.equal(a, "run-from-definition.teardown.leave-up.op-onprem-func-lite");
+  assert.notEqual(a, b);
+});
