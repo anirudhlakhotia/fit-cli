@@ -1,9 +1,9 @@
 /**
- * `bun run definition generate-preset` — emit a ready-to-run definition file
- * from a named preset template, parameterised by performer image.
+ * `bun run preset generate` — emit a ready-to-run definition file from a named
+ * preset template, parameterised by performer image.
  *
  * Usage:
- *   bun run definition generate-preset --type functional --performer-image-name java-fit-performer:refs-changes-67-246067-3
+ *   bun run preset generate op-onprem-func-lite --performer java-fit-performer:refs-changes-67-246067-3
  */
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, extname, join, resolve } from "node:path";

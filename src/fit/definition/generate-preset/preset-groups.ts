@@ -155,7 +155,7 @@ export function listPresetsAndGroups(): void {
     console.log();
   }
   console.log(
-    `Preset groups above don't show a description — run \`${runScriptPrefix("definition")} expand-preset-group <name> --verbose\` to see each preset it expands to, listed with its own description.\n`,
+    `Preset groups above don't show a description — run \`${runScriptPrefix("preset")} expand <name> --verbose\` to see each preset it expands to, listed with its own description.\n`,
   );
 }
 

@@ -42,7 +42,6 @@ type Subcommand = (typeof SUBCOMMANDS)[number];
 
 function buildHelp(): string {
   const run = runScriptPrefix("run");
-  const def = runScriptPrefix("definition");
   return `Run FIT tests from a preset or a definition file.
 
 Usage:
@@ -83,7 +82,7 @@ Resume selectors (narrow a resume to one run; emitted by a left-up run):
   --resume-clusterless-session=<n>  Which clusterless (situational) session.
   --resume-run=<n>                  Which run within the session.
 
-See available presets in detail with: ${def} list-presets`;
+See available presets in detail with: ${runScriptPrefix("preset")} list`;
 }
 
 /** Pull `--override key=value` entries out of an argv list (repeatable). */

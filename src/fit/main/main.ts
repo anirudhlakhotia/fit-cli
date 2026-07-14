@@ -16,6 +16,7 @@ import { runFromDefinition } from "../functional/run-from-definition/run-from-de
 import type { DefinitionFormat } from "../shared/definition/generate-definition.js";
 import { extractPushGistVisibility, type GistVisibility } from "../shared/definition/push-gist.js";
 import { isMachineOutputDefinitionSubcommand, runDefinitionMain } from "../definition/definition.js";
+import { isMachineOutputPresetSubcommand, runPresetMain } from "../preset/preset.js";
 import { runRunMain } from "../run/run.js";
 import { runPresetWizard } from "../definition/preset-wizard/preset-wizard.js";
 import { runArchiveMain } from "../archive/archive.js";
@@ -208,14 +209,15 @@ function runReplayMain(): void {
 // Anything listed here is available as both `fit <cmd>` and `bun run <cmd>`.
 /**
  * `machineOutput` marks invocations whose stdout is parsed by a machine rather
- * than read by a human — CI does `presets=$(fit definition expand-preset-group
- * ... --json) >> $GITHUB_OUTPUT`. For those we install no console formatting
- * and print no "Ran with:" banner, so stdout carries the payload and nothing
- * else. It takes the command's args because it's the *sub*command that decides.
+ * than read by a human — CI does `presets=$(fit preset expand ... --json) >>
+ * $GITHUB_OUTPUT`. For those we install no console formatting and print no
+ * "Ran with:" banner, so stdout carries the payload and nothing else. It takes
+ * the command's args because it's the *sub*command that decides.
  */
 const COMMANDS: Record<string, { fn: () => void; description: string; hidden?: boolean; machineOutput?: (args: string[]) => boolean }> = {
   "wizard":          { fn: runWizardMain,          description: "Interactive walkthrough (default when no command given)" },
   "run":             { fn: runRunMain,             description: "Run FIT tests from a preset or a definition file" },
+  "preset":          { fn: runPresetMain,          description: "List, expand or generate FIT presets", machineOutput: isMachineOutputPresetSubcommand },
   "definition":      { fn: runDefinitionMain,      description: "Author or inspect a FIT definition file", machineOutput: isMachineOutputDefinitionSubcommand },
   "config":          { fn: runConfigMain,           description: "Manage fit-cli configuration" },
   "cloud-instances": { fn: runCloudInstancesMain,  description: "Manage cloud (EC2) instances" },
