@@ -214,7 +214,10 @@ export async function runDispatch(argv: string[]): Promise<RunOutput | void> {
         skipGuidance: true,
         ...(Object.keys(overrides).length > 0 ? { overrides } : {}),
       });
-      const output = await runFromDefinition(definitionPath, runOpts);
+      // Presets in a group run in one process, so scope per-run prompt ids by preset
+      // name — otherwise the second preset's teardown reuses the leave-up prompt id and
+      // trips the replay "used more than once" guard. Single-preset runs stay unscoped.
+      const output = await runFromDefinition(definitionPath, types.length > 1 ? { ...runOpts, promptScope: type } : runOpts);
       if (output) outputs.push(output);
     }
     return combineRunOutputs(...outputs);
