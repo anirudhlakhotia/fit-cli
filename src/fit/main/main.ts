@@ -19,6 +19,7 @@ import { isMachineOutputDefinitionSubcommand, runDefinitionMain } from "../defin
 import { runRunMain } from "../run/run.js";
 import { runPresetWizard } from "../definition/preset-wizard/preset-wizard.js";
 import { runArchiveMain } from "../archive/archive.js";
+import { runCapsMain } from "../caps/caps.js";
 import { runConfigMain } from "../config/config.js";
 import { runEditWorkflow } from "../config/edit.js";
 import { defaultFitCliConfigPath } from "../util/config.js";
@@ -219,6 +220,7 @@ const COMMANDS: Record<string, { fn: () => void; description: string; hidden?: b
   "definition":      { fn: runDefinitionMain,      description: "Author or inspect a FIT definition file", machineOutput: isMachineOutputDefinitionSubcommand },
   "config":          { fn: runConfigMain,           description: "Manage fit-cli configuration" },
   "cloud-instances": { fn: runCloudInstancesMain,  description: "Manage cloud (EC2) instances" },
+  "caps":            { fn: runCapsMain,             description: "Show the FIT capabilities each SDK's performer reports" },
   "secrets":         { fn: runSecretsMain,          description: "Manage AWS secrets", hidden: true },
   "maintenance":     { fn: runMaintenanceMain,       description: "Repo & release maintenance (branch channels)", hidden: true },
   "archive":         { fn: runArchiveMain,          description: "Archive run artifacts" },

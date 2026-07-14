@@ -108,6 +108,7 @@ User-facing (using the installed binary):
 - `fit run definition <file>` — run an existing definition file (see Resuming for the resume flags).
 - `fit definition validate | generate-preset | generate-desc | list-presets` — author or inspect a definition file.
 - `fit cloud-instances list | manage | delete | remove-all` — manage the EC2 instances fit-cli launched.
+- `fit caps table | sync` — show which FIT capabilities each SDK's performer reports (see Capabilities).
 
 For development (from source with Bun):
 - `bun run typecheck` — type-check without emitting.
@@ -117,6 +118,33 @@ For development (from source with Bun):
 ## Capella
 When running locally, we use Capella creds from your fit-cli config.  Generally you just need to provide your email address.  We default to using Capella's production environment.
 When running on CI, the user chooses what Capella environment to use (stage, dev, etc.) and we use previously-setup accounts for those. 
+
+## Capabilities
+Each performer declares what it supports — a set of "caps" — over the `performerCapsFetch` gRPC call.
+There are three independent cap enums: SDK, transactions, and the performer harness itself.
+
+```sh
+# Start every SDK's performer, ask each what it supports, print the matrix
+fit caps table
+```
+
+No cluster is needed: performers answer this call before connecting to anything. Each performer is
+started from its `main` image, queried, and stopped again.
+
+`caps.json5` is the catalogue of what each cap means. Performers report bare enum numbers, so that file
+maps a number to its name, its description, and **the Jira ticket tracking it** — fill that in as caps
+are added. When the FIT protos gain a cap, pick it up with:
+
+```sh
+fit caps sync <path-to-transactions-fit-performer>
+```
+
+which adds new caps and never overwrites the `jira` / `description` / `notes` you have written. A cap a
+performer reports that `caps.json5` doesn't know about still appears in the table, flagged, so it can't
+go unnoticed.
+
+Note the Analytics performers don't implement this call (they use the separate columnar-test-driver), so
+they aren't queried by default.
 
 ## General rules
 Everyone - AI and human - please follow these as best you can.
