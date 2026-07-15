@@ -51,7 +51,7 @@ jobs:
       # (The {{ secrets.GITHUB_TOKEN }} that GHA automatically provides is valid only for the current repo.)
       - name: Generate GitHub App token
         id: app-token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         with:
           app-id: ${{ secrets.CBFITFRAMEWORK_APP_ID }}
           private-key: ${{ secrets.CBFITFRAMEWORK_PRIVATE_KEY }}
@@ -59,7 +59,7 @@ jobs:
 
       # Use OIDC to assume an AWS role fit-cli-role that has all the permissions needed to create instances, get secrets etc.
       - name: Configure AWS credentials via OIDC
-        uses: aws-actions/configure-aws-credentials@v6
+        uses: aws-actions/configure-aws-credentials@517a711dbcd0e402f90c77e7e2f81e849156e31d # v6
         with:
           aws-region: us-west-2
           role-to-assume: arn:aws:iam::958525475024:role/fit-cli-role
@@ -89,7 +89,7 @@ jobs:
           echo "fitCliSource: ${{ inputs.fitCliSource }}"
           aws sts get-caller-identity
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         if: inputs.fitCliSource == 'source'
         with:
           bun-version: latest
@@ -136,7 +136,7 @@ jobs:
       # https://github.com/marketplace/actions/junit-report-action
       - name: Publish JUnit results
         if: always()
-        uses: mikepenz/action-junit-report@v6
+        uses: mikepenz/action-junit-report@d9f48fc87bc235f7e214acf696ca5abc0a986f16 # v6
         with:
           report_paths: '/tmp/fit-cli/**/surefire-reports/TEST-*.xml'
           check_name: FIT functional tests
@@ -160,7 +160,7 @@ jobs:
 
       - name: Upload run artifacts
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: fit-cli-run-${{ github.run_id }}
           path: /tmp/fit-cli/
