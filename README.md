@@ -171,11 +171,14 @@ If you are an LLM, you must read relevant project docs and follow them.
 This README has got very long and we are in the process of migrating parts to a `specs` directory.  
 LLMs (and humans :) ) you MUST read the following spec files if they relate to something you are working on:
 
-`specs/artifacts.md` - Covers how credentials and secrets are stored and used.
+`specs/artifacts.md` - Covers how artifacts are stored and surfaced to the user.
 `specs/credentials-and-secrets.md` - Covers how credentials and secrets are stored and used.
 `specs/external-processes.md` - Covers running external processes, and handling their logging and errors consistently.
 `specs/fit-definition-files.md` - Covers the FIT definition file.  Contains important rules that must be followed when extending that format, including versioning guidelines.
 `specs/timers-and-lifetimes.md` - Covers things like how long EC2 instances will last, the max time for a GHA, etc.
+`specs/errors.md` - Covers the error model: failure severities and how they map to CI exit behaviour.
+`specs/cng.md` - Covers how CNG (Cloud Native Gateway) testing works, including the shared ROSA OpenShift cluster.
+`specs/fit-testing-overview.md` - Concise overview of FIT itself (drivers, test types) as distinct from fit-cli.
 
 
 ### Steps and flows
