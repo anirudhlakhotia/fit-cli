@@ -30,6 +30,7 @@
                   resultsEnvironment: 'dev',
                 },
               },
+              versions: ['{{environments.defaults.capellaClusterVersion}}'],
             },
           ],
         },

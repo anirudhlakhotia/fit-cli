@@ -442,3 +442,42 @@ test("repeat mixes correctly with non-repeated runs in the same session", () => 
   assert.equal(resolved.runs[2]?.path.runIndex, 2);
   assert.equal(resolved.runs[2]?.path.dirSegments?.run, "functional:r2");
 });
+
+test("versions expands a situational run into one copy per version with distinct runIndex values", () => {
+  const session: SessionLifetime = {
+    performer: { image: "java-fit-performer:main" },
+    runs: [
+      {
+        type: "situational",
+        tests: { classes: ["com.example.MyTest"] },
+        situational: { database: { mode: "local" } },
+        versions: ["8.0-stable", "7.6"],
+      },
+    ],
+  };
+  const resolved = resolveSession(session, { instanceIndex: 0, clusterIndex: 0, sessionIndex: 0 }, false);
+  assert.equal(resolved.runs.length, 2);
+  assert.equal(resolved.runs[0]?.path.runIndex, 0);
+  assert.equal(resolved.runs[1]?.path.runIndex, 1);
+  const run0 = resolved.runs[0];
+  const run1 = resolved.runs[1];
+  assert.equal(run0?.type === "situational" ? run0.version : undefined, "8.0-stable");
+  assert.equal(run1?.type === "situational" ? run1.version : undefined, "7.6");
+});
+
+test("versions appends :v{version} to the run dir segment to avoid collisions", () => {
+  const session: SessionLifetime = {
+    performer: { image: "java-fit-performer:main" },
+    runs: [
+      {
+        type: "situational",
+        tests: { classes: ["com.example.MyTest"] },
+        situational: { database: { mode: "local" } },
+        versions: ["8.0-stable", "7.6"],
+      },
+    ],
+  };
+  const resolved = resolveSession(session, { instanceIndex: 0, clusterIndex: 0, sessionIndex: 0 }, false);
+  assert.equal(resolved.runs[0]?.path.dirSegments?.run, "situational:v8.0-stable");
+  assert.equal(resolved.runs[1]?.path.dirSegments?.run, "situational:v7.6");
+});

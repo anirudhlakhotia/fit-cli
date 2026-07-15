@@ -632,6 +632,83 @@ test("rejects non-integer repeat", () => {
   );
 });
 
+const SITUATIONAL = `
+version: 1
+type: fit
+instances:
+  - localhost: {}
+    clusters: []
+    clusterlessSessions:
+      - performer:
+          image: java-fit-performer:main
+        runs:
+          - type: situational
+            situational:
+              database:
+                mode: hosted
+            tests:
+              presets: [all]
+`;
+
+test("parses versions on a situational run, expanding to N sequential runs at resolve time (not here)", () => {
+  const def = parseDefinition(SITUATIONAL.replace("presets: [all]", "presets: [all]\n            versions: [8.0-stable, \"7.6\"]"));
+  const run = def.instances[0]?.clusterlessSessions?.[0]?.runs[0];
+  assert.ok(run && run.type === "situational");
+  assert.deepEqual(run.versions, ["8.0-stable", "7.6"]);
+});
+
+test("parses situational.version", () => {
+  const def = parseDefinition(SITUATIONAL.replace("mode: hosted", "mode: hosted\n              version: 8.0-stable"));
+  const run = def.instances[0]?.clusterlessSessions?.[0]?.runs[0];
+  assert.ok(run && run.type === "situational");
+  assert.equal(run.situational.version, "8.0-stable");
+});
+
+test("rejects empty versions array", () => {
+  assert.throws(
+    () => parseDefinition(SITUATIONAL.replace("presets: [all]", "presets: [all]\n            versions: []")),
+    (err: unknown) => err instanceof InvalidDefinitionError && /versions/.test(err.message),
+  );
+});
+
+test("rejects versions combined with repeat", () => {
+  assert.throws(
+    () => parseDefinition(SITUATIONAL.replace("presets: [all]", "presets: [all]\n            versions: [8.0-stable]\n            repeat: 2")),
+    (err: unknown) => err instanceof InvalidDefinitionError && /mutually exclusive/.test(err.message),
+  );
+});
+
+test("rejects versions combined with situational.version", () => {
+  assert.throws(
+    () => parseDefinition(
+      SITUATIONAL
+        .replace("mode: hosted", "mode: hosted\n              version: \"7.6\"")
+        .replace("presets: [all]", "presets: [all]\n            versions: [8.0-stable]"),
+    ),
+    (err: unknown) => err instanceof InvalidDefinitionError && /mutually exclusive/.test(err.message),
+  );
+});
+
+test("rejects versions combined with situational.cng", () => {
+  assert.throws(
+    () => parseDefinition(
+      SITUATIONAL
+        .replace("mode: hosted", "mode: hosted\n              cng: {}")
+        .replace("presets: [all]", "presets: [all]\n            versions: [8.0-stable]"),
+    ),
+    (err: unknown) => err instanceof InvalidDefinitionError && /CNG pins its own cluster version/.test(err.message),
+  );
+});
+
+test("rejects situational.version combined with situational.cng", () => {
+  assert.throws(
+    () => parseDefinition(
+      SITUATIONAL.replace("mode: hosted", "mode: hosted\n              version: 8.0-stable\n              cng: {}"),
+    ),
+    (err: unknown) => err instanceof InvalidDefinitionError && /mutually exclusive/.test(err.message),
+  );
+});
+
 test("rejects unknown top-level field", () => {
   assert.throws(
     () => parseDefinition(FUNCTIONAL.replace("version: 1", "version: 1\nbad: ignored")),

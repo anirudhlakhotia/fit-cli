@@ -53,6 +53,7 @@ import type {
   ResolvedFitConfig,
   SessionLifetime,
   SituationalDatabaseMode,
+  SituationalRun,
   TestsSection,
 } from "./types.js";
 
@@ -101,6 +102,8 @@ export interface ResolvedSituationalRun extends ResolvedRunCommon {
   cng: boolean;
   /** Present when this run should connect to cbdino's Capella cluster over AWS PrivateLink. */
   privateEndpoint?: PrivateEndpointSetup;
+  /** Couchbase Server version cbdino should deploy; see {@link SituationalRun.versions}. */
+  version?: string;
 }
 
 export type ResolvedRun = ResolvedFunctionalRun | ResolvedSituationalRun;
@@ -168,6 +171,8 @@ export interface ResolvedSituationalExecutionRun extends ResolvedExecutionRunCom
   cng: boolean;
   /** Present when this run should connect to cbdino's Capella cluster over AWS PrivateLink. */
   privateEndpoint?: PrivateEndpointSetup;
+  /** Couchbase Server version cbdino should deploy; see {@link SituationalRun.versions}. */
+  version?: string;
 }
 
 export type ResolvedExecutionRun = ResolvedFunctionalExecutionRun | ResolvedSituationalExecutionRun;
@@ -465,6 +470,7 @@ function resolveRun(run: FitRun, stripClusterAccess: boolean): ResolvedRunWithou
       resultsEnvironment: run.situational.database.resultsEnvironment ?? DEFAULT_RESULTS_ENV,
       cng: run.situational.cng !== undefined,
       ...(run.situational.privateEndpoint !== undefined ? { privateEndpoint: run.situational.privateEndpoint } : {}),
+      ...(run.situational.version !== undefined ? { version: run.situational.version } : {}),
     };
   }
   if (run.type === "analytics-functional") {
@@ -497,6 +503,21 @@ export function resolveSession(
   const pathWithSession: DefinitionRunPath = { ...path, dirSegments: { ...path.dirSegments, session: sessionSeg } };
   let runIndex = 0;
   const runs = session.runs.flatMap((run) => {
+    if (run.type === "situational" && run.versions !== undefined) {
+      const versions = run.versions;
+      const { versions: _versions, ...runWithoutVersions } = run;
+      return versions.map((version) => {
+        const ri = runIndex++;
+        const versionedRun: SituationalRun = { ...runWithoutVersions, situational: { ...run.situational, version } };
+        return resolveRunWithPath(
+          versionedRun,
+          { ...pathWithSession, runIndex: ri },
+          stripClusterAccess,
+          undefined,
+          version,
+        );
+      });
+    }
     const count = run.repeat ?? 1;
     return Array.from({ length: count }, (_, repeatIndex) => {
       const ri = runIndex++;
@@ -523,11 +544,15 @@ function resolveRunWithPath(
   path: DefinitionRunPath,
   stripClusterAccess: boolean,
   repeatIndex?: number,
+  versionLabel?: string,
 ): ResolvedRun {
   const resolved = resolveRun(run, stripClusterAccess);
   let runSeg = runLabel(path, run.type, resolved.testSelection.presets);
   if (repeatIndex !== undefined) {
     runSeg = runSeg !== undefined ? `${runSeg}:r${repeatIndex + 1}` : `r${repeatIndex + 1}`;
+  }
+  if (versionLabel !== undefined) {
+    runSeg = runSeg !== undefined ? `${runSeg}:v${versionLabel}` : `v${versionLabel}`;
   }
   const pathWithRun: DefinitionRunPath = {
     ...path,
@@ -701,6 +726,7 @@ export function buildExecutionGroups(instances: ResolvedInstancePlan[]): Resolve
                   resultsEnvironment: run.resultsEnvironment,
                   cng: run.cng,
                   ...(run.privateEndpoint !== undefined ? { privateEndpoint: run.privateEndpoint } : {}),
+                  ...(run.version !== undefined ? { version: run.version } : {}),
                 })),
             ),
           },

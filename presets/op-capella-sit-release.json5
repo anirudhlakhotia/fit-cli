@@ -30,6 +30,7 @@
                   resultsEnvironment: 'prod',
                 },
               },
+              versions: ['{{environments.defaults.capellaClusterVersion}}', '{{environments.defaults.capellaPreviousClusterVersion}}'],
             },
           ],
         },

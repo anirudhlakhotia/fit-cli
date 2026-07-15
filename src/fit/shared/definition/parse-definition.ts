@@ -503,11 +503,24 @@ function validateSituationalCng(value: unknown, path: string): SituationalCngSet
   return {};
 }
 
+function validateSituationalVersion(record: Record<string, unknown>, path: string): string | undefined {
+  const value = record.version;
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || value.length === 0) {
+    throw new InvalidDefinitionError(`"${path}.version" must be a non-empty string when present; got ${JSON.stringify(value)}`);
+  }
+  return value;
+}
+
 function validateSituationalSection(value: unknown, path: string): SituationalSection {
   const record = requireRecord(value, path);
-  rejectUnknown(record, ["database", "cng", "privateEndpoint"], path);
+  rejectUnknown(record, ["database", "cng", "privateEndpoint", "version"], path);
   if (record.database === undefined) {
     throw new InvalidDefinitionError(`Missing required field: ${path}.database`);
+  }
+  const version = validateSituationalVersion(record, path);
+  if (version !== undefined && record.cng !== undefined) {
+    throw new InvalidDefinitionError(`"${path}.version" and "${path}.cng" are mutually exclusive — CNG pins its own cluster version.`);
   }
   return {
     database: validateSituationalDatabase(record.database, `${path}.database`),
@@ -515,6 +528,7 @@ function validateSituationalSection(value: unknown, path: string): SituationalSe
     ...(record["privateEndpoint"] !== undefined
       ? { privateEndpoint: validatePrivateEndpointSetup(record["privateEndpoint"], `${path}.privateEndpoint`) }
       : {}),
+    ...(version !== undefined ? { version } : {}),
   };
 }
 
@@ -536,6 +550,15 @@ function validateRepeat(record: Record<string, unknown>, path: string): number |
   const value = record.repeat;
   if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
     throw new InvalidDefinitionError(`"${path}.repeat" must be a positive integer when present; got ${JSON.stringify(value)}`);
+  }
+  return value;
+}
+
+function validateVersions(record: Record<string, unknown>, path: string): string[] | undefined {
+  if (record.versions === undefined) return undefined;
+  const value = record.versions;
+  if (!Array.isArray(value) || value.length === 0 || !value.every((v): v is string => typeof v === "string" && v.length > 0)) {
+    throw new InvalidDefinitionError(`"${path}.versions" must be a non-empty array of non-empty strings when present; got ${JSON.stringify(value)}`);
   }
   return value;
 }
@@ -562,16 +585,28 @@ function validateRun(value: unknown, path: string, clusterless: boolean): FitRun
       ...(repeat !== undefined ? { repeat } : {}),
     };
   }
-  rejectUnknown(record, ["type", "tests", "fitConfig", "repeat", "situational"], path);
+  rejectUnknown(record, ["type", "tests", "fitConfig", "repeat", "situational", "versions"], path);
   if (record.situational === undefined) {
     throw new InvalidDefinitionError(`Missing required field: ${path}.situational`);
+  }
+  const situational = validateSituationalSection(record.situational, `${path}.situational`);
+  const versions = validateVersions(record, path);
+  if (versions !== undefined && repeat !== undefined) {
+    throw new InvalidDefinitionError(`"${path}.versions" and "${path}.repeat" are mutually exclusive; set only one.`);
+  }
+  if (versions !== undefined && situational.version !== undefined) {
+    throw new InvalidDefinitionError(`"${path}.versions" and "${path}.situational.version" are mutually exclusive; set only one.`);
+  }
+  if (versions !== undefined && situational.cng !== undefined) {
+    throw new InvalidDefinitionError(`"${path}.versions" cannot be combined with "${path}.situational.cng" — CNG pins its own cluster version.`);
   }
   return {
     type: "situational",
     tests: validateTestsSection(record.tests, `${path}.tests`),
-    situational: validateSituationalSection(record.situational, `${path}.situational`),
+    situational,
     ...(record.fitConfig !== undefined ? { fitConfig: validateRunFitConfig(record.fitConfig, `${path}.fitConfig`) } : {}),
     ...(repeat !== undefined ? { repeat } : {}),
+    ...(versions !== undefined ? { versions } : {}),
   };
 }
 

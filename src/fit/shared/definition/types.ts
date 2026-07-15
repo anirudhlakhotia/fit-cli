@@ -235,6 +235,18 @@ export interface SituationalSection {
    * {@link PrivateEndpointSetup}'s other uses.
    */
   privateEndpoint?: PrivateEndpointSetup;
+  /**
+   * Couchbase Server version cbdino should deploy for this run's self-managed
+   * Capella cluster, e.g. "8.0" or "7.6". Capella's supported versions lag
+   * self-managed and are coarser-grained (a plain release line rather than a
+   * cb-alias like "8.0-stable" or a pinned build) — see
+   * `environments.json5`'s `capellaClusterVersion`. Defaults to the
+   * situational default version (currently "7.6") when omitted. Mutually
+   * exclusive with `cng` (CNG pins its own cluster version from
+   * environments.json5) and with the run-level `versions` shorthand — see
+   * {@link SituationalRun.versions}.
+   */
+  version?: string;
 }
 
 export interface FunctionalRun {
@@ -252,6 +264,13 @@ export interface SituationalRun {
   tests: TestsSection;
   /** Run this entry N times in sequence. */
   repeat?: number;
+  /**
+   * Run this same situational spec once per listed Couchbase Server version,
+   * in sequence — shorthand for duplicating the whole run block just to vary
+   * `situational.version` (e.g. `["8.0", "7.6"]`). Mutually exclusive with
+   * `repeat` and with `situational.version`/`situational.cng`.
+   */
+  versions?: string[];
 }
 
 /**

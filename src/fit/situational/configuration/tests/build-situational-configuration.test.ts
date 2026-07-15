@@ -61,7 +61,7 @@ test("the cbdino and database blocks are merged under situational", () => {
   });
 });
 
-test("cbdino settings default to a 7.6 cluster on the PATH binary", () => {
+test("cbdino settings default to a DEFAULT_CAPELLA_CLUSTER_VERSION cluster on the PATH binary", () => {
   const config = buildSituationalConfiguration(database) as {
     situational: { cbdino: typeof DEFAULT_CBDINO_SETTINGS };
   };

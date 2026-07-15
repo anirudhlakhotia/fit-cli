@@ -954,9 +954,13 @@ async function withResolvedSituationalCbdino(
  * `operator-version`/`gateway-version` into cbdinocluster's config when it sees a
  * `cao` deployer.
  */
-function situationalCbdinoSettings(cng: boolean, privateEndpoint: boolean): CbdinoSettings {
+export function situationalCbdinoSettings(cng: boolean, privateEndpoint: boolean, versionOverride?: string): CbdinoSettings {
   if (!cng) {
-    return { ...DEFAULT_CBDINO_SETTINGS, enablePrivateEndpoint: privateEndpoint };
+    return {
+      ...DEFAULT_CBDINO_SETTINGS,
+      version: versionOverride ?? loadEnvironments().defaults.capellaClusterVersion,
+      enablePrivateEndpoint: privateEndpoint,
+    };
   }
   const { cngClusterVersion, caoOperatorVersion, cngVersion } = loadEnvironments().defaults;
   return {
@@ -998,10 +1002,11 @@ export async function runSituationalTests(
   // test driver can invoke it even when its environment doesn't inherit the same PATH.
   const cbdinoclusterPath = await resolveCbdinoclusterPathOnExecution(execution);
   const fitConfigPiece = await withResolvedSituationalCbdino(run.fitConfig, cbdinoclusterPath);
+  const resolvedVersion = run.version !== undefined && isAlias(run.version) ? await resolveAlias(run.version) : run.version;
 
   const fitConfig = generateSituationalConfiguration(
     database.database,
-    situationalCbdinoSettings(run.cng, run.privateEndpoint !== undefined),
+    situationalCbdinoSettings(run.cng, run.privateEndpoint !== undefined, resolvedVersion),
     execution.fitPerformerDir,
     run.path,
     run.performerPort,
