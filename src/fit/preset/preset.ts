@@ -47,7 +47,7 @@ To run a preset, use \`${run} preset <preset>\` instead.
 Usage:
   ${preset} list
   ${preset} expand <preset-or-group>[,<preset-or-group>...] [--json | --verbose]
-  ${preset} generate <preset> --performer <image> [--output <path>]
+  ${preset} generate <preset> --performer <image> [--output <path>] [--env-override <path>=<value>]
   ${preset} --help
 
 Subcommands:
@@ -63,6 +63,9 @@ generate options:
   --performer <image>           SDK-specific performer image ref (e.g. java-fit-performer:refs-changes-67-246067-3 or ghcr.io/couchbase/java-fit-performer:refs-changes-67-246067-3). Alias: --performer-image-name.
   --output <path>               Write to an explicit path instead of the default run dir.
   --override <dotpath>=<value>  Override a field in the generated definition (repeatable).
+  --env-override <path>=<value> Override an environments.json5 value the preset templates in (repeatable),
+                                keyed by the preset's {{environments.<path>}} placeholder.
+                                e.g. --env-override defaults.clusterVersion=7.6-stable
   --push-gist [public|private]  Create a GitHub Gist after writing. Requires a GitHub token in the fit-cli config or GITHUB_TOKEN / GH_TOKEN.`;
 }
 
@@ -120,7 +123,7 @@ export function runRawExpand(rest: string[], usage: string): void {
  */
 export function normaliseGenerateArgs(rest: readonly string[]): string[] {
   /** Flags whose value is a separate argv entry, so it must not be mistaken for the positional. */
-  const VALUE_FLAGS = new Set(["--type", "--performer", "--performer-image-name", "--output", "--override"]);
+  const VALUE_FLAGS = new Set(["--type", "--performer", "--performer-image-name", "--output", "--override", "--env-override"]);
   const out: string[] = [];
   let type: string | undefined;
   for (let i = 0; i < rest.length; i++) {
