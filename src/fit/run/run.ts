@@ -29,7 +29,14 @@ import {
   extractResumeSelector,
   parseResumePoint,
 } from "../functional/run-from-definition/resume.js";
-import { applyDotPathOverride, formatKnownPresetsByTag, generatePreset } from "../definition/generate-preset/generate-preset.js";
+import {
+  applyDotPathOverride,
+  assertEnvOverridesUsed,
+  formatKnownPresetsByTag,
+  generatePreset,
+  parseKeyValueFlag,
+  validateEnvOverrides,
+} from "../definition/generate-preset/generate-preset.js";
 import { expandPresetGroupNames, formatKnownPresetGroups, formatPresetsAndGroupsListing } from "../definition/generate-preset/preset-groups.js";
 import { analysePerformerImage, performerImageShortName } from "../performers/util/performer-image.js";
 import { formatFitDefinition } from "../shared/definition/generate-definition.js";
@@ -45,7 +52,7 @@ function buildHelp(): string {
   return `Run FIT tests from a preset or a definition file.
 
 Usage:
-  ${run} preset <preset>[,<preset>...] --performer <image> [resume flags] [--cbcollect]
+  ${run} preset <preset>[,<preset>...] --performer <image> [--env-override <path>=<value>] [resume flags] [--cbcollect]
   ${run} definition <file.json5> [--override <dotpath>=<value>] [--resume-at=<point>] [resume selectors] [--cbcollect]
   ${run} --help
 
@@ -64,6 +71,12 @@ preset options:
   --performer <image>             SDK-specific performer image ref (e.g. java-fit-performer:refs-changes-67-246067-3 or ghcr.io/couchbase/java-fit-performer:refs-changes-67-246067-3). Alias: --performer-image-name.
   --override <dotpath>=<value>    Override a field in the generated definition (repeatable).
                                   e.g. --override setup.repos.transactions-fit-performer.gerritRef=refs/changes/32/247532/1
+  --env-override <path>=<value>   Override an environments.json5 value the preset templates in (repeatable),
+                                  keyed by the preset's {{environments.<path>}} placeholder. Applies to every
+                                  preset in a group, and is baked into the generated definition.
+                                  e.g. --env-override defaults.clusterVersion=7.6-stable
+                                  Common paths: defaults.clusterVersion, defaults.capellaClusterVersion,
+                                  defaults.cngClusterVersion, defaults.enterpriseAnalyticsVersion
 
 definition options:
   --override <dotpath>=<value>    Override a field in the definition before running (repeatable).
@@ -85,27 +98,53 @@ Resume selectors (narrow a resume to one run; emitted by a left-up run):
 See available presets in detail with: ${runScriptPrefix("preset")} list`;
 }
 
-/** Pull `--override key=value` entries out of an argv list (repeatable). */
-function extractOverrides(argv: readonly string[]): { overrides: Record<string, string>; positionals: string[] } {
-  const overrides: Record<string, string> = {};
+/**
+ * Pull repeatable `<flag> key=value` entries (e.g. `--override`, `--env-override`)
+ * out of an argv list, leaving everything else in `positionals`.
+ */
+function extractKeyValueFlag(
+  argv: readonly string[],
+  flag: string,
+): { values: Record<string, string>; positionals: string[] } {
+  const values: Record<string, string> = {};
   const positionals: string[] = [];
+  const inline = `${flag}=`;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg === "--override") {
-      const kv = argv[++i];
-      const eq = kv.indexOf("=");
-      if (eq === -1) { console.error(`--override value must be in key=value form, got: ${kv}`); process.exit(2); }
-      overrides[kv.slice(0, eq)] = kv.slice(eq + 1);
-    } else if (arg.startsWith("--override=")) {
-      const kv = arg.slice("--override=".length);
-      const eq = kv.indexOf("=");
-      if (eq === -1) { console.error(`--override value must be in key=value form, got: ${kv}`); process.exit(2); }
-      overrides[kv.slice(0, eq)] = kv.slice(eq + 1);
-    } else {
+    const kv = arg === flag ? argv[++i] : arg.startsWith(inline) ? arg.slice(inline.length) : undefined;
+    if (kv === undefined) {
       positionals.push(arg);
+      continue;
+    }
+    try {
+      const [key, value] = parseKeyValueFlag(flag, kv);
+      values[key] = value;
+    } catch (err) {
+      console.error((err as Error).message);
+      process.exit(2);
     }
   }
-  return { overrides, positionals };
+  return { values, positionals };
+}
+
+/** Pull `--override key=value` entries out of an argv list (repeatable). */
+function extractOverrides(argv: readonly string[]): { overrides: Record<string, string>; positionals: string[] } {
+  const { values, positionals } = extractKeyValueFlag(argv, "--override");
+  return { overrides: values, positionals };
+}
+
+/**
+ * Pull `--env-override <dot.path>=<value>` entries (repeatable) out of an argv list.
+ * These override `environments.json5` values as a preset's `{{environments.*}}`
+ * placeholders are substituted — e.g. `defaults.clusterVersion=7.6-stable` to run a
+ * preset against a different server version without editing `environments.json5`.
+ *
+ * Preset generation only: by the time a definition file exists, its placeholders are
+ * already resolved, so `run definition` rejects this flag and points at `--override`.
+ */
+function extractEnvOverrides(argv: readonly string[]): { envOverrides: Record<string, string>; positionals: string[] } {
+  const { values, positionals } = extractKeyValueFlag(argv, "--env-override");
+  return { envOverrides: values, positionals };
 }
 
 /** Pull `--performer-image-name[=<image>]` (or the `--performer` alias) out of an argv list. */
@@ -176,7 +215,14 @@ export async function runDispatch(argv: string[]): Promise<RunOutput | void> {
   if (subcommand === "preset") {
     const { runOpts, positionals: afterRunOpts } = extractRunOptions(rest);
     const { overrides, positionals: afterOverrides } = extractOverrides(afterRunOpts);
-    const { performerImageName, positionals } = extractPerformerImageName(afterOverrides);
+    const { envOverrides, positionals: afterEnvOverrides } = extractEnvOverrides(afterOverrides);
+    const { performerImageName, positionals } = extractPerformerImageName(afterEnvOverrides);
+    try {
+      validateEnvOverrides(envOverrides);
+    } catch (err) {
+      console.error((err as Error).message);
+      process.exit(2);
+    }
     const [typeList, ...extra] = positionals;
     if (!typeList || extra.length > 0) {
       console.error(
@@ -193,6 +239,14 @@ export async function runDispatch(argv: string[]): Promise<RunOutput | void> {
     }
     if (types.length > 1) {
       console.log(`"${typeList}" expands to ${types.length} presets, run in sequence: ${types.join(", ")}\n`);
+    }
+    // Checked against the whole expanded set, so a group-wide override only has to apply
+    // to some of its presets — see assertEnvOverridesUsed.
+    try {
+      assertEnvOverridesUsed(types, envOverrides);
+    } catch (err) {
+      console.error((err as Error).message);
+      process.exit(2);
     }
     if (!performerImageName) {
       console.error("--performer is required, e.g. java-fit-performer:main");
@@ -213,6 +267,7 @@ export async function runDispatch(argv: string[]): Promise<RunOutput | void> {
         image: performerImageShortName(parsed.sdk, parsed.tag),
         skipGuidance: true,
         ...(Object.keys(overrides).length > 0 ? { overrides } : {}),
+        ...(Object.keys(envOverrides).length > 0 ? { envOverrides } : {}),
       });
       // Presets in a group run in one process, so scope per-run prompt ids by preset
       // name — otherwise the second preset's teardown reuses the leave-up prompt id and
@@ -225,7 +280,18 @@ export async function runDispatch(argv: string[]): Promise<RunOutput | void> {
 
   // definition
   const { overrides, positionals: afterOverrides } = extractOverrides(rest);
-  const { runOpts, positionals } = extractRunOptions(afterOverrides);
+  // A definition file has no `{{environments.*}}` placeholders left to resolve — they were
+  // substituted when it was generated. Say so, rather than letting the flag fall through to
+  // the positional parser and surface as a confusing usage error.
+  const { envOverrides, positionals: afterEnvOverrides } = extractEnvOverrides(afterOverrides);
+  if (Object.keys(envOverrides).length > 0) {
+    console.error(
+      `--env-override only applies to "${runScriptPrefix("run")} preset" (it resolves a preset's {{environments.*}} placeholders).\n` +
+        "A definition file's placeholders are already resolved — edit it, or patch the field directly with --override.",
+    );
+    process.exit(2);
+  }
+  const { runOpts, positionals } = extractRunOptions(afterEnvOverrides);
   const [definitionPath, ...extra] = positionals;
   if (!definitionPath || extra.length > 0) {
     console.error(

@@ -394,24 +394,111 @@ function loadPresetTemplate(type: string): string {
 }
 
 /**
+ * Look up a dot-path in `environments.json5`, e.g. `defaults.clusterVersion`.
+ * Returns undefined if any segment is missing.
+ */
+function lookupEnvironmentsPath(dotPath: string): unknown {
+  let cursor: unknown = loadEnvironments();
+  for (const key of dotPath.split(".")) {
+    if (cursor === null || typeof cursor !== "object" || !(key in cursor)) {
+      return undefined;
+    }
+    cursor = (cursor as Record<string, unknown>)[key];
+  }
+  return cursor;
+}
+
+/**
+ * Validate `--env-override` dot-paths against `environments.json5`, so a typo
+ * (`defualts.clusterVersion`) fails loudly rather than silently doing nothing.
+ *
+ * A path only has to exist — it does NOT have to be referenced by the preset(s)
+ * being generated. A group run deliberately applies one override across presets
+ * that use different keys (`defaults.clusterVersion` on-prem vs
+ * `defaults.capellaClusterVersion` on Capella), so an override that no-ops for
+ * some members of the group is expected, not an error.
+ */
+export function validateEnvOverrides(envOverrides: Record<string, string>): void {
+  for (const dotPath of Object.keys(envOverrides)) {
+    const existing = lookupEnvironmentsPath(dotPath);
+    if (existing === undefined) {
+      throw new Error(
+        `--env-override "${dotPath}" is not a path in environments.json5. ` +
+          `Expected something like: defaults.clusterVersion, defaults.capellaClusterVersion, defaults.cngClusterVersion.`,
+      );
+    }
+    if (typeof existing !== "string" && typeof existing !== "number") {
+      throw new Error(
+        `--env-override "${dotPath}" must target a string or number in environments.json5, but it is: ${JSON.stringify(existing)}.`,
+      );
+    }
+  }
+}
+
+/** Every `{{environments.<dot.path>}}` path the given presets template in. */
+export function envPlaceholderPaths(types: PresetType[]): Set<string> {
+  const paths = new Set<string>();
+  for (const type of types) {
+    for (const [, dotPath] of loadPresetTemplate(type).matchAll(/\{\{environments\.([\w.]+)\}\}/g)) {
+      paths.add(dotPath);
+    }
+  }
+  return paths;
+}
+
+/**
+ * Reject an `--env-override` that no preset in this run actually templates in — it
+ * would otherwise be a silent no-op, which is the worst possible outcome for a flag
+ * whose whole job is to change the cluster under test. The classic trap: passing
+ * `defaults.clusterVersion` (the on-prem key, and a perfectly valid path in
+ * environments.json5, so `validateEnvOverrides` is happy) to a Capella preset, which
+ * templates `defaults.capellaClusterVersion` instead.
+ *
+ * Checked against the whole expanded preset set, and satisfied by ANY one of them: a
+ * group legitimately spans presets keyed on different versions, so an override that
+ * applies to only some members is fine — one that applies to none is not.
+ */
+export function assertEnvOverridesUsed(types: PresetType[], envOverrides: Record<string, string>): void {
+  const used = envPlaceholderPaths(types);
+  const unused = Object.keys(envOverrides).filter((dotPath) => !used.has(dotPath));
+  if (unused.length === 0) {
+    return;
+  }
+  const target = types.length === 1 ? `preset "${types[0]}"` : `presets: ${types.join(", ")}`;
+  throw new Error(
+    `--env-override ${unused.map((p) => `"${p}"`).join(", ")} would have no effect: not templated by the ${target}.\n` +
+      `That ${target.startsWith("preset") ? "preset templates" : "set templates"} in: ${[...used].sort().join(", ") || "(nothing)"}.`,
+  );
+}
+
+/**
  * Resolve every `{{environments.<dot.path>}}` placeholder in a preset template
  * against `environments.json5`, e.g. `{{environments.defaults.clusterVersion}}`
  * → `8.0-stable`. This is the single source of truth for cluster/tool versions —
  * bumping a version in `environments.json5` updates every preset that references it.
+ *
+ * `envOverrides` (from `--env-override <dot.path>=<value>`) takes precedence for
+ * the paths it names, letting a run pin e.g. a different cluster version without
+ * editing `environments.json5`. The resolved value is baked into the generated
+ * definition file, so the run stays reproducible from that file alone.
+ *
+ * Override values are substituted as raw strings, never JSON-parsed: version
+ * strings like `8.0` must stay `"8.0"` rather than becoming the number 8.
  */
-function resolveEnvironmentsPlaceholders(template: string): string {
+export function resolveEnvironmentsPlaceholders(template: string, envOverrides: Record<string, string> = {}): string {
   return template.replace(/\{\{environments\.([\w.]+)\}\}/g, (match, dotPath: string) => {
-    let cursor: unknown = loadEnvironments();
-    for (const key of dotPath.split(".")) {
-      if (cursor === null || typeof cursor !== "object" || !(key in cursor)) {
-        throw new Error(`Unknown environments.json5 path in preset placeholder: ${match}`);
-      }
-      cursor = (cursor as Record<string, unknown>)[key];
+    const override = envOverrides[dotPath];
+    if (override !== undefined) {
+      return override;
     }
-    if (typeof cursor !== "string" && typeof cursor !== "number") {
-      throw new Error(`Preset placeholder ${match} must resolve to a string or number, got: ${JSON.stringify(cursor)}`);
+    const value = lookupEnvironmentsPath(dotPath);
+    if (value === undefined) {
+      throw new Error(`Unknown environments.json5 path in preset placeholder: ${match}`);
     }
-    return String(cursor);
+    if (typeof value !== "string" && typeof value !== "number") {
+      throw new Error(`Preset placeholder ${match} must resolve to a string or number, got: ${JSON.stringify(value)}`);
+    }
+    return String(value);
   });
 }
 
@@ -419,8 +506,8 @@ function resolveEnvironmentsPlaceholders(template: string): string {
  * Fill the `{{PERFORMER_IMAGE}}` and `{{environments.*}}` placeholders and
  * return a parsed FitDefinition. `image` is the short-form `<sdk>-fit-performer:<tag>`.
  */
-function applyPresetParams(template: string, image: string): FitDefinition {
-  const filled = resolveEnvironmentsPlaceholders(template.replace(/\{\{PERFORMER_IMAGE\}\}/g, image));
+function applyPresetParams(template: string, image: string, envOverrides: Record<string, string> = {}): FitDefinition {
+  const filled = resolveEnvironmentsPlaceholders(template.replace(/\{\{PERFORMER_IMAGE\}\}/g, image), envOverrides);
   const definition = JSON5.parse(filled) as FitDefinition & { preset?: unknown };
   delete definition.preset;
   // `preset.description` above is menu-only and already stripped; this is the separate,
@@ -444,6 +531,13 @@ export interface GeneratePresetArgs {
    * Values are JSON-parsed where possible so booleans and numbers work naturally.
    */
   overrides?: Record<string, string>;
+  /**
+   * `environments.json5` overrides applied *during* template substitution, keyed by
+   * the same dot-path the preset's `{{environments.<dot.path>}}` placeholder uses, e.g.
+   * `{ "defaults.clusterVersion": "7.6-stable" }`. Unlike `overrides`, values are used
+   * verbatim (a version like `8.0` must not be JSON-parsed into a number).
+   */
+  envOverrides?: Record<string, string>;
 }
 
 /**
@@ -473,10 +567,16 @@ export function applyDotPathOverride(obj: Record<string, unknown>, dotPath: stri
 }
 
 export async function generatePreset(args: GeneratePresetArgs): Promise<{ path: string }> {
-  const { type, image, outputPath, format, pushGistVisibility, skipGuidance, overrides } = args;
+  const { type, image, outputPath, format, pushGistVisibility, skipGuidance, overrides, envOverrides } = args;
 
   const template = loadPresetTemplate(type);
-  const definition = applyPresetParams(template, image);
+  if (envOverrides && Object.keys(envOverrides).length > 0) {
+    validateEnvOverrides(envOverrides);
+    for (const [dotPath, value] of Object.entries(envOverrides)) {
+      console.log(`Overriding environments.${dotPath} = ${value}`);
+    }
+  }
+  const definition = applyPresetParams(template, image, envOverrides ?? {});
   if (overrides) {
     for (const [dotPath, rawValue] of Object.entries(overrides)) {
       applyDotPathOverride(definition as unknown as Record<string, unknown>, dotPath, rawValue);
@@ -510,6 +610,13 @@ export async function generatePreset(args: GeneratePresetArgs): Promise<{ path: 
   return { path: result.path };
 }
 
+/** Split a `key=value` flag value, e.g. `defaults.clusterVersion=7.6-stable`. */
+export function parseKeyValueFlag(flag: string, kv: string): [key: string, value: string] {
+  const eq = kv.indexOf("=");
+  if (eq === -1) throw new Error(`${flag} value must be in key=value form, got: ${kv}`);
+  return [kv.slice(0, eq), kv.slice(eq + 1)];
+}
+
 /** Parse `generate-preset` flags out of a positional-free argv slice. */
 export function parseGeneratePresetArgs(argv: string[]): GeneratePresetArgs {
   let type: string | undefined;
@@ -517,10 +624,17 @@ export function parseGeneratePresetArgs(argv: string[]): GeneratePresetArgs {
   let outputPath: string | undefined;
   let pushGistVisibility: GistVisibility | undefined;
   const overrides: Record<string, string> = {};
+  const envOverrides: Record<string, string> = {};
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg === "--type") {
+    if (arg === "--env-override") {
+      const [key, value] = parseKeyValueFlag("--env-override", argv[++i]);
+      envOverrides[key] = value;
+    } else if (arg.startsWith("--env-override=")) {
+      const [key, value] = parseKeyValueFlag("--env-override", arg.slice("--env-override=".length));
+      envOverrides[key] = value;
+    } else if (arg === "--type") {
       type = argv[++i];
     } else if (arg.startsWith("--type=")) {
       type = arg.slice("--type=".length);
@@ -573,6 +687,8 @@ export function parseGeneratePresetArgs(argv: string[]): GeneratePresetArgs {
   if ("error" in parsed) {
     throw new Error(`--performer-image-name: ${parsed.error}`);
   }
+  validateEnvOverrides(envOverrides);
+  assertEnvOverridesUsed([type], envOverrides);
 
   return {
     type,
@@ -580,5 +696,6 @@ export function parseGeneratePresetArgs(argv: string[]): GeneratePresetArgs {
     outputPath,
     pushGistVisibility,
     ...(Object.keys(overrides).length > 0 ? { overrides } : {}),
+    ...(Object.keys(envOverrides).length > 0 ? { envOverrides } : {}),
   };
 }

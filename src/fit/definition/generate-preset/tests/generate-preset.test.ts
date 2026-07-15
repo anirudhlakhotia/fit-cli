@@ -2,13 +2,17 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   applyDotPathOverride,
+  assertEnvOverridesUsed,
   autoDescribeName,
   describeTag,
+  envPlaceholderPaths,
   generatePreset,
   groupPresetsByTag,
   parseGeneratePresetArgs,
   presetDescriptions,
   presetUsesAnalyticsDriver,
+  resolveEnvironmentsPlaceholders,
+  validateEnvOverrides,
 } from "../generate-preset.js";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -276,4 +280,148 @@ test("autoDescribeName scopes a cross-axis 'multi' group to one SDK family, neve
     autoDescribeName("columnar-multi-func-release", ["columnar", "functional"]),
     "Columnar SDK functional testing across every axis (release sign-off testing).",
   );
+});
+
+test("parseGeneratePresetArgs collects repeatable --env-override flags in both forms", () => {
+  // op-onprem-func-release spans two release lines, so it templates in both version keys.
+  const args = parseGeneratePresetArgs([
+    "--type=op-onprem-func-release",
+    "--performer-image-name=java-fit-performer:main",
+    "--env-override=defaults.clusterVersion=7.6-stable",
+    "--env-override",
+    "defaults.previousClusterVersion=7.2-stable",
+  ]);
+
+  assert.deepEqual(args.envOverrides, {
+    "defaults.clusterVersion": "7.6-stable",
+    "defaults.previousClusterVersion": "7.2-stable",
+  });
+});
+
+test("parseGeneratePresetArgs omits envOverrides entirely when none are given", () => {
+  const args = parseGeneratePresetArgs([
+    "--type=op-onprem-func-lite",
+    "--performer-image-name=java-fit-performer:main",
+  ]);
+  assert.equal(args.envOverrides, undefined);
+});
+
+test("parseGeneratePresetArgs rejects an --env-override that is not in key=value form", () => {
+  assert.throws(
+    () =>
+      parseGeneratePresetArgs([
+        "--type=op-onprem-func-lite",
+        "--performer-image-name=java-fit-performer:main",
+        "--env-override=defaults.clusterVersion",
+      ]),
+    /--env-override value must be in key=value form/,
+  );
+});
+
+test("parseGeneratePresetArgs rejects an --env-override the chosen preset does not template in", () => {
+  assert.throws(
+    () =>
+      parseGeneratePresetArgs([
+        "--type=op-onprem-func-lite",
+        "--performer-image-name=java-fit-performer:main",
+        "--env-override=defaults.cngClusterVersion=8.0.2-5503",
+      ]),
+    /would have no effect/,
+  );
+});
+
+test("validateEnvOverrides rejects a path that does not exist in environments.json5", () => {
+  assert.throws(
+    () => validateEnvOverrides({ "defualts.clusterVersion": "7.6-stable" }),
+    /is not a path in environments\.json5/,
+  );
+});
+
+test("validateEnvOverrides rejects a path targeting a non-scalar", () => {
+  assert.throws(() => validateEnvOverrides({ defaults: "7.6-stable" }), /must target a string or number/);
+});
+
+test("validateEnvOverrides accepts the real version paths presets template in", () => {
+  assert.doesNotThrow(() =>
+    validateEnvOverrides({
+      "defaults.clusterVersion": "7.6-stable",
+      "defaults.capellaClusterVersion": "7.2",
+    }),
+  );
+});
+
+test("assertEnvOverridesUsed rejects an override no preset in the set templates in", () => {
+  assert.throws(
+    () => assertEnvOverridesUsed(["op-capella-sit-lite"], { "defaults.clusterVersion": "8.0-stable" }),
+    /would have no effect/,
+  );
+});
+
+test("assertEnvOverridesUsed accepts an override the preset does template in", () => {
+  assert.doesNotThrow(() =>
+    assertEnvOverridesUsed(["op-capella-sit-lite"], { "defaults.capellaClusterVersion": "7.2" }),
+  );
+  assert.doesNotThrow(() =>
+    assertEnvOverridesUsed(["op-onprem-func-lite"], { "defaults.clusterVersion": "7.6-stable" }),
+  );
+});
+
+test("assertEnvOverridesUsed accepts an override that applies to only some presets in a group", () => {
+  assert.doesNotThrow(() =>
+    assertEnvOverridesUsed(["op-onprem-func-lite", "op-capella-sit-lite"], {
+      "defaults.clusterVersion": "7.6-stable",
+    }),
+  );
+});
+
+test("capella situational presets template the capella cluster version, so --env-override can retarget it", () => {
+  // Composition with main's multi-version `versions:` mechanism: the capella SIT presets
+  // template {{environments.defaults.capellaClusterVersion}}, so the flag reaches it.
+  for (const { type } of presetDescriptions().filter(
+    (p) => p.tags.includes("situational") && p.tags.includes("capella"),
+  )) {
+    assert.ok(
+      envPlaceholderPaths([type]).has("defaults.capellaClusterVersion"),
+      `capella situational preset ${type} does not template defaults.capellaClusterVersion`,
+    );
+  }
+});
+
+test("resolveEnvironmentsPlaceholders prefers an override over the environments.json5 value", () => {
+  const resolved = resolveEnvironmentsPlaceholders("version: {{environments.defaults.clusterVersion}}", {
+    "defaults.clusterVersion": "7.6-stable",
+  });
+  assert.equal(resolved, "version: 7.6-stable");
+});
+
+test("resolveEnvironmentsPlaceholders leaves un-overridden placeholders on the environments.json5 value", () => {
+  const resolved = resolveEnvironmentsPlaceholders("capella: {{environments.defaults.capellaClusterVersion}}", {
+    "defaults.clusterVersion": "7.6-stable",
+  });
+  assert.match(resolved, /^capella: \S+$/);
+  assert.doesNotMatch(resolved, /\{\{/);
+});
+
+test("resolveEnvironmentsPlaceholders substitutes an override verbatim, never JSON-parsed", () => {
+  // Regression: the definition-level --override JSON-parses its value, which would turn the
+  // version "8.0" into the number 8 (and "8.0" -> "8"). Version strings must survive intact.
+  const resolved = resolveEnvironmentsPlaceholders("{{environments.defaults.clusterVersion}}", {
+    "defaults.clusterVersion": "8.0",
+  });
+  assert.equal(resolved, "8.0");
+});
+
+test("generatePreset bakes an env-override into the written capella situational definition", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "fit-generate-preset-"));
+  const outputPath = join(dir, "generated.yaml");
+
+  await generatePreset({
+    type: "op-capella-sit-lite",
+    image: "java-fit-performer:main",
+    outputPath,
+    envOverrides: { "defaults.capellaClusterVersion": "7.2" },
+  });
+
+  const written = readFileSync(outputPath, "utf8");
+  assert.match(written, /7\.2/);
 });
