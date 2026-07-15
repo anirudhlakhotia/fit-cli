@@ -88,8 +88,8 @@ interface TagMeta {
   description: string;
   /** When true, this tag's heading is suppressed from `list-presets` (e.g. `functional`/
    * `situational` — every entry already carries a more specific axis tag too). Items with
-   * only hidden tags still show under an `(untagged)` fallback; error-message listings
-   * (`formatKnownPresetsByTag`/`formatKnownPresetGroups`) ignore this and show everything. */
+   * only hidden tags still show under an `(untagged)` fallback; the terse `--help` listing
+   * (`formatKnownPresetsByTag`) ignores this and shows everything. */
   hiddenFromList?: boolean;
 }
 
@@ -332,12 +332,45 @@ export function presetDescriptions(): PresetDescription[] {
 }
 
 /**
- * Bare preset names grouped by tag (no descriptions), for embedding in
- * "unknown preset" error and usage messages. Mirrors `listPresetsAndGroups()`'s grouping.
+ * Render a set of tag-grouped items as `fit preset list` does: one heading per
+ * tag (with its description, if any), then each item indented with its own
+ * description, padded to a common column. Shared by `formatKnownPresetsWithDescriptions`
+ * below and `preset-groups.ts`'s `formatPresetsAndGroupsListing`, which adds
+ * preset groups into the same item list before calling this.
+ */
+export function formatTaggedListing<T extends { type: PresetType; tags: string[]; description: string; isGroup?: boolean }>(
+  items: T[],
+  { showHidden = false }: { showHidden?: boolean } = {},
+): string {
+  const groups = groupPresetsByTag(items, { showHidden });
+  const col = groups.reduce((max, { items: groupItems }) => groupItems.reduce((m, { type }) => Math.max(m, type.length), max), 0);
+  const lines: string[] = [];
+  for (const { tag, items: groupItems } of groups) {
+    const tagDescription = describeTag(tag);
+    lines.push(tagDescription ? `${tag}: ${tagDescription}` : `${tag}:`);
+    for (const { type, description } of groupItems) {
+      lines.push(`  ${type.padEnd(col)}  ${description}`);
+    }
+    lines.push("");
+  }
+  return lines.join("\n");
+}
+
+/**
+ * Bare preset names grouped by tag (no descriptions) — for the terse `--help`
+ * text, which already points readers at `fit preset list` for full detail.
  */
 export function formatKnownPresetsByTag(): string {
   const groups = groupPresetsByTag(allPresetDescriptions(), { showHidden: true });
   return groups.map(({ tag, items }) => `  ${tag}: ${items.map(({ type }) => type).join(", ")}`).join("\n");
+}
+
+/**
+ * Every known preset, grouped by tag with its description — for embedding in
+ * "unknown preset" error messages, matching `fit preset list`'s format.
+ */
+export function formatKnownPresetsWithDescriptions(): string {
+  return formatTaggedListing(allPresetDescriptions());
 }
 
 function resolvePresetOutputFormat(outputPath: string | undefined, format: DefinitionFormat | undefined): DefinitionFormat {
@@ -356,7 +389,7 @@ function resolvePresetOutputFormat(outputPath: string | undefined, format: Defin
 
 function loadPresetTemplate(type: string): string {
   const content = PRESET_MAP[type];
-  if (content === undefined) throw new Error(`Unknown preset: ${type}\nKnown presets:\n${formatKnownPresetsByTag()}`);
+  if (content === undefined) throw new Error(`Unknown preset: ${type}\nKnown presets:\n${formatKnownPresetsWithDescriptions()}`);
   return content;
 }
 
@@ -529,9 +562,9 @@ export function parseGeneratePresetArgs(argv: string[]): GeneratePresetArgs {
     }
   }
 
-  if (!type) throw new Error(`--type is required.\nAvailable presets:\n${formatKnownPresetsByTag()}`);
+  if (!type) throw new Error(`--type is required.\nAvailable presets:\n${formatKnownPresetsWithDescriptions()}`);
   if (!isPresetType(type)) {
-    throw new Error(`Unknown preset type: ${type}\nKnown types:\n${formatKnownPresetsByTag()}`);
+    throw new Error(`Unknown preset type: ${type}\nKnown types:\n${formatKnownPresetsWithDescriptions()}`);
   }
   if (!performerImageName) {
     throw new Error("--performer-image-name is required, e.g. java-fit-performer:main");
