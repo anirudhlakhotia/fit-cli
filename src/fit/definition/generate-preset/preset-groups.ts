@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 import JSON5 from "json5";
 import { isMain } from "../../../util/non-fit/cli.js";
 import { runScriptPrefix } from "../../../util/non-fit/fit-cli-log.js";
-import { autoDescribeName, describeTag, formatKnownPresetsByTag, groupPresetsByTag, isPresetType, presetDescriptions, type PresetType } from "./generate-preset.js";
+import { autoDescribeName, formatTaggedListing, isPresetType, presetDescriptions, type PresetType } from "./generate-preset.js";
 
 const GROUPS_FILENAME = "groups.json5";
 
@@ -114,14 +114,18 @@ export function formatKnownPresetGroups(): string {
 }
 
 /**
- * Print every known preset and preset group, intermingled and grouped by tag.
+ * Render every known preset and preset group, intermingled and grouped by tag.
  * Presets show their description; groups only show their immediate members
  * (which may themselves be group names) plus a deprecation notice if they have
  * one — group descriptions get long fast once a group has several members, so
  * they're dropped here (see the `--verbose` hint printed once at the end) rather
  * than shown per-entry.
+ *
+ * Shared by `listPresetsAndGroups` (`fit preset list`) and `unknownNameError`,
+ * so a typo'd preset/group name gets exactly the same listing a user would see
+ * by running `fit preset list` themselves.
  */
-export function listPresetsAndGroups(): void {
+export function formatPresetsAndGroupsListing(): string {
   const entries = [
     ...presetDescriptions().map((p) => ({ type: p.type, tags: p.tags, description: p.description })),
     ...presetGroupDescriptions().map((g) => {
@@ -134,36 +138,28 @@ export function listPresetsAndGroups(): void {
       };
     }),
   ];
-  const groups = groupPresetsByTag(entries);
-  const col = groups.reduce((max, { items }) => items.reduce((m, { type }) => Math.max(m, type.length), max), 0);
-  console.log(`\nAvailable presets and preset groups:\n`);
-  console.log(
+  return (
+    `\nAvailable presets and preset groups:\n\n` +
     "Naming convention: <SDK type>-<cluster type>[-<modifier>]-<test type>-<test effort>\n" +
-      "  Examples: op-onprem-func-lite, op-capella-pe-sit-release\n" +
-      '  SDK type      — "op" for operational; may be omitted for some cases, such as Analytics.\n' +
-      '  Cluster type  — "onprem", "capella", "enterprise-analytics", "columnar", and "multi" for multiple types.\n' +
-      '  Modifiers     — optional; e.g. "pe" for Private Endpoint.\n' +
-      '  Test type     — "func"tional or "sit"uational.\n' +
-      "  Test effort   — lite | release | sanity.\n",
-  );
-  for (const { tag, items } of groups) {
-    const tagDescription = describeTag(tag);
-    console.log(tagDescription ? `${tag}: ${tagDescription}` : `${tag}:`);
-    for (const { type, description } of items) {
-      console.log(`  ${type.padEnd(col)}  ${description}`);
-    }
-    console.log();
-  }
-  console.log(
-    `Preset groups above don't show a description — run \`${runScriptPrefix("preset")} expand <name> --verbose\` to see each preset it expands to, listed with its own description.\n`,
+    "  Examples: op-onprem-func-lite, op-capella-pe-sit-release\n" +
+    '  SDK type      — "op" for operational; may be omitted for some cases, such as Analytics.\n' +
+    '  Cluster type  — "onprem", "capella", "enterprise-analytics", "columnar", and "multi" for multiple types.\n' +
+    '  Modifiers     — optional; e.g. "pe" for Private Endpoint.\n' +
+    '  Test type     — "func"tional or "sit"uational.\n' +
+    "  Test effort   — lite | release | sanity.\n\n" +
+    formatTaggedListing(entries) +
+    `\nPreset groups above don't show a description — run \`${runScriptPrefix("preset")} expand <name> --verbose\` to see each preset it expands to, listed with its own description.\n`
   );
 }
 
-/** Throws with a standard "unknown name" message listing known presets and groups. */
+/** Print every known preset and preset group — see `formatPresetsAndGroupsListing`. */
+export function listPresetsAndGroups(): void {
+  console.log(formatPresetsAndGroupsListing());
+}
+
+/** Throws with the same listing `fit preset list` shows, so a typo'd name is easy to correct. */
 function unknownNameError(name: string): Error {
-  return new Error(
-    `Unknown preset or preset group: ${name}\nKnown presets:\n${formatKnownPresetsByTag()}\nKnown preset groups:\n${formatKnownPresetGroups()}`,
-  );
+  return new Error(`Unknown preset or preset group: ${name}\n${formatPresetsAndGroupsListing()}`);
 }
 
 function expandName(name: string, visiting: Set<string>, out: string[]): void {

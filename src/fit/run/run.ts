@@ -30,7 +30,7 @@ import {
   parseResumePoint,
 } from "../functional/run-from-definition/resume.js";
 import { applyDotPathOverride, formatKnownPresetsByTag, generatePreset } from "../definition/generate-preset/generate-preset.js";
-import { expandPresetGroupNames, formatKnownPresetGroups } from "../definition/generate-preset/preset-groups.js";
+import { expandPresetGroupNames, formatKnownPresetGroups, formatPresetsAndGroupsListing } from "../definition/generate-preset/preset-groups.js";
 import { analysePerformerImage, performerImageShortName } from "../performers/util/performer-image.js";
 import { formatFitDefinition } from "../shared/definition/generate-definition.js";
 import { combineRunOutputs, type RunOutput } from "../../util/non-fit/artifacts.js";
@@ -180,7 +180,7 @@ export async function runDispatch(argv: string[]): Promise<RunOutput | void> {
     const [typeList, ...extra] = positionals;
     if (!typeList || extra.length > 0) {
       console.error(
-        `Usage: ${runScriptPrefix("run")} preset <preset-or-group>[,<preset-or-group>...] --performer <image>\nKnown presets:\n${formatKnownPresetsByTag()}\nKnown preset groups:\n${formatKnownPresetGroups()}`,
+        `Usage: ${runScriptPrefix("run")} preset <preset-or-group>[,<preset-or-group>...] --performer <image>\n${formatPresetsAndGroupsListing()}`,
       );
       process.exit(2);
     }
