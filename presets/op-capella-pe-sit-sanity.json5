@@ -32,6 +32,7 @@
                 },
                 privateEndpoint: {},
               },
+              versions: ['{{environments.defaults.capellaClusterVersion}}'],
             },
           ],
         },

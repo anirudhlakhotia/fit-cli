@@ -26,11 +26,12 @@ import { AUTO_GENERATED_MARKER } from "../../shared/fit-configuration/write-fit-
 
 /**
  * Default Couchbase Server version for situational runs that create Capella
- * clusters. Capella currently supports 7.6 here; keep this separate from the
- * self-managed cbdinocluster default so functional cluster-create changes do not
- * silently break SIT/FIT cloud provisioning.
+ * clusters, used as this (pure, no-IO) module's own default/test value. The live
+ * default actually used at run time comes from environments.json5's
+ * `defaults.capellaClusterVersion` (see `situationalCbdinoSettings` in
+ * run-from-definition.ts) — keep this literal in sync with that value.
  */
-export const DEFAULT_CAPELLA_CLUSTER_VERSION = "7.6";
+export const DEFAULT_CAPELLA_CLUSTER_VERSION = "8.0";
 
 /** How cbdino should build the cluster the situational tests run against. */
 export interface CbdinoSettings {

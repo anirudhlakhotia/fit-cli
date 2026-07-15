@@ -53,9 +53,14 @@
     cngVersion: "1.2.1-123",
 
     // Default Couchbase Server version for Capella cloud clusters (functional and situational).
-    // Capella's supported server versions lag behind self-managed; keep this separate so
-    // changes to clusterVersion don't silently break Capella provisioning.
-    capellaClusterVersion: "7.6",
+    // Capella's supported server versions lag behind self-managed and are coarser-grained —
+    // a plain release line (e.g. "7.6") rather than a cb-alias like "8.0-stable" or a pinned
+    // build — so keep this separate from clusterVersion.
+    capellaClusterVersion: "8.0",
+
+    // The previous Capella release line, for presets that deliberately span two release
+    // lines (the Capella counterpart of previousClusterVersion above).
+    capellaPreviousClusterVersion: "7.6",
 
     // Default Capella environment (a key under `capella` below) when the definition file doesn't specify one.
     // This is the default because we've seen issues on dev (https://couchbase.slack.com/archives/C05LNBVQRE3/p1782487819678329)

@@ -13,7 +13,9 @@ import {
   runTests,
   scopedPromptId,
   setupCluster,
+  situationalCbdinoSettings,
 } from "../run-from-definition.js";
+import { loadEnvironments } from "../../../util/environments.js";
 
 function functionalCycle(): ResolvedFunctionalExecutionGroup {
   const sdk = sdkByValue("java");
@@ -267,4 +269,20 @@ test("scopedPromptId suffixes with the preset scope so grouped presets don't col
   const b = scopedPromptId("run-from-definition.teardown.leave-up", "op-cng-func-lite");
   assert.equal(a, "run-from-definition.teardown.leave-up.op-onprem-func-lite");
   assert.notEqual(a, b);
+});
+
+test("situationalCbdinoSettings uses environments.json5's capellaClusterVersion when no override is given", () => {
+  const settings = situationalCbdinoSettings(false, false);
+  assert.equal(settings.version, loadEnvironments().defaults.capellaClusterVersion);
+});
+
+test("situationalCbdinoSettings uses the override version for a non-CNG run", () => {
+  const settings = situationalCbdinoSettings(false, false, "8.0-stable");
+  assert.equal(settings.version, "8.0-stable");
+});
+
+test("situationalCbdinoSettings ignores a version override for a CNG run (CNG pins its own version)", () => {
+  const withOverride = situationalCbdinoSettings(true, false, "8.0-stable");
+  const withoutOverride = situationalCbdinoSettings(true, false);
+  assert.equal(withOverride.version, withoutOverride.version);
 });
