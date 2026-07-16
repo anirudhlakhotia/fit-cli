@@ -58,19 +58,20 @@ test("parseJunitData: aggregates counts correctly across two suites", () => {
     { filename: "TEST-com.example.BarTest.xml", xml: FAILING_SUITE },
   ]);
 
-  assert.equal(data.totalPassed, 4); // 2 from Foo (3-0-0-1) + 2 from Bar (4-2-0)
-  assert.equal(data.totalFailed, 2); // 0 from Foo + 2 from Bar
+  assert.equal(data.totalPassed, 4); // 2 from Foo (3-0-0-1) + 2 from Bar (4-1-1-0)
+  assert.equal(data.totalFailures, 1); // 0 from Foo + 1 from Bar
+  assert.equal(data.totalErrors, 1); // 0 from Foo + 1 from Bar
   assert.equal(data.totalSkipped, 1); // 1 from Foo (skipped="1") + 0 from Bar (skipped="0")
   assert.equal(data.failingCases.length, 2);
 });
 
-test("parseJunitData: packages with failures sort first", () => {
+test("parseJunitData: packages with failures/errors sort first", () => {
   const data = parseJunitData([
     { filename: "TEST-com.example.FooTest.xml", xml: PASSING_SUITE },
     { filename: "TEST-com.example.BarTest.xml", xml: FAILING_SUITE },
   ]);
   assert.equal(data.packages[0].pkg, "com.example");
-  assert.ok(data.packages[0].failed > 0);
+  assert.ok(data.packages[0].failures + data.packages[0].errors > 0);
 });
 
 test("renderJunitMarkdown: contains badge and package table", () => {
@@ -83,6 +84,8 @@ test("renderJunitMarkdown: contains badge and package table", () => {
   assert.ok(md.includes("shields.io/badge/"), "should contain badge URL");
   assert.ok(md.includes("com.example"), "should contain package name");
   assert.ok(md.includes("❌"), "should contain failure emoji");
+  assert.ok(md.includes("💥"), "should contain error emoji");
+  assert.ok(md.includes("| Test Fail | Infra |"), "should have separate Test Fail and Infra columns");
   assert.ok(md.includes("TOTAL"), "should contain totals row");
 });
 
@@ -96,6 +99,14 @@ test("renderJunitMarkdown: failure details present, skipped not annotated", () =
   assert.ok(md.includes("expected true but was false"), "should include failure message");
   assert.ok(md.includes("Stack trace"), "should include stack trace block");
   assert.ok(!md.includes("testSkipped"), "should not annotate skipped test");
+});
+
+test("renderJunitMarkdown: distinguishes AssertionError failures from other-exception errors", () => {
+  const data = parseJunitData([{ filename: "TEST-com.example.BarTest.xml", xml: FAILING_SUITE }]);
+  const md = renderJunitMarkdown(data);
+
+  assert.ok(md.includes("#### ❌ BarTest.testFail"), "assertion failure should use the ❌ icon");
+  assert.ok(md.includes("#### 💥 BarTest.testError"), "other-exception error should use the 💥 icon");
 });
 
 const SUREFIRE_SUITE = `<?xml version="1.0" encoding="UTF-8"?>
@@ -167,6 +178,16 @@ test("renderJunitMarkdown: test output rendered under its own chevron", () => {
   assert.ok(md.includes("Test output (stderr)"), "should include stderr chevron summary");
   assert.ok(md.includes("line1\nline2\nline3"), "should include stdout content");
   assert.ok(md.includes("warn: something"), "should include stderr content");
+});
+
+test("renderJunitPlainText: separate Test Fail/Infra columns and icons", () => {
+  const data = parseJunitData([{ filename: "TEST-com.example.BarTest.xml", xml: FAILING_SUITE }]);
+  const text = renderJunitPlainText(data);
+
+  assert.ok(text.includes("Test Fail"), "header should say Test Fail");
+  assert.ok(text.includes("Infra"), "header should say Infra");
+  assert.ok(text.includes("❌ BarTest.testFail"), "assertion failure should use the ❌ icon");
+  assert.ok(text.includes("💥 BarTest.testError"), "other-exception error should use the 💥 icon");
 });
 
 test("renderJunitPlainText: caps test output to the last N lines", () => {

@@ -32,7 +32,8 @@ export interface FailingTestCase {
 export interface PackageStats {
   pkg: string;
   passed: number;
-  failed: number;
+  failures: number;
+  errors: number;
   skipped: number;
   timeMs: number;
 }
@@ -41,7 +42,8 @@ export interface JunitMarkdownData {
   packages: PackageStats[];
   failingCases: FailingTestCase[];
   totalPassed: number;
-  totalFailed: number;
+  totalFailures: number;
+  totalErrors: number;
   totalSkipped: number;
   totalTimeMs: number;
 }
@@ -122,15 +124,15 @@ export function parseJunitData(files: ReadonlyArray<{ filename: string; xml: str
     const failures = parseInt(getAttr(attrs, "failures") || "0", 10);
     const errors = parseInt(getAttr(attrs, "errors") || "0", 10);
     const skipped = parseInt(getAttr(attrs, "skipped") || "0", 10);
-    const failed = failures + errors;
-    const passed = Math.max(0, tests - failed - skipped);
+    const passed = Math.max(0, tests - failures - errors - skipped);
 
     const dotIdx = suiteName.lastIndexOf(".");
     const pkg = dotIdx === -1 ? "(default)" : suiteName.substring(0, dotIdx);
-    const existing = packageMap.get(pkg) ?? { passed: 0, failed: 0, skipped: 0, timeMs: 0 };
+    const existing = packageMap.get(pkg) ?? { passed: 0, failures: 0, errors: 0, skipped: 0, timeMs: 0 };
     packageMap.set(pkg, {
       passed: existing.passed + passed,
-      failed: existing.failed + failed,
+      failures: existing.failures + failures,
+      errors: existing.errors + errors,
       skipped: existing.skipped + skipped,
       timeMs: existing.timeMs + timeMs,
     });
@@ -138,27 +140,31 @@ export function parseJunitData(files: ReadonlyArray<{ filename: string; xml: str
     failingCases.push(...parseFailingTestCases(xml));
   }
 
-  // Packages with failures first, then alphabetical.
+  // Packages with failures/errors first, then alphabetical.
   const packages: PackageStats[] = [...packageMap.entries()]
     .sort(([pkgA, a], [pkgB, b]) => {
-      if (a.failed > 0 && b.failed === 0) return -1;
-      if (a.failed === 0 && b.failed > 0) return 1;
+      const aFailed = a.failures + a.errors;
+      const bFailed = b.failures + b.errors;
+      if (aFailed > 0 && bFailed === 0) return -1;
+      if (aFailed === 0 && bFailed > 0) return 1;
       return pkgA.localeCompare(pkgB);
     })
     .map(([pkg, s]) => ({ pkg, ...s }));
 
   let totalPassed = 0,
-    totalFailed = 0,
+    totalFailures = 0,
+    totalErrors = 0,
     totalSkipped = 0,
     totalTimeMs = 0;
   for (const s of packages) {
     totalPassed += s.passed;
-    totalFailed += s.failed;
+    totalFailures += s.failures;
+    totalErrors += s.errors;
     totalSkipped += s.skipped;
     totalTimeMs += s.timeMs;
   }
 
-  return { packages, failingCases, totalPassed, totalFailed, totalSkipped, totalTimeMs };
+  return { packages, failingCases, totalPassed, totalFailures, totalErrors, totalSkipped, totalTimeMs };
 }
 
 function pctSuccess(passed: number, failed: number): string {
@@ -198,13 +204,14 @@ function removePackage(name: string): string {
 
 /** Render a JunitMarkdownData object to a GFM markdown string (for $GITHUB_STEP_SUMMARY). */
 export function renderJunitMarkdown(data: JunitMarkdownData): string {
-  const { packages, failingCases, totalPassed, totalFailed, totalSkipped, totalTimeMs } = data;
+  const { packages, failingCases, totalPassed, totalFailures, totalErrors, totalSkipped, totalTimeMs } = data;
+  const totalFailed = totalFailures + totalErrors;
   const lines: string[] = [];
 
   // Badge
-  const badgeText = `tests-${totalPassed} ✅ | ${totalFailed} ❌ | ${totalSkipped} ⏭ | ${formatTime(totalTimeMs)} ⏱️-white`;
+  const badgeText = `tests-${totalPassed} ✅ | ${totalFailures} ❌ | ${totalErrors} 💥 | ${totalSkipped} ⏭ | ${formatTime(totalTimeMs)} ⏱️-white`;
   const badgeUrl = `https://img.shields.io/badge/${encodeURIComponent(badgeText).replace(/\+/g, "%20")}`;
-  const altText = `Test results: ${totalPassed} passed, ${totalFailed} failed, ${totalSkipped} skipped, time: ${formatTime(totalTimeMs)}`;
+  const altText = `Test results: ${totalPassed} passed, ${totalFailures} test failures, ${totalErrors} infra errors, ${totalSkipped} skipped, time: ${formatTime(totalTimeMs)}`;
   lines.push(`![${altText}](${badgeUrl})`);
   lines.push("");
 
@@ -212,18 +219,22 @@ export function renderJunitMarkdown(data: JunitMarkdownData): string {
   lines.push("<details>");
   lines.push("<summary>Test results by package</summary>");
   lines.push("");
-  lines.push("| Package | Pass | Fail | Skip | % Success | Time |");
-  lines.push("|:---|---:|---:|---:|---:|---:|");
+  lines.push("| Package | Pass | Test Fail | Infra | Skip | % Success | Time |");
+  lines.push("|:---|---:|---:|---:|---:|---:|---:|");
   for (const s of packages) {
+    const failed = s.failures + s.errors;
     lines.push(
-      `| ${s.pkg} | ${s.passed > 0 ? `${s.passed} ✅` : ""} | ${s.failed > 0 ? `${s.failed} ❌` : ""} | ${s.skipped > 0 ? `${s.skipped} ⏭️` : ""} | ${pctSuccess(s.passed, s.failed)} | ${formatTime(s.timeMs)} ⏱️ |`,
+      `| ${s.pkg} | ${s.passed > 0 ? `${s.passed} ✅` : ""} | ${s.failures > 0 ? `${s.failures} ❌` : ""} | ${s.errors > 0 ? `${s.errors} 💥` : ""} | ${s.skipped > 0 ? `${s.skipped} ⏭️` : ""} | ${pctSuccess(s.passed, failed)} | ${formatTime(s.timeMs)} ⏱️ |`,
     );
   }
   // Use explicit 0 for zero totals so the cell isn't bold-empty (**<empty>** = ****).
   const totalPassCell = totalPassed > 0 ? `${totalPassed} ✅` : "0";
-  const totalFailCell = totalFailed > 0 ? `${totalFailed} ❌` : "0";
+  const totalFailureCell = totalFailures > 0 ? `${totalFailures} ❌` : "0";
+  const totalErrorCell = totalErrors > 0 ? `${totalErrors} 💥` : "0";
   const totalSkipCell = totalSkipped > 0 ? `${totalSkipped} ⏭️` : "0";
-  lines.push(`| **TOTAL** | **${totalPassCell}** | **${totalFailCell}** | **${totalSkipCell}** | **${pctSuccess(totalPassed, totalFailed)}** | **${formatTime(totalTimeMs)} ⏱️** |`);
+  lines.push(
+    `| **TOTAL** | **${totalPassCell}** | **${totalFailureCell}** | **${totalErrorCell}** | **${totalSkipCell}** | **${pctSuccess(totalPassed, totalFailed)}** | **${formatTime(totalTimeMs)} ⏱️** |`,
+  );
   lines.push("");
   lines.push("</details>");
   lines.push("");
@@ -231,7 +242,8 @@ export function renderJunitMarkdown(data: JunitMarkdownData): string {
   // Per-failure detail blocks
   for (const tc of failingCases) {
     const simpleClass = removePackage(tc.classname);
-    lines.push(`#### ❌ ${simpleClass}.${tc.name}`);
+    const icon = tc.issues.some((issue) => issue.tag === "error") ? "💥" : "❌";
+    lines.push(`#### ${icon} ${simpleClass}.${tc.name}`);
     lines.push("");
     for (const issue of tc.issues) {
       if (issue.message) {
@@ -283,38 +295,44 @@ const RESET = "\x1b[0m";
 
 /** Render a JunitMarkdownData object as a plain-text table for terminal output. */
 export function renderJunitPlainText(data: JunitMarkdownData, maxFailuresPerPackage = 3, maxOutputLines = 20): string {
-  const { packages, failingCases, totalPassed, totalFailed, totalSkipped, totalTimeMs } = data;
+  const { packages, failingCases, totalPassed, totalFailures, totalErrors, totalSkipped, totalTimeMs } = data;
+  const totalFailed = totalFailures + totalErrors;
   const lines: string[] = [];
 
   const pkgHeader = "Package";
   const passHeader = "Pass";
   const skipHeader = "Skip";
-  const failHeader = "Fail";
+  const failureHeader = "Test Fail";
+  const errorHeader = "Infra";
   const pctHeader = "% Succ";
   const timeHeader = "Time";
 
   const pkgWidth = Math.max(pkgHeader.length, ...packages.map((s) => s.pkg.length), 5);
   const passWidth = Math.max(passHeader.length, String(totalPassed).length);
   const skipWidth = Math.max(skipHeader.length, String(totalSkipped).length);
-  const failWidth = Math.max(failHeader.length, String(totalFailed).length);
+  const failureWidth = Math.max(failureHeader.length, String(totalFailures).length);
+  const errorWidth = Math.max(errorHeader.length, String(totalErrors).length);
   const pctWidth = Math.max(pctHeader.length, "100.00%".length);
   const timeWidth = Math.max(timeHeader.length, "H:MM:SS".length, formatTime(totalTimeMs).length);
 
-  const sep = `${"-".repeat(pkgWidth)}-+-${"-".repeat(passWidth)}-+-${"-".repeat(skipWidth)}-+-${"-".repeat(failWidth)}-+-${"-".repeat(pctWidth)}-+-${"-".repeat(timeWidth)}`;
+  const sep = `${"-".repeat(pkgWidth)}-+-${"-".repeat(passWidth)}-+-${"-".repeat(skipWidth)}-+-${"-".repeat(failureWidth)}-+-${"-".repeat(errorWidth)}-+-${"-".repeat(pctWidth)}-+-${"-".repeat(timeWidth)}`;
 
-  const row = (pkg: string, pass: string, skip: string, fail: string, pct: string, time: string, highlight = false): string => {
-    const failStr = highlight && fail !== "0" ? `${RED}${fail.padStart(failWidth)}${RESET}` : fail.padStart(failWidth);
-    return `${pkg.padEnd(pkgWidth)} | ${pass.padStart(passWidth)} | ${skip.padStart(skipWidth)} | ${failStr} | ${pct.padStart(pctWidth)} | ${time.padStart(timeWidth)}`;
+  const row = (pkg: string, pass: string, skip: string, failure: string, error: string, pct: string, time: string, highlight = false): string => {
+    const failureStr = highlight && failure !== "0" ? `${RED}${failure.padStart(failureWidth)}${RESET}` : failure.padStart(failureWidth);
+    const errorStr = highlight && error !== "0" ? `${RED}${error.padStart(errorWidth)}${RESET}` : error.padStart(errorWidth);
+    return `${pkg.padEnd(pkgWidth)} | ${pass.padStart(passWidth)} | ${skip.padStart(skipWidth)} | ${failureStr} | ${errorStr} | ${pct.padStart(pctWidth)} | ${time.padStart(timeWidth)}`;
   };
 
   const renderTable = (): void => {
-    lines.push(row(pkgHeader, passHeader, skipHeader, failHeader, pctHeader, timeHeader));
+    lines.push(row(pkgHeader, passHeader, skipHeader, failureHeader, errorHeader, pctHeader, timeHeader));
     lines.push(sep);
     for (const s of packages) {
-      lines.push(row(s.pkg, String(s.passed), String(s.skipped), String(s.failed), pctSuccess(s.passed, s.failed), formatTime(s.timeMs), true));
+      lines.push(
+        row(s.pkg, String(s.passed), String(s.skipped), String(s.failures), String(s.errors), pctSuccess(s.passed, s.failures + s.errors), formatTime(s.timeMs), true),
+      );
     }
     lines.push(sep);
-    lines.push(row("TOTAL", String(totalPassed), String(totalSkipped), String(totalFailed), pctSuccess(totalPassed, totalFailed), formatTime(totalTimeMs), true));
+    lines.push(row("TOTAL", String(totalPassed), String(totalSkipped), String(totalFailures), String(totalErrors), pctSuccess(totalPassed, totalFailed), formatTime(totalTimeMs), true));
   };
 
   renderTable();
@@ -338,7 +356,8 @@ export function renderJunitPlainText(data: JunitMarkdownData, maxFailuresPerPack
       const hidden = cases.length - shown.length;
       for (const tc of shown) {
         const simpleClass = removePackage(tc.classname);
-        lines.push(`  ${RED}${simpleClass}.${tc.name}${RESET}`);
+        const icon = tc.issues.some((issue) => issue.tag === "error") ? "💥" : "❌";
+        lines.push(`  ${RED}${icon} ${simpleClass}.${tc.name}${RESET}`);
         for (const issue of tc.issues) {
           if (issue.message) {
             lines.push(`    ${issue.message}`);
