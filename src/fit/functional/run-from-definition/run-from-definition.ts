@@ -1869,11 +1869,8 @@ export async function runFromDefinition(
         process.stdout.write(renderSituationalResultsPlainText(rows));
       }
     }
-    // Fire-and-forget, but surface failures: a void'd rejection here is invisible,
-    // and @actions/core's summary writer can fail differently in the compiled binary.
-    void appendRunSummaryToGhaSummary(result).catch((err: unknown) =>
-      console.warn(`Warning: failed to append per-run GHA step summary block: ${String(err)}`),
-    );
+    // appendRunSummaryToGhaSummary is synchronous and catches its own errors internally.
+    appendRunSummaryToGhaSummary(result);
   };
 
   const runDir = ensureRunDir();

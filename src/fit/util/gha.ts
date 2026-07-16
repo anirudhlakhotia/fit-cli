@@ -13,9 +13,6 @@ function summaryFileSize(): number {
     return -1;
   }
 }
-type SummaryTableCell = { data: string; header?: boolean; colspan?: string; rowspan?: string };
-type SummaryTableRow = (SummaryTableCell | string)[];
-
 interface RunSummary {
   /** Rich path label (`aws1 / cbdino1 / java:main / func`), precomputed by the run loop. */
   pathLabel: string;
@@ -29,70 +26,96 @@ interface RunSummary {
 }
 
 /**
- * Append a per-run result block to $GITHUB_STEP_SUMMARY. No-ops outside GHA.
- * Writes a heading, a label/value details table, and (if surefireDir is set) the
- * full per-package JUnit results table — one block per run.
+ * Build the collapsed `<details>` block for one run: the always-visible
+ * `<summary>` line is `pathLabel (sdk) — status`, with the Metric/Value table
+ * and any pre-rendered JUnit/situational markdown collapsed inside it. Pure —
+ * callers own the file I/O (reading surefireDir/situationalResultsCsv) and
+ * pass already-rendered markdown in, so this stays unit-testable.
  */
-export async function appendRunSummaryToGhaSummary(result: RunSummary): Promise<void> {
-  if (!process.env.GITHUB_STEP_SUMMARY) {
-    console.log(`[gha-summary] appendRunSummaryToGhaSummary: GITHUB_STEP_SUMMARY unset — skipping`);
-    return;
-  }
-
-  const { pathLabel, sdk, ok, summary, surefireDir, situationalResultsCsv } = result;
+export function renderRunSummaryBlock(args: {
+  pathLabel: string;
+  sdk: string;
+  ok: boolean;
+  summary?: { testsRun: number; failures: number; errors: number; skipped: number };
+  /** Pre-rendered via junitToMarkdownFromDir. */
+  junitMarkdown?: string;
+  /** Pre-rendered via renderSituationalResultsMarkdown. */
+  situationalMarkdown?: string;
+}): string {
+  const { pathLabel, sdk, ok, summary, junitMarkdown, situationalMarkdown } = args;
   const status = ok ? "✅ PASS" : "❌ FAIL";
-  const sizeBefore = summaryFileSize();
+  const lines: string[] = [];
 
-  let s = core.summary.addHeading(`${pathLabel} (${sdk}) — ${status}`, 3);
+  lines.push("<details>");
+  lines.push(`<summary>${pathLabel} (${sdk}) — ${status}</summary>`);
+  lines.push("");
+
   if (summary) {
-    const rows: SummaryTableRow[] = [
-      [{ data: "Metric", header: true }, { data: "Value", header: true }],
-      ["Tests run", String(summary.testsRun)],
-      ["Failures", String(summary.failures)],
-      ["Errors", String(summary.errors)],
-      ["Skipped", String(summary.skipped)],
-    ];
-    s = s.addTable(rows);
-  }
-  await s.write({ overwrite: false });
-
-  // Append the per-package JUnit table directly to the summary file.
-  // appendFileSync is used here rather than core.summary because core.summary
-  // writes raw HTML blocks whose GFM parsing requires a blank line before the
-  // next markdown element — we inject that leading \n to close the HTML block.
-  if (surefireDir) {
-    const summaryPath = process.env.GITHUB_STEP_SUMMARY;
-    if (summaryPath) {
-      try {
-        const markdown = junitToMarkdownFromDir(surefireDir);
-        appendFileSync(summaryPath, "\n" + markdown + "\n");
-      } catch (err) {
-        console.warn(`Warning: failed to append JUnit table for "${pathLabel}": ${err instanceof Error ? err.message : String(err)}`);
-      }
-    }
+    lines.push("| Metric | Value |");
+    lines.push("|---|---|");
+    lines.push(`| Tests run | ${summary.testsRun} |`);
+    lines.push(`| Failures | ${summary.failures} |`);
+    lines.push(`| Errors | ${summary.errors} |`);
+    lines.push(`| Skipped | ${summary.skipped} |`);
+    lines.push("");
   }
 
   // Situational-only: the authoritative pass/fail signal for these scenarios comes from
   // the performer's scoring, not JUnit assertions, so this table is the more meaningful
   // one — appended below the JUnit table, matching fit-app-deployment's ordering.
-  if (situationalResultsCsv) {
-    const summaryPath = process.env.GITHUB_STEP_SUMMARY;
-    if (summaryPath) {
-      try {
-        const rows = readSituationalResultsCsv(situationalResultsCsv);
-        if (rows) {
-          appendFileSync(summaryPath, "\n" + renderSituationalResultsMarkdown(rows) + "\n");
-        }
-      } catch (err) {
-        console.warn(`Warning: failed to append situational results table for "${pathLabel}": ${err instanceof Error ? err.message : String(err)}`);
-      }
+  for (const markdown of [junitMarkdown, situationalMarkdown]) {
+    if (!markdown) continue;
+    lines.push(markdown.trimEnd());
+    lines.push("");
+  }
+
+  lines.push("</details>");
+  lines.push("");
+
+  return lines.join("\n");
+}
+
+/**
+ * Append a per-run result block to $GITHUB_STEP_SUMMARY. No-ops outside GHA.
+ * Collapsed by default — one `<details>` block per run, its `<summary>` line
+ * showing the pass/fail status so it's visible without expanding.
+ */
+export function appendRunSummaryToGhaSummary(result: RunSummary): void {
+  const summaryPath = process.env.GITHUB_STEP_SUMMARY;
+  if (!summaryPath) {
+    console.log(`[gha-summary] appendRunSummaryToGhaSummary: GITHUB_STEP_SUMMARY unset — skipping`);
+    return;
+  }
+
+  const { pathLabel, sdk, ok, summary, surefireDir, situationalResultsCsv } = result;
+  const sizeBefore = summaryFileSize();
+
+  let junitMarkdown: string | undefined;
+  if (surefireDir) {
+    try {
+      junitMarkdown = junitToMarkdownFromDir(surefireDir);
+    } catch (err) {
+      console.warn(`Warning: failed to render JUnit table for "${pathLabel}": ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
-  console.log(
-    `[gha-summary] wrote per-run block for "${pathLabel}" to ${process.env.GITHUB_STEP_SUMMARY} ` +
-      `(file ${sizeBefore} → ${summaryFileSize()} bytes)`,
-  );
+  let situationalMarkdown: string | undefined;
+  if (situationalResultsCsv) {
+    try {
+      const rows = readSituationalResultsCsv(situationalResultsCsv);
+      if (rows) situationalMarkdown = renderSituationalResultsMarkdown(rows);
+    } catch (err) {
+      console.warn(`Warning: failed to render situational results table for "${pathLabel}": ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  const block = renderRunSummaryBlock({ pathLabel, sdk, ok, summary, junitMarkdown, situationalMarkdown });
+  try {
+    appendFileSync(summaryPath, "\n" + block + "\n");
+    console.log(`[gha-summary] wrote per-run block for "${pathLabel}" to ${summaryPath} (file ${sizeBefore} → ${summaryFileSize()} bytes)`);
+  } catch (err) {
+    console.warn(`Warning: failed to append per-run GHA step summary block for "${pathLabel}": ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 /**
