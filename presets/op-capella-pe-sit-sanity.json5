@@ -27,8 +27,7 @@
               situational: {
                 database: {
                   mode: 'hosted',
-                  // 'dev' as quick sanity testing
-                  resultsEnvironment: 'dev',
+                  resultsEnvironment: 'prod',
                 },
                 privateEndpoint: {},
               },

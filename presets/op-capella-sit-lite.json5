@@ -27,7 +27,7 @@
               situational: {
                 database: {
                   mode: 'hosted',
-                  resultsEnvironment: 'dev',
+                  resultsEnvironment: 'prod',
                 },
               },
               versions: ['{{environments.defaults.capellaClusterVersion}}'],
