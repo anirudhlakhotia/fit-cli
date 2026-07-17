@@ -10,7 +10,6 @@ on:
           - functional
           - functional-quick-sanity
           - situational-quick-sanity
-          - qe-set
           - everything-quick-sanity
           - cng-functional
           - cng-functional-quick-sanity

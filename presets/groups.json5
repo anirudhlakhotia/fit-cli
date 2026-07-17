@@ -35,7 +35,8 @@
 // No `description` here — with this naming convention, a good description can be
 // generated from the name and tags (see generate-preset.ts's `autoDescribeName`),
 // so none is hand-authored. Add one to any entry below if auto-generation ever
-// stops being adequate for it (e.g. a genuinely irregular group, like `qe-set` below).
+// stops being adequate for it (e.g. a genuinely irregular group, such as a
+// hand-named back-compat alias).
 {
   // Level 1: per-cluster.
   'op-onprem-sanity':   { tags: ['onprem', 'functional'], order: 15, presets: ['op-onprem-func-sanity'] },
@@ -96,13 +97,4 @@
   'columnar-multi-sanity':  { tags: ['columnar', 'functional'], order: 46, presets: ['columnar-multi-func-sanity'] },
   'columnar-multi-lite':    { tags: ['columnar', 'functional'], order: 56, presets: ['columnar-multi-func-lite'] },
   'columnar-multi-release': { tags: ['columnar', 'functional'], order: 66, presets: ['columnar-multi-func-release'] },
-
-  // Back-compat: `qe-set` was a single preset (on-prem functional + hosted
-  // situational) before the axis/tier split. `op-multi-lite` is the closest
-  // equivalent under the new naming — kept as an alias so old CI/scripts
-  // referencing "qe-set" keep working. Not a mechanically-describable name, so
-  // it hand-authors its own description rather than relying on autoDescribeName.
-  // `removalDate` drives the deprecation notice appended to the description and
-  // the warning printed wherever this group gets expanded — see generate-preset.ts.
-  'qe-set': { description: 'Legacy alias for op-multi-lite, kept for back-compat.', tags: ['deprecated'], order: 10, presets: ['op-multi-lite'], removalDate: '2027-01-10' },
 }
