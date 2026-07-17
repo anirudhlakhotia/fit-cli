@@ -109,6 +109,7 @@ User-facing (using the installed binary):
 - `fit definition validate | generate-desc` — author or inspect a definition file.
 - `fit preset list | expand | generate` — list, expand or generate presets.
 - `fit cloud-instances list | manage | delete | remove-all` — manage the EC2 instances fit-cli launched.
+- `fit performer build <family> <ref>` — dispatch a performer image build on GitHub Actions (e.g. `fit performer build jvm refs/changes/01/248901/3`), wait for it, and print the resulting image names.
 - `fit caps table | sync` — show which FIT capabilities each SDK's performer reports (see Capabilities).
 
 For development (from source with Bun):
