@@ -184,10 +184,13 @@ function formatTime(ms: number): string {
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
-function truncate(s: string, max = 8 * 1024): string {
+function truncate(s: string, max = 16 * 1024): string {
   if (s.length <= max) return s;
   const half = Math.floor(max / 2);
-  return s.substring(0, half) + "\n[...truncated...]\n" + s.substring(s.length - half);
+  const omitted = s.substring(half, s.length - half);
+  const omittedLines = omitted.split("\n").length - 1;
+  const marker = `\n[...truncated by fit-cli to avoid Github length limits — ~${omittedLines} lines hidden; full output is in this run's ARTIFACT_DIR, fetchable via \`fit archive fetch ...\`...]\n`;
+  return s.substring(0, half) + marker + s.substring(s.length - half);
 }
 
 /** Keep only the last `maxLines` lines of `s` — the failure context is usually near the end of a test's output. */
