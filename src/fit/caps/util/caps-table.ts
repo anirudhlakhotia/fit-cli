@@ -116,6 +116,9 @@ export function formatCapGroupTable(
   for (const number of unknownCapNumbers(results, known, group)) {
     rows.push({ label: `#${number} (not in caps.json5)`, number });
   }
+  // Most recently added first: enum numbers only ever grow, so a higher number is a
+  // newer cap. Uncatalogued caps have the highest numbers, so they float to the top.
+  rows.sort((a, b) => b.number - a.number);
   if (rows.length === 0) return undefined;
 
   const capColumnWidth = Math.max(10, ...rows.map((row) => row.label.length));
@@ -213,6 +216,8 @@ export function formatCapsMarkdown(capsFile: CapsFile, results: readonly CapsFet
     for (const number of unknownCapNumbers(results, known, group)) {
       rows.push({ label: `#${number}`, number, jira: "", description: "Not in caps.json5 — run 'fit caps sync'" });
     }
+    // Most recently added first — see formatCapGroupTable.
+    rows.sort((a, b) => b.number - a.number);
     if (rows.length === 0) continue;
 
     lines.push(`## ${GROUP_TITLES[group]}`, "");

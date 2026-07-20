@@ -106,6 +106,16 @@ describe("formatCapGroupTable", () => {
     assert.ok(table.includes(TICK), "expected a tick");
     assert.ok(table.includes(CROSS), "expected a cross");
   });
+
+  test("orders rows most-recently-added first (highest enum number at the top)", () => {
+    const order = ["#7 (not in caps.json5)", "SDK_KV_RANGE_SCAN", "SDK_PRESERVE_EXPIRY"].map((label) =>
+      table.indexOf(label),
+    );
+    assert.ok(
+      order[0] < order[1] && order[1] < order[2],
+      `expected descending-by-number order, got positions ${order.join(", ")}`,
+    );
+  });
 });
 
 describe("capsByNumber", () => {
