@@ -24,9 +24,9 @@ interface RawPresetGroup {
   order: number;
   /** Immediate members — plain preset names and/or other group names. */
   presets: string[];
-  /** ISO date (YYYY-MM-DD) this group is slated for removal, for a back-compat alias.
-   * Drives the deprecation notice on its description and a warning wherever it's
-   * expanded (`expandPresetGroupNames`, `fit run preset`). */
+  /** ISO date (YYYY-MM-DD) this group is slated for removal, for a back-compat alias
+   * (e.g. `qe-set`). Drives the deprecation notice on its description and a warning
+   * wherever it's expanded (`expandPresetGroupNames`, `fit run preset`). */
   removalDate?: string;
 }
 
