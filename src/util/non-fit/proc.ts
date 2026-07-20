@@ -439,6 +439,10 @@ export function streamToFile(
   logFile: string,
   cwd: string = process.cwd(),
   opts?: RunOptions,
+  // Extra environment variables for the child process, merged over process.env.
+  // Used to pass secrets (e.g. FIT_RESULTS_DB_PASSWORD) to a subprocess without
+  // putting them on the command line, where they'd be echoed and visible via `ps`.
+  env?: Record<string, string>,
 ): Promise<void> {
   announce(command, args, opts);
   announceArtifactStream({ logPath: logFile, command: opts?.display ?? formatCommandLine(command, args) });
@@ -458,7 +462,11 @@ export function streamToFile(
       if (last) lastLine = last;
     };
 
-    const child = spawn(command, args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(command, args, {
+      cwd,
+      stdio: ["ignore", "pipe", "pipe"],
+      ...(env ? { env: { ...process.env, ...env } } : {}),
+    });
 
     child.stdout.on("data", (chunk: Buffer) => { log.write(chunk); trackLine(chunk); });
     child.stderr.on("data", (chunk: Buffer) => { log.write(chunk); trackLine(chunk); });

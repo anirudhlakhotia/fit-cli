@@ -70,7 +70,7 @@ export interface FitExecutionContext {
    * only, with the last line surfaced every N seconds for proof-of-life. For
    * genuinely huge logs (the FIT test-driver, performer docker logs).
    */
-  streamToArtifactFile(command: string, args: string[], targetPath: string, cwd?: string): Promise<void>;
+  streamToArtifactFile(command: string, args: string[], targetPath: string, cwd?: string, env?: Record<string, string>): Promise<void>;
   /**
    * BackgroundStreamToArtifact process model (LogType4): start a background
    * process that streams to `targetPath` without blocking. Call
@@ -433,7 +433,7 @@ export function createLocalFitExecutionContext(): FitExecutionContext {
         display: formatCommandLine(command, args),
       });
     },
-    streamToArtifactFile: (command, args, targetPath, cwd) => streamToFile(command, args, targetPath, cwd),
+    streamToArtifactFile: (command, args, targetPath, cwd, env) => streamToFile(command, args, targetPath, cwd, undefined, env),
     streamToArtifactFileInBackground: (command, args, targetPath, cwd) =>
       Promise.resolve(streamToFileInBackground(command, args, targetPath, cwd)),
     targetFilePath: (localPath) => localPath,

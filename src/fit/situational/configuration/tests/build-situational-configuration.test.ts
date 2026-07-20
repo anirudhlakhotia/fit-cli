@@ -41,12 +41,14 @@ test("a definition fitConfig piece can opt back into columnar tests", () => {
   assert.deepEqual(config.excludeTests, []);
 });
 
-test("the cbdino and database blocks are merged under situational", () => {
+test("the cbdino and database blocks are merged under situational, without the password", () => {
   const config = buildSituationalConfiguration(database, {
     version: "7.2",
     cbDinoClusterAppPath: "/opt/cbdinocluster",
     enablePrivateEndpoint: true,
   });
+  // The password must NOT appear in the config — it's passed to the driver via the
+  // FIT_RESULTS_DB_PASSWORD environment variable so it can't leak into CI artifacts.
   assert.deepEqual(config.situational, {
     cbdino: {
       version: "7.2",
@@ -56,7 +58,6 @@ test("the cbdino and database blocks are merged under situational", () => {
     database: {
       jdbc: "jdbc:postgresql://faas.couchbase.com:5432/perf",
       username: "postgres",
-      password: "secret",
     },
   });
 });

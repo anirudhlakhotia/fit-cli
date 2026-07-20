@@ -83,6 +83,12 @@ function baseConfigPiece(performerPort: number): ConfigPiece {
  * ColumnarTest) are excluded by default — they need an Analytics performer and
  * fail against a plain operational one. A definition file can opt back in with
  * a `fitConfig.excludeTests` override, which replaces this array wholesale.
+ *
+ * The database block deliberately carries only the non-secret jdbc + username.
+ * The password is NOT written here: FITConfiguration.json is collected into CI
+ * artifacts, so a password in it leaks. fit-cli passes it to the test-driver via
+ * the FIT_RESULTS_DB_PASSWORD environment variable instead (see runTestDriver),
+ * and the driver rejects a password found in config.
  */
 export function situationalConfigPiece(database: ResultsDatabase, cbdino: CbdinoSettings): ConfigPiece {
   return {
@@ -101,7 +107,6 @@ export function situationalConfigPiece(database: ResultsDatabase, cbdino: Cbdino
         database: {
           jdbc: database.jdbc,
           username: database.username,
-          password: database.password,
         },
       },
     },

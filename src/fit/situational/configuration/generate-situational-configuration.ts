@@ -39,29 +39,14 @@ export function generateSituationalConfiguration(
     `\nGenerating a situational FITConfiguration.json for you. You can also produce this by hand by ` +
       `following ${fitConfigDocPath(fitPerformerDir)} and the situational notes in SITUATIONAL_TESTING.md.`,
   );
-  // The results-DB password is secret, so don't echo the config verbatim; show
-  // it with the password masked while writing the real value to the file.
+  // The config no longer contains the results-DB password (fit-cli passes it to
+  // the driver via the FIT_RESULTS_DB_PASSWORD env var), so it's safe to echo verbatim.
   const result = writeFitConfiguration(config, path);
   console.log(`\nWriting ${result.path}:\n`);
-  printFileContent(JSON.stringify(maskDatabasePassword(config), null, 2));
+  printFileContent(JSON.stringify(config, null, 2));
   console.log(`\n✓ Wrote ${result.path}`);
 
   return { path: result.path, artifacts: [result.artifact], details: [] };
-}
-
-/** Return a shallow clone of the config with the results-DB password masked. */
-export function maskDatabasePassword(config: Record<string, unknown>): Record<string, unknown> {
-  const situational = config.situational as { database?: { password?: unknown } } | undefined;
-  if (!situational?.database) {
-    return config;
-  }
-  return {
-    ...config,
-    situational: {
-      ...situational,
-      database: { ...situational.database, password: "***" },
-    },
-  };
 }
 
 if (isMain(import.meta.url)) {
@@ -71,7 +56,7 @@ if (isMain(import.meta.url)) {
       username: "postgres",
       password: "***",
     });
-    console.log(JSON.stringify(maskDatabasePassword(sample), null, 2));
+    console.log(JSON.stringify(sample, null, 2));
     return Promise.resolve();
   });
 }

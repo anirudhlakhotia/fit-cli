@@ -157,11 +157,3 @@ jobs:
       - name: Job summary
         if: always() && inputs.fitCliSource == 'source'
         run: fit-cli/.github/scripts/job-summary.sh "${{ steps.run-fit-cli.outcome }}"
-
-      - name: Upload run artifacts
-        if: always()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
-        with:
-          name: fit-cli-run-${{ github.run_id }}
-          path: /tmp/fit-cli/
-          if-no-files-found: warn

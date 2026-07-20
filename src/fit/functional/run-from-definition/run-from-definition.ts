@@ -1024,6 +1024,9 @@ export async function runSituationalTests(
     run.extraMavenArgs,
     DEFAULT_TEST_DRIVER_MODULE,
     true,
+    // The results-DB password goes to the driver via the environment, not the
+    // config file — so it can't leak into the collected FITConfiguration.json.
+    { FIT_RESULTS_DB_PASSWORD: database.database.password },
   );
   artifacts.push(...testRun.artifacts);
   const pathLabel = formatRunLabel(

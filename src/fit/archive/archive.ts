@@ -46,7 +46,15 @@ Subcommands:
               <output-dir> defaults to /tmp/fetched/<name-without-.zip>.`;
 }
 
-/** Zip the contents of sourceDir into a new file at outputPath. */
+/**
+ * Glob patterns for run-dir content that must never leave the machine — secrets
+ * that fit-cli keeps in `_internal` (SSH private keys, driver env files). Excluded
+ * from the S3 zip here; the GitHub Actions upload-artifact step mirrors this with
+ * its own `!.../_internal/**` path exclusion (it can't import this constant).
+ */
+export const ARTIFACT_UPLOAD_EXCLUDE_GLOBS = ["**/_internal/**"];
+
+/** Zip the contents of sourceDir into a new file at outputPath, excluding secrets. */
 export async function zipDirectory(sourceDir: string, outputPath: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const output = createWriteStream(outputPath);
@@ -54,7 +62,9 @@ export async function zipDirectory(sourceDir: string, outputPath: string): Promi
     output.on("close", resolve);
     archive.on("error", reject);
     archive.pipe(output);
-    archive.directory(sourceDir, false);
+    // glob (rather than directory()) so we can exclude `_internal` — archiver's
+    // directory() has no ignore option. dot:true keeps dotfiles that directory() included.
+    archive.glob("**/*", { cwd: sourceDir, ignore: ARTIFACT_UPLOAD_EXCLUDE_GLOBS, dot: true });
     void archive.finalize();
   });
 }

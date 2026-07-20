@@ -168,6 +168,23 @@ export async function createRemoteFitExecutionContext(
 
   const gerritSshKeyPath = localGerritKey ? remoteGerritSshKeyPath(rootDir) : undefined;
 
+  // Write extra env vars (e.g. FIT_RESULTS_DB_PASSWORD) into a mode-600 file in the
+  // never-uploaded _internal dir, stage it to the box, and return the remote path.
+  // The driver command then `.`-sources this file, so the secret reaches the remote
+  // process's environment without ever appearing on a command line (which would be
+  // visible via `ps` / logged in the SSH invocation).
+  const stageRemoteEnvFile = async (env: Record<string, string>): Promise<string> => {
+    const internalDir = instanceInternalRunDir(instancePath);
+    mkdirSync(internalDir, { recursive: true, mode: 0o700 });
+    const localEnvFile = join(internalDir, "driver-env.sh");
+    const contents = Object.entries(env).map(([k, v]) => `export ${k}=${posixQuote(v)}`).join("\n") + "\n";
+    writeFileSync(localEnvFile, contents, { mode: 0o600 });
+    const remoteEnvFile = join(rootDir, ".fit-driver-env.sh");
+    await target.putFile(localEnvFile, remoteEnvFile);
+    await target.run("chmod", ["600", remoteEnvFile]);
+    return remoteEnvFile;
+  };
+
   return {
     kind: "remote",
     description: target.description,
@@ -205,7 +222,7 @@ export async function createRemoteFitExecutionContext(
         display: commandOn(formatCommandLine(command, args), target.description),
       });
     },
-    streamToArtifactFile: async (command, args, targetPath, cwd) => {
+    streamToArtifactFile: async (command, args, targetPath, cwd, env) => {
       // The redirect (`> targetPath`) won't create parent dirs, and per-run
       // targets now nest under artifacts/instances/.../runs/N — so ensure the dir.
       await target.run("mkdir", ["-p", dirname(targetPath)]);
@@ -214,7 +231,11 @@ export async function createRemoteFitExecutionContext(
         command: formatCommandLine(command, args),
         onHost: target.description,
       });
-      return target.run("bash", ["-lc", heartbeatShellCommand(pathPrefixedCommand(binDir, command, args), targetPath)], cwd, {
+      // Secrets go via a sourced env file (see stageRemoteEnvFile), never on the
+      // command line — only the file path appears in the invocation.
+      const envSourcePrefix = env ? `. ${posixQuote(await stageRemoteEnvFile(env))} && ` : "";
+      const innerCommand = envSourcePrefix + pathPrefixedCommand(binDir, command, args);
+      return target.run("bash", ["-lc", heartbeatShellCommand(innerCommand, targetPath)], cwd, {
         display: commandOn(formatCommandLine(command, args), target.description),
         greyTextOutput: true,
       });

@@ -26,7 +26,7 @@ import { type InstanceInfo } from "../../../cloud/util/aws/parse-instance.js";
 import { terminateInstance } from "../../../cloud/util/aws/terminate-instance.js";
 import { createKeyPair, deleteKeyPair } from "../../../cloud/util/aws/key-pair.js";
 import { ensureSecurityGroup } from "../../../cloud/util/aws/security-group.js";
-import { instanceRunDir } from "../../../util/non-fit/replay.js";
+import { instanceRunDir, instanceInternalRunDir } from "../../../util/non-fit/replay.js";
 import { instanceLabel } from "../../shared/util/run-labels.js";
 import { waitForSsh, type RemoteHost } from "../../../util/non-fit/ssh.js";
 import { RemoteTarget } from "../../../util/non-fit/remote-target.js";
@@ -171,9 +171,16 @@ export async function provisionFitInstance(options: ProvisionOptions = {}): Prom
 
   const keyName = `fit-cli-${Date.now().toString(36)}`;
   const instanceIdx = options.instanceIndex ?? 0;
-  const instanceDir = instanceRunDir({ instanceIndex: instanceIdx, dirSegments: { instance: instanceLabel({ instanceIndex: instanceIdx }, "aws") } });
+  const instancePathObj = { instanceIndex: instanceIdx, dirSegments: { instance: instanceLabel({ instanceIndex: instanceIdx }, "aws") } };
+  const instanceDir = instanceRunDir(instancePathObj);
   mkdirSync(instanceDir, { recursive: true, mode: 0o700 });
-  const keyPath = join(instanceDir, `${keyName}.pem`);
+  // The SSH private key must NOT be uploaded: the whole run dir is collected into CI
+  // artifacts (public) and S3. Keep it in the per-instance _internal dir, which both
+  // artifact sinks exclude. Local debug/resume tooling still finds it via the keyPath
+  // recorded in ec2-instance.json.
+  const internalDir = instanceInternalRunDir(instancePathObj);
+  mkdirSync(internalDir, { recursive: true, mode: 0o700 });
+  const keyPath = join(internalDir, `${keyName}.pem`);
   await createKeyPair(keyName, keyPath);
 
   // Install EC2 Instance Connect so any team member with the
@@ -235,7 +242,6 @@ export async function provisionFitInstance(options: ProvisionOptions = {}): Prom
       `${JSON.stringify({ instanceId: id, address, region: AWS_REGION, instanceType, keyPath, ...(vpcId ? { vpcId } : {}) }, null, 2)}\n`,
     );
     const artifacts = [
-      artifactFromPath(keyPath, "SSH private key for the EC2 test instance"),
       artifactFromPath(infoPath, "EC2 test instance details (id, address, region)"),
     ];
     const ec2icCommand = `aws ec2-instance-connect ssh --instance-id ${id} --os-user ${FIT_INSTANCE_USER} --region ${AWS_REGION}`;

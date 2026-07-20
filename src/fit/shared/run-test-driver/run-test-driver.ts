@@ -258,6 +258,10 @@ export async function runTestDriver(
   // Only situational runs produce test_results.csv (RunnerUtils.writeCsvRow); skip the
   // extra purge/collect round-trip on the much more common functional path.
   collectSituationalCsv: boolean = false,
+  // Extra env vars for the driver process (e.g. FIT_RESULTS_DB_PASSWORD). Passed via
+  // the process environment rather than the config file or command line so secrets
+  // don't leak into FITConfiguration.json (an artifact) or the echoed command.
+  driverEnv?: Record<string, string>,
 ): Promise<TestRunResult> {
   // The Maven test-driver runs from the performer checkout, so make sure it's
   // present first — cloning it locally if missing (idempotent on a remote box).
@@ -299,7 +303,7 @@ export async function runTestDriver(
   let commandOk: boolean;
   const startMs = Date.now();
   try {
-    await execution.streamToArtifactFile("./mvnw", args, targetLogFile, execution.fitPerformerDir);
+    await execution.streamToArtifactFile("./mvnw", args, targetLogFile, execution.fitPerformerDir, driverEnv);
     console.log("\n✓ FIT test-driver finished");
     commandOk = true;
   } catch (err) {
