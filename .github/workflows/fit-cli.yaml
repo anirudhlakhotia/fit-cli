@@ -74,7 +74,7 @@ jobs:
         env:
           PRESETS: ${{ inputs.preset }}
 
-  run-fit:
+  fit-cli:
     needs: preset-matrix
     runs-on: ubuntu-latest
     strategy:
