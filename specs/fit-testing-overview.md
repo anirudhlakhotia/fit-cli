@@ -26,3 +26,13 @@ A performer is a small per-SDK GRPC server that the driver drives.  fit-cli excl
 
 # Clusters
 FIT needs a real Couchbase cluster to test against.  fit-cli supports several ways to get one (Capella, cbdinocluster-managed local/Docker clusters, CNG-on-OpenShift).
+
+# Writing and running tests
+There's many ways to run FIT tests particularly now that fit-cli exists.
+
+You can run a published performer image:
+```
+fit performer run scala
+```
+
+More to come...
