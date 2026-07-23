@@ -11,10 +11,11 @@
  */
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { artifactFromPath, combineArtifacts, type Detail, type RunOutput } from "../../../util/non-fit/artifacts.js";
+import { artifactFromPath, combineArtifacts, type Artifact, type Detail, type RunOutput } from "../../../util/non-fit/artifacts.js";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { createLogFile } from "../../../util/non-fit/proc.js";
 import { sanitizePathSeg, type DefinitionRunPath } from "../../../util/non-fit/replay.js";
+import { ClassifiedFailure, throwFatalToRun } from "../failure-classification.js";
 import { surefireReportsDir, testResultsCsvPath } from "./collect-junit.js";
 import { createLocalFitExecutionContext, type FitExecutionContext } from "../util/remote-fit-run.js";
 import { selectFitTests, type FitTestSelection } from "../select-fit-tests/select-fit-tests.js";
@@ -247,6 +248,22 @@ export function runTestDriverArgs(
   ];
 }
 
+/**
+ * The last few non-blank lines of the test-driver log, for surfacing *why* Maven
+ * itself failed (e.g. a compile error) instead of just "no JUnit reports found" —
+ * which is true, but masks the actual cause when Maven never got as far as
+ * running tests.
+ */
+function tailOfLog(logFile: string, maxLines = 30): string {
+  if (!existsSync(logFile)) {
+    return "";
+  }
+  const lines = readFileSync(logFile, "utf8")
+    .split(/\r?\n/)
+    .filter((line) => line.trim() !== "");
+  return lines.slice(-maxLines).join("\n");
+}
+
 /** Run the FIT test-driver using the Jenkins-style Maven invocation. */
 export async function runTestDriver(
   execution: FitExecutionContext,
@@ -326,10 +343,21 @@ export async function runTestDriver(
   const csvArtifact = situationalResultsCsv
     ? [artifactFromPath(situationalResultsCsv, "Situational test results (timestamp, test case, status, results-viewer link)")]
     : [];
-  const artifacts = combineArtifacts(
-    [logArtifact, ...csvArtifact],
-    await execution.collectJunitArtifacts(sourceSurefireDir, path),
-  );
+  let artifacts: Artifact[];
+  try {
+    artifacts = combineArtifacts([logArtifact, ...csvArtifact], await execution.collectJunitArtifacts(sourceSurefireDir, path));
+  } catch (err) {
+    // collectJunitArtifacts already classifies a report-less run as FatalToRun, but
+    // its "no JUnit reports found" message masks the real cause when Maven itself
+    // failed (e.g. a compile error) before ever reaching the tests — surface that
+    // instead, using the log we just captured.
+    if (!commandOk && err instanceof ClassifiedFailure && err.classification === "FatalToRun") {
+      throwFatalToRun(
+        `Maven build failed before the test-driver produced any JUnit reports — see ${logFile} for the full log. Tail:\n${tailOfLog(collectedLogFile)}`,
+      );
+    }
+    throw err;
+  }
   const rawSummary = extractFitTestDriverSummaryFromJunitReports(join(dirname(logFile), "surefire-reports"));
   const summary = rawSummary ? { ...rawSummary, durationMs } : undefined;
   const ok = commandOk && (summary ? didFitTestDriverPass(summary) : true);
