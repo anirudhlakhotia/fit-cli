@@ -294,7 +294,6 @@ export async function runTestDriver(
 
   const logFile = fitTestLogFile(path);
   const targetLogFile = join(runArtifactsDir, basename(logFile));
-  const logArtifact = artifactFromPath(logFile, "FIT test-driver stdout/stderr captured for this run");
   console.log(`\nRunning FIT test-driver with:\n  cd ${execution.fitPerformerDir} && ./mvnw ${args.join(" ")}\n`);
   console.log(`Streaming FIT test-driver output to:\n  ${targetLogFile}\n`);
 
@@ -312,7 +311,8 @@ export async function runTestDriver(
   }
   const durationMs = Date.now() - startMs;
 
-  await execution.collectFile(targetLogFile, logFile);
+  const collectedLogFile = await execution.collectFile(targetLogFile, logFile);
+  const logArtifact = artifactFromPath(collectedLogFile, "FIT test-driver stdout/stderr captured for this run");
 
   // Best-effort: an old performer checkout without RunnerUtils.writeCsvRow, or a run
   // that died before finalizeRun(), simply won't have this file — that must not fail
@@ -320,8 +320,7 @@ export async function runTestDriver(
   let situationalResultsCsv: string | undefined;
   if (collectSituationalCsv && (await execution.pathExists(sourceCsvPath))) {
     const localCsvPath = join(dirname(logFile), "test_results.csv");
-    await execution.collectFile(sourceCsvPath, localCsvPath);
-    situationalResultsCsv = localCsvPath;
+    situationalResultsCsv = await execution.collectFile(sourceCsvPath, localCsvPath);
   }
 
   const csvArtifact = situationalResultsCsv
@@ -336,7 +335,7 @@ export async function runTestDriver(
   const ok = commandOk && (summary ? didFitTestDriverPass(summary) : true);
   return {
     ok,
-    logFile,
+    logFile: collectedLogFile,
     artifacts,
     details: summary ? fitTestDriverSummaryDetails(summary, path) : [],
     ...(summary ? { summary } : {}),

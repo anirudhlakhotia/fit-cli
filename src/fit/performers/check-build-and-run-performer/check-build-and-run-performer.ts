@@ -221,7 +221,20 @@ export async function stopManagedPerformer(
     await performer.logStream?.drain();
     const targetLogFile = execution.targetFilePath(performer.logFile);
     try {
-      await execution.collectFile(targetLogFile, performer.logFile);
+      const collectedPath = await execution.collectFile(targetLogFile, performer.logFile);
+      if (collectedPath !== performer.logFile) {
+        // Collection kept the file gzipped (too large to decompress locally) — swap
+        // the pre-registered artifact entry so it doesn't point at a file that was
+        // never created.
+        const staleFilename = artifactFromPath(performer.logFile, "").filename;
+        const explanation =
+          performer.artifacts.find((artifact) => artifact.filename === staleFilename)?.explanation ??
+          "performer logs captured for this FIT run";
+        performer.artifacts = performer.artifacts
+          .filter((artifact) => artifact.filename !== staleFilename)
+          .concat(artifactFromPath(collectedPath, explanation));
+        performer.logFile = collectedPath;
+      }
       console.log(`\n✓ Saved performer logs to ${performer.logFile}`);
     } catch (err) {
       console.warn(`\nCould not collect performer logs from ${execution.description}: ${(err as Error).message}`);

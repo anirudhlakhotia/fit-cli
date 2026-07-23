@@ -1,10 +1,27 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  DEFAULT_MAX_AUTO_DECOMPRESS_BYTES,
   remoteAptCleanupCommand,
   remoteAptGetCommand,
   remoteAptWaitCommand,
+  shouldAutoDecompress,
 } from "../util/remote-fit-execution-context.js";
+
+test("shouldAutoDecompress allows files at or under the default threshold", () => {
+  assert.equal(shouldAutoDecompress(1024), true);
+  assert.equal(shouldAutoDecompress(DEFAULT_MAX_AUTO_DECOMPRESS_BYTES), true);
+});
+
+test("shouldAutoDecompress rejects files over the default threshold", () => {
+  assert.equal(shouldAutoDecompress(DEFAULT_MAX_AUTO_DECOMPRESS_BYTES + 1), false);
+  assert.equal(shouldAutoDecompress(802.6 * 1024 * 1024), false);
+});
+
+test("shouldAutoDecompress honours a custom threshold", () => {
+  assert.equal(shouldAutoDecompress(2000, 1000), false);
+  assert.equal(shouldAutoDecompress(1000, 1000), true);
+});
 
 test("remoteAptWaitCommand waits for cloud-init and apt activity to finish", () => {
   const command = remoteAptWaitCommand();

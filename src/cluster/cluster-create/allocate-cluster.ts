@@ -60,7 +60,8 @@ export interface ClusterCommandExecutor {
   streamToTerminalAndFile(command: string, args: string[], targetPath: string, cwd?: string): Promise<void>;
   targetFilePath(localPath: string): string;
   stageFile(localPath: string, targetPath?: string): Promise<string>;
-  collectFile(targetPath: string, localPath: string): Promise<void>;
+  /** Collect `targetPath` to `localPath`; returns the actual local path written (see {@link FitExecutionContext.collectFile}). */
+  collectFile(targetPath: string, localPath: string): Promise<string>;
   commandAvailable(command: string): Promise<boolean>;
 }
 
@@ -84,7 +85,7 @@ export function localClusterCommandExecutor(): ClusterCommandExecutor {
       if (targetPath !== localPath) {
         copyFileSync(targetPath, localPath);
       }
-      return Promise.resolve();
+      return Promise.resolve(localPath);
     },
     commandAvailable: (command) => Promise.resolve(findOnPath(command) !== undefined),
   };

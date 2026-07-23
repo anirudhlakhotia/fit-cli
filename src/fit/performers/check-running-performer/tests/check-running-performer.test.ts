@@ -36,7 +36,7 @@ function fakeExecutionContext(): FitExecutionContext {
     streamToArtifactFileInBackground: () => Promise.resolve({ drain: () => Promise.resolve() }),
     targetFilePath: (path) => path,
     stageFile: (path) => Promise.resolve(path),
-    collectFile: () => Promise.resolve(),
+    collectFile: (_targetPath: string, localPath: string) => Promise.resolve(localPath),
     removeTree: () => Promise.resolve(),
     runArtifactsDir: () => "/tmp/root/artifacts/run",
     collectJunitArtifacts: () => Promise.resolve([]),

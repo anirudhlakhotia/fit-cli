@@ -36,7 +36,7 @@ function collectExecutor(opts: { collectFails?: boolean } = {}): ClusterCommandE
     stageFile: (localPath, targetPath = localPath) => Promise.resolve(targetPath),
     collectFile: (targetPath, localPath) => {
       collectedFiles.push({ targetPath, localPath });
-      return Promise.resolve();
+      return Promise.resolve(localPath);
     },
     commandAvailable: () => Promise.resolve(true),
   };

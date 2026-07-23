@@ -81,7 +81,13 @@ export interface FitExecutionContext {
   streamToArtifactFileInBackground(command: string, args: string[], targetPath: string, cwd?: string): Promise<BackgroundStream>;
   targetFilePath(localPath: string): string;
   stageFile(localPath: string, targetPath?: string): Promise<string>;
-  collectFile(targetPath: string, localPath: string): Promise<void>;
+  /**
+   * Collect `targetPath` (on the execution target) to `localPath`. Returns the
+   * actual local path written — normally `localPath`, but remote contexts may
+   * return `${localPath}.gz` instead when the collected file was too large to
+   * safely decompress locally (see {@link createRemoteFitExecutionContext}).
+   */
+  collectFile(targetPath: string, localPath: string): Promise<string>;
   removeTree(path: string): Promise<void>;
   /**
    * Directory (on the execution target) that holds this run's per-run I/O —
@@ -443,7 +449,7 @@ export function createLocalFitExecutionContext(): FitExecutionContext {
       if (targetPath !== localPath) {
         copyFileSync(targetPath, localPath);
       }
-      return Promise.resolve();
+      return Promise.resolve(localPath);
     },
     removeTree: (path) => {
       rmSync(path, { recursive: true, force: true });

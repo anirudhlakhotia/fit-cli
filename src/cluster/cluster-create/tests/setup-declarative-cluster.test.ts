@@ -46,7 +46,7 @@ function executor(): ClusterCommandExecutor & {
       stagedFiles.push({ localPath, targetPath });
       return Promise.resolve(targetPath);
     },
-    collectFile: () => Promise.resolve(),
+    collectFile: (_targetPath: string, localPath: string) => Promise.resolve(localPath),
     commandAvailable: () => Promise.resolve(true),
   };
 }
@@ -72,7 +72,7 @@ function configReadingExecutor(config: string): ClusterCommandExecutor & { kind:
     streamToTerminalAndFile: () => Promise.resolve(),
     targetFilePath: (path) => path,
     stageFile: (localPath, targetPath = localPath) => Promise.resolve(targetPath),
-    collectFile: () => Promise.resolve(),
+    collectFile: (_targetPath: string, localPath: string) => Promise.resolve(localPath),
     commandAvailable: () => Promise.resolve(true),
   };
 }
@@ -128,7 +128,7 @@ function initAwareExecutor(): ClusterCommandExecutor & {
       stagedFiles.push({ localPath, targetPath });
       return Promise.resolve(targetPath);
     },
-    collectFile: () => Promise.resolve(),
+    collectFile: (_targetPath: string, localPath: string) => Promise.resolve(localPath),
     commandAvailable: () => Promise.resolve(true),
   };
 }

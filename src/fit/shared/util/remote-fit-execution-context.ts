@@ -4,7 +4,7 @@ import { basename, dirname, join, relative } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { createGunzip } from "node:zlib";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
-import { commandOn, formatCommandLine, runScriptPrefix } from "../../../util/non-fit/fit-cli-log.js";
+import { commandOn, formatBytes, formatCommandLine, runScriptPrefix } from "../../../util/non-fit/fit-cli-log.js";
 import { ensureRunDir, instanceInternalRunDir, type DefinitionRunPath } from "../../../util/non-fit/replay.js";
 import { announceArtifactStream, type BackgroundStream } from "../../../util/non-fit/proc.js";
 import { posixQuote, teeToFileCommand } from "../../../util/non-fit/remote-target.js";
@@ -60,6 +60,14 @@ async function resolveGerritKeyWithAwsFallback(): Promise<string | undefined> {
     if (err instanceof AwsSecretError) return undefined;
     throw err;
   }
+}
+
+/** Compressed size above which {@link createRemoteFitExecutionContext}'s `collectFile` keeps the file gzipped rather than decompressing it locally. */
+export const DEFAULT_MAX_AUTO_DECOMPRESS_BYTES = 250 * 1024 * 1024;
+
+/** Whether a collected file's compressed size is small enough to safely decompress locally. */
+export function shouldAutoDecompress(compressedBytes: number, thresholdBytes: number = DEFAULT_MAX_AUTO_DECOMPRESS_BYTES): boolean {
+  return compressedBytes <= thresholdBytes;
 }
 
 const REMOTE_APT_ENV = "DEBIAN_FRONTEND=noninteractive";
@@ -273,14 +281,37 @@ export async function createRemoteFitExecutionContext(
         "-lc",
         `tmp=$(mktemp /tmp/fit-collect-XXXXXX.gz) && gzip -c ${posixQuote(targetPath)} > "$tmp" && stat -c%s "$tmp" && printf '%s\\n' "$tmp"`,
       ], undefined, { quiet: true })).trim().split("\n");
+      const compressedBytes = Number(sizeLine);
+
+      if (!shouldAutoDecompress(compressedBytes)) {
+        // A GHA-hosted runner (ubuntu-latest) hit ENOSPC mid-decompression on an
+        // oversized (802.6 MB compressed) performer log during a real run: expanding
+        // needs headroom for both the compressed and raw copies at once, and these
+        // runners only have a few GB free to begin with. Past this size, keep the
+        // collected file compressed instead of risking the same failure.
+        const keptGzPath = `${localPath}.gz`;
+        try {
+          await target.getFile(remoteGz, keptGzPath, compressedBytes);
+          console.log(
+            `\n→ Kept ${keptGzPath} compressed (${formatBytes(compressedBytes)}) — exceeds the ` +
+              `${formatBytes(DEFAULT_MAX_AUTO_DECOMPRESS_BYTES)} auto-decompress threshold. ` +
+              `Expand with: gunzip -k ${keptGzPath}`,
+          );
+        } finally {
+          await target.run("rm", ["-f", remoteGz], undefined, { quiet: true });
+        }
+        return keptGzPath;
+      }
+
       const localGz = `${localPath}.fit-gz`;
       try {
-        await target.getFile(remoteGz, localGz, Number(sizeLine));
+        await target.getFile(remoteGz, localGz, compressedBytes);
         await pipeline(createReadStream(localGz), createGunzip(), createWriteStream(localPath, { mode: 0o600 }));
       } finally {
         await target.run("rm", ["-f", remoteGz], undefined, { quiet: true });
         rmSync(localGz, { force: true });
       }
+      return localPath;
     },
     removeTree: (path) => target.run("rm", ["-rf", path]),
     collectJunitArtifacts: async (sourceDir, path) =>

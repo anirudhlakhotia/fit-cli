@@ -32,7 +32,7 @@ function fakeExecutor(): ClusterCommandExecutor & { capturedArgs: string[] } {
     },
     targetFilePath: (localPath: string) => localPath,
     stageFile: (localPath: string) => Promise.resolve(localPath),
-    collectFile: () => Promise.resolve(),
+    collectFile: (_targetPath: string, localPath: string) => Promise.resolve(localPath),
     commandAvailable: () => Promise.resolve(true),
   };
   return executor;
