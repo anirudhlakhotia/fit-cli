@@ -154,6 +154,14 @@ function matchesDomain(relativePath: string, domain: FitTestDomain): boolean {
   return true;
 }
 
+/** Convert a `java|scala/...` relative test path into its Maven-selectable FQCN. */
+function toClassName(relativePath: string): string {
+  return relativePath
+    .replace(/^(?:java|scala)\//, "")
+    .replace(/\.(?:java|scala)$/, "")
+    .replaceAll("/", ".");
+}
+
 /** Parse the `find` output produced by {@link listFitTests}. */
 export function parseFitTests(output: string, domain: FitTestDomain = FUNCTIONAL_TEST_DOMAIN): FitTestCase[] {
   return output
@@ -164,10 +172,7 @@ export function parseFitTests(output: string, domain: FitTestDomain = FUNCTIONAL
     .map((relativePath) => ({
       relativePath,
       fileName: basename(relativePath),
-      className: relativePath
-        .replace(/^(?:java|scala)\//, "")
-        .replace(/\.(?:java|scala)$/, "")
-        .replaceAll("/", "."),
+      className: toClassName(relativePath),
     }))
     .sort((left, right) => left.relativePath.localeCompare(right.relativePath));
 }
@@ -312,7 +317,10 @@ export function fitTestSearchSource(tests: readonly FitTestCase[]) {
 
     const needle = (term ?? "").trim();
     if (needle.length > 0 && results.length === 0) {
-      return [{ name: `Use "${needle}" directly (not found in discovered tests)`, short: needle, value: needle }];
+      // The typed term may be a `java|scala/...` relative path (copy-pasted from
+      // elsewhere) rather than a dotted FQCN - normalize it so Maven can select it.
+      const className = toClassName(needle);
+      return [{ name: `Use "${needle}" directly (not found in discovered tests)`, short: needle, value: className }];
     }
 
     return results;
@@ -393,7 +401,13 @@ async function selectSingleFitTest(tests: FitTestCase[], promptIdPrefix?: string
     message: "Search for the FIT test to run:",
     source: fitTestSearchSource(tests),
   });
-  return buildFitTestSelection(tests, [className]);
+  const selection = buildFitTestSelection(tests, [className]);
+  if (selection.selectedTests.length > 0) {
+    return selection;
+  }
+  // The typed name didn't match a discovered test (e.g. not yet in the cache) - fall
+  // back to passing it straight to Maven, mirroring buildSanityFitTestSelection.
+  return buildFitTestSelectionFromClassNames([className]);
 }
 
 /** Extract the unique package names from a list of test cases (everything before the class name). */

@@ -106,7 +106,7 @@ function buildTests(selection: FitTestSelection): TestsSection {
   if (selection.selectedPackages?.length) {
     return { packages: selection.selectedPackages };
   }
-  if (selection.mavenTestSelector) {
+  if (selection.mavenTestSelector !== undefined && selection.selectedTests.length > 0) {
     return { classes: selection.selectedTests.map((test) => test.className) };
   }
   return { presets: ["all"] };
