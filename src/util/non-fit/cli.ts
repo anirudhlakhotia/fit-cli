@@ -51,7 +51,7 @@ async function renderRunSummary(runDir: string, runOutput: RunOutput): Promise<v
   if (!s3Uri) {
     console.log(`\nTo upload run artifacts to S3 (optional):\n  ${runScriptPrefix("archive")} s3-upload --zip ${runDir} s3://fit-cli/runs/`);
   } else {
-    await appendArtifactFetchToGhaSummary(s3Uri);
+    appendArtifactFetchToGhaSummary(s3Uri);
   }
   emitGhaArtifactNotice(s3Uri ?? undefined);
 }

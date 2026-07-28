@@ -219,7 +219,7 @@ export function renderJunitMarkdown(data: JunitMarkdownData): string {
   lines.push("");
 
   // Per-package summary table
-  lines.push("<details>");
+  lines.push("<details open>");
   lines.push("<summary>Test results by package</summary>");
   lines.push("");
   lines.push("| Package | Pass | Test Fail | Infra | Skip | % Success | Time |");
@@ -261,7 +261,7 @@ export function renderJunitMarkdown(data: JunitMarkdownData): string {
       }
       if (issue.body) {
         lines.push("<details>");
-        lines.push("<summary>Stack trace</summary>");
+        lines.push("<summary><b>🧵 Stack trace</b></summary>");
         lines.push("");
         lines.push("```");
         lines.push(truncate(issue.body));
@@ -277,7 +277,7 @@ export function renderJunitMarkdown(data: JunitMarkdownData): string {
     ] as const) {
       if (!output) continue;
       lines.push("<details>");
-      lines.push(`<summary>Test output (${label})</summary>`);
+      lines.push(`<summary><b>🖥️ Test output (${label})</b></summary>`);
       lines.push("");
       lines.push("```");
       lines.push(truncate(output));

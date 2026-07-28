@@ -1,5 +1,4 @@
-import * as core from "@actions/core";
-import { appendFileSync, existsSync, statSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { junitToMarkdownFromDir } from "../shared/run-test-driver/junit-to-markdown.js";
 import { readSituationalResultsCsv, renderSituationalResultsMarkdown } from "../shared/run-test-driver/situational-results.js";
 
@@ -119,18 +118,39 @@ export function appendRunSummaryToGhaSummary(result: RunSummary): void {
 }
 
 /**
- * Append a "Run artifacts" section to $GITHUB_STEP_SUMMARY with the
- * `fit archive fetch` command so reviewers can pull the run down locally.
- * No-ops outside GHA or when GITHUB_STEP_SUMMARY is unset.
+ * Prepend a "Run artifacts" section to the top of $GITHUB_STEP_SUMMARY with the
+ * `fit archive fetch` command (and install instructions) so reviewers can pull the
+ * run down locally. Collapsed by default. Prepended rather than appended since the
+ * S3 URI is only known once the run finishes, after the per-run blocks are already
+ * written — this is the only way to get it to the top of the summary. No-ops outside
+ * GHA or when GITHUB_STEP_SUMMARY is unset.
  */
-export async function appendArtifactFetchToGhaSummary(s3Uri: string): Promise<void> {
-  if (!process.env.GITHUB_STEP_SUMMARY) return;
+export function appendArtifactFetchToGhaSummary(s3Uri: string): void {
+  const summaryPath = process.env.GITHUB_STEP_SUMMARY;
+  if (!summaryPath) return;
 
-  await core.summary
-    .addHeading("Run artifacts (S3)", 3)
-    .addRaw(`<p>Artifacts uploaded — download locally with:</p>`)
-    .addCodeBlock(`fit archive fetch ${s3Uri}`, "sh")
-    .write({ overwrite: false });
+  const block = [
+    "<details>",
+    "<summary>📦 Run artifacts (S3)</summary>",
+    "",
+    "Artifacts uploaded — download locally with:",
+    "",
+    "```sh",
+    `fit archive fetch ${s3Uri}`,
+    "```",
+    "",
+    "Don't have `fit` installed yet?",
+    "",
+    "```sh",
+    "curl -fsSL https://raw.githubusercontent.com/couchbaselabs/fit-cli/main/install.sh | bash",
+    "```",
+    "",
+    "</details>",
+    "",
+  ].join("\n");
+
+  const existing = existsSync(summaryPath) ? readFileSync(summaryPath, "utf8") : "";
+  writeFileSync(summaryPath, block + "\n" + existing);
 }
 
 /**
