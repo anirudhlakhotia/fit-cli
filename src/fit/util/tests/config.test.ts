@@ -13,6 +13,7 @@ import {
   parseFitCliConfig,
   resolveCapellaConfig,
   resolveCloudInstanceType,
+  resolveFitPerformerDir,
   resolveGithubToken,
   resolveResultsDbCredentials,
   resolveRosaCredentials,
@@ -128,6 +129,30 @@ test("resolveGithubToken falls back to GITHUB_TOKEN then GH_TOKEN", async () => 
     }),
     "fallback",
   );
+});
+
+test("resolveFitPerformerDir prefers FIT_PERFORMER_DIR env var over config", () => {
+  assert.equal(
+    resolveFitPerformerDir({
+      config: { version: FIT_CLI_CONFIG_VERSION, localhost: { repos: { "transactions-fit-performer": { dir: "/from/config" } } } },
+      env: { FIT_PERFORMER_DIR: "/from/env" },
+    }),
+    "/from/env",
+  );
+});
+
+test("resolveFitPerformerDir falls back to config when FIT_PERFORMER_DIR is unset", () => {
+  assert.equal(
+    resolveFitPerformerDir({
+      config: { version: FIT_CLI_CONFIG_VERSION, localhost: { repos: { "transactions-fit-performer": { dir: "/from/config" } } } },
+      env: {},
+    }),
+    "/from/config",
+  );
+});
+
+test("resolveFitPerformerDir returns undefined when neither is set", () => {
+  assert.equal(resolveFitPerformerDir({ config: { version: FIT_CLI_CONFIG_VERSION }, env: {} }), undefined);
 });
 
 test("resolveGithubToken falls back to AWS secret when no local config or env", async () => {

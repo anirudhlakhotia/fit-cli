@@ -43,6 +43,12 @@ import { formatFitDefinition } from "../shared/definition/generate-definition.js
 import { combineRunOutputs, type RunOutput } from "../../util/non-fit/artifacts.js";
 import { printVersion } from "../version/version.js";
 import { runScriptPrefix } from "../../util/non-fit/fit-cli-log.js";
+import { FIT_PERFORMER } from "../util/repos.js";
+
+/** Maps a `--repo-dir` key (a {@link Repo.name}) to the env var {@link resolveFitPerformerDir} reads it from. */
+const REPO_DIR_ENV_VARS: Record<string, string> = {
+  [FIT_PERFORMER.name]: "FIT_PERFORMER_DIR",
+};
 
 const SUBCOMMANDS = ["preset", "definition"] as const;
 type Subcommand = (typeof SUBCOMMANDS)[number];
@@ -66,6 +72,11 @@ ${formatKnownPresetsByTag()}
 
 Known preset groups:
 ${formatKnownPresetGroups()}
+
+Shared options (both subcommands):
+  --repo-dir <repo>=<path>         Override, for this run only, where a local repo checkout lives —
+                                  normally set once via \`${runScriptPrefix("config")} edit\` (repeatable).
+                                  e.g. --repo-dir transactions-fit-performer=/path/to/checkout
 
 preset options:
   --performer <image>             SDK-specific performer image ref (e.g. java-fit-performer:refs-changes-67-246067-3 or ghcr.io/couchbase/java-fit-performer:refs-changes-67-246067-3). Alias: --performer-image-name.
@@ -131,6 +142,30 @@ function extractKeyValueFlag(
 function extractOverrides(argv: readonly string[]): { overrides: Record<string, string>; positionals: string[] } {
   const { values, positionals } = extractKeyValueFlag(argv, "--override");
   return { overrides: values, positionals };
+}
+
+/**
+ * Pull `--repo-dir <repo-name>=<path>` entries (repeatable) out of an argv list.
+ * This overrides, for this run only, where a local repo checkout lives — normally
+ * set once via `fit config edit` (`localhost.repos.<name>.dir`). Fails fast on an
+ * unknown repo name rather than silently doing nothing.
+ */
+function extractRepoDirs(argv: readonly string[]): { repoDirs: Record<string, string>; positionals: string[] } {
+  const { values, positionals } = extractKeyValueFlag(argv, "--repo-dir");
+  for (const name of Object.keys(values)) {
+    if (!(name in REPO_DIR_ENV_VARS)) {
+      console.error(`--repo-dir: unknown repo "${name}". Known repos: ${Object.keys(REPO_DIR_ENV_VARS).join(", ")}`);
+      process.exit(2);
+    }
+  }
+  return { repoDirs: values, positionals };
+}
+
+/** Apply `--repo-dir` overrides to the environment for the rest of this process. */
+function applyRepoDirs(repoDirs: Record<string, string>): void {
+  for (const [name, dir] of Object.entries(repoDirs)) {
+    process.env[REPO_DIR_ENV_VARS[name]] = dir;
+  }
 }
 
 /**
@@ -212,8 +247,11 @@ export async function runDispatch(argv: string[]): Promise<RunOutput | void> {
   printVersion();
   console.log();
 
+  const { repoDirs, positionals: afterRepoDirs } = extractRepoDirs(rest);
+  applyRepoDirs(repoDirs);
+
   if (subcommand === "preset") {
-    const { runOpts, positionals: afterRunOpts } = extractRunOptions(rest);
+    const { runOpts, positionals: afterRunOpts } = extractRunOptions(afterRepoDirs);
     const { overrides, positionals: afterOverrides } = extractOverrides(afterRunOpts);
     const { envOverrides, positionals: afterEnvOverrides } = extractEnvOverrides(afterOverrides);
     const { performerImageName, positionals } = extractPerformerImageName(afterEnvOverrides);
@@ -279,7 +317,7 @@ export async function runDispatch(argv: string[]): Promise<RunOutput | void> {
   }
 
   // definition
-  const { overrides, positionals: afterOverrides } = extractOverrides(rest);
+  const { overrides, positionals: afterOverrides } = extractOverrides(afterRepoDirs);
   // A definition file has no `{{environments.*}}` placeholders left to resolve — they were
   // substituted when it was generated. Say so, rather than letting the flag fall through to
   // the positional parser and surface as a confusing usage error.

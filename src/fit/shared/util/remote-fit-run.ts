@@ -420,7 +420,8 @@ export function createLocalFitExecutionContext(): FitExecutionContext {
         fitCliError(
           "No local transactions-fit-performer checkout is configured.\n" +
             `  Run \`${runScriptPrefix("config")} edit\` and enable localhost testing ` +
-            "(sets localhost.repos.\"transactions-fit-performer\".dir).",
+            "(sets localhost.repos.\"transactions-fit-performer\".dir),\n" +
+            `  or pass --repo-dir transactions-fit-performer=<path> to \`${runScriptPrefix("run")}\` for a one-off override.`,
         );
         return false;
       }

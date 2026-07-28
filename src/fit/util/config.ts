@@ -597,15 +597,21 @@ export function resolveCbdinoclusterPath(
 
 /**
  * Resolve the local transactions-fit-performer checkout directory for localhost
- * runs, from `localhost.repos["transactions-fit-performer"].dir` in the config.
- * Returns undefined when the user hasn't configured localhost testing — there's
- * no env var or default; the EC2 path clones the repo on the remote box instead.
+ * runs. Priority: FIT_PERFORMER_DIR env var (set by `run`'s `--performer-dir`
+ * flag for a single invocation) → `localhost.repos["transactions-fit-performer"].dir`
+ * in the config. The env var deliberately wins over config, unlike
+ * {@link resolveCbdinoclusterPath}'s config-first order — this one exists
+ * specifically to let a single run override an already-configured dir, so
+ * config-wins-over-env would make the override silently do nothing for anyone
+ * who has localhost testing configured. Returns undefined when neither is set;
+ * the EC2 path clones the repo on the remote box instead.
  */
 export function resolveFitPerformerDir(
-  options: { config?: FitCliConfig; path?: string } = {},
+  options: { config?: FitCliConfig; path?: string; env?: NodeJS.ProcessEnv } = {},
 ): string | undefined {
+  const env = options.env ?? process.env;
   const config = options.config ?? loadFitCliConfig(options.path).config;
-  const dir = config?.localhost?.repos?.["transactions-fit-performer"]?.dir;
+  const dir = (env.FIT_PERFORMER_DIR?.trim() || undefined) ?? config?.localhost?.repos?.["transactions-fit-performer"]?.dir;
   return dir === undefined ? undefined : expandTilde(dir);
 }
 
