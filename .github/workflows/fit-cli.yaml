@@ -83,19 +83,6 @@ jobs:
         preset: ${{ fromJson(needs.preset-matrix.outputs.presets) }}
     name: ${{ matrix.preset }}
     steps:
-      - name: Debug OIDC token claims
-        run: |
-          JWT=$(curl -fsSL -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r '.value')
-
-          PAYLOAD=$(echo "$JWT" | cut -d. -f2 | tr '_-' '/+')
-          case $(( ${#PAYLOAD} % 4 )) in
-            2) PAYLOAD="${PAYLOAD}==" ;;
-            3) PAYLOAD="${PAYLOAD}=" ;;
-          esac
-
-          echo "$PAYLOAD" | base64 -d | jq .
-
       # Assume the AWS role 'fit-cli-role' from account 'cb-sdk' (958525475024), as this has all required AWS permissions.
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v6
