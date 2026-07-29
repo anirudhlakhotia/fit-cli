@@ -15,6 +15,7 @@ import { checkAwsCredentials } from "../../cloud/util/aws/identity.js";
 import { listInstances, LIVE_STATES } from "../../cloud/util/aws/list-instances.js";
 import { terminateInstance } from "../../cloud/util/aws/terminate-instance.js";
 import { describeInstance } from "../../cloud/util/aws/describe-instance.js";
+import { deleteKeyPair } from "../../cloud/util/aws/key-pair.js";
 import { formatAge, instanceAgeMs, parseDuration, selectAgedOut } from "../../cloud/util/aws/instance-age.js";
 import { confirm } from "../../util/non-fit/prompts.js";
 import { FIT_OWNER_TAG } from "../../fit/util/aws/fit-instance.js";
@@ -172,6 +173,15 @@ async function cmdRemove(argv: string[]): Promise<void> {
 
   await terminateInstance(instanceId);
   console.log(`✓ Terminating ${instanceId}`);
+
+  if (info.keyName) {
+    try {
+      await deleteKeyPair(info.keyName);
+      console.log(`✓ Deleted key pair ${info.keyName}`);
+    } catch (err) {
+      console.error(`✗ Failed to delete key pair ${info.keyName}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
 }
 
 /** Derive the readable creator id fit-cli stamps as the `created-by` tag. */
@@ -269,6 +279,16 @@ async function cmdRemoveAll(argv: string[]): Promise<void> {
       const error = err instanceof Error ? err.message : String(err);
       failures.push({ instanceId: instance.instanceId, error });
       console.error(`✗ Failed to terminate ${instance.instanceId}: ${error}`);
+      continue;
+    }
+
+    if (instance.keyName) {
+      try {
+        await deleteKeyPair(instance.keyName);
+        console.log(`✓ Deleted key pair ${instance.keyName}`);
+      } catch (err) {
+        console.error(`✗ Failed to delete key pair ${instance.keyName}: ${err instanceof Error ? err.message : String(err)}`);
+      }
     }
   }
 

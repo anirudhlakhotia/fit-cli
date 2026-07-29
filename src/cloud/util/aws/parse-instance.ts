@@ -29,6 +29,8 @@ export interface InstanceInfo {
   creator?: string;
   /** VPC the instance belongs to, if present. */
   vpcId?: string;
+  /** Name of the EC2 key pair the instance was launched with, if present. */
+  keyName?: string;
 }
 
 /** A raw EC2 instance entry, as it appears in either response shape. */
@@ -41,6 +43,7 @@ interface RawInstance {
   LaunchTime?: string | Date;
   Tags?: Array<{ Key?: string; Value?: string }>;
   VpcId?: string;
+  KeyName?: string;
 }
 
 /**
@@ -81,6 +84,7 @@ export function parseInstances(response: DescribeInstancesResponse): InstanceInf
       ...(instance.LaunchTime ? { launchTime: instance.LaunchTime instanceof Date ? instance.LaunchTime.toISOString() : instance.LaunchTime } : {}),
       ...(tag("created-by") ? { creator: tag("created-by") } : {}),
       ...(instance.VpcId ? { vpcId: instance.VpcId } : {}),
+      ...(instance.KeyName ? { keyName: instance.KeyName } : {}),
     });
   }
   return instances;

@@ -64,6 +64,21 @@ test("reads the top-level Instances shape returned by run-instances", () => {
   ]);
 });
 
+test("reads the key pair name", () => {
+  const response = {
+    Reservations: [
+      {
+        Instances: [
+          { InstanceId: "i-hhh", State: { Name: "running" }, KeyName: "fit-cli-abc123" },
+        ],
+      },
+    ],
+  };
+  assert.deepEqual(parseInstances(response), [
+    { instanceId: "i-hhh", state: "running", publicDns: undefined, publicIp: undefined, keyName: "fit-cli-abc123" },
+  ]);
+});
+
 test("an empty / absent reservation list yields no instances", () => {
   assert.deepEqual(parseInstances({}), []);
   assert.deepEqual(parseInstances({ Reservations: [] }), []);
