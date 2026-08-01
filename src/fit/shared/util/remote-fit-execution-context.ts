@@ -36,7 +36,7 @@ import {
 import { resolveGerritSshKey } from "../../util/config.js";
 import { getJsonSecret, AwsSecretError } from "../../../cloud/util/aws/secrets.js";
 
-const GERRIT_AWS_SECRET_ID = "fit-cli/gerrit/ssh-key";
+export const GERRIT_AWS_SECRET_ID = "fit-cli/gerrit/ssh-key";
 
 /**
  * Resolve the Gerrit SSH private key path, falling back to AWS Secrets Manager

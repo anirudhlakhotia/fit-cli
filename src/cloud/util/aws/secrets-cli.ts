@@ -1,6 +1,7 @@
 /**
- * Mini CLI for the AWS Secrets Manager secrets that back fit-cli's per-environment
- * Capella and results-DB credentials (the secretIds listed in environments.json5).
+ * Mini CLI for the AWS Secrets Manager secrets that back fit-cli: per-environment
+ * Capella and results-DB credentials (the secretIds listed in environments.json5),
+ * plus the fixed shared secrets (GitHub, Gerrit, ROSA) kept out of that file.
  *
  * Uses the ambient AWS credential chain (env / SSO / profile / OIDC) — the same
  * credentials fit-cli already needs to create instances. Secret values are JSON
@@ -19,11 +20,13 @@ import { runScriptPrefix } from "../../../util/non-fit/fit-cli-log.js";
 import { loadEnvironments } from "../../../fit/util/environments.js";
 import { getJsonSecret, AwsSecretError } from "./secrets.js";
 import { AWS_REGION } from "./aws-target.js";
+import { GITHUB_AWS_SECRET_ID, ROSA_AWS_SECRET_ID } from "../../../fit/util/config.js";
+import { GERRIT_AWS_SECRET_ID } from "../../../fit/shared/util/remote-fit-execution-context.js";
 
 let client: SecretsManagerClient | undefined;
 const secrets = (): SecretsManagerClient => (client ??= new SecretsManagerClient({ region: AWS_REGION }));
 
-/** All secretIds referenced by environments.json5, with a human label. */
+/** All known fit-cli secretIds — environments.json5 entries plus the fixed shared ones — with a human label. */
 function registrySecrets(): { label: string; secretId: string }[] {
   const envs = loadEnvironments();
   const out: { label: string; secretId: string }[] = [];
@@ -33,6 +36,9 @@ function registrySecrets(): { label: string; secretId: string }[] {
   for (const [name, e] of Object.entries(envs.results)) {
     if (e.secretId) out.push({ label: `results/${name}`, secretId: e.secretId });
   }
+  out.push({ label: "github", secretId: GITHUB_AWS_SECRET_ID });
+  out.push({ label: "gerrit", secretId: GERRIT_AWS_SECRET_ID });
+  out.push({ label: "rosa", secretId: ROSA_AWS_SECRET_ID });
   return out;
 }
 
