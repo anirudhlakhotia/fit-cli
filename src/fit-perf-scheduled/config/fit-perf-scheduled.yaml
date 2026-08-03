@@ -1,0 +1,437 @@
+# This file declaratively says what performance tests should be run, and where they should be run.
+# The tools will work out all permutations of runs from this.
+# They will interrogate the database and see what runs already exist.
+# Any runs that need running, will be.
+#
+# Copied from https://github.com/couchbaselabs/fit-as-a-service/blob/main/config/fit-perf-scheduled.yaml
+# for use by src/fit-perf-scheduled/fit-perf-scheduled.ts. That script overwrites `servers.driver.source`
+# at run time (to wherever it actually clones the repos on the fit-cli EC2 instance), and always deletes
+# `database.password` below — the password is never written to a config file; it's resolved from AWS
+# Secrets Manager (`results.prod` in environments.json5) and passed to perf-driver as the
+# FIT_PERF_DB_PASSWORD environment variable instead. `variables.dryRun` below is deliberately left
+# `true` so the first exercise of this script doesn't write to the production perf DB — flip it to
+# `false` once this has been reviewed and run successfully, to make it a real scheduled run.
+
+servers:
+  # This is where the performers should run.  Currently only "localhost" is supported.
+  # In future we want to supported scp-ing the performers to a remote host.
+  performer: localhost
+
+  driver:
+    # Where the driver runs.  Currently only "localhost" is supported.
+    hostname: localhost
+
+    # WARNING: files under this location will be modified.  Make sure you have a backup or have committed local changes.
+    # Under this location will need these folders:
+    #
+    # transactions-fit-performer
+    #
+    # If want to test JVM:
+    # couchbase-jvm-clients
+    # Overwritten by fit-perf-scheduled.ts at run time (see the comment above) — this value only
+    # matters if you hand this file to jenkins-sdk yourself, outside that script.
+    source: /home/ubuntu/fit-perf-scheduled
+
+# Generally only CI should be talking to production database.  For local performance testing, spin up a localhost database.
+# There is deliberately no `password` field here — see the note at the top of this file. perf-driver
+# reads it from the FIT_PERF_DB_PASSWORD environment variable instead.
+database:
+  # When run by jenkins-sdk, jenkins-sdk will use `hostname`, and the driver will use `hostname_docker`.
+  # They need to be separate to allow the driver to connect to the database when both are running inside Docker.
+  hostname: performance-sdk.couchbase.com
+  hostname_docker: performance-sdk.couchbase.com
+  port: 5432
+  username: results_writer
+
+environment:
+  # Can override any executables here, to workaround environmental/path issues.
+  executables:
+  #    docker: /usr/bin/docker
+    #docker: "c:\\Program/ Files\\Docker\\Docker\\resources\\bin\\docker.exe"
+
+  # These will be added to environment variables when running executables
+  envvar:
+#    DOCKER_HOST: cbdyncluster docker-host docker ps
+
+  # The workspace directory is where all temporary files will be placed
+  workspace: workspace
+
+# These settings will not be saved to the database
+variables:
+  # Outputs what would be performed, without actually performing it.  Config files still get written.
+  # Deliberately true here — see the note at the top of this file.
+  dryRun: true
+
+  # Whether to ignore whatever runs are already in the database
+  force: false
+
+  # If confident that Docker images are built and up-to-date
+  skipDriverDockerBuild: false
+  skipPerformerDockerBuild: false
+
+  # How many times we require each permutation to be run.  Smoothes out variance.
+  runsRequired: 1
+
+  # Whether the failure of an individual job should stop everything.
+  stopOnFailure: false
+
+matrix:
+  # While this config supports multiple cluster versions, it's likely some tweaks in the rest of the code would be needed to support it fully.
+  # Note this project is  for perf testing the SDKs, not the clusters, and we intentionally do not test many cluster versions.
+  # Not least because changing the cluster version is very expensive since it reruns the world - multiple days of retesting.
+  clusters:
+    - type: unmanaged # It's 'unmanaged' from jenkins-sdk's POV, e.g. that tool does not have to create the cluster
+      # This will be passed down to cbdinocluster as the cluster config.
+      # Note that changing anything in this will change the cluster and rerun the world.
+      cbdino: 
+        nodes:
+        - count: 1
+          # Note that the logic controls cbdino, which requires "7.1.1" rather than e.g. "7.1.1-3175-enterprise". 
+          # jenkins-sdk has logic (`modifyConfig`) that will interrogate the cluster and fix up various things before it is written to database,
+          # including changing to the "7.1.1-3175-enterprise" we want there.
+          version: 8.0.0
+          services: [kv, n1ql, index]
+        docker:
+          # We use 28GB because it's what we've always used for FIT/PERF.
+          # These are 32GB nodes, we leave 4GB for the driver and performer.
+          kv-memory: 28000
+    # A number of other fields will get filled in dynamically, both by CI and by jenkins-sdk.  Uncomment the below
+    # to help with localhost testing against a copy of the prod database.
+    # Remember to also change top-level variables.
+    # topology: A
+    # version: 7.1.1-3175-enterprise
+    # cpuCount: 16
+    # instance: c5.4xlarge
+    # nodeCount: 1
+    # compaction: disabled
+    # memory: 28000
+
+  implementations:
+    - language: Rust
+      version: snapshot
+
+#    - language: Java
+#      version: snapshot
+#
+#    - language: Java
+#      version: 3.X.X
+#
+#      # If changing or adding any Gerrit patches, may need to make changes in ConfigParser
+#
+#    - language: Scala
+#      version: 1.X.X
+#
+#    - language: Scala
+#      version: 3.8.X
+#
+#    - language: Scala
+#      version: 3.9.X
+#
+#    - language: Scala
+#      version: 3.10.X
+#
+#    - language: Scala
+#      version: 3.11.X
+#
+#    - language: Scala
+#      version: snapshot
+#
+#    # Kotlin SDK owner has opted out of testing non-snapshot builds
+#    - language: Kotlin
+#      version: snapshot
+#
+#    # https://couchbase.slack.com/archives/C033YPWT6DC/p1692090337345279?thread_ts=1692029200.583649&cid=C033YPWT6DC
+#    - language: .NET
+#      version: 3.3.X
+#
+#    - language: .NET
+#      version: 3.4.X
+#
+#    - language: .NET
+#      version: 3.5.X
+#
+#    - language: .NET
+#      version: 3.6.X
+#
+#    - language: .NET
+#      version: 3.7.X
+#
+#    - language: .NET
+#      version: 3.8.X
+#
+#    - language: .NET
+#      version: 3.9.X
+#
+#    - language: .NET
+#      version: snapshot
+#
+#    # Earliest version the Go performer can compile is 2.3.0 (possibly earlier)
+#    # Go needs SDKQE-2831 to avoid 'bad scheme' errors
+#    - language: Go
+#      version: 2.3.X
+#
+#    - language: Go
+#      version: 2.4.X
+#
+#    - language: Go
+#      version: 2.5.X
+#
+#    - language: Go
+#      version: 2.6.X
+#
+#    - language: Go
+#      version: 2.7.X
+#
+#    - language: Go
+#      version: 2.8.X
+#
+#    - language: Go
+#      version: 2.9.X
+#
+#    - language: Go
+#      version: 2.10.X
+#
+#    - language: Go
+#      version: 2.11.X
+#
+#    - language: Go
+#      version: 2.12.X
+#
+#    - language: Go
+#      version: snapshot
+#
+#    - language: Python
+#      version: snapshot
+#
+#    - language: Python
+#      version: 4.1.X
+#
+#    - language: Python
+#      version: 4.2.X
+#
+#    - language: Python
+#      version: 4.3.X
+#
+#    - language: Python
+#      version: 4.4.X
+#
+#    - language: Python
+#      version: 4.5.X
+#
+#    - language: Python
+#      version: 4.6.X
+#
+#    - language: C++
+#      version: snapshot
+#
+#    - language: C++
+#      version: 1.1.X
+#
+#    - language: C++
+#      version: 1.2.X
+#
+#    - language: C++
+#      version: 1.3.X
+#
+#    - language: Node
+#      version: snapshot
+#
+#    - language: Node
+#      version: 4.2.X
+#
+#    - language: Node
+#      version: 4.3.X
+#
+#    - language: Node
+#      version: 4.4.X
+#
+#    - language: Node
+#      version: 4.5.X
+#
+#    - language: Node
+#      version: 4.6.X
+#
+#    - language: Node
+#      version: 4.7.X
+#
+#    - language: Ruby
+#      version: 3.4.X
+#
+#    - language: Ruby
+#      version: 3.5.X
+#
+#    - language: Ruby
+#      version: 3.6.X
+#
+#    - language: Ruby
+#      version: 3.7.X
+#
+#    - language: Ruby
+#      version: 3.8.X
+#
+#    - language: Ruby
+#      version: snapshot
+
+  workloads:
+
+    # KV replaces
+#    - operations:
+#        - op: replace
+#          bounds:
+#            forSeconds: $forSeconds
+#          docLocation:
+#            method: pool
+#            poolSize: $poolSize
+#            poolSelectionStrategy: counter
+#      settings:
+#        variables:
+#          - name: poolSize
+#            value: 10000
+#      exclude:
+#        - protostellar: true
+#        - gerrit: true        # As Gerrit excluded by default
+
+    # KV gets
+    - operations:
+        - op: get
+          bounds:
+            forSeconds: $forSeconds
+          docLocation:
+            method: pool
+            poolSize: $poolSize
+            poolSelectionStrategy: randomUniform
+      settings:
+        variables:
+          - name: poolSize
+            value: 10000
+      exclude:
+        - gerrit: true
+
+    # KV gets - experiment for testing different horizontal scaling values
+#    - operations:
+#        - op: get
+#          bounds:
+#            forSeconds: $forSeconds
+#          docLocation:
+#            method: pool
+#            poolSize: $poolSize
+#            poolSelectionStrategy: randomUniform
+#
+#      settings:
+#        variables:
+#          - name: poolSize
+#            value: 10000
+#          - name: horizontalScaling
+##            values: [1, 2, 4, 8, 16, 32]
+#            # Temporarily (?) scaled right back to reduce backlog
+#            values: [1, 32]
+#          # Just make it easier to find these results
+#          - name: experimentName
+#            values: [ "horizontalScaling" ]
+#      exclude:
+#        - gerrit: true        # As Gerrit excluded by default
+#
+#    # KV inserts
+#    - operations:
+#        - op: insert
+#          bounds:
+#            forSeconds: $forSeconds
+#          docLocation:
+#            method: uuid
+#      settings:
+#        variables:
+#          - name: docNum
+#            value: 10000000
+#      exclude:
+#        - protostellar: true
+#        - gerrit: true
+#
+#    # Write transactions
+#    - operations:
+#        - transaction:
+#            ops:
+#              - op: replace
+#                docLocation:
+#                  method: pool
+#                  poolSize: $poolSize
+#                  poolSelectionStrategy: randomUniform
+#              - op: insert
+#                docLocation:
+#                  method: uuid
+#            bounds:
+#              forSeconds: $forSeconds
+#      settings:
+#        variables:
+#          - name: poolSize
+#            value: 10000
+#      include:
+#        - language: Java
+#          # Note this will include all versions from 3.3.0
+#          version: 3.3.0
+#        - language: Go
+#          version: 2.5.3
+#        - language: C++
+#          version: snapshot
+#      exclude:
+#        - protostellar: true # As Protostellar doesn't support transactions
+#        - gerrit: true       # As we exclude these by default
+#
+#    # Read-only transactions
+#    - operations:
+#        - transaction:
+#            ops:
+#              - op: get
+#                docLocation:
+#                  method: pool
+#                  poolSize: $poolSize
+#                  poolSelectionStrategy: randomUniform
+#            bounds:
+#              forSeconds: $forSeconds
+#      settings:
+#        variables:
+#          - name: poolSize
+#            value: 10000
+#      include:
+#        - language: Java
+#          # Note this will include all versions from 3.3.0
+#          version: 3.3.0
+#        # Remove C++ from transactino read load until CXXCBC-678 (double free crash) is fixed
+#        # - language: C++
+#        #   version: snapshot
+#        - language: Go
+#          version: 2.4.0
+#      exclude:
+#        - protostellar: true # As Protostellar doesn't support transactions
+#        - gerrit: true       # As we exclude these by default
+
+# Top-level variables can be overwritten on a per-workload basis.
+settings:
+  # These GRPC settings are believed to give good results (CBD-4975).  GRPC settings don't get written to the
+  # database, as streaming back results shouldn't affect the results themselves.  So changing these settings
+  # will not trigger any reruns.
+  grpc:
+    flowControl: true
+    batch: 1000
+    compression: true
+  variables:
+    # 5 minutes is completely arbitrary, and we may need to reduce it in future as the permutations grow.
+    #  However, this length has proved useful for various reasons:
+    #  a) we need to trim off some seconds from the start to accommodate e.g. JVM warmup
+    #  b) it's proven long enough for performers that aren't correctly streaming back results to OOM - better to fail and know
+    #  c) it's _maybe_ long enough to catch SDK memory leaks and other over-time issues.  Hasn't been proven either way,
+    #     but it does 'feel' like the minimum that might catch such errors.
+    # (b) and (c) could be addressed by a dedicated smaller set of long soak tests, though.
+    - name: forSeconds
+      value: 300
+    - name: horizontalScaling
+      values: [1,20]
+    # All tests get run against all supported APIs by default.  There is code logic that filters to the APIs each SDK
+    # actually supports.
+    - name: api
+      values: ["DEFAULT", "ASYNC"]
+    - name: concurrencyMechanism
+      type: tunable
+      value: multiprocessing
+      include:
+        - implementation:
+            language: Python
