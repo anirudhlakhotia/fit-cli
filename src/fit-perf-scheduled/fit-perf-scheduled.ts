@@ -14,6 +14,10 @@ import { posixQuote, teeToFileCommand } from "../util/non-fit/remote-target.js";
 import { parseAllocatedId } from "../cluster/cluster-create/parse-allocated-id.js";
 import { parseConnstr } from "../cluster/cluster-select/parse-connstr.js";
 import { installCbdinoclusterRemote } from "../cluster/cluster-create/install-cbdinocluster.js";
+import {
+  defaultCbdinoclusterInitArgs,
+  DEFAULT_CBDINOCLUSTER_DOCKER_NETWORK,
+} from "../cluster/cluster-create/default-cbdinocluster-init-config.js";
 import { resolveGithubTokenFromAws } from "../fit/util/config.js";
 import { loadEnvironments } from "../fit/util/environments.js";
 import { provisionFitInstance, FIT_INSTANCE_USER } from "../fit/util/aws/fit-instance.js";
@@ -145,7 +149,20 @@ async function main(): Promise<void> {
     console.log("\nInstalling cbdinocluster...");
     const cbdinocluster = await installCbdinoclusterRemote(target);
 
+    console.log("\nInitializing cbdinocluster...");
+    const initArgs = defaultCbdinoclusterInitArgs().trim().split(/\s+/).filter(Boolean);
+    await target.run("bash", ["-lc", [cbdinocluster, "init", ...initArgs, "--disable-github"].map(posixQuote).join(" ")], undefined, {
+      display: `cbdinocluster init ${initArgs.join(" ")} --disable-github`,
+    });
+    await target.run(
+      "sh",
+      ["-lc", `docker network inspect ${posixQuote(DEFAULT_CBDINOCLUSTER_DOCKER_NETWORK)} >/dev/null 2>&1 || docker network create ${posixQuote(DEFAULT_CBDINOCLUSTER_DOCKER_NETWORK)}`],
+      undefined,
+      { display: `ensure docker network ${DEFAULT_CBDINOCLUSTER_DOCKER_NETWORK} exists` },
+    );
+
     console.log("\nCloning repositories...");
+    await target.run("mkdir", ["-p", REMOTE_ROOT_DIR]);
     const githubToken = await resolveGithubTokenFromAws();
     if (!githubToken) {
       throw new Error(
