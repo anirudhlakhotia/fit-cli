@@ -5,7 +5,7 @@
   //
   // Which environment a run uses is chosen in the definition file:
   //   capella  → instances[*].setup.capellaEnvironment   (default 'prod')
-  //   results  → runs[*].situational.database.resultsEnvironment   (default 'dev')
+  //   results  → runs[*].situational.database.resultsEnvironment   (default 'prod'; used to be 'dev')
   //
   // Only the passwords live in AWS Secrets Manager now (us-west-2); everything else
   // (endpoint, oid, the shared Capella username, results host) is non-secret and lives here.
