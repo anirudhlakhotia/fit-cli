@@ -1,28 +1,9 @@
 /**
  * fit-perf-scheduled — run FIT/PERF (SDK performance testing) on a clean, throwaway
- * EC2 instance, standing in for what fit-as-a-service's scheduled Prefect flow does:
- * launch a box, allocate a Couchbase cluster with cbdinocluster, build and run the
- * jenkins-sdk driver against a config, and report results into the same production
- * results database FIT/SIT uses.
+ * EC2 instance.
  *
- * This is deliberately NOT a `fit` subcommand and does NOT use a FIT definition file —
- * it's a standalone script (reusing fit-cli's EC2/SSH/secrets library code) meant to be
- * run directly from CI (see .github/workflows/fit-perf-scheduled.yaml) or localhost.
- * See working/fit-perf.md for why (option 1: a thin script, not a rework of fit-cli's
- * definition-file model).
- *
- * Run on its own (this really launches an EC2 instance and, on success, writes
- * results to the production perf database — only run it if you mean to):
+ * Run on its own:
  *   bun src/fit-perf-scheduled/fit-perf-scheduled.ts [--config <path>] [--dry-run]
- *
- * `--dry-run` forces the config's `variables.dryRun` to true (jenkins-sdk then works
- * out what it would run without actually running it) regardless of what the config
- * file says — a safe way to exercise the whole pipeline by hand.
- *
- * The results-DB password is never written into the config file: it's resolved from AWS
- * Secrets Manager and passed to perf-driver as the FIT_PERF_DB_PASSWORD environment
- * variable (see DB_PASSWORD_ENV_VAR below), staged via a remote env file rather than an
- * inline shell `export` so it doesn't appear in `ps` output or an echoed command.
  */
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -47,17 +28,8 @@ import {
 } from "../fit/shared/util/remote-fit-execution-context.js";
 
 const DEFAULT_CONFIG_PATH = join(import.meta.dirname, "config", "fit-perf-scheduled.yaml");
-// Written to the current directory (the GHA checkout, or wherever this is run from) as
-// soon as an instance is provisioned, so a step outside this process — the GHA workflow's
-// "Terminate instance if cancelled" — can find and terminate it if this process itself
-// gets killed (e.g. a job timeout) before it has a chance to clean up.
 const INSTANCE_INFO_PATH = "fit-perf-scheduled-instance.json";
-// The env var perf-driver (transactions-fit-performer/perf-driver) reads the results-DB
-// password from, in preference to a (no longer written) `database.password` config field.
 const DB_PASSWORD_ENV_VAR = "FIT_PERF_DB_PASSWORD";
-// A subdirectory of the home dir, not the home dir itself — configureRemoteGitCredentials
-// writes a plaintext GitHub token to "<rootDir>/.git-credentials", which we don't want
-// sitting at $HOME/.git-credentials (git's own default lookup path) alongside the repos.
 const REMOTE_ROOT_DIR = `/home/${FIT_INSTANCE_USER}/fit-perf-scheduled`;
 
 const JENKINS_SDK: Repo = {
@@ -74,30 +46,29 @@ const COUCHBASE_JVM_CLIENTS: Repo = {
   httpsUrl: "https://github.com/couchbase/couchbase-jvm-clients/",
 };
 
-function parseArgs(argv: string[]): { configPath: string; dryRun: boolean; help: boolean } {
+function parseArgs(argv: string[]): { configPath: string; dryRun: boolean; keepOnFailure: boolean; help: boolean } {
   const configIndex = argv.indexOf("--config");
   return {
     configPath: configIndex !== -1 ? argv[configIndex + 1] : DEFAULT_CONFIG_PATH,
     dryRun: argv.includes("--dry-run"),
+    keepOnFailure: argv.includes("--keep-on-failure"),
     help: argv.includes("--help") || argv.includes("-h"),
   };
 }
 
 function printHelp(): void {
-  console.log(`Usage: bun src/fit-perf-scheduled/fit-perf-scheduled.ts [--config <path>] [--dry-run]
+  console.log(`Usage: bun src/fit-perf-scheduled/fit-perf-scheduled.ts [--config <path>] [--dry-run] [--keep-on-failure]
 
 Launches a clean EC2 instance, allocates a Couchbase cluster with cbdinocluster,
 builds and runs jenkins-sdk against the config, and writes results to the
 production perf results database (performance-sdk.couchbase.com).
 
-  --config <path>  Path to the jenkins-sdk config YAML (default: config/fit-perf-scheduled.yaml
-                    next to this script — a copy of fit-as-a-service's config).
-  --dry-run        Force variables.dryRun=true regardless of what the config says.
-  --help, -h       Show this help.
-
-On success the EC2 instance is terminated. On failure it is left running for
-debugging — an SSH command is printed above; clean it up yourself, or wait for
-the scheduled cleanup-instances.yaml workflow to reap it.
+  --config <path>     Path to the jenkins-sdk config YAML (default: config/fit-perf-scheduled.yaml
+                      next to this script — a copy of fit-as-a-service's config).
+  --dry-run           Force variables.dryRun=true regardless of what the config says.
+  --keep-on-failure   Leave the EC2 instance running for debugging if the run fails.
+                      Default is to terminate it on failure too — only this flag keeps it up.
+  --help, -h          Show this help.
 `);
 }
 
@@ -111,7 +82,7 @@ interface JenkinsSdkConfig {
 }
 
 async function main(): Promise<void> {
-  const { configPath, dryRun, help } = parseArgs(process.argv.slice(2));
+  const { configPath, dryRun, keepOnFailure, help } = parseArgs(process.argv.slice(2));
   if (help) {
     printHelp();
     return;
@@ -153,7 +124,7 @@ async function main(): Promise<void> {
   writeFileSync(INSTANCE_INFO_PATH, JSON.stringify({ instanceId: provisioned.instanceId }));
 
   try {
-    console.log("\nInstalling FIT/PERF dependencies (git, docker, JDK, Maven)...");
+    console.log("\nInstalling FIT/PERF dependencies...");
     await target.runHiddenUntilFailure("sh", ["-lc", remoteAptWaitCommand()], undefined, { display: "wait for cloud-init/apt" });
     await target.runHiddenUntilFailure("sh", ["-lc", remoteAptCleanupCommand()], undefined, { display: "clear /var/lib/apt/lists contents" });
     await target.runHiddenUntilFailure("sh", ["-lc", remoteAptGetCommand("update")], undefined, { display: "apt-get update" });
@@ -253,10 +224,23 @@ async function main(): Promise<void> {
     await provisioned.terminate();
     rmSync(INSTANCE_INFO_PATH, { force: true });
   } catch (err) {
-    console.error(
-      `\n✗ FIT/PERF run failed — leaving instance ${provisioned.instanceId} running for debugging ` +
-        `(see the SSH command printed above). Terminate it yourself when done.`,
-    );
+    if (keepOnFailure) {
+      console.error(
+        `\n✗ FIT/PERF run failed — --keep-on-failure was passed, so instance ${provisioned.instanceId} is ` +
+          `being left running for debugging (see the SSH command printed above). Terminate it yourself when done.`,
+      );
+    } else {
+      console.error(`\n✗ FIT/PERF run failed — terminating instance ${provisioned.instanceId}...`);
+      try {
+        await provisioned.terminate();
+        rmSync(INSTANCE_INFO_PATH, { force: true });
+      } catch (terminateErr) {
+        console.error(
+          `✗ Also failed to terminate instance ${provisioned.instanceId} — you'll need to clean it up yourself: ` +
+            (terminateErr instanceof Error ? terminateErr.message : String(terminateErr)),
+        );
+      }
+    }
     throw err;
   }
 }

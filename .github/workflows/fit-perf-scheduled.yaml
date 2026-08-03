@@ -75,9 +75,9 @@ jobs:
           echo "Running: bun src/fit-perf-scheduled/fit-perf-scheduled.ts ${ARGS[*]}"
           bun src/fit-perf-scheduled/fit-perf-scheduled.ts "${ARGS[@]}"
 
-      # Only fires if the job was cancelled (e.g. hit timeout-minutes above) — an
-      # ordinary script failure intentionally leaves the instance up for debugging,
-      # so this is scoped to cancelled() rather than always()+failure().
+      # Backstop for when the job is cancelled/times out (e.g. hit timeout-minutes above) —
+      # the script's own process gets killed outright then, so its normal on-failure
+      # termination (see --keep-on-failure in fit-perf-scheduled.ts) never gets to run.
       - name: Terminate instance if cancelled
         if: always() && cancelled() && steps.check.outputs.skip != 'true'
         run: |
