@@ -14,12 +14,16 @@ import { posixQuote, teeToFileCommand } from "../util/non-fit/remote-target.js";
 import { parseAllocatedId } from "../cluster/cluster-create/parse-allocated-id.js";
 import { parseConnstr } from "../cluster/cluster-select/parse-connstr.js";
 import { installCbdinoclusterRemote } from "../cluster/cluster-create/install-cbdinocluster.js";
-import { resolveGithubTokenFromAws, resolveResultsDbCredentials } from "../fit/util/config.js";
+import { resolveGithubTokenFromAws } from "../fit/util/config.js";
+import { loadEnvironments } from "../fit/util/environments.js";
 import { provisionFitInstance, FIT_INSTANCE_USER } from "../fit/util/aws/fit-instance.js";
 import { FIT_PERFORMER, repoPath, type Repo } from "../fit/util/repos.js";
+import { checkAwsCredentials } from "../cloud/util/aws/identity.js";
+import { AWS_REGION } from "../cloud/util/aws/aws-target.js";
 import {
   configureRemoteGitCredentials,
   ensureRemoteRepos,
+  uploadRemoteAwsCredentials,
 } from "../fit/shared/util/remote-fit-run.js";
 import {
   remoteAptCleanupCommand,
@@ -75,7 +79,6 @@ production perf results database (performance-sdk.couchbase.com).
 /** Everything from the config we actually inspect/mutate; the rest passes through untouched. */
 interface JenkinsSdkConfig {
   servers?: { driver?: { source?: string } };
-  database?: { username?: string; password?: string };
   variables?: { dryRun?: boolean; [key: string]: unknown };
   matrix?: { clusters?: Array<Record<string, unknown>> };
   [key: string]: unknown;
@@ -102,13 +105,15 @@ async function main(): Promise<void> {
     console.log("--dry-run: forcing variables.dryRun=true");
   }
 
-  console.log("Resolving results-database credentials (results/prod) from AWS Secrets Manager...");
-  const dbCreds = await resolveResultsDbCredentials({ block: "prod" });
-  // The password is deliberately never written into the config file (it ends up on disk on
-  // the EC2 instance, and potentially in uploaded artifacts) — perf-driver reads it from the
-  // DB_PASSWORD_ENV_VAR environment variable instead (staged below, once the box exists).
-  config.database = { ...config.database, username: dbCreds.username };
-  delete config.database.password;
+  // The results-DB password is never resolved here, written into the config file, or handled by
+  // this process at all — it's fetched by the instance itself, directly from AWS Secrets Manager,
+  // once AWS credentials have been forwarded to it (see below). perf-driver reads it from the
+  // DB_PASSWORD_ENV_VAR environment variable.
+  const resultsSecretId = loadEnvironments().results.prod?.secretId;
+  if (!resultsSecretId) {
+    throw new Error(`No secretId configured for the "prod" results environment in environments.json5.`);
+  }
+
   // Must match wherever we actually clone the repos below (REMOTE_ROOT_DIR), not whatever
   // the config file happens to say — overridden here rather than trusted from the file.
   config.servers = { ...config.servers, driver: { ...config.servers?.driver, source: REMOTE_ROOT_DIR } };
@@ -130,9 +135,9 @@ async function main(): Promise<void> {
     await target.runHiddenUntilFailure("sh", ["-lc", remoteAptGetCommand("update")], undefined, { display: "apt-get update" });
     await target.runHiddenUntilFailure(
       "sh",
-      ["-lc", remoteAptGetCommand("install -y git docker.io lsof openjdk-21-jdk maven")],
+      ["-lc", remoteAptGetCommand("install -y git docker.io lsof openjdk-21-jdk maven awscli jq")],
       undefined,
-      { display: "apt-get install git docker.io lsof openjdk-21-jdk maven" },
+      { display: "apt-get install git docker.io lsof openjdk-21-jdk maven awscli jq" },
     );
     await target.run("sudo", ["usermod", "-aG", "docker", FIT_INSTANCE_USER]);
     await target.run("sudo", ["-n", "systemctl", "enable", "--now", "docker"]);
@@ -149,6 +154,11 @@ async function main(): Promise<void> {
     }
     await configureRemoteGitCredentials(target, REMOTE_ROOT_DIR, githubToken);
     await ensureRemoteRepos(target, REMOTE_ROOT_DIR, [FIT_PERFORMER, JENKINS_SDK, COUCHBASE_JVM_CLIENTS]);
+
+    console.log("\nForwarding AWS credentials to the instance (so it can fetch the results-DB password itself)...");
+    const awsCreds = await checkAwsCredentials();
+    if (!awsCreds.ok) throw new Error(`AWS credentials are not usable: ${awsCreds.message}`);
+    await uploadRemoteAwsCredentials(target, REMOTE_ROOT_DIR, awsCreds.credentials);
 
     console.log("\nAllocating the Couchbase cluster with cbdinocluster...");
     const defLocalPath = join(scratchDir, "cbdino-def.yaml");
@@ -204,12 +214,21 @@ async function main(): Promise<void> {
     }
     const [jarPath] = jarListing;
 
-    // Stage the results-DB password as an env file rather than a command-line argument or
-    // inline `export` (which would land in `ps` output and the echoed SSH command/log).
-    const envFileLocal = join(scratchDir, "driver-env.sh");
-    writeFileSync(envFileLocal, `export ${DB_PASSWORD_ENV_VAR}=${posixQuote(dbCreds.password)}\n`, { mode: 0o600 });
+    // Fetch the results-DB password directly on the instance — it never passes through this
+    // process or over SCP, only through the box's own (encrypted) call to Secrets Manager.
+    // `@sh` shell-quotes the value so it's safe to source regardless of its contents.
     const envFileRemote = `${REMOTE_ROOT_DIR}/.fit-perf-driver-env.sh`;
-    await target.putFile(envFileLocal, envFileRemote);
+    await target.run(
+      "sh",
+      [
+        "-lc",
+        `set -o pipefail; aws secretsmanager get-secret-value --secret-id ${posixQuote(resultsSecretId)} ` +
+          `--region ${posixQuote(AWS_REGION)} --query SecretString --output text ` +
+          `| jq -r '"export ${DB_PASSWORD_ENV_VAR}=" + (.password | @sh)' > ${posixQuote(envFileRemote)}`,
+      ],
+      undefined,
+      { display: `fetch ${DB_PASSWORD_ENV_VAR} from AWS Secrets Manager (${resultsSecretId}) on the instance` },
+    );
     await target.run("chmod", ["600", envFileRemote]);
 
     const remoteLogPath = `${jenkinsSdkDir}/logs/jenkins_sdk_run.log`;
