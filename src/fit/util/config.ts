@@ -35,7 +35,7 @@ export const DEFAULT_ROSA_USERNAME = "cluster-admin";
 /** Default environment block names — sourced from environments.json5 defaults. */
 export const DEFAULT_CAPELLA_ENV = loadEnvironments().defaults.defaultCapellaEnvironment;
 export const DEFAULT_RESULTS_ENV = loadEnvironments().defaults.defaultResultsEnvironment;
-/** Default user for the hosted results database when the secret doesn't override it. */
+/** Last-resort user for the hosted results database, for an environment that names none. */
 const DEFAULT_RESULTS_DB_USERNAME = "postgres";
 
 export const FIT_CLI_CONFIG_VERSION = 1;
@@ -739,10 +739,11 @@ export interface ResolvedResultsDbCredentials {
 
 /**
  * Resolve the hosted results-database credentials for a results environment
- * (a key under `results` in environments.json5; default "dev"). The host is the
- * non-secret registry value; the password (and optional username) come from that
- * environment's AWS Secrets Manager secret. Throws with an actionable message
- * when the environment is unknown/unprovisioned or the secret can't be read.
+ * (a key under `results` in environments.json5; default "prod"). Host and username are
+ * non-secret registry values; only the password comes from that environment's AWS
+ * Secrets Manager secret — though a `username` in the secret still wins, so the role
+ * can be changed in an emergency without a fit-cli release. Throws with an actionable
+ * message when the environment is unknown/unprovisioned or the secret can't be read.
  */
 export async function resolveResultsDbCredentials(
   options: {
@@ -770,7 +771,8 @@ export async function resolveResultsDbCredentials(
   if (!password) {
     throw new InvalidFitCliConfigError(`AWS secret "${entry.secretId}" (results "${block}") has no "password" field.`);
   }
-  return { host, username: secret.username?.trim() || DEFAULT_RESULTS_DB_USERNAME, password };
+  const username = secret.username?.trim() || entry.username?.trim() || DEFAULT_RESULTS_DB_USERNAME;
+  return { host, username, password };
 }
 
 /**

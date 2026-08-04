@@ -202,7 +202,10 @@ const TEST_ENVIRONMENTS = {
   defaults: STUB_DEFAULTS,
   testSets: STUB_TEST_SETS,
   capella: { dev: { endpoint: "https://dev.example", oid: "oid-dev", username: "sdk_qe@couchbase.com", secretId: "cap/dev" } },
-  results: { dev: { host: "dev.db.example", secretId: "res/dev" } },
+  results: {
+    dev: { host: "dev.db.example", secretId: "res/dev" },
+    prod: { host: "prod.db.example", username: "results_writer", secretId: "res/prod" },
+  },
   awsTenants: { "cb-sdk": { accountId: "958525475024" } },
   fitCliRole: { accountId: "958525475024", roleName: "fit-cli-role" },
 };
@@ -233,6 +236,24 @@ test("resolveResultsDbCredentials takes the host from the registry and the passw
     fetchSecret: () => Promise.resolve({ password: "s3cret" }),
   });
   assert.deepEqual(creds, { host: "dev.db.example", username: "postgres", password: "s3cret" });
+});
+
+test("resolveResultsDbCredentials takes the username from the registry when the secret has none", async () => {
+  const creds = await resolveResultsDbCredentials({
+    block: "prod",
+    environments: TEST_ENVIRONMENTS,
+    fetchSecret: () => Promise.resolve({ password: "s3cret" }),
+  });
+  assert.deepEqual(creds, { host: "prod.db.example", username: "results_writer", password: "s3cret" });
+});
+
+test("resolveResultsDbCredentials lets the secret's username override the registry", async () => {
+  const creds = await resolveResultsDbCredentials({
+    block: "prod",
+    environments: TEST_ENVIRONMENTS,
+    fetchSecret: () => Promise.resolve({ password: "p", username: "emergency_role" }),
+  });
+  assert.equal(creds.username, "emergency_role");
 });
 
 test("resolveResultsDbCredentials uses the secret's username when present", async () => {

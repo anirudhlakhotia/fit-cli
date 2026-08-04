@@ -13,7 +13,8 @@
   // create instances — so CI and laptops resolve identically. Access is controlled purely by
   // IAM on the secrets (CI's fit-cli-role + developers' SSO role need secretsmanager:GetSecretValue).
   //   capella secret JSON → { "password": "..." }
-  //   results secret JSON → { "password": "..." }   (username defaults to "postgres")
+  //   results secret JSON → { "password": "..." }   (the user is the non-secret `username` on the
+  //   results block below; a "username" in the secret overrides it, for emergency role changes)
   //
   // Capella password: a developer's own (from `config edit` / CAPELLA_PASS env) takes precedence
   // locally; with none configured we fall back to the shared account password in the secret (and
@@ -138,9 +139,9 @@
   },
   results: {
     // hosted-dev: Postgres results DB on :5432/perf, results UI under /results/situational.
-    dev: { host: "faas.couchbase.com", secretId: "fit-cli/results/dev" },
+    dev: { host: "faas.couchbase.com", username: "postgres", secretId: "fit-cli/results/dev" },
     // production results.
-    prod: { host: "performance-sdk.couchbase.com", secretId: "fit-cli/results/prod" },
+    prod: { host: "performance-sdk.couchbase.com", username: "results_writer", secretId: "fit-cli/results/prod" },
   },
 
   // AWS accounts ("tenants") whose users fit-cli-role's trust policy allows to assume it —

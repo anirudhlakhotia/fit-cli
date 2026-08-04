@@ -1,11 +1,13 @@
 /**
  * Workflow: choose which hosted database situational test results are stored in
  * (the results environment selected in the definition file — "dev"=faas,
- * "prod"=performance-sdk; default dev).
+ * "prod"=performance-sdk; default prod).
  *
  * The hosted database's password is secret and comes from that results environment's
  * AWS Secrets Manager secret (see resolveResultsDbCredentials / environments.json5),
  * resolved with the ambient AWS credentials rather than prompted for or stored.
+ * The user it connects as is non-secret and lives in environments.json5 alongside the host,
+ * and differs per environment (prod uses results_writer, not the postgres superuser).
  *
  * Run on its own:
  *   bun run src/fit/situational/choose-results-database/choose-results-database.ts
@@ -21,7 +23,6 @@ import { type ResultsDatabase } from "../../shared/util/results-database.js";
 
 /** Default hosted results host, used for connectivity defaults and JDBC parsing fallbacks. */
 export const DEFAULT_RESULTS_HOST = "faas.couchbase.com";
-export const HOSTED_RESULTS_DB_USERNAME = "postgres";
 
 /** JDBC URL for the Postgres results database on `host`. */
 export function resultsDbJdbc(host: string): string {

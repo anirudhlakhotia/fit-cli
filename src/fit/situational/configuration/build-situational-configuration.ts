@@ -134,8 +134,8 @@ export function buildSituationalConfiguration(
 if (isMain(import.meta.url)) {
   runCli(() => {
     const sample = buildSituationalConfiguration({
-      jdbc: "jdbc:postgresql://faas.couchbase.com:5432/perf",
-      username: "postgres",
+      jdbc: "jdbc:postgresql://performance-sdk.couchbase.com:5432/perf",
+      username: "results_writer",
       password: "***",
     });
     console.log(JSON.stringify(sample, null, 2));

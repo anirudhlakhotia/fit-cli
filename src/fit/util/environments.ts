@@ -26,6 +26,8 @@ export interface CapellaEnvironment {
 
 export interface ResultsEnvironment {
   host?: string | null;
+  /** The (non-secret) Postgres role fit-cli and the FIT driver connect as. */
+  username?: string | null;
   /** AWS Secrets Manager id/ARN holding { password } for this results environment. */
   secretId?: string | null;
 }
