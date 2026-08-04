@@ -5,8 +5,11 @@
 name: Scheduled FIT/PERF
 
 on:
-  schedule:
-    - cron: "0 */3 * * *"
+  # Cron trigger disabled for now: jenkins-sdk's GHCR-only version-discovery change
+  # (prebuilt-container-rollout) hasn't been released there yet. Trigger manually via
+  # workflow_dispatch (with --jenkins-sdk-branch prebuilt-container-rollout) until then.
+  # schedule:
+  #   - cron: "0 */3 * * *"
   workflow_dispatch:
     inputs:
       dryRun:
