@@ -206,7 +206,7 @@ async function main(): Promise<void> {
     await target.run("chmod", ["600", ghcrTokenRemotePath]);
     await target.run(
       "sh",
-      ["-lc", `cat ${posixQuote(ghcrTokenRemotePath)} | sudo docker login ${posixQuote(GHCR_REGISTRY)} --username x-access-token --password-stdin`],
+      ["-lc", `cat ${posixQuote(ghcrTokenRemotePath)} | docker login ${posixQuote(GHCR_REGISTRY)} --username x-access-token --password-stdin`],
       undefined,
       { display: `docker login ${GHCR_REGISTRY}` },
     );
@@ -286,6 +286,15 @@ async function main(): Promise<void> {
       undefined,
       { display: `fetch ${DB_PASSWORD_ENV_VAR} from AWS Secrets Manager (${resultsSecretId}) on the instance` },
     );
+    // jenkins-sdk's Java code itself (not just `docker pull`) checks GITHUB_TOKEN when
+    // pulling prebuilt performer images from ghcr.io, so the java process needs it exported
+    // too, alongside DB_PASSWORD_ENV_VAR.
+    const githubTokenEnvLocalPath = join(scratchDir, "github-token-env.sh");
+    writeFileSync(githubTokenEnvLocalPath, `export GITHUB_TOKEN=${posixQuote(githubToken)}\n`, { mode: 0o600 });
+    const githubTokenEnvRemotePath = `${REMOTE_ROOT_DIR}/.github-token-env.sh`;
+    await target.putFile(githubTokenEnvLocalPath, githubTokenEnvRemotePath);
+    await target.run("sh", ["-lc", `cat ${posixQuote(githubTokenEnvRemotePath)} >> ${posixQuote(envFileRemote)}`]);
+    await target.run("rm", ["-f", githubTokenEnvRemotePath]);
     await target.run("chmod", ["600", envFileRemote]);
 
     const remoteLogPath = `${jenkinsSdkDir}/logs/jenkins_sdk_run.log`;
