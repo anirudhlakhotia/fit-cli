@@ -81,19 +81,21 @@
       // The single AWS region fit-cli operates in.
       region: "us-west-2",
 
-      // cbqerunners-vpc — the only VPC in us-west-2 in this account (there is NO default
-      // VPC, which is why a VPC must be named explicitly).
-      vpcId: "vpc-0ea6734517a89f0f9",
+      // fit-cli-vpc (terraform/vpc.tf) — a VPC dedicated to fit-cli, isolated from
+      // sdkqe-github-runners-tf's cbqerunners-vpc (which fit-cli used to share; infra
+      // changes made there for the GHA self-hosted runners could silently affect PE
+      // connectivity).
+      vpcId: "vpc-01b5328d47e7b9419",
 
-      // cbqerunners-vpc-public-us-west-2b — a public subnet (MapPublicIpOnLaunch=true)
+      // fit-cli-public (terraform/vpc.tf) — a public subnet (MapPublicIpOnLaunch=true)
       // so launched instances get a public IP we can SSH to.
-      subnetId: "subnet-066bf3b21c106d96b",
+      subnetId: "subnet-0c9e623708a87ee88",
 
       // Default SG of the fit-cli VPC. cbdinocluster's `private-endpoints setup-link`
       // creates a Capella PrivateLink endpoint that lands in this SG (no explicit SG is
       // passed to AWS's CreateVpcEndpoint, so it defaults to the VPC's default SG), so
       // instances doing private endpoint testing need to be in it too to reach the cluster.
-      privateEndpointVpcSgId: "sg-0dc1aadee3ec8f615",
+      privateEndpointVpcSgId: "sg-0d7f0565513f225f1",
     },
   },
 
