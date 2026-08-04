@@ -4,13 +4,6 @@
 # Any runs that need running, will be.
 #
 # Copied from https://github.com/couchbaselabs/fit-as-a-service/blob/main/config/fit-perf-scheduled.yaml
-# for use by src/fit-perf-scheduled/fit-perf-scheduled.ts. That script overwrites `servers.driver.source`
-# at run time (to wherever it actually clones the repos on the fit-cli EC2 instance), and always deletes
-# `database.password` below — the password is never written to a config file; it's resolved from AWS
-# Secrets Manager (`results.prod` in environments.json5) and passed to perf-driver as the
-# FIT_PERF_DB_PASSWORD environment variable instead. `variables.dryRun` below is deliberately left
-# `true` so the first exercise of this script doesn't write to the production perf DB — flip it to
-# `false` once this has been reviewed and run successfully, to make it a real scheduled run.
 
 servers:
   # This is where the performers should run.  Currently only "localhost" is supported.
@@ -41,6 +34,7 @@ database:
   hostname: performance-sdk.couchbase.com
   hostname_docker: performance-sdk.couchbase.com
   port: 5432
+  database: perf
   username: results_writer
 
 environment:
@@ -60,7 +54,7 @@ environment:
 variables:
   # Outputs what would be performed, without actually performing it.  Config files still get written.
   # Deliberately true here — see the note at the top of this file.
-  dryRun: true
+  dryRun: false
 
   # Whether to ignore whatever runs are already in the database
   force: false
@@ -110,11 +104,11 @@ matrix:
     - language: Rust
       version: snapshot
 
-#    - language: Java
-#      version: snapshot
-#
-#    - language: Java
-#      version: 3.X.X
+    - language: Java
+      version: snapshot
+
+    - language: Java
+      version: 3.X.X
 #
 #      # If changing or adding any Gerrit patches, may need to make changes in ConfigParser
 #

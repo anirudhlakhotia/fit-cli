@@ -14,10 +14,7 @@ import { posixQuote, teeToFileCommand } from "../util/non-fit/remote-target.js";
 import { parseAllocatedId } from "../cluster/cluster-create/parse-allocated-id.js";
 import { parseConnstr } from "../cluster/cluster-select/parse-connstr.js";
 import { installCbdinoclusterRemote } from "../cluster/cluster-create/install-cbdinocluster.js";
-import {
-  defaultCbdinoclusterInitArgs,
-  DEFAULT_CBDINOCLUSTER_DOCKER_NETWORK,
-} from "../cluster/cluster-create/default-cbdinocluster-init-config.js";
+import { defaultCbdinoclusterInitArgs } from "../cluster/cluster-create/default-cbdinocluster-init-config.js";
 import { resolveGithubTokenFromAws } from "../fit/util/config.js";
 import { loadEnvironments } from "../fit/util/environments.js";
 import { provisionFitInstance, FIT_INSTANCE_USER } from "../fit/util/aws/fit-instance.js";
@@ -39,6 +36,13 @@ const DEFAULT_CONFIG_PATH = join(import.meta.dirname, "config", "fit-perf-schedu
 const INSTANCE_INFO_PATH = "fit-perf-scheduled-instance.json";
 const DB_PASSWORD_ENV_VAR = "FIT_PERF_DB_PASSWORD";
 const REMOTE_ROOT_DIR = `/home/${FIT_INSTANCE_USER}/fit-perf-scheduled`;
+
+// jenkins-sdk hardcodes `--network perf` for the driver/performer containers it starts
+// itself (a legacy assumption from its original Jenkins CI environment) - it isn't
+// configurable. So the cluster cbdinocluster allocates has to live on a network of
+// that same name, overriding fit-cli's usual "fit" default, or the driver/performer
+// can't reach it.
+const DOCKER_NETWORK = "perf";
 
 const JENKINS_SDK: Repo = {
   name: "jenkins-sdk",
@@ -150,15 +154,15 @@ async function main(): Promise<void> {
     const cbdinocluster = await installCbdinoclusterRemote(target);
 
     console.log("\nInitializing cbdinocluster...");
-    const initArgs = defaultCbdinoclusterInitArgs().trim().split(/\s+/).filter(Boolean);
+    const initArgs = defaultCbdinoclusterInitArgs(DOCKER_NETWORK).trim().split(/\s+/).filter(Boolean);
     await target.run("bash", ["-lc", [cbdinocluster, "init", ...initArgs, "--disable-github"].map(posixQuote).join(" ")], undefined, {
       display: `cbdinocluster init ${initArgs.join(" ")} --disable-github`,
     });
     await target.run(
       "sh",
-      ["-lc", `docker network inspect ${posixQuote(DEFAULT_CBDINOCLUSTER_DOCKER_NETWORK)} >/dev/null 2>&1 || docker network create ${posixQuote(DEFAULT_CBDINOCLUSTER_DOCKER_NETWORK)}`],
+      ["-lc", `docker network inspect ${posixQuote(DOCKER_NETWORK)} >/dev/null 2>&1 || docker network create ${posixQuote(DOCKER_NETWORK)}`],
       undefined,
-      { display: `ensure docker network ${DEFAULT_CBDINOCLUSTER_DOCKER_NETWORK} exists` },
+      { display: `ensure docker network ${DOCKER_NETWORK} exists` },
     );
 
     console.log("\nCloning repositories...");
@@ -236,7 +240,7 @@ async function main(): Promise<void> {
     // `@sh` shell-quotes the value so it's safe to source regardless of its contents.
     const envFileRemote = `${REMOTE_ROOT_DIR}/.fit-perf-driver-env.sh`;
     await target.run(
-      "sh",
+      "bash",
       [
         "-lc",
         `set -o pipefail; aws secretsmanager get-secret-value --secret-id ${posixQuote(resultsSecretId)} ` +
@@ -250,7 +254,7 @@ async function main(): Promise<void> {
 
     const remoteLogPath = `${jenkinsSdkDir}/logs/jenkins_sdk_run.log`;
     await target.run("mkdir", ["-p", `${jenkinsSdkDir}/logs`]);
-    await target.run("sh", ["-lc", teeToFileCommand(`. ${envFileRemote} && java -jar ${jarPath}`, remoteLogPath)], jenkinsSdkDir);
+    await target.run("bash", ["-lc", teeToFileCommand(`. ${envFileRemote} && java -jar ${jarPath}`, remoteLogPath)], jenkinsSdkDir);
 
     const localLogPath = join(scratchDir, "jenkins_sdk_run.log");
     await target.getFile(remoteLogPath, localLogPath);
