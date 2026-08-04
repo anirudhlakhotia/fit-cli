@@ -13,6 +13,10 @@ on:
         description: Force variables.dryRun=true (exercises the whole pipeline without writing results).
         type: boolean
         default: false
+      jenkinsSdkBranch:
+        description: Clone this branch of jenkins-sdk instead of its default branch (e.g. prebuilt-container-rollout).
+        type: string
+        default: ""
 
 # Don't run multiple of this job concurrently.  Github will queue up just one item.
 concurrency:
@@ -51,10 +55,14 @@ jobs:
       - name: Run FIT/PERF
         env:
           DRY_RUN: ${{ inputs.dryRun || false }}
+          JENKINS_SDK_BRANCH: ${{ inputs.jenkinsSdkBranch || '' }}
         run: |
           ARGS=()
           if [ "$DRY_RUN" = "true" ]; then
             ARGS+=(--dry-run)
+          fi
+          if [ -n "$JENKINS_SDK_BRANCH" ]; then
+            ARGS+=(--jenkins-sdk-branch "$JENKINS_SDK_BRANCH")
           fi
           echo "Running: bun src/fit-perf-scheduled/fit-perf-scheduled.ts ${ARGS[*]}"
           bun src/fit-perf-scheduled/fit-perf-scheduled.ts "${ARGS[@]}"

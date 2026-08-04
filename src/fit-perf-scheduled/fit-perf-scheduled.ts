@@ -21,6 +21,7 @@ import { provisionFitInstance, FIT_INSTANCE_USER } from "../fit/util/aws/fit-ins
 import { FIT_PERFORMER, repoPath, type Repo } from "../fit/util/repos.js";
 import { checkAwsCredentials } from "../cloud/util/aws/identity.js";
 import { AWS_REGION } from "../cloud/util/aws/aws-target.js";
+import { GHCR_REGISTRY } from "../fit/performers/util/performer-image.js";
 import {
   configureRemoteGitCredentials,
   ensureRemoteRepos,
@@ -44,12 +45,15 @@ const REMOTE_ROOT_DIR = `/home/${FIT_INSTANCE_USER}/fit-perf-scheduled`;
 // can't reach it.
 const DOCKER_NETWORK = "perf";
 
-const JENKINS_SDK: Repo = {
-  name: "jenkins-sdk",
-  dir: "jenkins-sdk",
-  sshUrl: "git@github.com:couchbaselabs/jenkins-sdk.git",
-  httpsUrl: "https://github.com/couchbaselabs/jenkins-sdk/",
-};
+function jenkinsSdkRepo(branch?: string): Repo {
+  return {
+    name: "jenkins-sdk",
+    dir: "jenkins-sdk",
+    sshUrl: "git@github.com:couchbaselabs/jenkins-sdk.git",
+    httpsUrl: "https://github.com/couchbaselabs/jenkins-sdk/",
+    branch,
+  };
+}
 
 const COUCHBASE_JVM_CLIENTS: Repo = {
   name: "couchbase-jvm-clients",
@@ -58,29 +62,40 @@ const COUCHBASE_JVM_CLIENTS: Repo = {
   httpsUrl: "https://github.com/couchbase/couchbase-jvm-clients/",
 };
 
-function parseArgs(argv: string[]): { configPath: string; dryRun: boolean; keepOnFailure: boolean; help: boolean } {
+function parseArgs(argv: string[]): {
+  configPath: string;
+  dryRun: boolean;
+  keepOnFailure: boolean;
+  jenkinsSdkBranch: string | undefined;
+  help: boolean;
+} {
   const configIndex = argv.indexOf("--config");
+  const branchIndex = argv.indexOf("--jenkins-sdk-branch");
   return {
     configPath: configIndex !== -1 ? argv[configIndex + 1] : DEFAULT_CONFIG_PATH,
     dryRun: argv.includes("--dry-run"),
     keepOnFailure: argv.includes("--keep-on-failure"),
+    jenkinsSdkBranch: branchIndex !== -1 ? argv[branchIndex + 1] : undefined,
     help: argv.includes("--help") || argv.includes("-h"),
   };
 }
 
 function printHelp(): void {
-  console.log(`Usage: bun src/fit-perf-scheduled/fit-perf-scheduled.ts [--config <path>] [--dry-run] [--keep-on-failure]
+  console.log(`Usage: bun src/fit-perf-scheduled/fit-perf-scheduled.ts [--config <path>] [--dry-run] [--keep-on-failure] [--jenkins-sdk-branch <branch>]
 
 Launches a clean EC2 instance, allocates a Couchbase cluster with cbdinocluster,
 builds and runs jenkins-sdk against the config, and writes results to the
 production perf results database (performance-sdk.couchbase.com).
 
-  --config <path>     Path to the jenkins-sdk config YAML (default: config/fit-perf-scheduled.yaml
-                      next to this script — a copy of fit-as-a-service's config).
-  --dry-run           Force variables.dryRun=true regardless of what the config says.
-  --keep-on-failure   Leave the EC2 instance running for debugging if the run fails.
-                      Default is to terminate it on failure too — only this flag keeps it up.
-  --help, -h          Show this help.
+  --config <path>            Path to the jenkins-sdk config YAML (default: config/fit-perf-scheduled.yaml
+                             next to this script — a copy of fit-as-a-service's config).
+  --dry-run                  Force variables.dryRun=true regardless of what the config says.
+  --keep-on-failure          Leave the EC2 instance running for debugging if the run fails.
+                             Default is to terminate it on failure too — only this flag keeps it up.
+  --jenkins-sdk-branch <branch>
+                             Clone this branch of jenkins-sdk instead of its default branch, e.g.
+                             --jenkins-sdk-branch prebuilt-container-rollout.
+  --help, -h                 Show this help.
 `);
 }
 
@@ -93,7 +108,7 @@ interface JenkinsSdkConfig {
 }
 
 async function main(): Promise<void> {
-  const { configPath, dryRun, keepOnFailure, help } = parseArgs(process.argv.slice(2));
+  const { configPath, dryRun, keepOnFailure, jenkinsSdkBranch, help } = parseArgs(process.argv.slice(2));
   if (help) {
     printHelp();
     return;
@@ -174,7 +189,28 @@ async function main(): Promise<void> {
       );
     }
     await configureRemoteGitCredentials(target, REMOTE_ROOT_DIR, githubToken);
-    await ensureRemoteRepos(target, REMOTE_ROOT_DIR, [FIT_PERFORMER, JENKINS_SDK, COUCHBASE_JVM_CLIENTS]);
+    if (jenkinsSdkBranch) {
+      console.log(`Using jenkins-sdk branch: ${jenkinsSdkBranch}`);
+    }
+    await ensureRemoteRepos(target, REMOTE_ROOT_DIR, [FIT_PERFORMER, jenkinsSdkRepo(jenkinsSdkBranch), COUCHBASE_JVM_CLIENTS]);
+
+    // jenkins-sdk's prebuilt-container-rollout branch has most SDKs `docker pull` their
+    // performer image straight from ghcr.io/couchbase (the same private packages fit-cli's
+    // own performer commands use) instead of building from source, so Docker on the
+    // instance needs to be authenticated to GHCR too, not just git.
+    console.log("\nAuthenticating Docker to GHCR (for jenkins-sdk's prebuilt performer image pulls)...");
+    const ghcrTokenLocalPath = join(scratchDir, "ghcr-token");
+    writeFileSync(ghcrTokenLocalPath, `${githubToken}\n`, { mode: 0o600 });
+    const ghcrTokenRemotePath = `${REMOTE_ROOT_DIR}/.ghcr-token`;
+    await target.putFile(ghcrTokenLocalPath, ghcrTokenRemotePath);
+    await target.run("chmod", ["600", ghcrTokenRemotePath]);
+    await target.run(
+      "sh",
+      ["-lc", `cat ${posixQuote(ghcrTokenRemotePath)} | sudo docker login ${posixQuote(GHCR_REGISTRY)} --username x-access-token --password-stdin`],
+      undefined,
+      { display: `docker login ${GHCR_REGISTRY}` },
+    );
+    await target.run("rm", ["-f", ghcrTokenRemotePath]);
 
     console.log("\nForwarding AWS credentials to the instance (so it can fetch the results-DB password itself)...");
     const awsCreds = await checkAwsCredentials();
@@ -209,7 +245,7 @@ async function main(): Promise<void> {
     cluster0.connection_string_performer = `couchbase://${nodeIp}`;
     cluster0.connection_string_performer_docker = `couchbase://${nodeIp}`;
 
-    const jenkinsSdkDir = repoPath(JENKINS_SDK, REMOTE_ROOT_DIR);
+    const jenkinsSdkDir = repoPath(jenkinsSdkRepo(jenkinsSdkBranch), REMOTE_ROOT_DIR);
     const configLocalPath = join(scratchDir, "job-config.yaml");
     writeFileSync(configLocalPath, stringifyYaml(config));
     await target.run("mkdir", ["-p", `${jenkinsSdkDir}/config`]);

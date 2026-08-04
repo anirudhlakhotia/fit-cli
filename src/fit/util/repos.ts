@@ -17,6 +17,8 @@ export interface Repo {
    * github SSH key and authenticates with an injected token instead.
    */
   httpsUrl: string;
+  /** Branch to clone instead of the repo's default branch, if set. */
+  branch?: string;
 }
 
 export const FIT_PERFORMER: Repo = {
