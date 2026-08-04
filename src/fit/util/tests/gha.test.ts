@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { renderRunSummaryBlock } from "../gha.js";
+import { chooseBlockWithinBudget, renderRunSummaryBlock, STEP_SUMMARY_BUDGET_BYTES, STEP_SUMMARY_HARD_LIMIT_BYTES } from "../gha.js";
 
 test("renderRunSummaryBlock: collapsed details wrapper, no open attribute", () => {
   const block = renderRunSummaryBlock({ pathLabel: "aws1 / 8.0-stable / java:main / functional", sdk: "Java", ok: true });
@@ -80,5 +80,42 @@ test("renderRunSummaryBlock: all-absent case produces a clean minimal block", ()
   assert.equal(
     block,
     ["<details>", "<summary>aws1 (Java) — ✅ PASS</summary>", "", "</details>", ""].join("\n"),
+  );
+});
+
+test("chooseBlockWithinBudget: takes the richest candidate when there is room", () => {
+  const chosen = chooseBlockWithinBudget(["rich", "lean", "x"], 100);
+  assert.deepEqual(chosen, { block: "rich", skippedRicher: 0 });
+});
+
+test("chooseBlockWithinBudget: falls back past candidates that do not fit", () => {
+  const chosen = chooseBlockWithinBudget(["aaaaaaaaaa", "bbbbb", "c"], 5);
+  assert.deepEqual(chosen, { block: "bbbbb", skippedRicher: 1 });
+});
+
+test("chooseBlockWithinBudget: returns undefined when even the leanest does not fit", () => {
+  assert.equal(chooseBlockWithinBudget(["aaa", "bb"], 1), undefined);
+});
+
+test("chooseBlockWithinBudget: a candidate exactly filling the remaining budget fits", () => {
+  const chosen = chooseBlockWithinBudget(["abcde"], 5);
+  assert.deepEqual(chosen, { block: "abcde", skippedRicher: 0 });
+});
+
+test("chooseBlockWithinBudget: measures bytes not characters, so multi-byte content is not undercounted", () => {
+  // "✅" is 3 bytes in UTF-8 but one JS character — budgeting on .length would let 3x too much through.
+  assert.equal(chooseBlockWithinBudget(["✅"], 2), undefined);
+  assert.deepEqual(chooseBlockWithinBudget(["✅"], 3), { block: "✅", skippedRicher: 0 });
+});
+
+test("chooseBlockWithinBudget: a zero or negative remaining budget admits nothing non-empty", () => {
+  assert.equal(chooseBlockWithinBudget(["a"], 0), undefined);
+  assert.equal(chooseBlockWithinBudget(["a"], -50_000), undefined);
+});
+
+test("step summary budget leaves headroom under GitHub's hard limit", () => {
+  assert.ok(
+    STEP_SUMMARY_BUDGET_BYTES < STEP_SUMMARY_HARD_LIMIT_BYTES,
+    "budget must sit below the limit at which GitHub discards the whole summary",
   );
 });

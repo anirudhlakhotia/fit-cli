@@ -7,6 +7,9 @@
  *   bun src/fit/shared/run-test-driver/junit-to-markdown.ts <surefire-reports-dir-or-archive.tar.gz>
  *   bun src/fit/shared/run-test-driver/junit-to-markdown.ts /tmp/fit-cli/20260622-122009
  *   bun src/fit/shared/run-test-driver/junit-to-markdown.ts /tmp/fit-cli/20260622-122009/instances/0/clusters/0/sessions/0/runs/0/surefire-reports.tar.gz
+ *
+ * Add --markdown to see what a GitHub Actions step summary will contain (--lean for the
+ * reduced form, --bytes for just the size). See --help.
  */
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -193,6 +196,47 @@ function truncate(s: string, max = 16 * 1024): string {
   return s.substring(0, half) + marker + s.substring(s.length - half);
 }
 
+/**
+ * Third-party frames that appear in every FIT stack trace and carry no signal about
+ * the failure. The test driver is always the Java/Maven suite in transactions-fit-performer
+ * regardless of which SDK is under test, so this list is fixed rather than per-language.
+ */
+const FRAMEWORK_FRAME = /^\s*at\s+(org\.awaitility|okhttp3|okio|java\.base|jdk\.internal|sun\.|org\.junit|org\.opentest4j|io\.grpc|reactor\.|com\.google\.common|org\.apache\.maven|org\.testng|kotlin\.|kotlinx\.)/;
+
+/**
+ * Drop framework frames from a stack trace, keeping every non-frame line (the exception
+ * header, `Caused by:`, `... N more`) and every frame that isn't third-party plumbing.
+ * Runs of dropped frames are replaced by a marker so nothing disappears silently.
+ *
+ * On a real FIT run this cuts stack bodies by roughly 6x — a typical trace has two
+ * `com.couchbase.*` frames and fourteen frames of awaitility/okhttp/JDK internals.
+ * If a trace is *entirely* framework frames the original is returned unchanged, since
+ * a marker on its own would tell the reader nothing.
+ */
+export function condenseStackTrace(body: string): string {
+  const lines = body.split("\n");
+  const out: string[] = [];
+  let elided = 0;
+  let keptFrames = 0;
+  const flush = (): void => {
+    if (elided > 0) {
+      out.push(`\t... ${elided} framework frame${elided === 1 ? "" : "s"} elided by fit-cli ...`);
+      elided = 0;
+    }
+  };
+  for (const line of lines) {
+    if (FRAMEWORK_FRAME.test(line)) {
+      elided++;
+      continue;
+    }
+    flush();
+    if (/^\s*at\s+/.test(line)) keptFrames++;
+    out.push(line);
+  }
+  flush();
+  return keptFrames === 0 ? body : out.join("\n");
+}
+
 /** Keep only the last `maxLines` lines of `s` — the failure context is usually near the end of a test's output. */
 function tailLines(s: string, maxLines: number): { text: string; omittedCount: number } {
   const lines = s.split("\n");
@@ -205,8 +249,25 @@ function removePackage(name: string): string {
   return idx === -1 ? name : name.substring(idx + 1);
 }
 
-/** Render a JunitMarkdownData object to a GFM markdown string (for $GITHUB_STEP_SUMMARY). */
-export function renderJunitMarkdown(data: JunitMarkdownData): string {
+export interface JunitMarkdownOptions {
+  /**
+   * Include the per-failure detail blocks. Set false for the badge and package table
+   * only — the lean form the step-summary budget falls back to (see gha.ts).
+   */
+  includeFailureDetail?: boolean;
+}
+
+/**
+ * Render a JunitMarkdownData object to a GFM markdown string (for $GITHUB_STEP_SUMMARY).
+ *
+ * Deliberately omits per-test stdout/stderr. On a real run those are ~99.6% of the
+ * bytes here (83.7 MB of raw stdout across 71 failing tests on one nightly .NET run)
+ * and blew the 1024k step-summary cap, discarding the whole summary. The full output
+ * is preserved in the run's artifact bundle — see the `fit archive fetch` line the
+ * summary carries — which is where megabytes of driver logging belongs.
+ */
+export function renderJunitMarkdown(data: JunitMarkdownData, options: JunitMarkdownOptions = {}): string {
+  const { includeFailureDetail = true } = options;
   const { packages, failingCases, totalPassed, totalFailures, totalErrors, totalSkipped, totalTimeMs } = data;
   const totalFailed = totalFailures + totalErrors;
   const lines: string[] = [];
@@ -242,6 +303,14 @@ export function renderJunitMarkdown(data: JunitMarkdownData): string {
   lines.push("</details>");
   lines.push("");
 
+  if (!includeFailureDetail) {
+    if (failingCases.length > 0) {
+      lines.push(`_${failingCases.length} failing test(s) — detail omitted to stay within GitHub's step-summary limit; see the run artifacts above._`);
+      lines.push("");
+    }
+    return lines.join("\n");
+  }
+
   // Per-failure detail blocks
   for (const tc of failingCases) {
     const simpleClass = removePackage(tc.classname);
@@ -264,26 +333,15 @@ export function renderJunitMarkdown(data: JunitMarkdownData): string {
         lines.push("<summary><b>🧵 Stack trace</b></summary>");
         lines.push("");
         lines.push("```");
-        lines.push(truncate(issue.body));
+        lines.push(truncate(condenseStackTrace(issue.body)));
         lines.push("```");
         lines.push("");
         lines.push("</details>");
         lines.push("");
       }
     }
-    for (const [label, output] of [
-      ["stdout", tc.stdout],
-      ["stderr", tc.stderr],
-    ] as const) {
-      if (!output) continue;
-      lines.push("<details>");
-      lines.push(`<summary><b>🖥️ Test output (${label})</b></summary>`);
-      lines.push("");
-      lines.push("```");
-      lines.push(truncate(output));
-      lines.push("```");
-      lines.push("");
-      lines.push("</details>");
+    if (tc.stdout || tc.stderr) {
+      lines.push(`_Test stdout/stderr omitted here — read it in the run artifacts (see the \`fit archive fetch\` command above)._`);
       lines.push("");
     }
     lines.push("---");
@@ -423,9 +481,9 @@ export function parseJunitDataFromDir(dir: string): JunitMarkdownData | undefine
  * Read all TEST-*.xml files recursively under `dir` and return a GFM
  * markdown string suitable for appending to $GITHUB_STEP_SUMMARY.
  */
-export function junitToMarkdownFromDir(dir: string): string {
+export function junitToMarkdownFromDir(dir: string, options: JunitMarkdownOptions = {}): string {
   const data = parseJunitDataFromDir(dir);
-  return data ? renderJunitMarkdown(data) : "_No JUnit reports found._\n";
+  return data ? renderJunitMarkdown(data, options) : "_No JUnit reports found._\n";
 }
 
 /**
@@ -437,29 +495,68 @@ export function junitToPlainTextFromDir(dir: string): string {
   return data ? renderJunitPlainText(data) : "No JUnit reports found.\n";
 }
 
+const USAGE = `Usage: bun src/fit/shared/run-test-driver/junit-to-markdown.ts [options] <surefire-reports-dir-or-archive.tar.gz>
+
+Render JUnit surefire reports the way fit-cli does.
+
+Options:
+  --markdown     Emit the GitHub-flavoured markdown written to $GITHUB_STEP_SUMMARY,
+                 rather than the terminal table. Use this to see what a GHA run will show.
+  --lean         With --markdown, emit the reduced form (badge + package table, no
+                 per-failure detail) that the step-summary budget falls back to.
+  --bytes        Print the rendered size instead of the content — handy for checking
+                 a run against GitHub's 1024k step-summary cap.
+  -h, --help     Show this help.
+
+Examples:
+  bun src/fit/shared/run-test-driver/junit-to-markdown.ts /tmp/fit-cli/20260622-122009
+  bun src/fit/shared/run-test-driver/junit-to-markdown.ts --markdown --bytes /tmp/fit-cli/20260804-002753-7c4f/instances/aws1/clusters/8.0-stable/sessions/dotnet-main/runs/functional/surefire-reports
+  bun src/fit/shared/run-test-driver/junit-to-markdown.ts --markdown .../surefire-reports.tar.gz`;
+
 async function main(): Promise<void> {
-  const args = process.argv.slice(2).filter((a) => a !== "--");
-  if (args.length !== 1 || args[0] === "--help" || args[0] === "-h") {
-    console.log("Usage: bun src/fit/shared/run-test-driver/junit-to-markdown.ts <surefire-reports-dir-or-archive.tar.gz>");
-    process.exit(args.length === 1 ? 0 : 2);
+  const argv = process.argv.slice(2).filter((a) => a !== "--");
+  if (argv.includes("--help") || argv.includes("-h")) {
+    console.log(USAGE);
+    process.exit(0);
+  }
+  const asMarkdown = argv.includes("--markdown");
+  const lean = argv.includes("--lean");
+  const bytesOnly = argv.includes("--bytes");
+  const positional = argv.filter((a) => !a.startsWith("-"));
+  if (positional.length !== 1) {
+    console.log(USAGE);
+    process.exit(2);
+  }
+  if (lean && !asMarkdown) {
+    console.error("--lean only applies with --markdown (the terminal renderer has no lean form).");
+    process.exit(2);
   }
 
-  const input = args[0];
+  const input = positional[0];
   if (!existsSync(input)) {
     console.error(`Not found: ${input}`);
     process.exit(1);
   }
 
+  const render = (dir: string): string => (asMarkdown ? junitToMarkdownFromDir(dir, { includeFailureDetail: !lean }) : junitToPlainTextFromDir(dir));
+  const emit = (text: string): void => {
+    if (bytesOnly) {
+      console.log(`${Buffer.byteLength(text, "utf8")} bytes (${(Buffer.byteLength(text, "utf8") / 1024).toFixed(1)}K)`);
+    } else {
+      process.stdout.write(text);
+    }
+  };
+
   if (extname(input) === ".gz") {
     const tmpDir = mkdtempSync(join(tmpdir(), "fit-junit-markdown-"));
     try {
       await run("tar", ["-xzf", input, "-C", tmpDir]);
-      process.stdout.write(junitToPlainTextFromDir(tmpDir));
+      emit(render(tmpDir));
     } finally {
       rmSync(tmpDir, { recursive: true, force: true });
     }
   } else {
-    process.stdout.write(junitToPlainTextFromDir(input));
+    emit(render(input));
   }
 }
 

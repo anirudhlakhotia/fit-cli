@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseFailingTestCases, parseJunitData, renderJunitMarkdown, renderJunitPlainText } from "../junit-to-markdown.js";
+import { condenseStackTrace, parseFailingTestCases, parseJunitData, renderJunitMarkdown, renderJunitPlainText } from "../junit-to-markdown.js";
 
 const PASSING_SUITE = `<?xml version="1.0" encoding="UTF-8"?>
 <testsuite name="com.example.FooTest" tests="3" failures="0" errors="0" skipped="1" time="2.345">
@@ -171,13 +171,14 @@ test("parseFailingTestCases: stdout/stderr are undefined when absent", () => {
   assert.equal(cases[0].stderr, undefined);
 });
 
-test("renderJunitMarkdown: test output rendered under its own chevron", () => {
+test("renderJunitMarkdown: test output is not inlined, but the reader is told where it is", () => {
+  // Per-test stdout/stderr is ~99.6% of the bytes on a real run and is what overran
+  // GitHub's 1024k step-summary cap; it lives in the artifact bundle instead.
   const data = parseJunitData([{ filename: "TEST-com.example.OutputTest.xml", xml: SUITE_WITH_OUTPUT }]);
   const md = renderJunitMarkdown(data);
-  assert.ok(md.includes("Test output (stdout)"), "should include stdout chevron summary");
-  assert.ok(md.includes("Test output (stderr)"), "should include stderr chevron summary");
-  assert.ok(md.includes("line1\nline2\nline3"), "should include stdout content");
-  assert.ok(md.includes("warn: something"), "should include stderr content");
+  assert.ok(!md.includes("line1\nline2\nline3"), "stdout content should not be inlined");
+  assert.ok(!md.includes("warn: something"), "stderr content should not be inlined");
+  assert.ok(md.includes("fit archive fetch"), "should point the reader at the artifact bundle");
 });
 
 test("renderJunitPlainText: separate Test Fail/Infra columns and icons", () => {
@@ -205,4 +206,108 @@ test("renderJunitPlainText: caps test output to the last N lines", () => {
   assert.ok(text.includes("[20 earlier line(s) omitted]"), "should note omitted line count");
   assert.ok(text.includes("line29"), "should include the last line");
   assert.ok(!text.includes("line0\n") && !text.includes("line0)"), "should not include early lines");
+});
+
+/**
+ * A trace in the shape FIT actually produces: a couple of Couchbase frames buried in
+ * awaitility/okhttp/JDK plumbing. Real runs measured ~14 framework frames per 16.
+ */
+const REAL_TRACE = [
+  "java.lang.RuntimeException: java.io.InterruptedIOException: timeout",
+  "\tat com.couchbase.client.observability.util.ObservabilityUtil.checkMetricsExistWithCustomQuery(ObservabilityUtil.java:457)",
+  "\tat com.couchbase.client.observability.util.ObservabilityUtil.lambda$waitForMetricsToExist$4(ObservabilityUtil.java:365)",
+  "\tat org.awaitility.core.CallableCondition$ConditionEvaluationWrapper.eval(CallableCondition.java:99)",
+  "\tat org.awaitility.core.ConditionAwaiter$ConditionPoller.call(ConditionAwaiter.java:248)",
+  "\tat org.awaitility.core.ConditionAwaiter$ConditionPoller.call(ConditionAwaiter.java:235)",
+  "\tat java.base/java.util.concurrent.FutureTask.run(FutureTask.java:317)",
+  "\tat java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1144)",
+  "\tat java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:642)",
+  "\tat java.base/java.lang.Thread.run(Thread.java:1583)",
+  "Caused by: java.io.InterruptedIOException: timeout",
+  "\tat okhttp3.internal.connection.RealCall.timeoutExit(RealCall.kt:398)",
+  "\tat okhttp3.internal.connection.RealCall.callDone(RealCall.kt:360)",
+  "\tat okhttp3.internal.http.RealInterceptorChain.proceed(RealInterceptorChain.kt:109)",
+  "\t... 10 more",
+].join("\n");
+
+test("condenseStackTrace: keeps Couchbase frames and drops framework frames", () => {
+  const out = condenseStackTrace(REAL_TRACE);
+  assert.ok(out.includes("ObservabilityUtil.checkMetricsExistWithCustomQuery"), "keeps the meaningful frame");
+  assert.ok(out.includes("ObservabilityUtil.lambda$waitForMetricsToExist$4"), "keeps the second meaningful frame");
+  assert.ok(!out.includes("org.awaitility"), "drops awaitility frames");
+  assert.ok(!out.includes("java.base/java.util.concurrent"), "drops JDK frames");
+  assert.ok(!out.includes("okhttp3"), "drops okhttp frames");
+});
+
+test("condenseStackTrace: keeps non-frame lines so the exception structure survives", () => {
+  const out = condenseStackTrace(REAL_TRACE);
+  assert.ok(out.includes("java.lang.RuntimeException: java.io.InterruptedIOException: timeout"), "keeps the header");
+  assert.ok(out.includes("Caused by: java.io.InterruptedIOException: timeout"), "keeps Caused by");
+  assert.ok(out.includes("... 10 more"), "keeps the elision marker the JVM itself emitted");
+});
+
+test("condenseStackTrace: reports how many frames it removed rather than dropping them silently", () => {
+  const out = condenseStackTrace(REAL_TRACE);
+  assert.ok(/\.\.\. 7 framework frames elided by fit-cli \.\.\./.test(out), `expected a 7-frame marker, got:\n${out}`);
+  assert.ok(/\.\.\. 3 framework frames elided by fit-cli \.\.\./.test(out), `expected a 3-frame marker, got:\n${out}`);
+});
+
+test("condenseStackTrace: singular wording for a single elided frame", () => {
+  const one = ["java.lang.AssertionError: nope", "\tat com.couchbase.Foo.bar(Foo.java:1)", "\tat org.junit.Assert.fail(Assert.java:88)"].join("\n");
+  assert.ok(/\.\.\. 1 framework frame elided by fit-cli \.\.\./.test(condenseStackTrace(one)));
+});
+
+test("condenseStackTrace: substantially shrinks a framework-heavy trace", () => {
+  assert.ok(condenseStackTrace(REAL_TRACE).length < REAL_TRACE.length / 2, "should at least halve a framework-heavy trace");
+});
+
+test("condenseStackTrace: an all-framework trace is returned untouched", () => {
+  // Nothing of ours in it, so a bare "everything elided" marker would leave the reader with nothing.
+  const allFramework = ["java.lang.AssertionError", "\tat org.junit.Assert.fail(Assert.java:88)", "\tat java.base/java.lang.Thread.run(Thread.java:1583)"].join("\n");
+  assert.equal(condenseStackTrace(allFramework), allFramework);
+});
+
+test("condenseStackTrace: leaves a trace with no framework frames unchanged", () => {
+  const clean = ["java.lang.AssertionError: nope", "\tat com.couchbase.Foo.bar(Foo.java:1)"].join("\n");
+  assert.equal(condenseStackTrace(clean), clean);
+});
+
+test("condenseStackTrace: empty body is preserved", () => {
+  assert.equal(condenseStackTrace(""), "");
+});
+
+test("renderJunitMarkdown: condenses stack traces in the detail block", () => {
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.example.TraceTest" tests="1" failures="1" errors="0" skipped="0" time="1.0">
+  <testcase name="doThing" classname="com.example.TraceTest" time="1.0">
+    <failure message="boom"><![CDATA[${REAL_TRACE}]]></failure>
+  </testcase>
+</testsuite>`;
+  const md = renderJunitMarkdown(parseJunitData([{ filename: "TEST-com.example.TraceTest.xml", xml }]));
+  assert.ok(md.includes("ObservabilityUtil.checkMetricsExistWithCustomQuery"), "keeps meaningful frames");
+  assert.ok(!md.includes("org.awaitility"), "drops framework frames");
+});
+
+test("renderJunitMarkdown: includeFailureDetail false keeps the package table but drops detail blocks", () => {
+  const data = parseJunitData([{ filename: "TEST-com.example.BarTest.xml", xml: FAILING_SUITE }]);
+  const md = renderJunitMarkdown(data, { includeFailureDetail: false });
+  assert.ok(md.includes("Test results by package"), "the package table is the point of the lean form");
+  assert.ok(md.includes("com.example"), "package row survives");
+  assert.ok(!md.includes("BarTest.testFail"), "per-failure detail is dropped");
+});
+
+test("renderJunitMarkdown: the lean form states how many failures it is not showing", () => {
+  const data = parseJunitData([{ filename: "TEST-com.example.BarTest.xml", xml: FAILING_SUITE }]);
+  const md = renderJunitMarkdown(data, { includeFailureDetail: false });
+  assert.ok(/failing test\(s\) — detail omitted/.test(md), `expected a count of omitted failures, got:\n${md}`);
+});
+
+test("renderJunitMarkdown: the lean form is smaller than the full one", () => {
+  const data = parseJunitData([{ filename: "TEST-com.example.BarTest.xml", xml: FAILING_SUITE }]);
+  assert.ok(renderJunitMarkdown(data, { includeFailureDetail: false }).length < renderJunitMarkdown(data).length);
+});
+
+test("renderJunitMarkdown: lean form of an all-passing run says nothing about failures", () => {
+  const data = parseJunitData([{ filename: "TEST-com.example.FooTest.xml", xml: PASSING_SUITE }]);
+  assert.ok(!renderJunitMarkdown(data, { includeFailureDetail: false }).includes("detail omitted"));
 });
