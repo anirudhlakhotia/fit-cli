@@ -162,8 +162,9 @@ export async function ensureRemoteRepos(target: ExecutionTarget, rootDir: string
       console.log(`✓ Found ${repo.name} on ${target.description} at ${repoPath(repo, rootDir)}`);
       continue;
     }
-    console.log(`\nCloning ${repo.name} onto ${target.description}...\n`);
-    await target.run("git", ["clone", repo.httpsUrl, repo.dir], rootDir);
+    const branchArgs = repo.branch ? ["--branch", repo.branch] : [];
+    console.log(`\nCloning ${repo.name}${repo.branch ? ` (branch ${repo.branch})` : ""} onto ${target.description}...\n`);
+    await target.run("git", ["clone", ...branchArgs, repo.httpsUrl, repo.dir], rootDir);
   }
 }
 
