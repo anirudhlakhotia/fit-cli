@@ -279,7 +279,7 @@ export function resolveDefinitionRefs(def: FitDefinition): FitDefinition {
 
 function resolveTestsSelection(tests: TestsSection): FitTestSelection {
   const presets = tests.presets ?? [];
-  const packageSelectors = (tests.packages ?? []).map((pkg) => `${pkg}.*`);
+  const packageSelectors = (tests.packages ?? []).map((pkg) => `${pkg}.**`);
   const classes = [...(tests.classes ?? []), ...packageSelectors];
   // "all" (or omitting all keys) means run everything; it dominates any other entry.
   if (presets.includes("all") || (presets.length === 0 && classes.length === 0)) {

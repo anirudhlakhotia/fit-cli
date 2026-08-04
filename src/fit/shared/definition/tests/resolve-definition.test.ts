@@ -194,7 +194,7 @@ test("packages are expanded to Maven wildcard selectors", () => {
     ],
   });
   const testSelection = resolved.instances[0]?.clusters[0]?.sessions[0]?.runs[0]?.testSelection;
-  assert.equal(testSelection?.mavenTestSelector, "com.couchbase.client.kv.*,com.couchbase.transactions.*");
+  assert.equal(testSelection?.mavenTestSelector, "com.couchbase.client.kv.**,com.couchbase.transactions.**");
 });
 
 test("packages combined with classes produce a unified selector", () => {
@@ -224,7 +224,7 @@ test("packages combined with classes produce a unified selector", () => {
     ],
   });
   const testSelection = resolved.instances[0]?.clusters[0]?.sessions[0]?.runs[0]?.testSelection;
-  assert.equal(testSelection?.mavenTestSelector, "com.couchbase.other.ExplicitTest,com.couchbase.client.kv.*");
+  assert.equal(testSelection?.mavenTestSelector, "com.couchbase.other.ExplicitTest,com.couchbase.client.kv.**");
 });
 
 test("excludedGroups override the default Maven args", () => {
