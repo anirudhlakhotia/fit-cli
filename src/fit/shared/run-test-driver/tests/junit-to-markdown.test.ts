@@ -1,6 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { condenseStackTrace, parseFailingTestCases, parseJunitData, renderJunitMarkdown, renderJunitPlainText } from "../junit-to-markdown.js";
+import {
+  condenseStackTrace,
+  DEFAULT_OUTPUT_WINDOW_BYTES,
+  MIN_OUTPUT_WINDOW_BYTES,
+  parseFailingTestCases,
+  parseJunitData,
+  planFailureDetail,
+  renderJunitMarkdown,
+  renderJunitPlainText,
+} from "../junit-to-markdown.js";
 
 const PASSING_SUITE = `<?xml version="1.0" encoding="UTF-8"?>
 <testsuite name="com.example.FooTest" tests="3" failures="0" errors="0" skipped="1" time="2.345">
@@ -171,14 +180,13 @@ test("parseFailingTestCases: stdout/stderr are undefined when absent", () => {
   assert.equal(cases[0].stderr, undefined);
 });
 
-test("renderJunitMarkdown: test output is not inlined, but the reader is told where it is", () => {
-  // Per-test stdout/stderr is ~99.6% of the bytes on a real run and is what overran
-  // GitHub's 1024k step-summary cap; it lives in the artifact bundle instead.
+test("renderJunitMarkdown: test output rendered under its own chevron", () => {
   const data = parseJunitData([{ filename: "TEST-com.example.OutputTest.xml", xml: SUITE_WITH_OUTPUT }]);
   const md = renderJunitMarkdown(data);
-  assert.ok(!md.includes("line1\nline2\nline3"), "stdout content should not be inlined");
-  assert.ok(!md.includes("warn: something"), "stderr content should not be inlined");
-  assert.ok(md.includes("fit archive fetch"), "should point the reader at the artifact bundle");
+  assert.ok(md.includes("Test output (stdout)"), "should include stdout chevron summary");
+  assert.ok(md.includes("Test output (stderr)"), "should include stderr chevron summary");
+  assert.ok(md.includes("line1\nline2\nline3"), "should include stdout content");
+  assert.ok(md.includes("warn: something"), "should include stderr content");
 });
 
 test("renderJunitPlainText: separate Test Fail/Infra columns and icons", () => {
@@ -310,4 +318,95 @@ test("renderJunitMarkdown: the lean form is smaller than the full one", () => {
 test("renderJunitMarkdown: lean form of an all-passing run says nothing about failures", () => {
   const data = parseJunitData([{ filename: "TEST-com.example.FooTest.xml", xml: PASSING_SUITE }]);
   assert.ok(!renderJunitMarkdown(data, { includeFailureDetail: false }).includes("detail omitted"));
+});
+
+// --- budget-derived elision window (planFailureDetail) ---
+
+const PLAN_BASE = { failureCount: 100, fixedBytes: 10_000, perFailureBytes: 100_000 };
+
+test("planFailureDetail: no budget keeps the historical fixed window and every failure", () => {
+  const plan = planFailureDetail({ ...PLAN_BASE });
+  assert.equal(plan.outputWindowBytes, DEFAULT_OUTPUT_WINDOW_BYTES);
+  assert.equal(plan.shownFailures, 100);
+});
+
+test("planFailureDetail: a generous budget does not exceed the historical window", () => {
+  // Otherwise a run with 2 failures would inline megabytes just because it can.
+  const plan = planFailureDetail({ ...PLAN_BASE, failureCount: 2, perFailureBytes: 2000, budgetBytes: 900 * 1024 });
+  assert.equal(plan.outputWindowBytes, DEFAULT_OUTPUT_WINDOW_BYTES);
+  assert.equal(plan.shownFailures, 2);
+});
+
+test("planFailureDetail: a tight budget narrows the window but still shows every failure", () => {
+  const plan = planFailureDetail({ ...PLAN_BASE, budgetBytes: 900 * 1024 });
+  assert.equal(plan.shownFailures, 100, "every failure should still be detailed");
+  assert.ok(plan.outputWindowBytes < DEFAULT_OUTPUT_WINDOW_BYTES, "window should have narrowed");
+  assert.ok(plan.outputWindowBytes >= MIN_OUTPUT_WINDOW_BYTES, "window should stay usable");
+});
+
+test("planFailureDetail: the window derived from the budget actually fits it", () => {
+  const budgetBytes = 900 * 1024;
+  const plan = planFailureDetail({ ...PLAN_BASE, budgetBytes });
+  const projected = PLAN_BASE.fixedBytes + PLAN_BASE.perFailureBytes + plan.shownFailures * 2 * plan.outputWindowBytes;
+  assert.ok(projected <= budgetBytes, `projected ${projected} should fit budget ${budgetBytes}`);
+});
+
+test("planFailureDetail: once the window hits its floor, failures are cut instead", () => {
+  // 5000 failures cannot each get a usable window out of 900K, so show fewer properly.
+  const plan = planFailureDetail({ failureCount: 5000, fixedBytes: 10_000, perFailureBytes: 5_000_000, budgetBytes: 900 * 1024 });
+  assert.equal(plan.outputWindowBytes, MIN_OUTPUT_WINDOW_BYTES, "window should sit at the floor, not below");
+  assert.ok(plan.shownFailures < 5000, "should show fewer failures");
+  assert.ok(plan.shownFailures > 0, "should still show some");
+});
+
+test("planFailureDetail: never asks for more failures than exist, or a negative count", () => {
+  const plan = planFailureDetail({ failureCount: 3, fixedBytes: 10_000, perFailureBytes: 3000, budgetBytes: 200 });
+  assert.ok(plan.shownFailures >= 0 && plan.shownFailures <= 3, `got ${plan.shownFailures}`);
+});
+
+test("planFailureDetail: zero failures is handled without dividing by zero", () => {
+  const plan = planFailureDetail({ failureCount: 0, fixedBytes: 5000, perFailureBytes: 0, budgetBytes: 900 * 1024 });
+  assert.equal(plan.shownFailures, 0);
+  assert.ok(Number.isFinite(plan.outputWindowBytes));
+});
+
+test("renderJunitMarkdown: a tight budget still names every failing test", () => {
+  const data = parseJunitData([{ filename: "TEST-com.example.BarTest.xml", xml: FAILING_SUITE }]);
+  const md = renderJunitMarkdown(data, { budgetBytes: 8000 });
+  assert.ok(md.includes("BarTest.testFail"), "failing test should still be named");
+  assert.ok(md.includes("BarTest.testError"), "erroring test should still be named");
+});
+
+test("renderJunitMarkdown: reports how many failures it did not show, and where to find them", () => {
+  const many = Array.from({ length: 200 }, (_, i) => ({
+    filename: `TEST-com.example.T${i}.xml`,
+    xml: `<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.example.T${i}" tests="1" failures="1" errors="0" skipped="0" time="1.0">
+  <testcase name="boom" classname="com.example.T${i}" time="1.0">
+    <failure message="boom ${i}">${"stack line\n".repeat(200)}</failure>
+    <system-out><![CDATA[${"out line\n".repeat(2000)}]]></system-out>
+  </testcase>
+</testsuite>`,
+  }));
+  const md = renderJunitMarkdown(parseJunitData(many), { budgetBytes: 120 * 1024 });
+  assert.ok(/\.\.\. and \d+ more failure\(s\) not shown/.test(md), `expected a not-shown count, got:\n${md.slice(-600)}`);
+  assert.ok(md.includes("fit archive fetch"), "should say where all of them are");
+});
+
+test("renderJunitMarkdown: honours a tight budget on a pathological run", () => {
+  const many = Array.from({ length: 300 }, (_, i) => ({
+    filename: `TEST-com.example.T${i}.xml`,
+    xml: `<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.example.T${i}" tests="1" failures="1" errors="0" skipped="0" time="1.0">
+  <testcase name="boom" classname="com.example.T${i}" time="1.0">
+    <failure message="boom">${"stack line\n".repeat(500)}</failure>
+    <system-out><![CDATA[${"out line\n".repeat(5000)}]]></system-out>
+    <system-err><![CDATA[${"err line\n".repeat(5000)}]]></system-err>
+  </testcase>
+</testsuite>`,
+  }));
+  const budgetBytes = 200 * 1024;
+  const md = renderJunitMarkdown(parseJunitData(many), { budgetBytes });
+  // The window is a sizing heuristic, so allow slack; gha.ts's byte check is the hard bound.
+  assert.ok(Buffer.byteLength(md, "utf8") < budgetBytes * 1.5, `rendered ${Buffer.byteLength(md, "utf8")} against a ${budgetBytes} budget`);
 });

@@ -187,13 +187,32 @@ function formatTime(ms: number): string {
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
+function elisionMarker(omittedLines: number): string {
+  return `\n[...truncated by fit-cli to avoid Github length limits — ~${omittedLines} lines hidden; full output is in this run's ARTIFACT_DIR, fetchable via \`fit archive fetch ...\`...]\n`;
+}
+
+/**
+ * Keep the head and tail of `s`, replacing the middle with a marker saying how much was
+ * hidden and where to find it in full. `max` bounds the returned length *including* the
+ * marker: at the historical 16k window the marker was rounding error, but the window is
+ * now derived from the step-summary budget and can be small enough that ~160 bytes of
+ * marker matters.
+ */
 function truncate(s: string, max = 16 * 1024): string {
   if (s.length <= max) return s;
-  const half = Math.floor(max / 2);
-  const omitted = s.substring(half, s.length - half);
-  const omittedLines = omitted.split("\n").length - 1;
-  const marker = `\n[...truncated by fit-cli to avoid Github length limits — ~${omittedLines} lines hidden; full output is in this run's ARTIFACT_DIR, fetchable via \`fit archive fetch ...\`...]\n`;
-  return s.substring(0, half) + marker + s.substring(s.length - half);
+  // Two passes: the marker's length depends on the hidden line count, which depends on
+  // where we cut. One refinement is enough to settle it.
+  let half = Math.max(0, Math.floor((max - elisionMarker(0).length) / 2));
+  for (let pass = 0; pass < 2; pass++) {
+    const omittedLines = s.substring(half, s.length - half).split("\n").length - 1;
+    half = Math.max(0, Math.floor((max - elisionMarker(omittedLines).length) / 2));
+  }
+  if (half === 0) {
+    // No room for any content alongside the marker — say what was dropped and nothing else.
+    return elisionMarker(s.split("\n").length - 1).trim();
+  }
+  const omittedLines = s.substring(half, s.length - half).split("\n").length - 1;
+  return s.substring(0, half) + elisionMarker(omittedLines) + s.substring(s.length - half);
 }
 
 /**
@@ -249,25 +268,85 @@ function removePackage(name: string): string {
   return idx === -1 ? name : name.substring(idx + 1);
 }
 
+/**
+ * Historical per-stream elision window. Retained as the default so a run with few
+ * failures renders exactly as it always has.
+ *
+ * It bounds each stream of each failure but never their sum, which is how a 1437k
+ * summary got built out of individually-elided pieces and was discarded whole: at 16k
+ * per stream a failure can cost 32k, so the format only ever afforded ~32 maximally
+ * verbose failures. One nightly .NET run had 136.
+ */
+export const DEFAULT_OUTPUT_WINDOW_BYTES = 16 * 1024;
+
+/**
+ * Smallest per-stream window still worth rendering. Below this the elision marker
+ * crowds out the output it is describing, so the budget is better spent showing fewer
+ * failures properly than all of them uselessly.
+ */
+export const MIN_OUTPUT_WINDOW_BYTES = 512;
+
+/**
+ * Markdown scaffolding around one failure's content — heading, code fences, `<details>`
+ * wrappers, separator. Measured from a rendered failure rather than estimated; only used
+ * to size the output window, and the byte-accurate check in gha.ts is the real bound.
+ */
+const PER_FAILURE_SCAFFOLD_BYTES = 220;
+
 export interface JunitMarkdownOptions {
   /**
    * Include the per-failure detail blocks. Set false for the badge and package table
    * only — the lean form the step-summary budget falls back to (see gha.ts).
    */
   includeFailureDetail?: boolean;
+  /**
+   * Bytes this run's markdown may occupy. Sizes the per-failure stdout/stderr window so
+   * the total fits, rather than bounding each stream by a constant unrelated to the
+   * budget. Omit to keep the historical fixed window.
+   */
+  budgetBytes?: number;
+}
+
+/** How much of `budgetBytes` a single failure's stdout/stderr may use, and how many failures to detail. */
+export function planFailureDetail(args: {
+  failureCount: number;
+  /** Bytes already committed to the badge, package table and any non-failure content. */
+  fixedBytes: number;
+  /** Message + stack trace + markdown scaffolding, summed over all failures. */
+  perFailureBytes: number;
+  budgetBytes?: number;
+}): { outputWindowBytes: number; shownFailures: number } {
+  const { failureCount, fixedBytes, perFailureBytes, budgetBytes } = args;
+  if (failureCount === 0) return { outputWindowBytes: DEFAULT_OUTPUT_WINDOW_BYTES, shownFailures: 0 };
+  if (budgetBytes === undefined) return { outputWindowBytes: DEFAULT_OUTPUT_WINDOW_BYTES, shownFailures: failureCount };
+
+  // Rule 1: size the window to what's left after the parts we always render.
+  const forOutput = budgetBytes - fixedBytes - perFailureBytes;
+  const perStream = Math.floor(forOutput / failureCount / 2);
+  if (perStream >= MIN_OUTPUT_WINDOW_BYTES) {
+    return { outputWindowBytes: Math.min(perStream, DEFAULT_OUTPUT_WINDOW_BYTES), shownFailures: failureCount };
+  }
+
+  // Rule 2: the window has hit its floor, so cut how many failures are detailed rather
+  // than shrinking the window into uselessness. Costs are averaged over the failures we
+  // have; the byte-accurate check in gha.ts is what actually guarantees the bound.
+  const averageFixed = perFailureBytes / failureCount;
+  const costEach = averageFixed + 2 * MIN_OUTPUT_WINDOW_BYTES;
+  const affordable = Math.floor((budgetBytes - fixedBytes) / costEach);
+  return { outputWindowBytes: MIN_OUTPUT_WINDOW_BYTES, shownFailures: Math.max(0, Math.min(failureCount, affordable)) };
 }
 
 /**
  * Render a JunitMarkdownData object to a GFM markdown string (for $GITHUB_STEP_SUMMARY).
  *
- * Deliberately omits per-test stdout/stderr. On a real run those are ~99.6% of the
- * bytes here (83.7 MB of raw stdout across 71 failing tests on one nightly .NET run)
- * and blew the 1024k step-summary cap, discarding the whole summary. The full output
- * is preserved in the run's artifact bundle — see the `fit archive fetch` line the
- * summary carries — which is where megabytes of driver logging belongs.
+ * Per-test stdout and stack traces are kept — they are what makes a failure triageable —
+ * but the elision window is derived from `budgetBytes` rather than fixed, so a run with
+ * many failures narrows the window instead of overrunning GitHub's 1024k cap and losing
+ * the summary entirely. Once the window would be too small to be useful, fewer failures
+ * are detailed and the remainder is reported as a count.
  */
 export function renderJunitMarkdown(data: JunitMarkdownData, options: JunitMarkdownOptions = {}): string {
-  const { includeFailureDetail = true } = options;
+  const { includeFailureDetail = true, budgetBytes } = options;
   const { packages, failingCases, totalPassed, totalFailures, totalErrors, totalSkipped, totalTimeMs } = data;
   const totalFailed = totalFailures + totalErrors;
   const lines: string[] = [];
@@ -311,8 +390,26 @@ export function renderJunitMarkdown(data: JunitMarkdownData, options: JunitMarkd
     return lines.join("\n");
   }
 
+  // Size the per-failure output window against what's left of the budget. The stack trace
+  // and message are always rendered, so they count as committed cost before the window is
+  // divided up; only stdout/stderr flex.
+  const fixedBytes = Buffer.byteLength(lines.join("\n"), "utf8");
+  const perFailureBytes = failingCases.reduce(
+    (total, tc) =>
+      total +
+      PER_FAILURE_SCAFFOLD_BYTES +
+      tc.issues.reduce((a, issue) => a + Buffer.byteLength(issue.message, "utf8") + Buffer.byteLength(condenseStackTrace(issue.body), "utf8"), 0),
+    0,
+  );
+  const { outputWindowBytes, shownFailures } = planFailureDetail({
+    failureCount: failingCases.length,
+    fixedBytes,
+    perFailureBytes,
+    budgetBytes,
+  });
+
   // Per-failure detail blocks
-  for (const tc of failingCases) {
+  for (const tc of failingCases.slice(0, shownFailures)) {
     const simpleClass = removePackage(tc.classname);
     const icon = tc.issues.some((issue) => issue.tag === "error") ? "💥" : "❌";
     lines.push(`#### ${icon} ${simpleClass}.${tc.name}`);
@@ -333,18 +430,38 @@ export function renderJunitMarkdown(data: JunitMarkdownData, options: JunitMarkd
         lines.push("<summary><b>🧵 Stack trace</b></summary>");
         lines.push("");
         lines.push("```");
-        lines.push(truncate(condenseStackTrace(issue.body)));
+        lines.push(truncate(condenseStackTrace(issue.body), outputWindowBytes));
         lines.push("```");
         lines.push("");
         lines.push("</details>");
         lines.push("");
       }
     }
-    if (tc.stdout || tc.stderr) {
-      lines.push(`_Test stdout/stderr omitted here — read it in the run artifacts (see the \`fit archive fetch\` command above)._`);
+    for (const [label, output] of [
+      ["stdout", tc.stdout],
+      ["stderr", tc.stderr],
+    ] as const) {
+      if (!output) continue;
+      lines.push("<details>");
+      lines.push(`<summary><b>🖥️ Test output (${label})</b></summary>`);
+      lines.push("");
+      lines.push("```");
+      lines.push(truncate(output, outputWindowBytes));
+      lines.push("```");
+      lines.push("");
+      lines.push("</details>");
       lines.push("");
     }
     lines.push("---");
+    lines.push("");
+  }
+
+  const notShown = failingCases.length - shownFailures;
+  if (notShown > 0) {
+    lines.push(
+      `_... and ${notShown} more failure(s) not shown, to stay within GitHub's step-summary limit. ` +
+        `All ${failingCases.length} are in this run's ARTIFACT_DIR, fetchable via \`fit archive fetch ...\` (see above)._`,
+    );
     lines.push("");
   }
 

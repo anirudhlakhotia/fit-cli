@@ -145,14 +145,20 @@ export function appendRunSummaryToGhaSummary(result: RunSummary, budgetBytes: nu
   const { pathLabel, sdk, ok, summary, surefireDir, situationalResultsCsv } = result;
   const sizeBefore = summaryFileSize();
 
-  // Parsed once, rendered twice — with failure detail, and (as a fallback if the budget
-  // is tight) with just the badge and package table.
+  // Parsed once, rendered twice — with failure detail sized to the budget still unspent,
+  // and (as a fallback if even that doesn't fit) with just the badge and package table.
+  //
+  // Passing the *whole* remaining budget rather than a per-run share means an early run
+  // can spend more than its share when later runs turn out to be cheap. Runs stream in
+  // and the total isn't known here, so this trades fairness across runs for using the
+  // budget well; the ladder below still guarantees later runs get at least their tables.
+  const remainingForThisRun = Math.max(0, budgetBytes - (sizeBefore < 0 ? 0 : sizeBefore) - SUMMARY_APPEND_OVERHEAD_BYTES);
   let junitFull: string | undefined;
   let junitLean: string | undefined;
   if (surefireDir) {
     try {
       const data = parseJunitDataFromDir(surefireDir);
-      junitFull = data ? renderJunitMarkdown(data) : "_No JUnit reports found._\n";
+      junitFull = data ? renderJunitMarkdown(data, { budgetBytes: remainingForThisRun }) : "_No JUnit reports found._\n";
       junitLean = data ? renderJunitMarkdown(data, { includeFailureDetail: false }) : junitFull;
     } catch (err) {
       console.warn(`Warning: failed to render JUnit table for "${pathLabel}": ${err instanceof Error ? err.message : String(err)}`);
