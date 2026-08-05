@@ -5,12 +5,9 @@
 name: Scheduled FIT/PERF
 
 on:
-  # Cron trigger disabled for now: jenkins-sdk's GHCR-only version-discovery change
-  # (prebuilt-container-rollout) hasn't been released there yet. Trigger manually via
-  # workflow_dispatch (with --jenkins-sdk-branch prebuilt-container-rollout) until then.
-  # schedule:
-  #   - cron: "0 */3 * * *"
-  workflow_dispatch:
+   schedule:
+     - cron: "0 */3 * * *"
+   workflow_dispatch:
     inputs:
       dryRun:
         description: Force variables.dryRun=true (exercises the whole pipeline without writing results).
