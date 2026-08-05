@@ -1,6 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { chooseBlockWithinBudget, renderRunSummaryBlock, STEP_SUMMARY_BUDGET_BYTES, STEP_SUMMARY_HARD_LIMIT_BYTES } from "../gha.js";
+import {
+  chooseBlockWithinBudget,
+  labelForSurefireDir,
+  renderRunSummaryBlock,
+  STEP_SUMMARY_BUDGET_BYTES,
+  STEP_SUMMARY_HARD_LIMIT_BYTES,
+  SUMMARY_APPEND_OVERHEAD_BYTES,
+  wrapBlockForAppend,
+} from "../gha.js";
 
 test("renderRunSummaryBlock: collapsed details wrapper, no open attribute", () => {
   const block = renderRunSummaryBlock({ pathLabel: "aws1 / 8.0-stable / java:main / functional", sdk: "Java", ok: true });
@@ -118,4 +126,40 @@ test("step summary budget leaves headroom under GitHub's hard limit", () => {
     STEP_SUMMARY_BUDGET_BYTES < STEP_SUMMARY_HARD_LIMIT_BYTES,
     "budget must sit below the limit at which GitHub discards the whole summary",
   );
+});
+
+test("SUMMARY_APPEND_OVERHEAD_BYTES matches what wrapBlockForAppend actually adds", () => {
+  // If these drift apart the budget stops being a strict bound, which is its whole job.
+  for (const block of ["", "x", "<details>\n<summary>a</summary>\n</details>\n", "✅ multi-byte"]) {
+    const added = Buffer.byteLength(wrapBlockForAppend(block), "utf8") - Buffer.byteLength(block, "utf8");
+    assert.equal(added, SUMMARY_APPEND_OVERHEAD_BYTES, `overhead mismatch for block ${JSON.stringify(block)}`);
+  }
+});
+
+test("wrapBlockForAppend separates a block from its neighbours", () => {
+  assert.equal(wrapBlockForAppend("BLOCK"), "\nBLOCK\n");
+});
+
+test("labelForSurefireDir: derives instance and run from a POSIX path", () => {
+  assert.equal(
+    labelForSurefireDir("/tmp/fit-cli/run/instances/aws1/clusters/8.0-stable/sessions/dotnet-main/runs/functional/surefire-reports"),
+    "aws1 / functional",
+  );
+});
+
+test("labelForSurefireDir: handles Windows separators too", () => {
+  // findSurefireDirs builds paths with path.join(), so on Windows they arrive backslashed;
+  // a POSIX-only split labelled every run "surefire-reports".
+  assert.equal(
+    labelForSurefireDir("C:\\tmp\\fit-cli\\run\\instances\\aws1\\clusters\\8.0-stable\\sessions\\dotnet-main\\runs\\functional\\surefire-reports"),
+    "aws1 / functional",
+  );
+});
+
+test("labelForSurefireDir: falls back to the directory name when the path has no runs segment", () => {
+  assert.equal(labelForSurefireDir("/somewhere/else/surefire-reports"), "surefire-reports");
+});
+
+test("labelForSurefireDir: omits the instance when the path has no instances segment", () => {
+  assert.equal(labelForSurefireDir("/tmp/whatever/runs/functional/surefire-reports"), "functional");
 });

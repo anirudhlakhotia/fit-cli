@@ -29,6 +29,19 @@ export const STEP_SUMMARY_HARD_LIMIT_BYTES = 1024 * 1024;
 export const STEP_SUMMARY_BUDGET_BYTES = 900 * 1024;
 
 /**
+ * Each block is appended wrapped in newlines, so it costs this much more than its own
+ * length. Counted against the budget so a block that "fits" can't nudge the file past it —
+ * the point of the budget is to be a strict backstop. Kept in step with
+ * `wrapBlockForAppend` by a unit test.
+ */
+export const SUMMARY_APPEND_OVERHEAD_BYTES = 2;
+
+/** How a per-run block is written into the summary file: separated from its neighbours. */
+export function wrapBlockForAppend(block: string): string {
+  return "\n" + block + "\n";
+}
+
+/**
  * Pick the richest candidate that still fits in `remaining` bytes. Candidates must be
  * ordered richest first; returns the chosen text with how many richer ones were passed
  * over, or undefined when even the leanest doesn't fit.
@@ -167,7 +180,9 @@ export function appendRunSummaryToGhaSummary(result: RunSummary, budgetBytes: nu
   ].filter((block, i, all) => all.indexOf(block) === i);
 
   const used = sizeBefore < 0 ? 0 : sizeBefore;
-  const remaining = budgetBytes - used;
+  // Leave room for the newlines the append wraps the block in, so the file cannot end up
+  // past the budget by a block that measured as fitting.
+  const remaining = budgetBytes - used - SUMMARY_APPEND_OVERHEAD_BYTES;
   const chosen = chooseBlockWithinBudget(candidates, remaining);
   if (!chosen) {
     console.warn(
@@ -184,7 +199,7 @@ export function appendRunSummaryToGhaSummary(result: RunSummary, budgetBytes: nu
   }
 
   try {
-    appendFileSync(summaryPath, "\n" + chosen.block + "\n");
+    appendFileSync(summaryPath, wrapBlockForAppend(chosen.block));
     console.log(`[gha-summary] wrote per-run block for "${pathLabel}" to ${summaryPath} (file ${sizeBefore} → ${summaryFileSize()} bytes)`);
   } catch (err) {
     console.warn(`Warning: failed to append per-run GHA step summary block for "${pathLabel}": ${err instanceof Error ? err.message : String(err)}`);
@@ -269,7 +284,11 @@ Examples:
   bun src/fit/util/gha.ts summary --dir ./bundle --out "$GITHUB_STEP_SUMMARY"   # inside GHA
   bun src/fit/util/gha.ts summary /tmp/fit-cli/20260804-002753-7c4f/instances/aws1/clusters/8.0-stable/sessions/dotnet-main/runs/functional/surefire-reports`;
 
-/** Recursively find every surefire-reports directory under `dir`, shallowest first. */
+/**
+ * Recursively find every surefire-reports directory under `dir`, in lexicographic path
+ * order. The order matters and is deliberately deterministic: it decides which run spends
+ * the summary budget first, so a replay is reproducible.
+ */
 function findSurefireDirs(dir: string): string[] {
   const found: string[] = [];
   const walk = (current: string): void => {
@@ -293,9 +312,13 @@ function findSurefireDirs(dir: string): string[] {
   return found.sort();
 }
 
-/** A short label for a run, derived from its path within the artifact directory. */
-function labelForSurefireDir(dir: string): string {
-  const parts = dir.split("/").filter(Boolean);
+/**
+ * A short label for a run, derived from its path within the artifact directory. Splits on
+ * either separator: `findSurefireDirs` builds paths with path.join(), which yields "\" on
+ * Windows, and a POSIX-only split would label every run "surefire-reports".
+ */
+export function labelForSurefireDir(dir: string): string {
+  const parts = dir.split(/[/\\]/).filter(Boolean);
   const runsIdx = parts.lastIndexOf("runs");
   if (runsIdx >= 0 && runsIdx + 1 < parts.length) {
     const instanceIdx = parts.lastIndexOf("instances");

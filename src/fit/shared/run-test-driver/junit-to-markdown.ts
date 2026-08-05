@@ -519,6 +519,15 @@ async function main(): Promise<void> {
     console.log(USAGE);
     process.exit(0);
   }
+  // Reject unknown options rather than ignoring them: silently dropping a typo like
+  // "--markdwon" would print the terminal table while the caller believed they were
+  // looking at the markdown GitHub will render.
+  const KNOWN_FLAGS = new Set(["--markdown", "--lean", "--bytes"]);
+  const unknown = argv.filter((a) => a.startsWith("-") && !KNOWN_FLAGS.has(a));
+  if (unknown.length > 0) {
+    console.error(`Unknown option(s): ${unknown.join(", ")}\n\n${USAGE}`);
+    process.exit(2);
+  }
   const asMarkdown = argv.includes("--markdown");
   const lean = argv.includes("--lean");
   const bytesOnly = argv.includes("--bytes");
