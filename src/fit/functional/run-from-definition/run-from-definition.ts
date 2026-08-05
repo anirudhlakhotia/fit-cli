@@ -56,7 +56,7 @@ import {
 import { clusterLabel as clusterSegmentLabel, formatRunLabel, instanceLabel, performerLabel, runLabel, type RunLabelParts } from "../../shared/util/run-labels.js";
 import { confirm, select } from "../../../util/non-fit/prompts.js";
 import { DEFAULT_CAPELLA_ENV, resolveCapellaConfig, resolveFitPerformerDir, resolveGithubCredentials, resolveResultsDbCredentials, resolveRosaCredentials } from "../../util/config.js";
-import { terminateInstanceCommand } from "../../util/aws/lifecycle-warning.js";
+import { ssmStartSessionCommand, terminateInstanceCommand } from "../../util/aws/lifecycle-warning.js";
 import { maybeUploadRunArtifacts } from "../../util/aws/upload-run-artifacts.js";
 import { postRunSummaryToSlack } from "../../slack/post-run-summary.js";
 import { AWS_REGION } from "../../../cloud/util/aws/aws-target.js";
@@ -1214,9 +1214,7 @@ function targetStateFrom(teardown: ExecutionTargetTeardown): ResumeTargetState {
   return {
     kind: teardown.kind,
     ...(teardown.instanceId ? { instanceId: teardown.instanceId } : {}),
-    ...(teardown.address ? { address: teardown.address } : {}),
-    ...(teardown.user ? { user: teardown.user } : {}),
-    ...(teardown.identityFile ? { identityFile: teardown.identityFile } : {}),
+    ...(teardown.owned !== undefined ? { owned: teardown.owned } : {}),
   };
 }
 
@@ -1449,7 +1447,7 @@ function resumeSuggestions(inputs: TeardownInputs): ResumePoint[] {
   const { teardown, execution, clusterState, performerStates } = inputs;
   const points: ResumePoint[] = [];
   // A remote box we can reconnect to: reuse the instance, re-prepare the rest.
-  if (teardown.kind === "remote" && teardown.address) {
+  if (teardown.kind === "remote" && teardown.instanceId) {
     points.push("after-instance-creation");
     // The workspace is only prepared once the execution context came up.
     if (execution) {
@@ -1549,7 +1547,7 @@ async function teardownRun(inputs: TeardownInputs): Promise<{ leftUp: boolean }>
     // money / holding resources and needs cleaning up later.
     const leftRunning: string[] = [];
     if (teardown.terminate && teardown.instanceId) {
-      leftRunning.push(`Instance: ${teardown.instanceId}${teardown.address ? ` (${teardown.address})` : ""}`);
+      leftRunning.push(`Instance: ${teardown.instanceId}`);
     }
     if (clusterState) {
       const clusterId = clusterState.clusterId ?? clusterState.cluster.defaultHostname;
@@ -1573,10 +1571,7 @@ async function teardownRun(inputs: TeardownInputs): Promise<{ leftUp: boolean }>
     }
     if (teardown.terminate && teardown.instanceId) {
       fitCliWarn(`\nInstance ${teardown.instanceId} is still running — remember to terminate it when done.`);
-      if (teardown.identityFile && teardown.user && teardown.address) {
-        console.log(`\nSSH in with:\n  ssh -i ${teardown.identityFile} ${teardown.user}@${teardown.address}`);
-        console.log(`\nOr via EC2 Instance Connect (no key needed — requires ec2-instance-connect:SendSSHPublicKey):\n  aws ec2-instance-connect ssh --instance-id ${teardown.instanceId} --os-user ${teardown.user} --region ${AWS_REGION}`);
-      }
+      console.log(`\nDebug access (SSM):\n  ${ssmStartSessionCommand(teardown.instanceId)}`);
       console.log(`\nTerminate it with:\n  ${terminateInstanceCommand(teardown.instanceId)}`);
     }
     return { leftUp: true };
@@ -1684,7 +1679,7 @@ function describeExecutionOverride(override: ExecutionOverride, declaredKind: st
     case "aws":
       return "EC2 (fresh instance, forced)";
     case "existing":
-      return `existing EC2 instance ${override.existing.host} (forced)`;
+      return `existing EC2 instance ${override.existing.instanceId} (forced)`;
     default:
       return declaredKind;
   }
@@ -2022,7 +2017,7 @@ export async function runFromDefinition(
         cycleTeardown = targetOutcome.teardown;
         activeTeardown = cycleTeardown;
         setLogContext({ env: instanceLabel(group.path, cycleTeardown.kind === "remote" ? "aws" : "localhost") });
-        if (cycleTeardown.kind === "remote" && cycleTeardown.address) {
+        if (cycleTeardown.kind === "remote" && cycleTeardown.instanceId) {
           printResumeHint("after-instance-creation", definitionCopyPath, group.path, false);
         }
 
@@ -2035,7 +2030,7 @@ export async function runFromDefinition(
         currentBoxInstanceIndex = group.path.instanceIndex;
         artifacts.push(...execution.artifacts);
         instanceDetails.push(...execution.details);
-        if (phases.prepareRemote && cycleTeardown.kind === "remote" && cycleTeardown.address) {
+        if (phases.prepareRemote && cycleTeardown.kind === "remote" && cycleTeardown.instanceId) {
           printResumeHint("after-remote-preparation", definitionCopyPath, group.path, false);
         }
       }
@@ -2176,12 +2171,11 @@ export async function runFromDefinition(
             }
           }
           if (clusterState) {
-            await printClusterUiAccess(
-              clusterState.cluster,
-              cycleTeardown.kind === "remote" && cycleTeardown.address && cycleTeardown.user && cycleTeardown.identityFile
-                ? { address: cycleTeardown.address, user: cycleTeardown.user, identityFile: cycleTeardown.identityFile }
-                : undefined,
-            );
+            // No SSH tunnel hint any more — fit-cli no longer generates a key for the
+            // box (see the SSM migration), so there's nothing to offer an SSH
+            // local-port-forward with when the cluster is a plain-docker deploy on a
+            // remote instance.
+            await printClusterUiAccess(clusterState.cluster, undefined);
             setLogContext({
               cluster: clusterSegmentLabel(activeCycle.path, activeCycle.clusterMode, clusterVersionLabel(activeCycle), isEnterpriseAnalyticsGroup(activeCycle), isCapellaGroup(activeCycle), isCapellaAnalyticsGroup(activeCycle)),
             });
