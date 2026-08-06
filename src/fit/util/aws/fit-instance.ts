@@ -134,7 +134,10 @@ export async function provisionFitInstance(options: ProvisionOptions = {}): Prom
   // Last segment of the ARN is the most readable creator identifier:
   //   arn:aws:iam::123:user/alice          → alice
   //   arn:aws:sts::123:assumed-role/R/sess → sess
-  const creatorTag = creds.identity.arn.split("/").at(-1) ?? creds.identity.userId;
+  // The assumed-role session name is itself stamped "fit-cli-<user>" (see
+  // aws-cli.ts), so strip that prefix here or fitInstanceName() below doubles it
+  // up into "fit-cli-fit-cli-<user>-...".
+  const creatorTag = (creds.identity.arn.split("/").at(-1) ?? creds.identity.userId).replace(/^fit-cli-/, "");
 
   // Before launching anything, silently fetch fit-cli boxes already running in
   // this region. We suppress the banner here — it will be shown in the
