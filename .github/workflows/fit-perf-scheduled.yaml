@@ -17,6 +17,14 @@ on:
         description: Clone this branch of jenkins-sdk instead of its default branch (e.g. prebuilt-container-rollout).
         type: string
         default: ""
+      transactionsFitPerformerRef:
+        description: Fetch and check out this Gerrit ref in transactions-fit-performer before building (e.g. refs/changes/29/246329/1).
+        type: string
+        default: ""
+      cbdinoclusterPr:
+        description: Build cbdinocluster from this couchbaselabs/cbdinocluster PR number instead of installing the latest release.
+        type: string
+        default: ""
 
 # Don't run multiple of this job concurrently.  Github will queue up just one item.
 concurrency:
@@ -56,6 +64,8 @@ jobs:
         env:
           DRY_RUN: ${{ inputs.dryRun || false }}
           JENKINS_SDK_BRANCH: ${{ inputs.jenkinsSdkBranch || '' }}
+          GERRIT_REF: ${{ inputs.transactionsFitPerformerRef || '' }}
+          CBDINOCLUSTER_PR: ${{ inputs.cbdinoclusterPr || '' }}
         run: |
           ARGS=()
           if [ "$DRY_RUN" = "true" ]; then
@@ -63,6 +73,12 @@ jobs:
           fi
           if [ -n "$JENKINS_SDK_BRANCH" ]; then
             ARGS+=(--jenkins-sdk-branch "$JENKINS_SDK_BRANCH")
+          fi
+          if [ -n "$GERRIT_REF" ]; then
+            ARGS+=(--transactions-fit-performer-ref "$GERRIT_REF")
+          fi
+          if [ -n "$CBDINOCLUSTER_PR" ]; then
+            ARGS+=(--cbdinocluster-pr "$CBDINOCLUSTER_PR")
           fi
           echo "Running: bun src/fit-perf-scheduled/fit-perf-scheduled.ts ${ARGS[*]}"
           bun src/fit-perf-scheduled/fit-perf-scheduled.ts "${ARGS[@]}"

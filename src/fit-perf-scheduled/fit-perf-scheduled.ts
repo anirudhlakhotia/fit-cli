@@ -13,7 +13,7 @@ import { isMain } from "../util/non-fit/cli.js";
 import { posixQuote, teeToFileCommand } from "../util/non-fit/remote-target.js";
 import { parseAllocatedId } from "../cluster/cluster-create/parse-allocated-id.js";
 import { parseConnstr } from "../cluster/cluster-select/parse-connstr.js";
-import { installCbdinoclusterRemote } from "../cluster/cluster-create/install-cbdinocluster.js";
+import { buildCbdinoclusterFromPr, installCbdinoclusterRemote } from "../cluster/cluster-create/install-cbdinocluster.js";
 import { defaultCbdinoclusterInitArgs } from "../cluster/cluster-create/default-cbdinocluster-init-config.js";
 import { resolveGithubTokenFromAws } from "../fit/util/config.js";
 import { loadEnvironments } from "../fit/util/environments.js";
@@ -25,13 +25,22 @@ import { GHCR_REGISTRY } from "../fit/performers/util/performer-image.js";
 import {
   configureRemoteGitCredentials,
   ensureRemoteRepos,
+  remoteGerritSshKeyPath,
+  stageGerritSshKey,
   uploadRemoteAwsCredentials,
 } from "../fit/shared/util/remote-fit-run.js";
 import {
   remoteAptCleanupCommand,
   remoteAptGetCommand,
   remoteAptWaitCommand,
+  resolveGerritKeyWithAwsFallback,
 } from "../fit/shared/util/remote-fit-execution-context.js";
+import {
+  checkoutFetchHeadArgs,
+  fitPerformerGerritFetchArgs,
+  gerritSshCommand,
+  requireGerritUser,
+} from "../fit/performers/checkout-fit-gerrit-ref/checkout-fit-gerrit-ref.js";
 
 const DEFAULT_CONFIG_PATH = join(import.meta.dirname, "config", "fit-perf-scheduled.yaml");
 const INSTANCE_INFO_PATH = "fit-perf-scheduled-instance.json";
@@ -67,21 +76,32 @@ function parseArgs(argv: string[]): {
   dryRun: boolean;
   keepOnFailure: boolean;
   jenkinsSdkBranch: string | undefined;
+  transactionsFitPerformerRef: string | undefined;
+  cbdinoclusterPr: number | undefined;
   help: boolean;
 } {
   const configIndex = argv.indexOf("--config");
   const branchIndex = argv.indexOf("--jenkins-sdk-branch");
+  const transactionsFitPerformerRefIndex = argv.indexOf("--transactions-fit-performer-ref");
+  const cbdinoclusterPrIndex = argv.indexOf("--cbdinocluster-pr");
+  const cbdinoclusterPrStr = cbdinoclusterPrIndex !== -1 ? argv[cbdinoclusterPrIndex + 1] : undefined;
+  if (cbdinoclusterPrStr !== undefined && (!/^\d+$/.test(cbdinoclusterPrStr) || Number(cbdinoclusterPrStr) <= 0)) {
+    throw new Error(`--cbdinocluster-pr must be a positive integer, got: ${cbdinoclusterPrStr}`);
+  }
   return {
     configPath: configIndex !== -1 ? argv[configIndex + 1] : DEFAULT_CONFIG_PATH,
     dryRun: argv.includes("--dry-run"),
     keepOnFailure: argv.includes("--keep-on-failure"),
     jenkinsSdkBranch: branchIndex !== -1 ? argv[branchIndex + 1] : undefined,
+    transactionsFitPerformerRef:
+      transactionsFitPerformerRefIndex !== -1 ? argv[transactionsFitPerformerRefIndex + 1] : undefined,
+    cbdinoclusterPr: cbdinoclusterPrStr !== undefined ? Number(cbdinoclusterPrStr) : undefined,
     help: argv.includes("--help") || argv.includes("-h"),
   };
 }
 
 function printHelp(): void {
-  console.log(`Usage: bun src/fit-perf-scheduled/fit-perf-scheduled.ts [--config <path>] [--dry-run] [--keep-on-failure] [--jenkins-sdk-branch <branch>]
+  console.log(`Usage: bun src/fit-perf-scheduled/fit-perf-scheduled.ts [--config <path>] [--dry-run] [--keep-on-failure] [--jenkins-sdk-branch <branch>] [--transactions-fit-performer-ref <ref>] [--cbdinocluster-pr <n>]
 
 Launches a clean EC2 instance, allocates a Couchbase cluster with cbdinocluster,
 builds and runs jenkins-sdk against the config, and writes results to the
@@ -95,6 +115,11 @@ production perf results database (performance-sdk.couchbase.com).
   --jenkins-sdk-branch <branch>
                              Clone this branch of jenkins-sdk instead of its default branch, e.g.
                              --jenkins-sdk-branch prebuilt-container-rollout.
+  --transactions-fit-performer-ref <ref>
+                             Fetch and check out this Gerrit ref (e.g. refs/changes/29/246329/1) in the
+                             transactions-fit-performer checkout before building it.
+  --cbdinocluster-pr <n>     Build cbdinocluster from this couchbaselabs/cbdinocluster PR instead of
+                             installing the latest release.
   --help, -h                 Show this help.
 `);
 }
@@ -108,7 +133,9 @@ interface JenkinsSdkConfig {
 }
 
 async function main(): Promise<void> {
-  const { configPath, dryRun, keepOnFailure, jenkinsSdkBranch, help } = parseArgs(process.argv.slice(2));
+  const { configPath, dryRun, keepOnFailure, jenkinsSdkBranch, transactionsFitPerformerRef, cbdinoclusterPr, help } = parseArgs(
+    process.argv.slice(2),
+  );
   if (help) {
     printHelp();
     return;
@@ -166,7 +193,10 @@ async function main(): Promise<void> {
     await target.run("sudo", ["-n", "systemctl", "enable", "--now", "docker"]);
 
     console.log("\nInstalling cbdinocluster...");
-    const cbdinocluster = await installCbdinoclusterRemote(target);
+    const cbdinocluster =
+      cbdinoclusterPr !== undefined
+        ? await buildCbdinoclusterFromPr(target, { pr: cbdinoclusterPr })
+        : await installCbdinoclusterRemote(target);
 
     console.log("\nInitializing cbdinocluster...");
     const initArgs = defaultCbdinoclusterInitArgs(DOCKER_NETWORK).trim().split(/\s+/).filter(Boolean);
@@ -193,6 +223,31 @@ async function main(): Promise<void> {
       console.log(`Using jenkins-sdk branch: ${jenkinsSdkBranch}`);
     }
     await ensureRemoteRepos(target, REMOTE_ROOT_DIR, [FIT_PERFORMER, jenkinsSdkRepo(jenkinsSdkBranch), COUCHBASE_JVM_CLIENTS]);
+
+    if (transactionsFitPerformerRef) {
+      console.log(`\nChecking out transactions-fit-performer Gerrit ref ${transactionsFitPerformerRef}...`);
+      const gerritUser = await requireGerritUser();
+      const localGerritKey = await resolveGerritKeyWithAwsFallback();
+      if (!localGerritKey) {
+        throw new Error(
+          `--gerrit-ref was set but no Gerrit SSH key was found (checked gerrit.sshKey in config and the ` +
+            `fit-cli/gerrit/ssh-key AWS secret).`,
+        );
+      }
+      await stageGerritSshKey(target, REMOTE_ROOT_DIR, localGerritKey);
+      const remoteGerritKeyPath = remoteGerritSshKeyPath(REMOTE_ROOT_DIR);
+      const sshCmd = gerritSshCommand(remoteGerritKeyPath);
+      const fetchArgs = fitPerformerGerritFetchArgs(transactionsFitPerformerRef, gerritUser);
+      const fitPerformerDir = repoPath(FIT_PERFORMER, REMOTE_ROOT_DIR);
+      await target.run(
+        "sh",
+        ["-c", `GIT_SSH_COMMAND=${posixQuote(sshCmd)} git ${fetchArgs.map(posixQuote).join(" ")}`],
+        fitPerformerDir,
+        { display: `GIT_SSH_COMMAND=<gerrit-key> git ${fetchArgs.join(" ")}` },
+      );
+      await target.run("git", checkoutFetchHeadArgs(), fitPerformerDir);
+      console.log(`✓ Checked out transactions-fit-performer at Gerrit ref ${transactionsFitPerformerRef}`);
+    }
 
     // jenkins-sdk's prebuilt-container-rollout branch has most SDKs `docker pull` their
     // performer image straight from ghcr.io/couchbase (the same private packages fit-cli's

@@ -43,7 +43,7 @@ export const GERRIT_AWS_SECRET_ID = "fit-cli/gerrit/ssh-key";
  * (`fit-cli/gerrit/ssh-key`, field `sshPrivateKey`) if no local key is found.
  * When the key comes from AWS it is written to a temp file and that path is returned.
  */
-async function resolveGerritKeyWithAwsFallback(): Promise<string | undefined> {
+export async function resolveGerritKeyWithAwsFallback(): Promise<string | undefined> {
   const local = resolveGerritSshKey();
   if (local) return local;
 
