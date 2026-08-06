@@ -200,7 +200,7 @@ export async function buildCbdinoclusterFromPr(
  * day without anything recording which one actually got installed.
  */
 async function logCbdinoclusterVersion(execution: CaptureExecutor, installedPath: string): Promise<void> {
-  const version = (await execution.capture(installedPath, ["--version"])).trim();
+  const version = (await execution.capture(installedPath, ["version"])).trim();
   console.log(`  cbdinocluster version: ${version}`);
 }
 
