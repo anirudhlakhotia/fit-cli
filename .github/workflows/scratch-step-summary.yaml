@@ -1,0 +1,133 @@
+# THROWAWAY — delete this file before merging.
+#
+# Renders two real nightly runs, whose step summaries GitHub discarded for being over the
+# 1024k cap, using this branch's renderer. The point is to show colleagues what those runs
+# would now look like: each job's summary page is the genuine article, GitHub-rendered at
+# full size, rather than a local approximation.
+#
+# One job per run so each gets its own $GITHUB_STEP_SUMMARY (that file is per-step, so both
+# runs sharing a job would share one 1024k budget and misrepresent the result).
+#
+# There is deliberately no "before" rendering: the original output was discarded by GitHub,
+# which is the bug. Any "before" we drew would be a fabrication, so each job instead states
+# the original size and links the real run whose annotation proves it.
+#
+# Triggered by pull_request rather than workflow_dispatch (which is only offered once the
+# file is on the default branch) or push (which stopped producing runs for this branch after
+# a force-push, for reasons not visible without repo Actions-policy access).
+name: Scratch — step summary rendering
+
+on:
+  pull_request:
+
+permissions:
+  id-token: write   # required for GitHub OIDC (to read the run bundles from S3)
+  contents: read
+
+concurrency:
+  group: scratch-step-summary-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  replay:
+    name: ${{ matrix.run.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        run:
+          - name: "JVM Java 2026-08-04 (was 3712k, discarded)"
+            slug: jvm-java
+            bundle: s3://fit-cli/runs/20260804-003917-4235.zip
+            was: 3712k
+            failures: 262
+            sdk: Java
+            origin: https://github.com/couchbase/couchbase-jvm-clients/actions/runs/30866246460
+          - name: ".NET 2026-08-04 (was 1437k, discarded)"
+            slug: dotnet
+            bundle: s3://fit-cli/runs/20260804-002753-7c4f.zip
+            was: 1437k
+            failures: 136
+            sdk: .NET
+            origin: https://github.com/couchbase/couchbase-net-client/actions/runs/30865642313
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # Scoped to the suites this branch touches: the full suite is not CI-safe
+      # (src/util/non-fit/tests/replay.test.ts depends on stdin being a TTY).
+      - name: Typecheck and the unit tests for this change
+        run: |
+          bun run typecheck
+          FORCE_COLOR=1 node --import tsx --test \
+            'src/fit/shared/run-test-driver/tests/junit-to-markdown.test.ts' \
+            'src/fit/util/tests/gha.test.ts'
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@517a711dbcd0e402f90c77e7e2f81e849156e31d # v6
+        with:
+          aws-region: us-west-2
+          role-to-assume: arn:aws:iam::958525475024:role/fit-cli-role
+          role-session-name: gha-${{ github.actor }}-${{ github.run_id }}
+          audience: sts.amazonaws.com
+          retry-max-attempts: 3
+
+      - name: Fetch and unpack the run's artifact bundle
+        run: |
+          aws s3 cp "${{ matrix.run.bundle }}" bundle.zip --no-progress
+          mkdir -p bundle
+          unzip -q bundle.zip -d bundle
+          echo "surefire-reports directories:"
+          find bundle -type d -name surefire-reports | sort
+
+      # Preamble and render must share a step: $GITHUB_STEP_SUMMARY is a per-step file, so a
+      # later step would write to a different, empty one. The renderer appends, and its
+      # budget accounting reads the file size, so the preamble is correctly charged for.
+      - name: Render this run's summary as it would look now
+        run: |
+          {
+            echo "## ${{ matrix.run.sdk }} nightly FIT, 2026-08-04 — replayed with the step-summary budget"
+            echo
+            echo "The original run's step summary was **${{ matrix.run.was }}**, over GitHub's 1024k cap, so"
+            echo "GitHub **discarded the whole thing** — only an \`upload aborted\` annotation survived and the"
+            echo "results were recoverable only from the artifact bundle."
+            echo
+            echo "See the original run: <${{ matrix.run.origin }}>"
+            echo
+            echo "Below is the *same JUnit data* rendered by this branch, from"
+            echo "\`${{ matrix.run.bundle }}\`. Every one of the run's ~${{ matrix.run.failures }} failures should"
+            echo "be present, each with its message, stack trace and stdout — with stdout elided to fit,"
+            echo "and a pointer to the artifact bundle for the full text."
+            echo
+            echo "---"
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          bun src/fit/util/gha.ts summary --dir bundle --out "$GITHUB_STEP_SUMMARY"
+
+          bytes=$(wc -c < "$GITHUB_STEP_SUMMARY")
+          echo "step summary is ${bytes} bytes ($((bytes / 1024))K); GitHub's cap is 1024K"
+          if [ "$bytes" -gt 1048576 ]; then
+            echo "::error::step summary is over the 1024k cap — GitHub will discard it"
+            exit 1
+          fi
+          if [ "$bytes" -eq 0 ]; then
+            echo "::error::step summary is empty — the render wrote nothing"
+            exit 1
+          fi
+          cp "$GITHUB_STEP_SUMMARY" "rendered-${{ matrix.run.slug }}.md"
+
+      # So the markdown can be downloaded, diffed or attached elsewhere, not just viewed.
+      - name: Upload the rendered markdown
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: rendered-summary-${{ matrix.run.slug }}
+          path: rendered-${{ matrix.run.slug }}.md
+          retention-days: 14
