@@ -315,25 +315,29 @@ export function planFailureDetail(args: {
   /** Message + stack trace + markdown scaffolding, summed over all failures. */
   perFailureBytes: number;
   budgetBytes?: number;
-}): { outputWindowBytes: number; shownFailures: number } {
+}): { outputBudgetPerFailure: number; shownFailures: number } {
   const { failureCount, fixedBytes, perFailureBytes, budgetBytes } = args;
-  if (failureCount === 0) return { outputWindowBytes: DEFAULT_OUTPUT_WINDOW_BYTES, shownFailures: 0 };
-  if (budgetBytes === undefined) return { outputWindowBytes: DEFAULT_OUTPUT_WINDOW_BYTES, shownFailures: failureCount };
+  const maxPerFailure = 2 * DEFAULT_OUTPUT_WINDOW_BYTES;
+  if (failureCount === 0) return { outputBudgetPerFailure: maxPerFailure, shownFailures: 0 };
+  if (budgetBytes === undefined) return { outputBudgetPerFailure: maxPerFailure, shownFailures: failureCount };
 
-  // Rule 1: size the window to what's left after the parts we always render.
+  // Rule 1: size the allowance to what's left after the parts we always render. This is a
+  // per-failure total shared by whichever of stdout/stderr that failure actually has —
+  // dividing by a fixed two streams wasted half the budget on the common case of an empty
+  // stderr.
   const forOutput = budgetBytes - fixedBytes - perFailureBytes;
-  const perStream = Math.floor(forOutput / failureCount / 2);
-  if (perStream >= MIN_OUTPUT_WINDOW_BYTES) {
-    return { outputWindowBytes: Math.min(perStream, DEFAULT_OUTPUT_WINDOW_BYTES), shownFailures: failureCount };
+  const perFailure = Math.floor(forOutput / failureCount);
+  if (perFailure >= MIN_OUTPUT_WINDOW_BYTES) {
+    return { outputBudgetPerFailure: Math.min(perFailure, maxPerFailure), shownFailures: failureCount };
   }
 
   // Rule 2: the window has hit its floor, so cut how many failures are detailed rather
   // than shrinking the window into uselessness. Costs are averaged over the failures we
   // have; the byte-accurate check in gha.ts is what actually guarantees the bound.
   const averageFixed = perFailureBytes / failureCount;
-  const costEach = averageFixed + 2 * MIN_OUTPUT_WINDOW_BYTES;
+  const costEach = averageFixed + MIN_OUTPUT_WINDOW_BYTES;
   const affordable = Math.floor((budgetBytes - fixedBytes) / costEach);
-  return { outputWindowBytes: MIN_OUTPUT_WINDOW_BYTES, shownFailures: Math.max(0, Math.min(failureCount, affordable)) };
+  return { outputBudgetPerFailure: MIN_OUTPUT_WINDOW_BYTES, shownFailures: Math.max(0, Math.min(failureCount, affordable)) };
 }
 
 /**
@@ -401,14 +405,21 @@ export function renderJunitMarkdown(data: JunitMarkdownData, options: JunitMarkd
       tc.issues.reduce((a, issue) => a + Buffer.byteLength(issue.message, "utf8") + Buffer.byteLength(condenseStackTrace(issue.body), "utf8"), 0),
     0,
   );
-  const { outputWindowBytes, shownFailures } = planFailureDetail({
+  const plan = planFailureDetail({
     failureCount: failingCases.length,
     fixedBytes,
     perFailureBytes,
     budgetBytes,
   });
 
-  // Per-failure detail blocks
+  /**
+   * Render the failure section for a given allowance. Predicting its exact size from the
+   * inputs proved unreliable (markdown scaffolding, elision markers and multi-byte content
+   * all drift), so `renderJunitMarkdown` renders, measures, and shrinks until it fits
+   * rather than trusting the estimate.
+   */
+  const renderFailures = (outputBudgetPerFailure: number, shownFailures: number): string[] => {
+  const lines: string[] = [];
   for (const tc of failingCases.slice(0, shownFailures)) {
     const simpleClass = removePackage(tc.classname);
     const icon = tc.issues.some((issue) => issue.tag === "error") ? "💥" : "❌";
@@ -417,7 +428,9 @@ export function renderJunitMarkdown(data: JunitMarkdownData, options: JunitMarkd
     for (const issue of tc.issues) {
       if (issue.message) {
         lines.push("```");
-        lines.push(issue.message);
+        // Windowed like everything else: normally ~60 bytes, but the driver can put a
+        // whole serialized exception in here and nothing else would bound it.
+        lines.push(truncate(issue.message, outputBudgetPerFailure));
         lines.push("```");
         lines.push("");
       }
@@ -430,23 +443,23 @@ export function renderJunitMarkdown(data: JunitMarkdownData, options: JunitMarkd
         lines.push("<summary><b>🧵 Stack trace</b></summary>");
         lines.push("");
         lines.push("```");
-        lines.push(truncate(condenseStackTrace(issue.body), outputWindowBytes));
+        lines.push(truncate(condenseStackTrace(issue.body), outputBudgetPerFailure));
         lines.push("```");
         lines.push("");
         lines.push("</details>");
         lines.push("");
       }
     }
-    for (const [label, output] of [
-      ["stdout", tc.stdout],
-      ["stderr", tc.stderr],
-    ] as const) {
+    // Share this failure's allowance across only the streams it actually has.
+    const streams = ([["stdout", tc.stdout], ["stderr", tc.stderr]] as const).filter(([, output]) => Boolean(output));
+    const perStream = streams.length > 0 ? Math.floor(outputBudgetPerFailure / streams.length) : outputBudgetPerFailure;
+    for (const [label, output] of streams) {
       if (!output) continue;
       lines.push("<details>");
       lines.push(`<summary><b>🖥️ Test output (${label})</b></summary>`);
       lines.push("");
       lines.push("```");
-      lines.push(truncate(output, outputWindowBytes));
+      lines.push(truncate(output, perStream));
       lines.push("```");
       lines.push("");
       lines.push("</details>");
@@ -464,8 +477,32 @@ export function renderJunitMarkdown(data: JunitMarkdownData, options: JunitMarkd
     );
     lines.push("");
   }
+    return lines;
+  };
 
-  return lines.join("\n");
+  let { outputBudgetPerFailure, shownFailures } = plan;
+  let failureLines = renderFailures(outputBudgetPerFailure, shownFailures);
+  if (budgetBytes !== undefined) {
+    // Shrink the allowance to close any overshoot, then, if the allowance is already at its
+    // floor, show fewer failures. Bounded passes so this can never loop.
+    for (let pass = 0; pass < 6; pass++) {
+      const size = Buffer.byteLength([...lines, ...failureLines].join("\n"), "utf8");
+      if (size <= budgetBytes) break;
+      const overshoot = size - budgetBytes;
+      if (outputBudgetPerFailure > MIN_OUTPUT_WINDOW_BYTES && shownFailures > 0) {
+        const reduction = Math.max(1, Math.ceil(overshoot / shownFailures));
+        outputBudgetPerFailure = Math.max(MIN_OUTPUT_WINDOW_BYTES, outputBudgetPerFailure - reduction);
+      } else if (shownFailures > 0) {
+        const perFailure = Math.max(1, Math.floor(size / Math.max(1, shownFailures)));
+        shownFailures = Math.max(0, shownFailures - Math.max(1, Math.ceil(overshoot / perFailure)));
+      } else {
+        break;
+      }
+      failureLines = renderFailures(outputBudgetPerFailure, shownFailures);
+    }
+  }
+
+  return [...lines, ...failureLines].join("\n");
 }
 
 const RED = "\x1b[31m";

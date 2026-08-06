@@ -326,35 +326,35 @@ const PLAN_BASE = { failureCount: 100, fixedBytes: 10_000, perFailureBytes: 100_
 
 test("planFailureDetail: no budget keeps the historical fixed window and every failure", () => {
   const plan = planFailureDetail({ ...PLAN_BASE });
-  assert.equal(plan.outputWindowBytes, DEFAULT_OUTPUT_WINDOW_BYTES);
+  assert.equal(plan.outputBudgetPerFailure, 2 * DEFAULT_OUTPUT_WINDOW_BYTES);
   assert.equal(plan.shownFailures, 100);
 });
 
 test("planFailureDetail: a generous budget does not exceed the historical window", () => {
   // Otherwise a run with 2 failures would inline megabytes just because it can.
   const plan = planFailureDetail({ ...PLAN_BASE, failureCount: 2, perFailureBytes: 2000, budgetBytes: 900 * 1024 });
-  assert.equal(plan.outputWindowBytes, DEFAULT_OUTPUT_WINDOW_BYTES);
+  assert.equal(plan.outputBudgetPerFailure, 2 * DEFAULT_OUTPUT_WINDOW_BYTES);
   assert.equal(plan.shownFailures, 2);
 });
 
 test("planFailureDetail: a tight budget narrows the window but still shows every failure", () => {
   const plan = planFailureDetail({ ...PLAN_BASE, budgetBytes: 900 * 1024 });
   assert.equal(plan.shownFailures, 100, "every failure should still be detailed");
-  assert.ok(plan.outputWindowBytes < DEFAULT_OUTPUT_WINDOW_BYTES, "window should have narrowed");
-  assert.ok(plan.outputWindowBytes >= MIN_OUTPUT_WINDOW_BYTES, "window should stay usable");
+  assert.ok(plan.outputBudgetPerFailure < 2 * DEFAULT_OUTPUT_WINDOW_BYTES, "allowance should have narrowed");
+  assert.ok(plan.outputBudgetPerFailure >= MIN_OUTPUT_WINDOW_BYTES, "window should stay usable");
 });
 
 test("planFailureDetail: the window derived from the budget actually fits it", () => {
   const budgetBytes = 900 * 1024;
   const plan = planFailureDetail({ ...PLAN_BASE, budgetBytes });
-  const projected = PLAN_BASE.fixedBytes + PLAN_BASE.perFailureBytes + plan.shownFailures * 2 * plan.outputWindowBytes;
+  const projected = PLAN_BASE.fixedBytes + PLAN_BASE.perFailureBytes + plan.shownFailures * plan.outputBudgetPerFailure;
   assert.ok(projected <= budgetBytes, `projected ${projected} should fit budget ${budgetBytes}`);
 });
 
 test("planFailureDetail: once the window hits its floor, failures are cut instead", () => {
   // 5000 failures cannot each get a usable window out of 900K, so show fewer properly.
   const plan = planFailureDetail({ failureCount: 5000, fixedBytes: 10_000, perFailureBytes: 5_000_000, budgetBytes: 900 * 1024 });
-  assert.equal(plan.outputWindowBytes, MIN_OUTPUT_WINDOW_BYTES, "window should sit at the floor, not below");
+  assert.equal(plan.outputBudgetPerFailure, MIN_OUTPUT_WINDOW_BYTES, "window should sit at the floor, not below");
   assert.ok(plan.shownFailures < 5000, "should show fewer failures");
   assert.ok(plan.shownFailures > 0, "should still show some");
 });
@@ -367,7 +367,7 @@ test("planFailureDetail: never asks for more failures than exist, or a negative 
 test("planFailureDetail: zero failures is handled without dividing by zero", () => {
   const plan = planFailureDetail({ failureCount: 0, fixedBytes: 5000, perFailureBytes: 0, budgetBytes: 900 * 1024 });
   assert.equal(plan.shownFailures, 0);
-  assert.ok(Number.isFinite(plan.outputWindowBytes));
+  assert.ok(Number.isFinite(plan.outputBudgetPerFailure));
 });
 
 test("renderJunitMarkdown: a tight budget still names every failing test", () => {
@@ -407,6 +407,52 @@ test("renderJunitMarkdown: honours a tight budget on a pathological run", () => 
   }));
   const budgetBytes = 200 * 1024;
   const md = renderJunitMarkdown(parseJunitData(many), { budgetBytes });
-  // The window is a sizing heuristic, so allow slack; gha.ts's byte check is the hard bound.
-  assert.ok(Buffer.byteLength(md, "utf8") < budgetBytes * 1.5, `rendered ${Buffer.byteLength(md, "utf8")} against a ${budgetBytes} budget`);
+  assert.ok(Buffer.byteLength(md, "utf8") <= budgetBytes, `rendered ${Buffer.byteLength(md, "utf8")} against a ${budgetBytes} budget`);
+});
+
+test("renderJunitMarkdown: never exceeds its budget, across adversarial shapes and budgets", () => {
+  // Predicting the rendered size from the inputs turned out to be unreliable — an earlier
+  // version overshot by a constant ~988 bytes on one shape — so the renderer measures and
+  // shrinks. This pins that guarantee rather than the estimate behind it.
+  const shapes: Array<{ name: string; xml: (i: number) => string }> = [
+    {
+      name: "huge stdout, tiny message",
+      xml: (i) => `<testcase name="t${i}" classname="com.example.A${i}" time="1.0">
+        <error message="boom">short</error>
+        <system-out><![CDATA[${"x".repeat(50_000)}]]></system-out></testcase>`,
+    },
+    {
+      name: "huge message, no output",
+      xml: (i) => `<testcase name="t${i}" classname="com.example.B${i}" time="1.0">
+        <failure message="${"m".repeat(20_000)}">trace</failure></testcase>`,
+    },
+    {
+      name: "huge trace and both streams",
+      xml: (i) => `<testcase name="t${i}" classname="com.example.C${i}" time="1.0">
+        <error message="boom"><![CDATA[${"\tat com.couchbase.Foo.bar(Foo.java:1)\n".repeat(800)}]]></error>
+        <system-out><![CDATA[${"o".repeat(30_000)}]]></system-out>
+        <system-err><![CDATA[${"e".repeat(30_000)}]]></system-err></testcase>`,
+    },
+    {
+      name: "multi-byte content",
+      xml: (i) => `<testcase name="t${i}" classname="com.example.D${i}" time="1.0">
+        <error message="✅ boom 💥">trace</error>
+        <system-out><![CDATA[${"✅💥".repeat(8_000)}]]></system-out></testcase>`,
+    },
+  ];
+
+  for (const shape of shapes) {
+    for (const count of [1, 25, 200]) {
+      const files = Array.from({ length: count }, (_, i) => ({
+        filename: `TEST-com.example.S${i}.xml`,
+        xml: `<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.example.S${i}" tests="1" failures="1" errors="0" skipped="0" time="1.0">${shape.xml(i)}</testsuite>`,
+      }));
+      const data = parseJunitData(files);
+      for (const budgetBytes of [2000, 20_000, 200_000, 900 * 1024]) {
+        const size = Buffer.byteLength(renderJunitMarkdown(data, { budgetBytes }), "utf8");
+        assert.ok(size <= budgetBytes, `${shape.name} x${count} at budget ${budgetBytes}: rendered ${size}`);
+      }
+    }
+  }
 });

@@ -153,17 +153,6 @@ export function appendRunSummaryToGhaSummary(result: RunSummary, budgetBytes: nu
   // and the total isn't known here, so this trades fairness across runs for using the
   // budget well; the ladder below still guarantees later runs get at least their tables.
   const remainingForThisRun = Math.max(0, budgetBytes - (sizeBefore < 0 ? 0 : sizeBefore) - SUMMARY_APPEND_OVERHEAD_BYTES);
-  let junitFull: string | undefined;
-  let junitLean: string | undefined;
-  if (surefireDir) {
-    try {
-      const data = parseJunitDataFromDir(surefireDir);
-      junitFull = data ? renderJunitMarkdown(data, { budgetBytes: remainingForThisRun }) : "_No JUnit reports found._\n";
-      junitLean = data ? renderJunitMarkdown(data, { includeFailureDetail: false }) : junitFull;
-    } catch (err) {
-      console.warn(`Warning: failed to render JUnit table for "${pathLabel}": ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
 
   let situationalMarkdown: string | undefined;
   if (situationalResultsCsv) {
@@ -172,6 +161,26 @@ export function appendRunSummaryToGhaSummary(result: RunSummary, budgetBytes: nu
       if (rows) situationalMarkdown = renderSituationalResultsMarkdown(rows);
     } catch (err) {
       console.warn(`Warning: failed to render situational results table for "${pathLabel}": ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  // The JUnit markdown is embedded in a block that also carries the <details> wrapper, the
+  // Metric/Value table and any situational table. Measure those and hand the renderer only
+  // what is genuinely left, or it sizes its elision windows to the whole remaining budget
+  // and the finished block overshoots — which the ladder then rejects wholesale, costing
+  // all the detail we were trying to preserve.
+  const wrapperBytes = Buffer.byteLength(renderRunSummaryBlock({ pathLabel, sdk, ok, summary, situationalMarkdown }), "utf8");
+  const junitBudget = Math.max(0, remainingForThisRun - wrapperBytes);
+
+  let junitFull: string | undefined;
+  let junitLean: string | undefined;
+  if (surefireDir) {
+    try {
+      const data = parseJunitDataFromDir(surefireDir);
+      junitFull = data ? renderJunitMarkdown(data, { budgetBytes: junitBudget }) : "_No JUnit reports found._\n";
+      junitLean = data ? renderJunitMarkdown(data, { includeFailureDetail: false }) : junitFull;
+    } catch (err) {
+      console.warn(`Warning: failed to render JUnit table for "${pathLabel}": ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
