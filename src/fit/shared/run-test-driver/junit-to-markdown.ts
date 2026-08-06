@@ -280,11 +280,16 @@ function removePackage(name: string): string {
 export const DEFAULT_OUTPUT_WINDOW_BYTES = 16 * 1024;
 
 /**
- * Smallest per-stream window still worth rendering. Below this the elision marker
- * crowds out the output it is describing, so the budget is better spent showing fewer
- * failures properly than all of them uselessly.
+ * Smallest output window still worth rendering for a failure.
+ *
+ * Set from a stated preference in review: "I would much prefer to have some errors shown
+ * usefully (with info), than all errors shown too briefly." The window is head+tail around
+ * an elision marker of ~160 bytes, so 4k leaves roughly twenty lines at each end — enough
+ * to triage from. At the previous 512 it was about two lines each end, which meant runs of
+ * 300-700 failures got every failure shown and none of them usefully: the exact trade the
+ * preference rules out. Below this we show fewer failures rather than thinner ones.
  */
-export const MIN_OUTPUT_WINDOW_BYTES = 512;
+export const MIN_OUTPUT_WINDOW_BYTES = 4 * 1024;
 
 /**
  * Markdown scaffolding around one failure's content — heading, code fences, `<details>`
@@ -418,7 +423,7 @@ export function renderJunitMarkdown(data: JunitMarkdownData, options: JunitMarkd
    * all drift), so `renderJunitMarkdown` renders, measures, and shrinks until it fits
    * rather than trusting the estimate.
    */
-  const renderFailures = (outputBudgetPerFailure: number, shownFailures: number): string[] => {
+  const renderFailures = (outputBudgetPerFailure: number, shownFailures: number, namesListed: number): string[] => {
   const lines: string[] = [];
   for (const tc of failingCases.slice(0, shownFailures)) {
     const simpleClass = removePackage(tc.classname);
@@ -472,20 +477,38 @@ export function renderJunitMarkdown(data: JunitMarkdownData, options: JunitMarkd
   const notShown = failingCases.length - shownFailures;
   if (notShown > 0) {
     lines.push(
-      `_... and ${notShown} more failure(s) not shown, to stay within GitHub's step-summary limit. ` +
+      `_... and ${notShown} more failure(s) not shown in detail, to stay within GitHub's step-summary limit. ` +
         `All ${failingCases.length} are in this run's ARTIFACT_DIR, fetchable via \`fit archive fetch ...\` (see above)._`,
     );
     lines.push("");
+    // Names are ~30 bytes each, so listing them costs little and keeps the most important
+    // thing about a failure we had no room to detail: that it failed. Bounded like
+    // everything else, since 5000 failures would be 150k of names on their own.
+    const names = failingCases.slice(shownFailures, shownFailures + namesListed);
+    if (names.length > 0) {
+      lines.push("<details>");
+      lines.push(`<summary>${names.length === notShown ? `The other ${notShown} failing test(s)` : `${names.length} of the other ${notShown} failing test(s)`}</summary>`);
+      lines.push("");
+      for (const tc of names) {
+        const icon = tc.issues.some((issue) => issue.tag === "error") ? "💥" : "❌";
+        lines.push(`- ${icon} ${removePackage(tc.classname)}.${tc.name}`);
+      }
+      lines.push("");
+      lines.push("</details>");
+      lines.push("");
+    }
   }
     return lines;
   };
 
   let { outputBudgetPerFailure, shownFailures } = plan;
-  let failureLines = renderFailures(outputBudgetPerFailure, shownFailures);
+  let namesListed = failingCases.length - shownFailures;
+  let failureLines = renderFailures(outputBudgetPerFailure, shownFailures, namesListed);
   if (budgetBytes !== undefined) {
-    // Shrink the allowance to close any overshoot, then, if the allowance is already at its
-    // floor, show fewer failures. Bounded passes so this can never loop.
-    for (let pass = 0; pass < 6; pass++) {
+    // Give up detail in the order it is worth least: first narrow the output window, then
+    // detail fewer failures, then list fewer of their names. Bounded passes so this can
+    // never loop; if even the tables overrun, gha.ts's ladder drops to a leaner block.
+    for (let pass = 0; pass < 12; pass++) {
       const size = Buffer.byteLength([...lines, ...failureLines].join("\n"), "utf8");
       if (size <= budgetBytes) break;
       const overshoot = size - budgetBytes;
@@ -493,12 +516,16 @@ export function renderJunitMarkdown(data: JunitMarkdownData, options: JunitMarkd
         const reduction = Math.max(1, Math.ceil(overshoot / shownFailures));
         outputBudgetPerFailure = Math.max(MIN_OUTPUT_WINDOW_BYTES, outputBudgetPerFailure - reduction);
       } else if (shownFailures > 0) {
-        const perFailure = Math.max(1, Math.floor(size / Math.max(1, shownFailures)));
+        const perFailure = Math.max(1, Math.floor(size / shownFailures));
         shownFailures = Math.max(0, shownFailures - Math.max(1, Math.ceil(overshoot / perFailure)));
+        namesListed = failingCases.length - shownFailures;
+      } else if (namesListed > 0) {
+        const perName = 40;
+        namesListed = Math.max(0, namesListed - Math.max(1, Math.ceil(overshoot / perName)));
       } else {
         break;
       }
-      failureLines = renderFailures(outputBudgetPerFailure, shownFailures);
+      failureLines = renderFailures(outputBudgetPerFailure, shownFailures, namesListed);
     }
   }
 

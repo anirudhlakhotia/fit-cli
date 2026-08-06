@@ -23,10 +23,12 @@ export const STEP_SUMMARY_HARD_LIMIT_BYTES = 1024 * 1024;
 
 /**
  * What we allow ourselves to write. The headroom below the hard limit covers the
- * "Run artifacts" block prepended at the end of the run (whose S3 URI isn't known
- * until then) plus anything else in the job that writes to the same summary file.
+ * "Run artifacts" block prepended at the end of the run (whose S3 URI isn't known until
+ * then, so it cannot be counted as it is written) plus anything else in the job writing to
+ * the same file. That block is ~400 bytes, so 24k of margin is generous; the earlier 900k
+ * left 124k of the cap unused, which is 12% of the budget spent on nothing.
  */
-export const STEP_SUMMARY_BUDGET_BYTES = 900 * 1024;
+export const STEP_SUMMARY_BUDGET_BYTES = 1000 * 1024;
 
 /**
  * Each block is appended wrapped in newlines, so it costs this much more than its own
@@ -429,7 +431,10 @@ function main(): void {
       appendRunSummaryToGhaSummary({
         pathLabel: label,
         sdk: "replay",
-        ok: !data || data.totalFailures + data.totalErrors === 0,
+        // A run with no JUnit reports is not a pass — collect-junit.ts treats "no reports
+        // found" as FatalToRun, and a block reading PASS above "_No JUnit reports found._"
+        // would contradict itself.
+        ok: data !== undefined && data.totalFailures + data.totalErrors === 0,
         summary: data
           ? {
               testsRun: data.totalPassed + data.totalFailures + data.totalErrors,
