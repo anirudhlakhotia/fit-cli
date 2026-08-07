@@ -548,17 +548,37 @@ export async function resolveGithubToken(
     fetchSecret?: (secretId: string) => Promise<Record<string, string>>;
   } = {},
 ): Promise<string | undefined> {
+  return (await resolveGithubTokenWithSource(options)).token;
+}
+
+/** Where a resolved GitHub token came from — useful for tailoring error messages on failure. */
+export type GithubTokenSource = "config" | "env" | "aws" | "none";
+
+/** Same resolution order as {@link resolveGithubToken}, but also reports which source the token came from. */
+export async function resolveGithubTokenWithSource(
+  options: {
+    config?: FitCliConfig;
+    path?: string;
+    env?: NodeJS.ProcessEnv;
+    fetchSecret?: (secretId: string) => Promise<Record<string, string>>;
+  } = {},
+): Promise<{ token: string | undefined; source: GithubTokenSource }> {
   const env = options.env ?? process.env;
   const config = options.config ?? loadFitCliConfig(options.path).config;
-  const fromLocal = config?.localhost?.github?.token ?? (env.GITHUB_TOKEN?.trim() || undefined) ?? (env.GH_TOKEN?.trim() || undefined);
-  if (fromLocal) return fromLocal;
+
+  const fromConfig = config?.localhost?.github?.token;
+  if (fromConfig) return { token: fromConfig, source: "config" };
+
+  const fromEnv = (env.GITHUB_TOKEN?.trim() || undefined) ?? (env.GH_TOKEN?.trim() || undefined);
+  if (fromEnv) return { token: fromEnv, source: "env" };
 
   try {
     const fetchSecret = options.fetchSecret ?? getJsonSecret;
     const secret = await fetchSecret(GITHUB_AWS_SECRET_ID);
-    return secret.token?.trim() || undefined;
+    const token = secret.token?.trim() || undefined;
+    return { token, source: token ? "aws" : "none" };
   } catch {
-    return undefined;
+    return { token: undefined, source: "none" };
   }
 }
 

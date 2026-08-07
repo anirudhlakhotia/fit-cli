@@ -48,3 +48,4 @@ cat /home/grahamp-work/.fit-cli/config.json5
   },
 }
 ```
+[CONFIG2] We don't try and use the creds in AWS Secrets when user just wants to do local testing, so we can avoid pulling in an AWS dependency. 

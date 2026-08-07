@@ -9,7 +9,7 @@ import { fitCliError, runScriptPrefix } from "../../../util/non-fit/fit-cli-log.
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
 import { posixQuote } from "../../../util/non-fit/remote-target.js";
 import { createRunFilePath } from "../../../util/non-fit/replay.js";
-import { resolveGithubToken } from "../../util/config.js";
+import { GITHUB_AWS_SECRET_ID, resolveGithubTokenWithSource } from "../../util/config.js";
 import { chooseSdk } from "../../../util/sdk/choose-sdk.js";
 import { type Sdk } from "../../../util/sdk/sdks.js";
 import { createLocalFitExecutionContext, type FitExecutionContext } from "../../shared/util/remote-fit-run.js";
@@ -78,7 +78,7 @@ export async function checkAndPullPerformer(
     return true;
   }
 
-  const githubToken = await resolveGithubToken();
+  const { token: githubToken, source: tokenSource } = await resolveGithubTokenWithSource();
   console.log(`\nPulling performer with:\n  docker ${dockerPullArgs(imageName).join(" ")}\n`);
 
   try {
@@ -89,12 +89,23 @@ export async function checkAndPullPerformer(
     console.log("\nPulling performer container...\n");
     await execution.runHiddenUntilFailure(execution.dockerCommand, dockerPullArgs(imageName));
   } catch (err) {
-    fitCliError(
-      `\nFailed to pull the ${sdk.name} performer image ${imageName}: ${(err as Error).message}` +
-        (githubToken
-          ? ""
-          : `\nAdd a GitHub token with read:packages scope via \`${runScriptPrefix("config")} edit\`, GITHUB_TOKEN, or GH_TOKEN, then try again.`),
-    );
+    const message = (err as Error).message;
+    const denied = /denied/i.test(message);
+    let hint = "";
+    if (!githubToken) {
+      hint = `\nAdd a GitHub token with read:packages scope via \`${runScriptPrefix("config")} edit\`, GITHUB_TOKEN, or GH_TOKEN, then try again.`;
+    } else if (denied && tokenSource === "config") {
+      hint =
+        `\nPull denied even though a GitHub token was found in ~/.fit-cli/config.json5. If it's a personal PAT, it may not be ` +
+        `SSO-authorized for couchbaselabs — see https://github.com/settings/tokens -> Configure SSO.`;
+    } else if (denied && tokenSource === "env") {
+      hint =
+        `\nPull denied even though GITHUB_TOKEN/GH_TOKEN was set. If it's a personal PAT, it may not be SSO-authorized ` +
+        `for couchbaselabs — see https://github.com/settings/tokens -> Configure SSO.`;
+    } else if (denied && tokenSource === "aws") {
+      hint = `\nPull denied using the shared AWS-secret GitHub token. Check whether the "${GITHUB_AWS_SECRET_ID}" AWS secret needs updating.`;
+    }
+    fitCliError(`\nFailed to pull the ${sdk.name} performer image ${imageName}: ${message}${hint}`);
     return false;
   }
 
