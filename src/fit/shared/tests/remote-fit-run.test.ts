@@ -36,12 +36,14 @@ test("createLocalFitExecutionContext keeps local file paths unchanged", () => {
   assert.equal(execution.targetFilePath("/tmp/fit-cli/run/driver.log"), "/tmp/fit-cli/run/driver.log");
 });
 
-test("createLocalFitExecutionContext builds local docker run args without host-gateway wiring", () => {
+test("createLocalFitExecutionContext builds local docker run args with host-gateway wiring", () => {
   const execution = createLocalFitExecutionContext();
   assert.deepEqual(execution.performerRunArgs("performer-node-main"), [
     "run",
     "--detach",
     "--rm",
+    "--add-host",
+    "host.docker.internal:host-gateway",
     "--publish",
     "8060:8060",
     "--env",
@@ -56,6 +58,8 @@ test("createLocalFitExecutionContext can attach the performer to a cluster Docke
     "run",
     "--detach",
     "--rm",
+    "--add-host",
+    "host.docker.internal:host-gateway",
     "--network",
     "fit-net",
     "--publish",

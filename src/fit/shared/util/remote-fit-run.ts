@@ -469,6 +469,8 @@ export function createLocalFitExecutionContext(): FitExecutionContext {
       "run",
       "--detach",
       "--rm",
+      "--add-host",
+      REMOTE_DOCKER_HOST_ALIAS,
       ...(dockerNetwork ? ["--network", dockerNetwork] : []),
       "--publish",
       `${hostPort}:${DEFAULT_PERFORMER_PORT}`,
