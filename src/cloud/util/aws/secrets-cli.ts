@@ -16,7 +16,7 @@
  */
 import { SecretsManagerClient, CreateSecretCommand, PutSecretValueCommand } from "@aws-sdk/client-secrets-manager";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
-import { runScriptPrefix } from "../../../util/non-fit/fit-cli-log.js";
+import { printWithoutTimestamps, runScriptPrefix } from "../../../util/non-fit/fit-cli-log.js";
 import { loadEnvironments } from "../../../fit/util/environments.js";
 import { getJsonSecret, AwsSecretError } from "./secrets.js";
 import { AWS_REGION } from "./aws-target.js";
@@ -68,7 +68,9 @@ async function cmdList(): Promise<void> {
 
 async function cmdGet(idOrName: string): Promise<void> {
   const secret = await getJsonSecret(resolveSecretId(idOrName));
-  console.log(JSON.stringify(secret, null, 2));
+  // Raw, untimestamped output — this is meant to be piped (e.g. `| jq -r '.token'`),
+  // so stdout must carry nothing but the JSON.
+  printWithoutTimestamps(JSON.stringify(secret, null, 2));
 }
 
 async function cmdSet(idOrName: string, pairs: string[]): Promise<void> {

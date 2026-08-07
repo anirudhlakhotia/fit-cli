@@ -11,6 +11,7 @@ import { AssumeRoleCommand, GetCallerIdentityCommand, STSClient } from "@aws-sdk
 import { fromNodeProviderChain } from "@aws-sdk/credential-providers";
 import type { AwsCredentialIdentity, AwsCredentialIdentityProvider } from "@aws-sdk/types";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
+import { fitCliInfo } from "../../../util/non-fit/fit-cli-log.js";
 import { loadFitCliConfigEnv } from "../../../fit/util/config.js";
 import { loadEnvironments } from "../../../fit/util/environments.js";
 import { AWS_REGION } from "./aws-target.js";
@@ -135,7 +136,7 @@ export async function assumeFitCliRole(): Promise<AssumeRoleOutcome> {
   }
 
   if (pre.identity.arn.includes("fit-cli-role")) {
-    console.log(`Assuming fit-cli-role (already assumed as ${pre.identity.arn})`);
+    fitCliInfo(`Assuming fit-cli-role (already assumed as ${pre.identity.arn})`);
     // We didn't assume anything, so there's nothing for us to refresh — whatever provided
     // these credentials (OIDC / instance profile / a prior assume) owns their lifecycle.
     didSetEnvCreds = false;
@@ -149,8 +150,8 @@ export async function assumeFitCliRole(): Promise<AssumeRoleOutcome> {
     return cachedAssumeResult;
   }
 
-  console.log(`Assuming fit-cli-role...`);
-  console.log(`  current identity: ${pre.identity.arn}`);
+  fitCliInfo(`Assuming fit-cli-role...`);
+  fitCliInfo(`  current identity: ${pre.identity.arn}`);
 
   let sessionName: string;
   try {
@@ -185,7 +186,7 @@ export async function assumeFitCliRole(): Promise<AssumeRoleOutcome> {
     credsExpiration = creds.Expiration;
     didSetEnvCreds = true;
     const sessionExpiry = creds.Expiration?.toISOString() ?? "unknown";
-    console.log(`✓ Assumed fit-cli-role (session expires: ${sessionExpiry})`);
+    fitCliInfo(`✓ Assumed fit-cli-role (session expires: ${sessionExpiry})`);
     cachedAssumeResult = {
       ok: true,
       preAssumeIdentity: pre.identity,
