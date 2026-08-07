@@ -49,6 +49,18 @@ test("renderRunSummaryBlock: with summary counts renders Metric/Value table", ()
   assert.ok(block.includes("| Skipped | 379 |"));
 });
 
+test("renderRunSummaryBlock: fail with summary counts shows failure count in the summary line", () => {
+  const block = renderRunSummaryBlock({
+    pathLabel: "aws1 / 8.0-stable / java:main / functional",
+    sdk: "Java",
+    ok: false,
+    summary: { testsRun: 50, failures: 2, errors: 1, skipped: 0 },
+  });
+  assert.ok(
+    block.includes("<summary>aws1 / 8.0-stable / java:main / functional (Java) — ❌ FAIL (3/50 failed)</summary>"),
+  );
+});
+
 test("renderRunSummaryBlock: without summary, no Metric/Value table", () => {
   const block = renderRunSummaryBlock({ pathLabel: "aws1", sdk: "Java", ok: true });
   assert.ok(!block.includes("| Metric | Value |"));

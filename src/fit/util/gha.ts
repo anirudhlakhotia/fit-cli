@@ -100,7 +100,12 @@ export function renderRunSummaryBlock(args: {
   situationalMarkdown?: string;
 }): string {
   const { pathLabel, sdk, ok, summary, junitMarkdown, situationalMarkdown } = args;
-  const status = ok ? "✅ PASS" : "❌ FAIL";
+  const status =
+    ok || !summary
+      ? ok
+        ? "✅ PASS"
+        : "❌ FAIL"
+      : `❌ FAIL (${summary.failures + summary.errors}/${summary.testsRun} failed)`;
   const lines: string[] = [];
 
   lines.push("<details>");
