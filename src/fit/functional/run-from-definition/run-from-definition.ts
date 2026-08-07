@@ -98,10 +98,14 @@ import { DEFAULT_CBDINO_SETTINGS, type CbdinoSettings } from "../../situational/
 import { loadEnvironments } from "../../util/environments.js";
 import {
   createFitExecutionContext,
-  uploadRemoteAwsCredentials,
   uploadRemoteCapellaConfig,
   type FitExecutionContext,
 } from "../../shared/util/remote-fit-run.js";
+import {
+  startRemoteAwsCredsRefresher,
+  uploadRemoteAwsCredentials,
+  type RemoteAwsCredsRefresher,
+} from "../../shared/util/remote-aws-creds.js";
 import { loadDefinition } from "../../shared/definition/parse-definition.js";
 import {
   buildExecutionGroups,
@@ -1927,6 +1931,24 @@ export async function runFromDefinition(
   // box is shared, activeExecution/activeTeardown persist across cycles;
   // currentBoxInstanceIndex says which definition instance that box belongs to.
   let activeExecution: FitExecutionContext | undefined;
+  // Keeps the box's AWS credentials current for the whole run. Credentials assumed from a
+  // temporary identity (SSO, instance profile, an already-assumed role) are capped at 1h, so
+  // a multi-hour situational/PE suite outlives its own credentials without this. Restarted
+  // whenever credentials are (re)installed, stopped once in the outer finally.
+  let activeCredsRefresher: RemoteAwsCredsRefresher | undefined;
+  // Carried across restarts (a box shared by several execution groups reinstalls credentials
+  // per group), so a failure in an earlier group still reaches the end-of-run summary.
+  let credsRefreshFailures = 0;
+  let credsRefreshLastError: string | undefined;
+  // Must be awaited *before* credentials are reinstalled on the same box: a tick still in
+  // flight would otherwise be staging the same files concurrently with the install.
+  const stopCredsRefresher = async (): Promise<void> => {
+    if (!activeCredsRefresher) return;
+    await activeCredsRefresher.stop();
+    credsRefreshFailures += activeCredsRefresher.failures;
+    credsRefreshLastError = activeCredsRefresher.lastError ?? credsRefreshLastError;
+    activeCredsRefresher = undefined;
+  };
   let activeTeardown: ExecutionTargetTeardown = { kind: "local" };
   let currentBoxInstanceIndex: number | undefined;
   let activeCycleIndex = startCycleIndex;
@@ -2089,7 +2111,9 @@ export async function runFromDefinition(
               // the EC2 API directly for CreateVpcEndpoint) — forward the same fit-cli-role
               // credentials the situational branch uses, so setup-link can authenticate.
               if (capellaSetup.privateEndpoint && awsCredentials) {
-                await uploadRemoteAwsCredentials(execution.target, execution.rootDir, awsCredentials);
+                await stopCredsRefresher();
+                const expiry = await uploadRemoteAwsCredentials(execution.target, execution.rootDir, awsCredentials);
+                activeCredsRefresher = startRemoteAwsCredsRefresher(execution.target, execution.rootDir, expiry);
               }
             }
             // Inject the derived init args and deployer into the cbdinocluster plan.
@@ -2191,7 +2215,9 @@ export async function runFromDefinition(
               `Situational runs allocate Capella clusters`,
             );
             if (awsCredentials) {
-              await uploadRemoteAwsCredentials(execution.target, execution.rootDir, awsCredentials);
+              await stopCredsRefresher();
+              const expiry = await uploadRemoteAwsCredentials(execution.target, execution.rootDir, awsCredentials);
+              activeCredsRefresher = startRemoteAwsCredsRefresher(execution.target, execution.rootDir, expiry);
             }
           }
           await prepareCbdinoclusterInit(
@@ -2386,6 +2412,23 @@ export async function runFromDefinition(
     }
 
   } finally {
+    // Stop before teardown: teardown does its own AWS work through the refreshing provider,
+    // and a tick firing mid-teardown would only add noise.
+    await stopCredsRefresher();
+    if (credsRefreshFailures > 0) {
+      // Surface this loudly. A stale-credentials run fails much later and much less
+      // legibly — as `RequestExpired` inside cbdinocluster, typically in
+      // `private-endpoints setup-link` — so without this the real cause is easy to miss.
+      // Counts every failure over the run, so a later attempt may well have succeeded — hence
+      // "during this run" rather than a claim about the credentials' state right now.
+      const message =
+        `${credsRefreshFailures} attempt(s) to refresh AWS credentials on the test instance ` +
+        `failed during this run. Any 'RequestExpired' errors from cbdinocluster are caused by ` +
+        `this, not by the SDK under test. ` +
+        `Most recent failure: ${credsRefreshLastError ?? "unknown"}`;
+      details.push({ label: "AWS credential refresh", value: message, callToAction: true });
+      tracker.record("NonFatal", message, activeResumePath ? failureContextFromPath(activeResumePath) : { instanceIndex: 0 });
+    }
     const { leftUp } = await teardownRun({
       definitionPath,
       runDir,

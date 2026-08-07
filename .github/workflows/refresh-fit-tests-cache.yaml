@@ -25,6 +25,8 @@ jobs:
     steps:
       - name: Checkout fit-cli
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
 
       # Use OIDC to assume fit-cli-role, which can read fit-cli/github/token.
       - name: Configure AWS credentials via OIDC
@@ -60,6 +62,7 @@ jobs:
           repository: couchbaselabs/transactions-fit-performer
           token: ${{ steps.gh-secret.outputs.token }}
           path: transactions-fit-performer
+          persist-credentials: false
 
       - name: Regenerate fit-tests-cache.json5
         run: bun src/fit/shared/select-fit-tests/generate-fit-tests-cache.ts --root transactions-fit-performer

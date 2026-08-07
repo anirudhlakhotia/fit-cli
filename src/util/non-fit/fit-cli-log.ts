@@ -475,7 +475,7 @@ let invocationPrinted = false;
 export function printInvocationOnce(): void {
   if (invocationPrinted) return;
   invocationPrinted = true;
-  console.log(`Ran with: ${invocationLine()}`);
+  fitCliInfo(`Ran with: ${invocationLine()}`);
 }
 
 /** Render a byte count as a short human-readable size, e.g. `4.2 MB`. */
@@ -501,6 +501,17 @@ export function echoCommand(line: string): void {
 
 export function setFitCliTimestampProvider(provider: (() => string) | undefined): void {
   timestampProvider = provider ?? (() => new Date().toTimeString().slice(0, 8));
+}
+
+/**
+ * Print an informational banner (session/artifact notices, role-assumption progress,
+ * run summaries) to stderr — routed through process.stderr.write (looked up at call
+ * time) so it still gets the timestamp prefix and session-log tee, same reasoning as
+ * fitCliError(), but without wrapping the line in a misleading "FitCliError:" label.
+ * Reserve console.error/fitCliError for things that are actually errors.
+ */
+export function fitCliInfo(...args: unknown[]): void {
+  process.stderr.write(`${args.map(stringify).join(" ")}\n`);
 }
 
 export function fitCliError(...args: unknown[]): void {

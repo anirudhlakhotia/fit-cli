@@ -11,6 +11,7 @@ import { AssumeRoleCommand, GetCallerIdentityCommand, STSClient } from "@aws-sdk
 import { fromNodeProviderChain } from "@aws-sdk/credential-providers";
 import type { AwsCredentialIdentity, AwsCredentialIdentityProvider } from "@aws-sdk/types";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
+import { fitCliInfo } from "../../../util/non-fit/fit-cli-log.js";
 import { loadFitCliConfigEnv } from "../../../fit/util/config.js";
 import { loadEnvironments } from "../../../fit/util/environments.js";
 import { AWS_REGION } from "./aws-target.js";
@@ -135,7 +136,7 @@ export async function assumeFitCliRole(): Promise<AssumeRoleOutcome> {
   }
 
   if (pre.identity.arn.includes("fit-cli-role")) {
-    console.log(`Assuming fit-cli-role (already assumed as ${pre.identity.arn})`);
+    fitCliInfo(`Assuming fit-cli-role (already assumed as ${pre.identity.arn})`);
     // We didn't assume anything, so there's nothing for us to refresh — whatever provided
     // these credentials (OIDC / instance profile / a prior assume) owns their lifecycle.
     didSetEnvCreds = false;
@@ -149,8 +150,8 @@ export async function assumeFitCliRole(): Promise<AssumeRoleOutcome> {
     return cachedAssumeResult;
   }
 
-  console.log(`Assuming fit-cli-role...`);
-  console.log(`  current identity: ${pre.identity.arn}`);
+  fitCliInfo(`Assuming fit-cli-role...`);
+  fitCliInfo(`  current identity: ${pre.identity.arn}`);
 
   let sessionName: string;
   try {
@@ -185,7 +186,7 @@ export async function assumeFitCliRole(): Promise<AssumeRoleOutcome> {
     credsExpiration = creds.Expiration;
     didSetEnvCreds = true;
     const sessionExpiry = creds.Expiration?.toISOString() ?? "unknown";
-    console.log(`✓ Assumed fit-cli-role (session expires: ${sessionExpiry})`);
+    fitCliInfo(`✓ Assumed fit-cli-role (session expires: ${sessionExpiry})`);
     cachedAssumeResult = {
       ok: true,
       preAssumeIdentity: pre.identity,
@@ -255,17 +256,35 @@ export const fitCliCredentialsProvider: AwsCredentialIdentityProvider = async ()
   return fromNodeProviderChain()();
 };
 
+/** Assumed-role credentials plus when they expire, ready to forward to a remote box. */
+export interface ForwardableCredentials {
+  accessKeyId: string;
+  secretAccessKey: string;
+  sessionToken?: string;
+  /**
+   * When these credentials stop working. Always set for credentials we assumed ourselves;
+   * absent when we didn't assume (see {@link freshAssumedCredentials}), in which case the
+   * caller has no expiry to schedule against.
+   */
+  expiration?: Date;
+}
+
 /**
- * The freshest assumed-role credentials to forward to a remote box (re-assuming first if near
- * expiry), or undefined when we didn't assume them ourselves (caller should keep whatever it
- * already resolved). NB the forwarded values are a point-in-time snapshot that still expires on
- * the box — surviving a multi-hour run there needs the box to have its own refreshing source
- * (e.g. an EC2 instance profile); this just gives it as long a head start as possible.
+ * The freshest assumed-role credentials to forward to a remote box, or undefined when we didn't
+ * assume them ourselves (caller should keep whatever it already resolved).
+ *
+ * `marginMs` is passed straight to {@link ensureFreshFitCliRole}: pass the same threshold the
+ * caller schedules against, or the default 5-minute margin will report the *cached* session as
+ * still fresh and hand back the identical credentials. That matters for the remote refresher,
+ * which asks well before expiry and would otherwise re-upload an unchanged file.
+ *
+ * The forwarded values are still a point-in-time snapshot that expires on the box, so the box
+ * needs to re-read them rather than bake them into an environment — see
+ * `uploadRemoteAwsCredentials` in `fit/shared/util/remote-aws-creds.ts`, which installs them
+ * behind a `credential_process` and keeps the file refreshed for the life of the run.
  */
-export async function freshAssumedCredentials(): Promise<
-  { accessKeyId: string; secretAccessKey: string; sessionToken?: string } | undefined
-> {
-  await ensureFreshFitCliRole();
+export async function freshAssumedCredentials(marginMs?: number): Promise<ForwardableCredentials | undefined> {
+  await ensureFreshFitCliRole(marginMs);
   const accessKeyId = process.env.AWS_ACCESS_KEY_ID;
   const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
   if (didSetEnvCreds && accessKeyId && secretAccessKey) {
@@ -273,6 +292,7 @@ export async function freshAssumedCredentials(): Promise<
       accessKeyId,
       secretAccessKey,
       ...(process.env.AWS_SESSION_TOKEN ? { sessionToken: process.env.AWS_SESSION_TOKEN } : {}),
+      ...(credsExpiration ? { expiration: credsExpiration } : {}),
     };
   }
   return undefined;

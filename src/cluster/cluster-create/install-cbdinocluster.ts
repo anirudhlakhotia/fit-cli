@@ -164,7 +164,12 @@ export async function installCbdinoclusterRemote(
   const output = await execution.capture("sh", ["-lc", remoteInstallScript(binDir)], undefined, {
     display: `install cbdinocluster from ${CBDINOCLUSTER_URL}`,
   });
-  return parseInstalledPath(output, "cbdinocluster install script didn't print where it installed the binary");
+  const installedPath = parseInstalledPath(
+    output,
+    "cbdinocluster install script didn't print where it installed the binary",
+  );
+  await logCbdinoclusterVersion(execution, installedPath);
+  return installedPath;
 }
 
 /**
@@ -185,7 +190,18 @@ export async function buildCbdinoclusterFromPr(
   });
   const installedPath = parseInstalledPath(output, "cbdinocluster build script didn't print where it installed the binary");
   console.log(`✓ Built cbdinocluster (${label}) on ${execution.description} at ${installedPath}`);
+  await logCbdinoclusterVersion(execution, installedPath);
   return installedPath;
+}
+
+/**
+ * Log the installed binary's version so runs can be pinned down after the
+ * fact — a new release could otherwise have shipped between runs on the same
+ * day without anything recording which one actually got installed.
+ */
+async function logCbdinoclusterVersion(execution: CaptureExecutor, installedPath: string): Promise<void> {
+  const version = (await execution.capture(installedPath, ["version"])).trim();
+  console.log(`  cbdinocluster version: ${version}`);
 }
 
 function parseInstalledPath(output: string, errorMsg: string): string {

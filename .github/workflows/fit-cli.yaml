@@ -27,6 +27,14 @@ on:
         required: false
         type: string
         default: ci
+      transactionsFitPerformerRef:
+        description: Fetch and check out this Gerrit ref in transactions-fit-performer before building (e.g. refs/changes/29/246329/1).
+        type: string
+        default: ""
+      cbdinocluster_pr:
+        description: Build cbdinocluster from this couchbaselabs/cbdinocluster PR number instead of installing the latest release.
+        type: string
+        default: ""
   workflow_call:
     inputs:
       preset:
@@ -54,6 +62,14 @@ on:
         required: false
         type: string
         default: ci
+      transactionsFitPerformerRef:
+        description: Fetch and check out this Gerrit ref in transactions-fit-performer before building (e.g. refs/changes/29/246329/1).
+        type: string
+        default: ""
+      cbdinocluster_pr:
+        description: Build cbdinocluster from this couchbaselabs/cbdinocluster PR number instead of installing the latest release.
+        type: string
+        default: ""
 
 permissions:
   id-token: write   # required for GitHub OIDC
@@ -68,11 +84,12 @@ jobs:
         id: presets
         shell: bash
         run: |
-          curl -fsSL https://raw.githubusercontent.com/couchbaselabs/fit-cli/main/install.sh | CHANNEL="${{ inputs.channel }}" bash
+          curl -fsSL https://raw.githubusercontent.com/couchbaselabs/fit-cli/main/install.sh | CHANNEL="$CHANNEL" bash
           presets=$(fit definition expand-preset-group "$PRESETS" --json)
           echo "presets=$presets" >> "$GITHUB_OUTPUT"
         env:
           PRESETS: ${{ inputs.preset }}
+          CHANNEL: ${{ inputs.channel }}
 
   fit-cli:
     needs: preset-matrix
@@ -95,11 +112,24 @@ jobs:
           role-duration-seconds: 43200
 
       - name: Run fit-cli
+        env:
+          GERRIT_REF: ${{ inputs.transactionsFitPerformerRef || '' }}
+          CBDINOCLUSTER_PR: ${{ inputs.cbdinocluster_pr || '' }}
+          CHANNEL: ${{ inputs.channel }}
+          PRESET: ${{ matrix.preset }}
+          PERFORMER: ${{ inputs.performer }}
+          COLLECT_EXTRA_DIAGNOSTICS: ${{ inputs.collect_extra_diagnostics }}
         run: |
-          curl -fsSL https://raw.githubusercontent.com/couchbaselabs/fit-cli/main/install.sh | CHANNEL="${{ inputs.channel }}" bash
-          args=(preset "${{ matrix.preset }}" --performer "${{ inputs.performer }}")
-          if [[ "${{ inputs.collect_extra_diagnostics }}" == "true" ]]; then
+          curl -fsSL https://raw.githubusercontent.com/couchbaselabs/fit-cli/main/install.sh | CHANNEL="$CHANNEL" bash
+          args=(preset "$PRESET" --performer "$PERFORMER")
+          if [[ "$COLLECT_EXTRA_DIAGNOSTICS" == "true" ]]; then
             args+=(--cbcollect)
+          fi
+          if [ -n "$GERRIT_REF" ]; then
+            args+=(--override "setup.repos.transactions-fit-performer.gerritRef=$GERRIT_REF")
+          fi
+          if [ -n "$CBDINOCLUSTER_PR" ]; then
+            args+=(--override "setup.cbdinocluster.source.git.pr=$CBDINOCLUSTER_PR")
           fi
 
           fit run "${args[@]}"
