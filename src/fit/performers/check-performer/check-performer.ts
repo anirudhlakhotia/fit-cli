@@ -32,7 +32,7 @@ export function performerImageLabelsArgs(imageName: string): string[] {
   return ["image", "inspect", "--format={{json .Config.Labels}}", imageName];
 }
 
-const USEFUL_IMAGE_LABELS = [
+export const USEFUL_IMAGE_LABELS = [
   { key: "org.opencontainers.image.created", label: "Image built" },
   { key: "org.opencontainers.image.revision", label: "Revision" },
   { key: "org.opencontainers.image.source", label: "Source" },

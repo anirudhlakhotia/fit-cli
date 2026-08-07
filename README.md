@@ -111,6 +111,7 @@ User-facing (using the installed binary):
 - `fit performer build <family> <ref>` — dispatch a performer image build on GitHub Actions (e.g. `fit performer build jvm refs/changes/01/248901/3`), wait for it, and print the resulting image names.
 - `fit performer list [<sdk>]` — list the prebuilt performer container images published to GHCR for an SDK (e.g. `fit performer list scala`), or for every SDK if none is given.
 - `fit performer run <sdk> [version]` — pull and start a single prebuilt performer image, for manual testing outside a full FIT run (e.g. `fit performer run scala`). Leaves it running; stop it yourself when done.
+- `fit performer metadata <sdk> [version]` — pull a performer image and print all its metadata: Docker image labels (build time, revision, source, PR, CI run) and everything it reports over the `performerCapsFetch` gRPC call (user agent, library version, transactions protocol, and every capability).
 - `fit caps table | sync` — show which FIT capabilities each SDK's performer reports (see Capabilities).
 
 For development (from source with Bun):
