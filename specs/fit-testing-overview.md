@@ -7,12 +7,12 @@ For the full picture, see the [transactions-fit-performer README](https://github
 FIT tests SDKs against real Couchbase clusters.  A central "driver" tells per-SDK "performers" what operations to run, over a GRPC protocol.  This centralises test logic in the drivers, so each test is written once and reused across every SDK.
 
 # Test types
-- **Functional (FIT/FUN)** - correctness tests against a cluster: KV, query, transactions, etc.  Integration tests basically.
+- **Functional** - correctness tests against a cluster: KV, query, transactions, etc.  Integration tests basically.
 - **Situational (FIT/SIT)** - tests behaviour under irregular cluster conditions (node failures, rebalances, network partitions).
 - **Performance (FIT/PERF)** - throughput/latency benchmarking.
 - **Analytics functional** - functional tests against Enterprise Analytics / Capella Analytics clusters, driven by a dedicated Analytics-shaped driver (historically named `columnar-test-driver`).
 
-fit-cli currently supports functional and situational testing.
+fit-cli currently supports functional and situational testing.  FIT/PERF is sort-of supported via a quick GHA/script, but a much deeper integration is expected later.
 
 # Drivers
 There are three drivers, all living in [transactions-fit-performer](https://github.com/couchbaselabs/transactions-fit-performer):
