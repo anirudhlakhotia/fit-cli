@@ -600,11 +600,13 @@ export interface DefinitionRunPath {
 /**
  * Sanitize a label for use as a filesystem directory segment.
  * GitHub Actions artifact upload rejects colons (and other chars illegal on Windows NTFS).
+ * Also strips path separators and collapses runs of dots, so a label can never smuggle in
+ * a `..` or `/` and traverse outside the intended run/instance/cluster/session directory.
  * Display labels (log prefixes, table output) keep their colons; call this only when
  * building actual file-system paths.
  */
 export function sanitizePathSeg(seg: string): string {
-  return seg.replace(/:/g, "-");
+  return seg.replace(/[/\\:]/g, "-").replace(/\.\.+/g, "-");
 }
 
 /** Absolute path to the artifact directory for instance N (e.g. `{runDir}/instances/aws1`).

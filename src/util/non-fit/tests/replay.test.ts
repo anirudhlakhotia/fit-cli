@@ -632,6 +632,15 @@ test("sanitizePathSeg replaces colons with hyphens", () => {
   assert.equal(sanitizePathSeg("no-colons"), "no-colons");
 });
 
+test("sanitizePathSeg strips path separators and dot-dot sequences", () => {
+  assert.ok(!sanitizePathSeg("../../etc/passwd").includes(".."));
+  assert.ok(!sanitizePathSeg("../../etc/passwd").includes("/"));
+  assert.ok(!sanitizePathSeg("..").includes(".."));
+  assert.ok(!sanitizePathSeg("a/b\\c").includes("/"));
+  assert.ok(!sanitizePathSeg("a/b\\c").includes("\\"));
+  assert.equal(sanitizePathSeg("7.6-stable"), "7.6-stable");
+});
+
 test("clusterRunDir sanitizes colons in the cluster segment", () => {
   const runDir = mkdtempSync(join(tmpdir(), "fit-test-"));
   const path = { instanceIndex: 0, clusterIndex: 0, dirSegments: { instance: "aws1", cluster: "EA:2.2.0-1166" } };

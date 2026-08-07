@@ -65,3 +65,14 @@ test("an empty or missing PATH finds nothing", () => {
   assert.equal(findOnPath("mytool", { PATH: "" }), null);
   assert.equal(findOnPath("mytool", {}), null);
 });
+
+test("a command containing a path separator or .. is rejected rather than traversed", () => {
+  const { dir, path } = dirWith("mytool", true);
+  try {
+    assert.equal(findOnPath("../mytool", { PATH: dir }), null);
+    assert.equal(findOnPath("sub/mytool", { PATH: dir }), null);
+    assert.equal(findOnPath(path, { PATH: dir }), null);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
