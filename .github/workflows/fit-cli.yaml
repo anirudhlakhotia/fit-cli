@@ -84,11 +84,12 @@ jobs:
         id: presets
         shell: bash
         run: |
-          curl -fsSL https://raw.githubusercontent.com/couchbaselabs/fit-cli/main/install.sh | CHANNEL="${{ inputs.channel }}" bash
+          curl -fsSL https://raw.githubusercontent.com/couchbaselabs/fit-cli/main/install.sh | CHANNEL="$CHANNEL" bash
           presets=$(fit definition expand-preset-group "$PRESETS" --json)
           echo "presets=$presets" >> "$GITHUB_OUTPUT"
         env:
           PRESETS: ${{ inputs.preset }}
+          CHANNEL: ${{ inputs.channel }}
 
   fit-cli:
     needs: preset-matrix
@@ -114,10 +115,14 @@ jobs:
         env:
           GERRIT_REF: ${{ inputs.transactionsFitPerformerRef || '' }}
           CBDINOCLUSTER_PR: ${{ inputs.cbdinocluster_pr || '' }}
+          CHANNEL: ${{ inputs.channel }}
+          PRESET: ${{ matrix.preset }}
+          PERFORMER: ${{ inputs.performer }}
+          COLLECT_EXTRA_DIAGNOSTICS: ${{ inputs.collect_extra_diagnostics }}
         run: |
-          curl -fsSL https://raw.githubusercontent.com/couchbaselabs/fit-cli/main/install.sh | CHANNEL="${{ inputs.channel }}" bash
-          args=(preset "${{ matrix.preset }}" --performer "${{ inputs.performer }}")
-          if [[ "${{ inputs.collect_extra_diagnostics }}" == "true" ]]; then
+          curl -fsSL https://raw.githubusercontent.com/couchbaselabs/fit-cli/main/install.sh | CHANNEL="$CHANNEL" bash
+          args=(preset "$PRESET" --performer "$PERFORMER")
+          if [[ "$COLLECT_EXTRA_DIAGNOSTICS" == "true" ]]; then
             args+=(--cbcollect)
           fi
           if [ -n "$GERRIT_REF" ]; then
