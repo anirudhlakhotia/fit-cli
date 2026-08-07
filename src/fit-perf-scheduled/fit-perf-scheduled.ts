@@ -27,8 +27,8 @@ import {
   ensureRemoteRepos,
   remoteGerritSshKeyPath,
   stageGerritSshKey,
-  uploadRemoteAwsCredentials,
 } from "../fit/shared/util/remote-fit-run.js";
+import { uploadRemoteAwsCredentials } from "../fit/shared/util/remote-aws-creds.js";
 import {
   remoteAptCleanupCommand,
   remoteAptGetCommand,
