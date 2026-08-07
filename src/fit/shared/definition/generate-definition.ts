@@ -69,8 +69,10 @@ export interface DefinitionInputs {
    */
   capellaEnvironment?: string;
   /**
-   * Set up an AWS PrivateLink connection to this Capella cluster. Only meaningful
-   * for an AWS Capella cloud cluster; the instance must also have `aws.privateEndpoint: {}`.
+   * Set up a private endpoint connection (AWS PrivateLink or GCP PSC) to this
+   * Capella cluster. Only meaningful for an AWS/GCP Capella cloud cluster; the
+   * instance must also have `aws.privateEndpoint: {}` / `gcp.privateEndpoint: {}`
+   * matching `cluster.def.capellaCloudProvider`.
    */
   capellaPrivateEndpoint?: boolean;
 }
@@ -88,8 +90,9 @@ export interface SituationalDefinitionInputs {
   capellaEnvironment?: string;
   instance?: InstanceMode;
   /**
-   * Set up an AWS PrivateLink connection to the Capella cluster cbdino creates for
-   * this run. The instance must also be a fixed AWS + `privateEndpoint` instance.
+   * Set up a private endpoint connection (AWS PrivateLink or GCP PSC, matching
+   * `instance`) to the Capella cluster cbdino creates for this run. The instance
+   * must also be a fixed aws/gcp + `privateEndpoint` instance.
    */
   privateEndpoint?: boolean;
 }

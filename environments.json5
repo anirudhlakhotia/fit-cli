@@ -81,13 +81,13 @@
       // The single AWS region fit-cli operates in.
       region: "us-west-2",
 
-      // fit-cli-vpc (terraform/vpc.tf) — a VPC dedicated to fit-cli, isolated from
+      // fit-cli-vpc (terraform/aws/vpc.tf) — a VPC dedicated to fit-cli, isolated from
       // sdkqe-github-runners-tf's cbqerunners-vpc (which fit-cli used to share; infra
       // changes made there for the GHA self-hosted runners could silently affect PE
       // connectivity).
       vpcId: "vpc-01b5328d47e7b9419",
 
-      // fit-cli-public (terraform/vpc.tf) — a public subnet (MapPublicIpOnLaunch=true)
+      // fit-cli-public (terraform/aws/vpc.tf) — a public subnet (MapPublicIpOnLaunch=true)
       // so launched instances get a public IP we can SSH to.
       subnetId: "subnet-0c9e623708a87ee88",
 
@@ -97,9 +97,23 @@
       // instances doing private endpoint testing need to be in it too to reach the cluster.
       privateEndpointVpcSgId: "sg-0d7f0565513f225f1",
 
-      // fit-cli-ssm-instance-role (terraform/ssm-instance-role.tf) — the instance profile
+      // fit-cli-ssm-instance-role (terraform/aws/ssm-instance-role.tf) — the instance profile
       // attached to EC2 instances so their SSM Agent can register and run commands.
       ssmInstanceProfileName: "fit-cli-ssm-instance-role",
+    },
+    gcp: {
+      // For now fit-cli lives here, but could and perhaps should have its own project in future
+      project: "couchbase-qe",
+      // us-west1 is not arbitrary: it's cbdinocluster's DEFAULT_GCP_REGION, and the
+      // box and the Capella cluster must share a region for PSC to reach it.
+      region: "us-west1",
+      zone: "us-west1-a",
+      network: "fit-cli-vpc",
+      subnet: "fit-cli-us-west1",
+      // fit-cli-gcp (terraform/gcp/service-account.tf) — the service account attached
+      // to launched instances, so ADC on the box resolves to it (GCP's counterpart of
+      // the AWS ssmInstanceProfileName above).
+      serviceAccountEmail: "fit-cli-gcp@couchbase-qe.iam.gserviceaccount.com",
     },
   },
 

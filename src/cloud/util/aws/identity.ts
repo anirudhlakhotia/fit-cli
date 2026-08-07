@@ -267,7 +267,7 @@ async function runCheckAwsCredentials(options: CheckAwsCredentialsOptions): Prom
 
   const assumed = await doAssumeRole();
   if (!assumed.ok) {
-    const message = `Could not assume fit-cli-role: ${assumed.message}`;
+    const message = `Could not assume AWS fit-cli-role: ${assumed.message}`;
     console.error(`✗ ${message}`);
     printAwsFailureGuidance(profiles, environments);
     return { ok: false, message };

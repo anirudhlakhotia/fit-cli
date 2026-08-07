@@ -63,6 +63,21 @@ export interface AwsDefaults {
   ssmInstanceProfileName?: string | null;
 }
 
+export interface GcpDefaults {
+  /** The GCP project fit-cli operates in. */
+  project?: string | null;
+  /** The single GCP region fit-cli operates in (must match cbdinocluster's DEFAULT_GCP_REGION, us-west1, so the box and Capella's PSC endpoint share a region). */
+  region?: string | null;
+  /** Zone within `region` the test box is launched into. */
+  zone?: string | null;
+  /** The VPC network the box must sit in for PSC to bind to it. */
+  network?: string | null;
+  /** Subnet within that network. */
+  subnet?: string | null;
+  /** Service account attached to launched instances; ADC on the box resolves to it. */
+  serviceAccountEmail?: string | null;
+}
+
 /** Global version defaults for cbdinocluster and related tools (not per-environment). */
 export interface Defaults {
   /** Default Couchbase Server version, e.g. "8.0-stable" or a pinned build. */
@@ -87,6 +102,8 @@ export interface Defaults {
   defaultResultsEnvironment: string;
   /** AWS account and network settings. */
   aws: AwsDefaults;
+  /** GCP account and network settings. */
+  gcp?: GcpDefaults;
 }
 
 /**

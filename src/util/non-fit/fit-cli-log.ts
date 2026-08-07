@@ -85,9 +85,16 @@ export interface TimestampedChunk {
   atLineStart: boolean;
 }
 
+// Matches a full ANSI CSI escape sequence (ESC [ ... <final byte>), e.g. the
+// `cursorShow` (`[?25h`) that @inquirer/core appends after the trailing
+// newline when a prompt resolves. These are invisible on the terminal and
+// must not count as "content" when deciding whether we're at line start.
+const ANSI_CSI_SEQUENCE = /\u001B\[[0-9;?]*[A-Za-z]/g;
+
 function advanceLineStart(text: string, atLineStart: boolean): boolean {
+  const visible = text.replace(ANSI_CSI_SEQUENCE, "");
   let nextLineStart = atLineStart;
-  for (const char of text) {
+  for (const char of visible) {
     if (char !== "\n") {
       nextLineStart = false;
       continue;

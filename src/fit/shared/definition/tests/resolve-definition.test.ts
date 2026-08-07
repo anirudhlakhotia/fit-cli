@@ -392,6 +392,29 @@ test("dirSegments are populated through instance → cluster → session → run
   assert.equal(run.path.dirSegments?.run, "functional:standard-qe");
 });
 
+test("a gcp instance's situational privateEndpoint carries through to the resolved execution group", () => {
+  const instance: InstanceLifetime = {
+    gcp: { privateEndpoint: {} },
+    clusters: [],
+    clusterlessSessions: [
+      {
+        performer: { image: "java-fit-performer:main" },
+        runs: [{ type: "situational", tests: { presets: ["all"] }, situational: { database: { mode: "local" }, privateEndpoint: {} } }],
+      },
+    ],
+  };
+  const plan = resolveInstancePlan(instance, 0);
+  assert.equal(plan.instance.kind, "gcp");
+  assert.deepEqual(plan.instance.kind === "gcp" ? plan.instance.privateEndpoint : undefined, {});
+  const groups = buildExecutionGroups([plan]);
+  const group = groups[0];
+  assert.ok(group && group.type === "situational");
+  assert.equal(group.instance.kind, "gcp");
+  const run = group.runs[0];
+  assert.ok(run);
+  assert.deepEqual(run.privateEndpoint, {});
+});
+
 test("repeat expands a run into N sequential copies with distinct runIndex values", () => {
   const session: SessionLifetime = {
     performer: { image: "java-fit-performer:main" },

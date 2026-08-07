@@ -1,9 +1,10 @@
 /**
  * target — an execution target: somewhere commands run and files live. The point
  * of the abstraction is that a workflow can be handed a target and not care
- * whether it's the local machine or a remote box. Two implementations live
- * alongside this file: LocalTarget (local-target.ts) and SsmTarget
- * (ssm-target.ts, backed by AWS SSM SendCommand).
+ * whether it's the local machine or a remote box. Implementations live
+ * alongside this file: LocalTarget (local-target.ts), SsmTarget
+ * (ssm-target.ts, backed by AWS SSM SendCommand), and IapTarget
+ * (iap-target.ts, a GCP instance reached over an IAP-tunneled SSH connection).
  *
  * This is deliberately generic — nothing AWS- or FIT-specific. It mirrors the
  * shape of proc.ts (run / capture) plus file transfer, so a caller currently
@@ -40,4 +41,14 @@ export interface ExecutionTarget {
    * (e.g. compressed logs) show how much data is about to move.
    */
   getFile(remotePath: string, localPath: string, sizeBytes?: number): Promise<void>;
+
+  /**
+   * Resolve the actual login user on the target, when it can differ from the
+   * usual convention. Only implemented where that's true (GCP's IapTarget,
+   * where OS Login maps the caller's IAM identity to a POSIX account that has
+   * nothing to do with the user requested on the SSH command line). Targets
+   * where the login user is fixed by convention (AWS's SsmTarget, always
+   * "ubuntu") don't implement this.
+   */
+  resolveLoginUser?(): Promise<string>;
 }

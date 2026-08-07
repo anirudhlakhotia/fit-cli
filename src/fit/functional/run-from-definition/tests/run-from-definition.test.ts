@@ -287,3 +287,14 @@ test("situationalCbdinoSettings ignores a version override for a CNG run (CNG pi
   const withoutOverride = situationalCbdinoSettings(true, false);
   assert.equal(withOverride.version, withoutOverride.version);
 });
+
+test("situationalCbdinoSettings leaves deployer unset for an aws instance (driver defaults to aws)", () => {
+  const settings = situationalCbdinoSettings(false, false, undefined, "aws");
+  assert.equal(settings.deployer, undefined);
+});
+
+test("situationalCbdinoSettings sets deployer to gcp for a gcp instance", () => {
+  const settings = situationalCbdinoSettings(false, false, undefined, "gcp");
+  assert.equal(settings.deployer, "gcp");
+  assert.equal(settings.region, loadEnvironments().defaults.gcp?.region);
+});

@@ -27,21 +27,23 @@ function formatEntryLabel(entry: RecentDefinitionEntry): string {
   return `${date} ${time}  ${desc}  (${entry.path})`;
 }
 
-function patchInstanceMode(instance: InstanceLifetime, mode: "localhost" | "aws"): InstanceLifetime {
+function patchInstanceMode(instance: InstanceLifetime, mode: "localhost" | "aws" | "gcp"): InstanceLifetime {
   const patched = { ...instance } as Record<string, unknown>;
   delete patched.aws;
+  delete patched.gcp;
   delete patched.localhost;
   patched[mode] = {};
   return patched as unknown as InstanceLifetime;
 }
 
 async function runInteractive(entry: RecentDefinitionEntry): Promise<RunOutput> {
-  const mode = await select<"localhost" | "aws">({
+  const mode = await select<"localhost" | "aws" | "gcp">({
     promptId: "recent.definitions.run.location",
     message: "Where would you like to run?",
     choices: [
       { name: "This machine (localhost)", value: "localhost" },
       { name: "A clean AWS EC2 instance", value: "aws" },
+      { name: "A clean GCP Compute Engine instance", value: "gcp" },
     ],
   });
 

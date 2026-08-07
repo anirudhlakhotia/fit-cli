@@ -25,12 +25,19 @@ import { fitCliError, fitCliWarn } from "../../../util/non-fit/fit-cli-log.js";
 import { input, select } from "../../../util/non-fit/prompts.js";
 import { LocalTarget } from "../../../util/non-fit/local-target.js";
 import { checkAwsCredentials } from "../../../cloud/util/aws/identity.js";
+import { checkGcpCredentials } from "../../../cloud/util/gcp/identity.js";
 import { listInstances } from "../../../cloud/util/aws/list-instances.js";
 import { terminateInstance } from "../../../cloud/util/aws/terminate-instance.js";
 import { type InstanceInfo } from "../../../cloud/util/aws/parse-instance.js";
 import { type ExecutionTarget } from "../../../util/non-fit/target.js";
 import { FIT_INSTANCE_USER, provisionFitInstance } from "../../util/aws/fit-instance.js";
 import { ssmStartSessionCommand } from "../../util/aws/lifecycle-warning.js";
+import { provisionFitGcpInstance } from "../../util/gcp/fit-instance.js";
+import { gcpDebugAccessCommand } from "../../util/gcp/lifecycle-warning.js";
+import { terminateGcpInstance } from "../../../cloud/util/gcp/terminate-instance.js";
+import { IapTarget } from "../../../util/non-fit/iap-target.js";
+import { waitForIapSsh, type IapHost } from "../../../util/non-fit/gcp-iap.js";
+import { loadEnvironments } from "../../util/environments.js";
 import { SsmTarget, waitForSsmReady } from "../../../util/non-fit/ssm-target.js";
 import type { ResolvedInstance } from "../../shared/definition/resolve-definition.js";
 import type { ResumeTargetState } from "../run-from-definition/resume-state.js";
@@ -43,11 +50,18 @@ import type { ResumeTargetState } from "../run-from-definition/resume-state.js";
  */
 export interface ExecutionTargetTeardown {
   kind: "local" | "remote";
+  /** EC2 instance id, or GCP instance name. */
   instanceId?: string;
   /** Whether fit-cli provisioned this instance (vs. the user bringing an existing one). */
   owned?: boolean;
   /** Terminate the instance. */
   terminate?: () => Promise<void>;
+  /** Which cloud `instanceId` belongs to. Absent means "aws" (the only provider predating this field). */
+  provider?: "aws" | "gcp";
+  /** GCP zone `instanceId` lives in — present only when `provider` is "gcp". */
+  gcpZone?: string;
+  /** GCP project `instanceId` lives in — present only when `provider` is "gcp". */
+  gcpProject?: string;
 }
 
 /** The outcome of choosing where to run. */
@@ -57,7 +71,7 @@ export type ExecutionTargetOutcome =
   /** No target is ready; the reason was already printed. */
   | (RunOutput & { ready: false });
 
-type TargetChoice = "local" | "ec2" | "existing";
+type TargetChoice = "local" | "ec2" | "gcp" | "existing";
 
 /** The connection details for a user-brought EC2 instance, reused across a run. */
 export interface ExistingInstanceConnection {
@@ -98,6 +112,37 @@ export async function reconnectExecutionTarget(target: ResumeTargetState): Promi
   if (!instanceId) {
     fitCliError("\nresume: the saved run state is missing the instance id.");
     return { ready: false, artifacts: [], details: [] };
+  }
+
+  if (target.provider === "gcp") {
+    if (!target.gcpZone || !target.gcpProject) {
+      fitCliError("\nresume: the saved run state is missing the GCP zone/project.");
+      return { ready: false, artifacts: [], details: [] };
+    }
+    const host: IapHost = { instance: instanceId, zone: target.gcpZone, project: target.gcpProject };
+    process.stdout.write(`Reconnecting to ${instanceId}...`);
+    if (!(await waitForIapSsh(host))) {
+      console.log(" unreachable");
+      fitCliError(`\nresume: couldn't reach ${instanceId} over an IAP tunnel. The instance may be stopped or gone.`);
+      return { ready: false, artifacts: [], details: [] };
+    }
+    console.log(" ready");
+    const teardown: ExecutionTargetTeardown = {
+      kind: "remote",
+      provider: "gcp",
+      instanceId,
+      gcpZone: target.gcpZone,
+      gcpProject: target.gcpProject,
+      owned: target.owned,
+      ...(target.owned ? { terminate: () => terminateGcpInstance(target.gcpProject!, target.gcpZone!, instanceId) } : {}),
+    };
+    return {
+      ready: true,
+      target: new IapTarget(host),
+      teardown,
+      artifacts: [],
+      details: [{ label: "Debug access (IAP)", value: gcpDebugAccessCommand(instanceId, target.gcpZone, target.gcpProject) }],
+    };
   }
 
   process.stdout.write(`Reconnecting to ${instanceId}...`);
@@ -158,6 +203,40 @@ export async function resolveExecutionGroupTarget(
     return { ready: true, target: new LocalTarget(), teardown: LOCAL_TEARDOWN, artifacts: [], details: [] };
   }
 
+  // A gcp-typed instance in the definition provisions a GCP box, unless a run-wide
+  // override (aws/existing) forces every group elsewhere — those overrides fall
+  // through to the AWS path below exactly as they did before "gcp" existed.
+  if (override.kind === "definition" && instance.kind === "gcp") {
+    const gcpProject = loadEnvironments().defaults.gcp?.project ?? "";
+    const creds = await checkGcpCredentials(gcpProject);
+    if (!creds.ok) {
+      fitCliError(`\nCan't use GCP for this execution group: ${creds.message}`);
+      return { ready: false, artifacts: [], details: [] };
+    }
+    try {
+      const instanceType = instance.instanceType ?? resolveCloudInstanceType(purpose, { provider: "gcp" });
+      const provisioned = await provisionFitGcpInstance({
+        instanceType,
+        instanceIndex: executionGroupIndex,
+        interactive,
+        ...(instance.privateEndpoint !== undefined ? { privateEndpoint: instance.privateEndpoint } : {}),
+      });
+      const teardown: ExecutionTargetTeardown = {
+        kind: "remote",
+        provider: "gcp",
+        instanceId: provisioned.instanceName,
+        gcpZone: provisioned.zone,
+        gcpProject: provisioned.project,
+        owned: true,
+        terminate: provisioned.terminate,
+      };
+      return { ready: true, target: provisioned.target, teardown, artifacts: provisioned.artifacts, details: provisioned.details };
+    } catch (err) {
+      fitCliError(`\n✗ Could not provision a GCP instance: ${err instanceof Error ? err.message : String(err)}`);
+      return { ready: false, artifacts: [], details: [] };
+    }
+  }
+
   // AWS EC2 needs a working fit-cli-role session — check very early, before any provisioning.
   const creds = await checkAwsCredentials();
   if (!creds.ok) {
@@ -203,6 +282,7 @@ export async function selectExecutionTarget(): Promise<ExecutionTargetOutcome> {
       message: "Where should this FIT run execute?",
       choices: [
         { name: "A clean AWS EC2 instance", value: "ec2" },
+        { name: "A clean GCP Compute Engine instance", value: "gcp" },
         { name: "This machine (local)", value: "local" },
           // Temporarily hidden as not sure how well this works currently..  Also it's maybe better handled with resume.
         // { name: "An existing EC2 instance", value: "existing" },
@@ -211,6 +291,32 @@ export async function selectExecutionTarget(): Promise<ExecutionTargetOutcome> {
 
     if (choice === "local") {
       return { ready: true, target: new LocalTarget(), teardown: LOCAL_TEARDOWN, artifacts: [], details: [] };
+    }
+
+    if (choice === "gcp") {
+      const gcpProject = loadEnvironments().defaults.gcp?.project ?? "";
+      const creds = await checkGcpCredentials(gcpProject);
+      if (!creds.ok) {
+        fitCliError(`\nCan't use GCP: ${creds.message}`);
+        attempt += 1;
+        continue; // back to the target prompt
+      }
+      try {
+        const instance = await provisionFitGcpInstance({ interactive: true });
+        const teardown: ExecutionTargetTeardown = {
+          kind: "remote",
+          provider: "gcp",
+          instanceId: instance.instanceName,
+          gcpZone: instance.zone,
+          gcpProject: instance.project,
+          owned: true,
+          terminate: instance.terminate,
+        };
+        return { ready: true, target: instance.target, teardown, artifacts: instance.artifacts, details: instance.details };
+      } catch (err) {
+        console.error(`\n✗ Could not provision a GCP instance: ${err instanceof Error ? err.message : String(err)}`);
+        return { ready: false, artifacts: [], details: [] };
+      }
     }
 
     // Both EC2 paths need a working fit-cli-role session.

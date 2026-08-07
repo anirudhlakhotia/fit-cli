@@ -142,7 +142,7 @@ export async function assumeFitCliRole(): Promise<AssumeRoleOutcome> {
   }
 
   if (pre.identity.arn.includes("fit-cli-role")) {
-    fitCliInfo(`Assuming fit-cli-role (already assumed as ${pre.identity.arn})`);
+    fitCliInfo(`Assuming AWS fit-cli-role (already assumed as ${pre.identity.arn})`);
     // We didn't assume anything, so there's nothing for us to refresh — whatever provided
     // these credentials (OIDC / instance profile / a prior assume) owns their lifecycle.
     didSetEnvCreds = false;
@@ -157,7 +157,7 @@ export async function assumeFitCliRole(): Promise<AssumeRoleOutcome> {
     return cachedAssumeResult;
   }
 
-  fitCliInfo(`Assuming fit-cli-role...`);
+  fitCliInfo(`Assuming AWS fit-cli-role...`);
   fitCliInfo(`  current identity: ${pre.identity.arn}`);
 
   let sessionName: string;
@@ -200,7 +200,7 @@ export async function assumeFitCliRole(): Promise<AssumeRoleOutcome> {
     credsExpiration = creds.Expiration;
     didSetEnvCreds = true;
     const sessionExpiry = creds.Expiration?.toISOString() ?? "unknown";
-    fitCliInfo(`✓ Assumed fit-cli-role (session expires: ${sessionExpiry})`);
+    fitCliInfo(`✓ Assumed AWS fit-cli-role (session expires: ${sessionExpiry})`);
     cachedAssumeResult = {
       ok: true,
       preAssumeIdentity: pre.identity,
@@ -215,7 +215,7 @@ export async function assumeFitCliRole(): Promise<AssumeRoleOutcome> {
     return cachedAssumeResult;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    console.warn(`⚠  Could not assume fit-cli-role: ${message}`);
+    console.warn(`⚠  Could not assume AWS fit-cli-role: ${message}`);
     cachedAssumeResult = { ok: false, preAssumeIdentity: pre.identity, message };
     return cachedAssumeResult;
   }

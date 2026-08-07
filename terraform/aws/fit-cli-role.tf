@@ -1,6 +1,10 @@
 # fit-cli-role — the role fit-cli (human and CI) assumes for all its AWS/EC2/SSM
 # work.
 
+module "trusted_repos" {
+  source = "../shared/trusted-repos"
+}
+
 resource "aws_iam_role" "fit_cli_role" {
   name        = "fit-cli-role"
   path        = "/"
@@ -23,19 +27,7 @@ resource "aws_iam_role" "fit_cli_role" {
           }
           StringLike = {
             "token.actions.githubusercontent.com:sub" = [
-              "repo:couchbaselabs/fit-cli:*",
-              "repo:couchbaselabs/transactions-fit-performer:*",
-              "repo:couchbase/couchbase-jvm-clients:*",
-              "repo:couchbase/couchbase-analytics-jvm-clients:*",
-              "repo:couchbase/couchbase-cxx-client:*",
-              "repo:couchbase/couchbase-net-client:*",
-              "repo:couchbase/gocb:*",
-              "repo:couchbase/couchnode:*",
-              "repo:couchbase/couchbase-python-client:*",
-              "repo:couchbase/couchbase-ruby-client:*",
-              "repo:couchbase/couchbase-rs:*",
-              "repo:couchbase/couchbase-php-client:*",
-              "repo:couchbase/analytics-dotnet-client:*",
+              for r in module.trusted_repos.repos : "repo:${r}:*"
             ]
           }
         }

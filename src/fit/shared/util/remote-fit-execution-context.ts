@@ -117,7 +117,8 @@ export async function createRemoteFitExecutionContext(
   skipPreparation = false,
   instancePath: DefinitionRunPath | number = 0,
 ): Promise<FitExecutionContext> {
-  const rootDir = remoteFitRootDir();
+  const loginUser = await target.resolveLoginUser?.();
+  const rootDir = remoteFitRootDir(loginUser);
   const binDir = remoteFitBinDir(rootDir);
   const localGerritKey = await resolveGerritKeyWithAwsFallback();
 
@@ -144,7 +145,7 @@ export async function createRemoteFitExecutionContext(
       remoteAptGetCommand("install -y git docker.io lsof openjdk-21-jdk"),
     ], undefined, { display: "apt-get install git docker.io lsof openjdk-21-jdk" });
     // Allow running Docker without sudo
-    await target.run("sudo", ["usermod", "-aG", "docker", "ubuntu"]);
+    await target.run("sudo", ["-n", "usermod", "-aG", "docker", loginUser ?? "ubuntu"]);
     await target.run("sudo", ["-n", "systemctl", "enable", "--now", "docker"]);
 
     await target.run("mkdir", ["-p", binDir]);

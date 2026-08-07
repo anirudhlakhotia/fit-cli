@@ -160,27 +160,32 @@ async function chooseFunctionalDefinitionCluster(connectivity: FunctionalConnect
 }
 
 async function chooseInstanceExecution(promptIdPrefix: string): Promise<InstanceMode> {
-  const choice = await select<"localhost" | "aws">({
+  const choice = await select<"localhost" | "aws" | "gcp">({
     promptId: qualifyPromptId("execution.instance", promptIdPrefix),
     message: "Where should this instance's tests execute? (You can override this at runtime and run it on localhost)",
     choices: [
       { name: "A clean AWS EC2 instance", value: "aws" },
+      { name: "A clean GCP Compute Engine instance", value: "gcp" },
       { name: "This machine (localhost)", value: "localhost" },
     ],
   });
-  return choice === "aws" ? { aws: {} } : { localhost: {} };
+  if (choice === "aws") return { aws: {} };
+  if (choice === "gcp") return { gcp: {} };
+  return { localhost: {} };
 }
 
 /**
- * Ask whether to set up a PrivateLink connection to this Capella cluster. Only
- * offered for AWS-provisioned clusters (the only provider fit-cli supports PE for
- * today). PE requires an AWS EC2 instance in the VPC, so answering yes here means
- * the instance-execution question is skipped in favour of a fixed AWS + privateEndpoint instance.
+ * Ask whether to set up a private endpoint connection (AWS PrivateLink or GCP
+ * PSC) to this Capella cluster. Only offered for AWS/GCP-provisioned clusters
+ * (the providers fit-cli supports PE for today). PE requires a matching-CSP
+ * instance in fit-cli's VPC/network, so answering yes here means the
+ * instance-execution question is skipped in favour of a fixed instance on
+ * `cloudProvider` with privateEndpoint set.
  */
-async function askCapellaPrivateEndpoint(promptIdPrefix: string): Promise<boolean> {
+async function askCapellaPrivateEndpoint(promptIdPrefix: string, cloudProvider: "aws" | "gcp" = "aws"): Promise<boolean> {
   return confirm({
     promptId: qualifyPromptId("capella.private-endpoint", promptIdPrefix),
-    message: "Set up an AWS PrivateLink connection to Capella?",
+    message: `Set up an ${cloudProvider === "aws" ? "AWS PrivateLink" : "GCP PSC"} connection to Capella?`,
     default: false,
   });
 }
@@ -359,8 +364,8 @@ async function addFunctionalRun(
     if (connectivity === "capella") {
       capellaCloudProvider = await chooseCapellaCloudProvider(promptIdPrefix);
       capellaEnvironment = await chooseCapellaEnvironment(promptIdPrefix);
-      if (capellaCloudProvider === "aws") {
-        capellaPrivateEndpoint = await askCapellaPrivateEndpoint(promptIdPrefix);
+      if (capellaCloudProvider === "aws" || capellaCloudProvider === "gcp") {
+        capellaPrivateEndpoint = await askCapellaPrivateEndpoint(promptIdPrefix, capellaCloudProvider);
       }
     }
 
@@ -375,10 +380,12 @@ async function addFunctionalRun(
             ? "\nStarting a new FIT Capella Analytics instance. cbdinocluster creates a real Capella Analytics cluster via the Capella control-plane API (cloud deployer)."
             : "\nStarting a new FIT functional instance. Runs added now will share one cluster lifetime on that instance.",
     );
-    // PE testing requires an AWS EC2 instance in the fit-cli VPC — skip the usual
-    // localhost/AWS choice and fix the instance accordingly.
+    // PE testing requires an instance on the same CSP as the Capella cluster —
+    // skip the usual localhost/AWS/GCP choice and fix the instance accordingly.
     const instance = capellaPrivateEndpoint
-      ? { aws: { privateEndpoint: {} } }
+      ? capellaCloudProvider === "gcp"
+        ? { gcp: { privateEndpoint: {} } }
+        : { aws: { privateEndpoint: {} } }
       : await chooseInstanceExecution(promptIdPrefix);
     const cluster = await chooseFunctionalDefinitionCluster(connectivity, capellaCloudProvider);
     const onClusterExists = cluster.kind === "cbdinocluster" ? await askClusterExistsPolicy() : undefined;
@@ -482,9 +489,11 @@ async function addSituationalRun(
 
   const currentInstance = lastSituationalInstance(state);
   if (currentInstance?.clusterlessSessions) {
-    // The instance's execution mode (and its aws.privateEndpoint, if any) was fixed
-    // when it was created, so reuse whatever PE-ness that instance already has.
-    const privateEndpoint = "aws" in currentInstance && currentInstance.aws.privateEndpoint !== undefined;
+    // The instance's execution mode (and its aws/gcp.privateEndpoint, if any) was
+    // fixed when it was created, so reuse whatever PE-ness that instance already has.
+    const privateEndpoint =
+      ("aws" in currentInstance && currentInstance.aws.privateEndpoint !== undefined) ||
+      ("gcp" in currentInstance && currentInstance.gcp.privateEndpoint !== undefined);
     const subDef = buildFitSituationalDefinitionFrom({
       sdk,
       ...(version ? { version } : {}),
@@ -499,12 +508,29 @@ async function addSituationalRun(
     return;
   }
 
-  const privateEndpoint = await askCapellaPrivateEndpoint(promptIdPrefix);
+  const wantsPrivateEndpoint = await confirm({
+    promptId: qualifyPromptId("capella.private-endpoint", promptIdPrefix),
+    message: "Set up a private endpoint connection to Capella (AWS PrivateLink or GCP PSC)?",
+    default: false,
+  });
+  let privateEndpointCloudProvider: "aws" | "gcp" = "aws";
+  if (wantsPrivateEndpoint) {
+    privateEndpointCloudProvider = await select<"aws" | "gcp">({
+      promptId: qualifyPromptId("capella.private-endpoint.cloud-provider", promptIdPrefix),
+      message: "Which cloud provider should the private-endpoint instance run on?",
+      choices: [{ name: "AWS", value: "aws" }, { name: "GCP", value: "gcp" }],
+    });
+  }
+  const privateEndpoint = wantsPrivateEndpoint;
 
   console.log("\nStarting a new FIT situational instance. FIT/SIT creates its own clusters.");
-  // PE testing requires an AWS EC2 instance in the fit-cli VPC — skip the usual
-  // localhost/AWS choice and fix the instance accordingly.
-  const instance = privateEndpoint ? { aws: { privateEndpoint: {} } } : await chooseInstanceExecution(promptIdPrefix);
+  // PE testing requires an instance on the same CSP as the Capella cluster —
+  // skip the usual localhost/AWS/GCP choice and fix the instance accordingly.
+  const instance = privateEndpoint
+    ? privateEndpointCloudProvider === "gcp"
+      ? { gcp: { privateEndpoint: {} } }
+      : { aws: { privateEndpoint: {} } }
+    : await chooseInstanceExecution(promptIdPrefix);
   const subDef = buildFitSituationalDefinitionFrom({
     sdk,
     instance,

@@ -121,6 +121,14 @@ export interface RunOptions {
    * visually secondary.
    */
   greyTextOutput?: boolean;
+  /**
+   * Lines matching any of these are dropped from streamed stdout/stderr before
+   * they ever reach the terminal or session log — for tool chatter that has no
+   * "be quiet" flag of its own (e.g. gcloud's OS Login notice, see gcp-iap.ts).
+   * Only honoured by `run()`; a chunk-boundary miss (the line split across two
+   * `data` events) just lets that one line through rather than breaking output.
+   */
+  stripLines?: readonly RegExp[];
 }
 
 /** Knobs for the CaptureValue models (capture / captureValueSync). */
@@ -144,10 +152,14 @@ function announce(command: string, args: readonly string[], opts?: RunOptions): 
   echoCommand(opts?.display ?? formatCommandLine(command, args));
 }
 
-function teeChildOutput(stream: NodeJS.ReadableStream | null, target: NodeJS.WriteStream, onChunk?: (chunk: Buffer) => void): void {
+function teeChildOutput(stream: NodeJS.ReadableStream | null, target: NodeJS.WriteStream, stripLines?: readonly RegExp[]): void {
   stream?.on("data", (chunk: Buffer) => {
-    target.write(chunk);
-    onChunk?.(chunk);
+    if (!stripLines?.length) {
+      target.write(chunk);
+      return;
+    }
+    const filtered = stripLines.reduce((text, pattern) => text.replace(pattern, ""), chunk.toString());
+    if (filtered) target.write(filtered);
   });
 }
 
@@ -169,8 +181,8 @@ export function run(command: string, args: string[], cwd: string = process.cwd()
     const child = spawn(command, args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
     if (greyIndent) startGreyIndentedOutput();
     if (greyText) startGreyTextOutput();
-    teeChildOutput(child.stdout, process.stdout);
-    teeChildOutput(child.stderr, process.stderr);
+    teeChildOutput(child.stdout, process.stdout, opts?.stripLines);
+    teeChildOutput(child.stderr, process.stderr, opts?.stripLines);
     child.on("error", (err) => {
       if (greyIndent) stopGreyIndentedOutput();
       if (greyText) stopGreyTextOutput();
@@ -381,7 +393,8 @@ export function runHiddenUntilFailure(
     const child = spawn(command, args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
     let output = "";
     const collect = (chunk: Buffer) => {
-      output += chunk.toString();
+      const text = (opts?.stripLines ?? []).reduce((acc, pattern) => acc.replace(pattern, ""), chunk.toString());
+      output += text;
     };
     child.stdout.on("data", collect);
     child.stderr.on("data", collect);

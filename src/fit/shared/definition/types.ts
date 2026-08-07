@@ -73,12 +73,14 @@ export interface CapellaClusterSetup {
   /** Capella environment to create this cluster in. Defaults to "dev". */
   environment?: string;
   /**
-   * Set up an AWS PrivateLink connection to this cluster after it's created, and
-   * connect the FIT test-driver/performer over it instead of the public endpoint.
-   * Requires the instance to have `aws.privateEndpoint` set (see {@link AwsInstanceSetup}).
-   * AWS only for now. Empty for now (just a marker) but kept as an object — not a
-   * boolean — so provider-specific settings can be added later without a breaking
-   * schema change (see {@link PrivateEndpointSetup}).
+   * Set up a private endpoint (AWS PrivateLink or GCP PSC) connection to this
+   * cluster after it's created, and connect the FIT test-driver/performer over
+   * it instead of the public endpoint. Requires the instance to have
+   * `aws.privateEndpoint` or `gcp.privateEndpoint` set, matching this cluster's
+   * `cloudProvider` (see {@link AwsInstanceSetup}/{@link GcpInstanceSetup}).
+   * Empty for now (just a marker) but kept as an object — not a boolean — so
+   * provider-specific settings can be added later without a breaking schema
+   * change (see {@link PrivateEndpointSetup}).
    */
   privateEndpoint?: PrivateEndpointSetup;
 }
@@ -112,13 +114,18 @@ export interface InstanceSetup {
 }
 
 /**
- * Present when the instance is launched into the VPC default SG (opened
- * intra-VPC by terraform) so it can reach a Capella PrivateLink endpoint,
- * which also lands in that SG. AWS credentials are forwarded to the box the
- * same way situational runs do, so cbdinocluster's `private-endpoints
- * setup-link` (which creates the VPC endpoint) can authenticate as
- * fit-cli-role — no separate IAM instance profile is needed. Pair with
- * `capella.privateEndpoint: {}` on the cluster.
+ * Present when the instance is launched so it can reach a Capella private
+ * endpoint (AWS PrivateLink or GCP PSC). On AWS this attaches the VPC default
+ * SG (opened intra-VPC by terraform), which the PrivateLink endpoint also
+ * lands in; AWS credentials are forwarded to the box the same way situational
+ * runs do, so cbdinocluster's `private-endpoints setup-link` (which creates
+ * the VPC endpoint) can authenticate as fit-cli-role — no separate IAM
+ * instance profile is needed. On GCP the box is tagged so the
+ * fit-cli-allow-private-endpoint firewall rule (terraform/gcp/firewall.tf)
+ * admits traffic from the PSC endpoint; the attached fit-cli-gcp service
+ * account already has the GCP permissions setup-link needs, so no separate
+ * credential upload is required. Pair with `capella.privateEndpoint: {}` on
+ * the cluster.
  *
  * Empty for now (just a marker) but kept as an object — not a boolean — so
  * provider-specific settings can be added later without a breaking schema change.
@@ -130,8 +137,19 @@ export interface AwsInstanceSetup {
   privateEndpoint?: PrivateEndpointSetup;
 }
 
+/**
+ * A GCP Compute Engine instance, reached over an IAP-tunneled SSH connection
+ * (see util/non-fit/iap-target.ts).
+ */
+export interface GcpInstanceSetup {
+  instanceType?: string;
+  /** GCP's PSC counterpart of {@link AwsInstanceSetup.privateEndpoint}. */
+  privateEndpoint?: PrivateEndpointSetup;
+}
+
 export type InstanceMode =
   | { aws: AwsInstanceSetup }
+  | { gcp: GcpInstanceSetup }
   | { localhost: Record<string, never> };
 
 export interface RepoSetup {
@@ -223,16 +241,18 @@ export interface SituationalSection {
    */
   cng?: SituationalCngSetup;
   /**
-   * Set up an AWS PrivateLink connection to the Capella cluster cbdino creates
-   * for this situational run, and connect the test-driver over it instead of
-   * the public endpoint. Requires the instance to have `aws.privateEndpoint`
-   * set (see {@link AwsInstanceSetup}). Unlike {@link CapellaClusterSetup.privateEndpoint},
-   * this doesn't drive fit-cli's own PrivateLink setup — it's wired straight
+   * Set up a private-endpoint (AWS PrivateLink or GCP PSC, matching the
+   * instance's cloud) connection to the Capella cluster cbdino creates for
+   * this situational run, and connect the test-driver over it instead of the
+   * public endpoint. Requires the instance to have `aws.privateEndpoint` or
+   * `gcp.privateEndpoint` set to match (see {@link AwsInstanceSetup},
+   * {@link GcpInstanceSetup}). Unlike {@link CapellaClusterSetup.privateEndpoint},
+   * this doesn't drive fit-cli's own private-endpoint setup — it's wired straight
    * into the FIT test-driver's `situational.cbdino.enablePrivateEndpoint`
-   * flag, and the driver's own CbDinoManager does the private-endpoint setup
-   * and connection-string swap. AWS only for now. Empty for now (just a
-   * marker) but kept as an object — not a boolean — for consistency with
-   * {@link PrivateEndpointSetup}'s other uses.
+   * flag (plus `deployer`/`region` for gcp), and the driver's own CbDinoManager
+   * does the private-endpoint setup and connection-string swap. Empty for now
+   * (just a marker) but kept as an object — not a boolean — for consistency
+   * with {@link PrivateEndpointSetup}'s other uses.
    */
   privateEndpoint?: PrivateEndpointSetup;
   /**

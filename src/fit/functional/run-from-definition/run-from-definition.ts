@@ -57,6 +57,7 @@ import { clusterLabel as clusterSegmentLabel, formatRunLabel, instanceLabel, per
 import { confirm, select } from "../../../util/non-fit/prompts.js";
 import { DEFAULT_CAPELLA_ENV, resolveCapellaConfig, resolveFitPerformerDir, resolveGithubCredentials, resolveResultsDbCredentials, resolveRosaCredentials } from "../../util/config.js";
 import { ssmStartSessionCommand, terminateInstanceCommand } from "../../util/aws/lifecycle-warning.js";
+import { gcpDebugAccessCommand, gcpTerminateInstanceCommand } from "../../util/gcp/lifecycle-warning.js";
 import { maybeUploadRunArtifacts } from "../../util/aws/upload-run-artifacts.js";
 import { postRunSummaryToSlack } from "../../slack/post-run-summary.js";
 import { AWS_REGION } from "../../../cloud/util/aws/aws-target.js";
@@ -69,7 +70,7 @@ import {
 import { runClusterDiag } from "../../../cluster/cluster-diag/cluster-diag.js";
 import { printClusterUiAccess } from "../../../cluster/cluster-diag/cluster-ui-link.js";
 import { prepareCbdinoclusterInit, remoteCbdinoclusterCloudEnabled, removeCluster, setupDeclarativeCluster } from "../../../cluster/cluster-create/setup-declarative-cluster.js";
-import { capellaFunctionalCbdinoclusterInitArgs, capellaAnalyticsCbdinoclusterInitArgs } from "../../../cluster/cluster-create/default-cbdinocluster-init-config.js";
+import { capellaFunctionalCbdinoclusterInitArgs, capellaAnalyticsCbdinoclusterInitArgs, situationalCbdinoclusterInitArgs } from "../../../cluster/cluster-create/default-cbdinocluster-init-config.js";
 import { isAlias, resolveAlias } from "../../../cluster/cluster-create/cb-alias.js";
 import { collectClusterLogs } from "../../../cluster/cluster-cbcollect/cluster-cbcollect.js";
 import { installCbdinoclusterRemote } from "../../../cluster/cluster-create/install-cbdinocluster.js";
@@ -328,7 +329,7 @@ async function resolveTestSelectionMode(
  * per-run detail table and the recorded result so every label reads identically.
  */
 function runLabelParts(
-  instanceKind: "aws" | "localhost",
+  instanceKind: "aws" | "gcp" | "localhost",
   clusterMode: RunLabelParts["clusterMode"],
   run: ResolvedExecutionRun,
   clusterVersion?: string,
@@ -470,7 +471,9 @@ function announce(
   const instDesc =
     parts.instanceKind === "aws"
       ? `Running on AWS EC2 instance ${run.path.instanceIndex + 1}`
-      : "Running locally on this machine";
+      : parts.instanceKind === "gcp"
+        ? `Running on GCP Compute Engine instance ${run.path.instanceIndex + 1}`
+        : "Running locally on this machine";
   console.log(`  ${instSeg}:  ${instDesc}`);
   const clusterSeg = clusterSegmentLabel(run.path, parts.clusterMode, parts.clusterVersion, parts.enterpriseAnalytics, parts.capella, parts.capellaAnalytics);
   if (clusterSeg) {
@@ -754,6 +757,7 @@ export async function runTests(
   performer: RunningPerformer | undefined,
   dependencies: RunTestsDependencies = {},
   clusterVersion?: string,
+  instanceKind: "aws" | "gcp" | "localhost" = execution.kind === "remote" ? "aws" : "localhost",
 ): Promise<RunOutput> {
   if (!run.cluster) {
     fitCliWarn(missingClusterMessage(clusterMode));
@@ -833,7 +837,7 @@ export async function runTests(
   const isCapella = run.cluster?.flavour === "internal-capella" || run.cluster?.flavour === "production-capella";
   const pathLabel = formatRunLabel(
     run.path,
-    runLabelParts(execution.kind === "remote" ? "aws" : "localhost", clusterMode, run, clusterVersion, run.cluster?.cng !== undefined, isCapella, run.analytics && !run.cluster?.analyticsLoadBalancerHost),
+    runLabelParts(instanceKind, clusterMode, run, clusterVersion, run.cluster?.cng !== undefined, isCapella, run.analytics && !run.cluster?.analyticsLoadBalancerHost),
   );
   const iterationLabel = (label: string) => `Run ${run.path.runIndex ?? 0} ${label}`;
   details.push(
@@ -959,12 +963,24 @@ async function withResolvedSituationalCbdino(
  * `operator-version`/`gateway-version` into cbdinocluster's config when it sees a
  * `cao` deployer.
  */
-export function situationalCbdinoSettings(cng: boolean, privateEndpoint: boolean, versionOverride?: string): CbdinoSettings {
+export function situationalCbdinoSettings(
+  cng: boolean,
+  privateEndpoint: boolean,
+  versionOverride?: string,
+  instanceKind: "aws" | "gcp" | "localhost" = "aws",
+): CbdinoSettings {
   if (!cng) {
+    // The driver's CbDinoYamlWrangler defaults `deployer` to aws when omitted, so
+    // only gcp needs to be set explicitly (see CbdinoSettings.deployer). CNG always
+    // deploys via the "cao" deployer regardless of instanceKind, so this only
+    // applies to the Capella-cluster branch.
+    const gcp = instanceKind === "gcp" ? loadEnvironments().defaults.gcp : undefined;
+    const gcpFields = gcp ? { deployer: "gcp", ...(gcp.region ? { region: gcp.region } : {}) } : {};
     return {
       ...DEFAULT_CBDINO_SETTINGS,
       version: versionOverride ?? loadEnvironments().defaults.capellaClusterVersion,
       enablePrivateEndpoint: privateEndpoint,
+      ...gcpFields,
     };
   }
   const { cngClusterVersion, caoOperatorVersion, cngVersion } = loadEnvironments().defaults;
@@ -989,6 +1005,7 @@ export async function runSituationalTests(
   dependencies: {
     recordResult?: RecordRunResult;
   } = {},
+  instanceKind: "aws" | "gcp" | "localhost" = execution.kind === "remote" ? "aws" : "localhost",
 ): Promise<RunOutput> {
   console.log(
     "\nNote: for a full cbdino run the performer must share cbdino's Docker network " +
@@ -1011,7 +1028,7 @@ export async function runSituationalTests(
 
   const fitConfig = generateSituationalConfiguration(
     database.database,
-    situationalCbdinoSettings(run.cng, run.privateEndpoint !== undefined, resolvedVersion),
+    situationalCbdinoSettings(run.cng, run.privateEndpoint !== undefined, resolvedVersion, instanceKind),
     execution.fitPerformerDir,
     run.path,
     run.performerPort,
@@ -1036,7 +1053,7 @@ export async function runSituationalTests(
   artifacts.push(...testRun.artifacts);
   const pathLabel = formatRunLabel(
     run.path,
-    runLabelParts(execution.kind === "remote" ? "aws" : "localhost", undefined, run, undefined, run.cng),
+    runLabelParts(instanceKind, undefined, run, undefined, run.cng),
   );
   const iterationLabel = (label: string) => `Run ${run.path.runIndex ?? 0} ${label}`;
   details.push(
@@ -1126,6 +1143,7 @@ async function runIteration(
   recordResult: RecordRunResult,
   functionalClusterVersion?: string,
   existingPerformer?: RunningPerformer,
+  instanceKind?: "aws" | "gcp" | "localhost",
 ): Promise<{ output: RunOutput; performer?: RunningPerformer }> {
   const artifacts: Artifact[] = [];
   const details: Detail[] = [];
@@ -1154,10 +1172,10 @@ async function runIteration(
   let output: RunOutput;
   try {
     if (run.type === "situational") {
-      output = await runSituationalTests(execution, run, { recordResult });
+      output = await runSituationalTests(execution, run, { recordResult }, instanceKind);
     } else {
       const clusterMode: ResolvedFunctionalExecutionGroup["clusterMode"] = functionalClusterMode ?? "useExisting";
-      output = await runTests(execution, clusterMode, run, performer, { recordResult }, functionalClusterVersion);
+      output = await runTests(execution, clusterMode, run, performer, { recordResult }, functionalClusterVersion, instanceKind);
     }
   } catch (err) {
     // When we started this performer ourselves and a FatalToSession error escapes, stop
@@ -1215,7 +1233,28 @@ function targetStateFrom(teardown: ExecutionTargetTeardown): ResumeTargetState {
     kind: teardown.kind,
     ...(teardown.instanceId ? { instanceId: teardown.instanceId } : {}),
     ...(teardown.owned !== undefined ? { owned: teardown.owned } : {}),
+    ...(teardown.provider ? { provider: teardown.provider } : {}),
+    ...(teardown.gcpZone ? { gcpZone: teardown.gcpZone } : {}),
+    ...(teardown.gcpProject ? { gcpProject: teardown.gcpProject } : {}),
   };
+}
+
+/** The human debug-access command for whichever cloud provisioned `teardown`'s instance. */
+function debugAccessCommandFor(teardown: ExecutionTargetTeardown): string | undefined {
+  if (!teardown.instanceId) return undefined;
+  if (teardown.provider === "gcp" && teardown.gcpZone && teardown.gcpProject) {
+    return gcpDebugAccessCommand(teardown.instanceId, teardown.gcpZone, teardown.gcpProject);
+  }
+  return ssmStartSessionCommand(teardown.instanceId);
+}
+
+/** The instance-termination command for whichever cloud provisioned `teardown`'s instance. */
+function terminateCommandFor(teardown: ExecutionTargetTeardown): string | undefined {
+  if (!teardown.instanceId) return undefined;
+  if (teardown.provider === "gcp" && teardown.gcpZone && teardown.gcpProject) {
+    return gcpTerminateInstanceCommand(teardown.instanceId, teardown.gcpZone, teardown.gcpProject);
+  }
+  return terminateInstanceCommand(teardown.instanceId);
 }
 
 function hasResumeSelector(selector: ResumeSelector): boolean {
@@ -1430,9 +1469,9 @@ async function terminateInstanceWithGuidance(teardown: ExecutionTargetTeardown):
   } catch (err) {
     console.error(
       `\n✗ Failed to terminate instance ${teardown.instanceId ?? "(unknown)"}: ${(err as Error).message}\n` +
-        `  It is STILL RUNNING and incurring AWS charges. Remove it with:\n` +
-        (teardown.instanceId ? `    ${terminateInstanceCommand(teardown.instanceId)}\n` : "") +
-        `  or sweep every fit-cli instance you own:\n    fit cloud-instances remove-all`,
+        `  It is STILL RUNNING and incurring cloud charges. Remove it with:\n` +
+        (terminateCommandFor(teardown) ? `    ${terminateCommandFor(teardown)}\n` : "") +
+        (teardown.provider === "gcp" ? "" : `  or sweep every fit-cli instance you own:\n    fit cloud-instances remove-all`),
     );
     throw err;
   }
@@ -1524,7 +1563,7 @@ async function teardownRun(inputs: TeardownInputs): Promise<{ leftUp: boolean }>
   } catch (err) {
     if (err instanceof Error && err.name === "ExitPromptError" && teardown.terminate && teardown.instanceId) {
       fitCliWarn(`\nInstance ${teardown.instanceId} is still running — remember to terminate it when done.`);
-      console.log(`\nTerminate it with:\n  ${terminateInstanceCommand(teardown.instanceId)}`);
+      console.log(`\nTerminate it with:\n  ${terminateCommandFor(teardown)}`);
     }
     throw err;
   }
@@ -1571,8 +1610,8 @@ async function teardownRun(inputs: TeardownInputs): Promise<{ leftUp: boolean }>
     }
     if (teardown.terminate && teardown.instanceId) {
       fitCliWarn(`\nInstance ${teardown.instanceId} is still running — remember to terminate it when done.`);
-      console.log(`\nDebug access (SSM):\n  ${ssmStartSessionCommand(teardown.instanceId)}`);
-      console.log(`\nTerminate it with:\n  ${terminateInstanceCommand(teardown.instanceId)}`);
+      console.log(`\nDebug access:\n  ${debugAccessCommandFor(teardown)}`);
+      console.log(`\nTerminate it with:\n  ${terminateCommandFor(teardown)}`);
     }
     return { leftUp: true };
   }
@@ -1617,7 +1656,7 @@ function isInteractiveRun(): boolean {
  * Decide the run-wide override for where every execution group runs, ignoring each
  * group's `instance:` setting. Resuming reuses the earlier run's choice. Otherwise:
  * interactively we ask whether to honour the file (default), force everything onto
- * localhost, or run every group on one existing EC2 instance; non-interactively we
+ * localhost, or run every group on one existing AWS EC2 instance; non-interactively we
  * honour the definition file so a CI run provisions whatever the file asks for.
  */
 async function resolveExecutionOverride(
@@ -1640,7 +1679,10 @@ async function resolveExecutionOverride(
       : groups.map((g, i) => `group ${i + 1}: ${g.instance.kind}`).join(", ");
   const allLocalhost = groups.every((g) => g.instance.kind === "localhost");
   const requiresCloudCluster = groups.some(
-    (g) => g.cng || (g.instance.kind === "aws" && g.instance.privateEndpoint !== undefined),
+    (g) =>
+      g.cng ||
+      (g.instance.kind === "aws" && g.instance.privateEndpoint !== undefined) ||
+      (g.instance.kind === "gcp" && g.instance.privateEndpoint !== undefined),
   );
   for (let attempt = 1; ; attempt++) {
     const choice = await select<ExecutionOverride["kind"]>({
@@ -1649,7 +1691,7 @@ async function resolveExecutionOverride(
       default: "definition",
       choices: [
         { name: `Where the definition says: ${definitionDestination}`, value: "definition" },
-        ...(allLocalhost ? [{ name: "On a fresh EC2 instance (provision a new one)", value: "aws" as const }] : []),
+        ...(allLocalhost ? [{ name: "On a fresh cloud instance (provision a new one)", value: "aws" as const }] : []),
         {
           name: "Everything on localhost (good for testing and local development)",
           value: "localhost",
@@ -1657,7 +1699,7 @@ async function resolveExecutionOverride(
             ? { disabled: "can't test CNG or a Private Endpoint locally" }
             : {}),
         },
-        { name: "Everything on an existing EC2 instance (good for rapid iteration)", value: "existing" },
+        { name: "Everything on an existing AWS EC2 instance (good for rapid iteration)", value: "existing" },
       ],
     });
     if (choice === "definition" || choice === "localhost" || choice === "aws") {
@@ -1677,9 +1719,9 @@ function describeExecutionOverride(override: ExecutionOverride, declaredKind: st
     case "localhost":
       return "localhost (forced)";
     case "aws":
-      return "EC2 (fresh instance, forced)";
+      return "cloud (fresh instance, forced)";
     case "existing":
-      return `existing EC2 instance ${override.existing.instanceId} (forced)`;
+      return `existing AWS EC2 instance ${override.existing.instanceId} (forced)`;
     default:
       return declaredKind;
   }
@@ -1808,6 +1850,11 @@ export async function runFromDefinition(
   // --disable-github and CAO can't authenticate the image pull).
   let githubCredentials: { user: string; token: string } | undefined;
   if (needsGithubCredentials(phases, executionGroups, startCycleIndex)) {
+    if (!willRunOnAws) {
+      console.log(
+        "This instance doesn't run on AWS, but AWS is still needed here to fetch AWS Secrets.",
+      );
+    }
     const result = await resolveGithubCredentials();
     if (typeof result === "string") {
       fitCliError({ classification: "FatalToAll" }, `\n✗ ${result}`);
@@ -2000,7 +2047,7 @@ export async function runFromDefinition(
         console.log(
           `  Instance: reusing the box from the previous execution group (definition instance ${group.path.instanceIndex + 1}).`,
         );
-        setLogContext({ env: instanceLabel(group.path, cycleTeardown.kind === "remote" ? "aws" : "localhost") });
+        setLogContext({ env: instanceLabel(group.path, cycleTeardown.kind === "remote" ? (cycleTeardown.provider === "gcp" ? "gcp" : "aws") : "localhost") });
       } else {
         const isResumeStartCycle = savedState !== undefined && cycleIndex === startCycleIndex;
         const targetOutcome = isResumeStartCycle
@@ -2016,7 +2063,7 @@ export async function runFromDefinition(
         }
         cycleTeardown = targetOutcome.teardown;
         activeTeardown = cycleTeardown;
-        setLogContext({ env: instanceLabel(group.path, cycleTeardown.kind === "remote" ? "aws" : "localhost") });
+        setLogContext({ env: instanceLabel(group.path, cycleTeardown.kind === "remote" ? (cycleTeardown.provider === "gcp" ? "gcp" : "aws") : "localhost") });
         if (cycleTeardown.kind === "remote" && cycleTeardown.instanceId) {
           printResumeHint("after-instance-creation", definitionCopyPath, group.path, false);
         }
@@ -2197,6 +2244,11 @@ export async function runFromDefinition(
           );
         } else {
           const capellaEnvironment = group.type === "situational" ? group.capellaEnvironment : DEFAULT_CAPELLA_ENV;
+          // Which direct cloud-infra block cbdinocluster also needs, for situational
+          // PE's setup-link (it calls the CSP's API directly) — mirrors the functional
+          // Capella branch above, keyed off the instance's own cloud instead of the
+          // cluster's capella.cloudProvider.
+          const cloudProvider: "aws" | "gcp" = group.instance.kind === "gcp" ? "gcp" : "aws";
           let capellaEndpoint: string | undefined;
           if (execution.kind === "remote") {
             // When a source is specified the binary will be built from the PR
@@ -2215,15 +2267,24 @@ export async function runFromDefinition(
               capellaEnvironment,
               `Situational runs allocate Capella clusters`,
             );
-            if (awsCredentials) {
+            // GCP needs no equivalent credential upload — the box's attached service
+            // account already provides ADC for cbdinocluster's GCP PSC calls.
+            if (cloudProvider === "aws" && awsCredentials) {
               await stopCredsRefresher();
               const expiry = await uploadRemoteAwsCredentials(execution.target, execution.rootDir, awsCredentials);
               activeCredsRefresher = startRemoteAwsCredsRefresher(execution.target, execution.rootDir, expiry);
             }
           }
+          // Inject the derived cloud-provider init args when the definition didn't
+          // supply custom ones, so `cbdinocluster init --auto` enables the right
+          // cloud block instead of always defaulting to aws (see
+          // situationalCbdinoclusterInitArgs).
+          const cbdinoclusterInit = group.cbdinoclusterInit && !group.cbdinoclusterInit.args
+            ? { ...group.cbdinoclusterInit, args: situationalCbdinoclusterInitArgs(undefined, cloudProvider) }
+            : group.cbdinoclusterInit;
           await prepareCbdinoclusterInit(
             execution,
-            group.cbdinoclusterInit,
+            cbdinoclusterInit,
             githubCredentials,
             instanceRunDir(group.path),
             group.cbdinoclusterSource,
@@ -2285,6 +2346,7 @@ export async function runFromDefinition(
               recordResult,
               clusterVersionLabel(activeCycle),
               sessionPerformer,
+              activeCycle.instance.kind,
             );
             artifacts.push(...output.artifacts);
             details.push(...output.details);

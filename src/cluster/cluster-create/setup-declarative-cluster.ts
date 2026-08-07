@@ -889,10 +889,12 @@ async function createCapellaDefaultBucket(
 }
 
 /**
- * Set up an AWS PrivateLink connection to a Capella cluster via cbdinocluster's
- * `private-endpoints` commands. Returns the private `couchbases://` connection
- * string to connect over, plus the Couchbase cluster's own UUID (needed later to
- * delete the VPC endpoint on teardown — see {@link couchbaseClusterUuidFor}).
+ * Set up a private endpoint connection (AWS PrivateLink or GCP PSC) to a Capella
+ * cluster via cbdinocluster's `private-endpoints` commands — CSP-agnostic:
+ * `setup-link --auto` auto-identifies both the instance and its cloud from
+ * where it's run. Returns the private `couchbases://` connection string to
+ * connect over, plus the Couchbase cluster's own UUID (needed later to delete
+ * the AWS-side VPC endpoint on teardown — see {@link couchbaseClusterUuidFor}).
  * `knownUuid` is passed in when the caller already has it (from `allocate`'s own
  * output — see allocate-cluster.ts) so we skip the extra `cloud get-cloud-id`
  * round-trip; otherwise it's fetched here as a fallback.

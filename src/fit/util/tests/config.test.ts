@@ -50,6 +50,28 @@ test("parses a version 1 fit-cli config (JSON5)", () => {
   });
 });
 
+test("parses cloud.gcp instance types", () => {
+  const parsed = parseFitCliConfig(`{
+  version: 1,
+  cloud: {
+    gcp: {
+      instanceTypes: {
+        functional: 'n2-standard-4',
+      },
+    },
+  },
+}`);
+
+  assert.deepEqual(parsed, {
+    version: FIT_CLI_CONFIG_VERSION,
+    cloud: {
+      gcp: {
+        instanceTypes: { functional: "n2-standard-4" },
+      },
+    },
+  });
+});
+
 test("parses a version 1 fit-cli config (YAML, backward compat)", () => {
   const parsed = parseFitCliConfig(
     `version: 1\ncloud:\n  aws:\n    region: us-east-1\n    instanceTypes:\n      perf: c5.4xlarge\n`,

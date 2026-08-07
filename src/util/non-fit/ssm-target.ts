@@ -18,7 +18,7 @@
  * That read is what makes output unbounded, so it's load-bearing: it's the SSM
  * Agent on the instance that writes those streams, and it needs
  * logs:CreateLogStream/PutLogEvents on the log group via its instance profile
- * (terraform/ssm-instance-role.tf). Without that the log group stays empty and
+ * (terraform/aws/ssm-instance-role.tf). Without that the log group stays empty and
  * every command silently falls back to the capped inline copy.
  */
 import { DescribeInstanceInformationCommand, GetCommandInvocationCommand, SendCommandCommand } from "@aws-sdk/client-ssm";
@@ -285,7 +285,7 @@ function truncationExplanation(instanceId: string): string {
     `Output of the command on ${instanceId} was capped by SSM and could not be read back in full from CloudWatch ` +
     `Logs (log group ${SSM_LOG_GROUP_NAME} had no events for it). The instance's SSM Agent most likely can't write ` +
     `there — check that its instance profile grants logs:CreateLogStream/PutLogEvents on that log group ` +
-    `(terraform/ssm-instance-role.tf).`
+    `(terraform/aws/ssm-instance-role.tf).`
   );
 }
 
