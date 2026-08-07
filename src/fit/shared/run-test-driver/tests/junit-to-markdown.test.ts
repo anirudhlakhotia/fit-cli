@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   condenseStackTrace,
   DEFAULT_OUTPUT_WINDOW_BYTES,
+  MAX_RETAINED_STREAM_BYTES,
   MIN_OUTPUT_WINDOW_BYTES,
   parseFailingTestCases,
   parseJunitData,
@@ -455,4 +456,112 @@ test("renderJunitMarkdown: never exceeds its budget, across adversarial shapes a
       }
     }
   }
+});
+
+// --- memory safety: clipping at parse time, and oversized reports ---
+
+test("parseFailingTestCases: clips a huge stdout at parse time, keeping head and tail", () => {
+  const lines = Array.from({ length: 200_000 }, (_, i) => `line${i}`).join("\n");
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.example.BigTest" tests="1" failures="1" errors="0" skipped="0" time="1.0">
+  <testcase name="big" classname="com.example.BigTest" time="1.0">
+    <failure message="boom">trace</failure>
+    <system-out><![CDATA[${lines}]]></system-out>
+  </testcase>
+</testsuite>`;
+  const [tc] = parseFailingTestCases(xml);
+  assert.ok(tc.stdout, "stdout should be captured");
+  assert.ok(tc.stdout.length <= MAX_RETAINED_STREAM_BYTES, `retained ${tc.stdout.length}, cap is ${MAX_RETAINED_STREAM_BYTES}`);
+  assert.ok(tc.stdout.startsWith("line0\n"), "keeps the head");
+  assert.ok(tc.stdout.endsWith("line199999"), "keeps the tail");
+  assert.ok((tc.stdoutOmittedLines ?? 0) > 0, "records what it dropped");
+});
+
+test("parseFailingTestCases: leaves a small stdout untouched and records no omission", () => {
+  const cases = parseFailingTestCases(SUITE_WITH_OUTPUT);
+  assert.equal(cases[0].stdout, "line1\nline2\nline3");
+  assert.equal(cases[0].stdoutOmittedLines, undefined);
+});
+
+test("renderJunitMarkdown: the elision marker counts parse-time and render-time omissions together", () => {
+  const lines = Array.from({ length: 200_000 }, (_, i) => `line${i}`).join("\n");
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.example.BigTest" tests="1" failures="1" errors="0" skipped="0" time="1.0">
+  <testcase name="big" classname="com.example.BigTest" time="1.0">
+    <failure message="boom">trace</failure>
+    <system-out><![CDATA[${lines}]]></system-out>
+  </testcase>
+</testsuite>`;
+  const md = renderJunitMarkdown(parseJunitData([{ filename: "TEST-com.example.BigTest.xml", xml }]));
+  const m = md.match(/~(\d+) lines hidden/);
+  assert.ok(m, `expected an elision marker, got:\n${md.slice(0, 600)}`);
+  // Nearly all 200k lines are gone; a marker reporting only the render-time cut would be
+  // wildly understated, which is the bug this guards.
+  assert.ok(Number(m[1]) > 190_000, `marker said ${m[1]} lines, expected most of 200000`);
+});
+
+test("parseJunitData: an oversized report is counted but not detailed", () => {
+  const data = parseJunitData([
+    { filename: "TEST-com.example.HugeTest.xml", xml: `<testsuite name="com.example.HugeTest" tests="10" failures="3" errors="1" skipped="0" time="5.0">`, oversizedBytes: 385 * 1024 * 1024 },
+  ]);
+  assert.equal(data.totalFailures, 3, "counts still come from the testsuite attributes");
+  assert.equal(data.totalErrors, 1);
+  assert.equal(data.failingCases.length, 0, "no detail parsed from a partial document");
+  assert.deepEqual(data.oversizedReports, [{ filename: "TEST-com.example.HugeTest.xml", bytes: 385 * 1024 * 1024 }]);
+});
+
+test("renderJunitMarkdown: says which reports were too large, and where to read them", () => {
+  const data = parseJunitData([
+    { filename: "TEST-com.example.HugeTest.xml", xml: `<testsuite name="com.example.HugeTest" tests="10" failures="3" errors="1" skipped="0" time="5.0">`, oversizedBytes: 385 * 1024 * 1024 },
+  ]);
+  const md = renderJunitMarkdown(data);
+  assert.ok(md.includes("TEST-com.example.HugeTest.xml"), "names the report");
+  assert.ok(md.includes("385 MB"), "gives its size");
+  assert.ok(md.includes("fit archive fetch"), "says where to read it");
+});
+
+test("renderJunitPlainText: flags oversized reports too", () => {
+  const data = parseJunitData([
+    { filename: "TEST-com.example.HugeTest.xml", xml: `<testsuite name="com.example.HugeTest" tests="10" failures="3" errors="1" skipped="0" time="5.0">`, oversizedBytes: 385 * 1024 * 1024 },
+  ]);
+  assert.ok(renderJunitPlainText(data).includes("TEST-com.example.HugeTest.xml"));
+});
+
+test("retained stream size exceeds the largest render window, so clipping is always reported", () => {
+  // If this inverted, a clipped stream could render without truncation and its parse-time
+  // omission would go unmentioned.
+  assert.ok(MAX_RETAINED_STREAM_BYTES > 2 * DEFAULT_OUTPUT_WINDOW_BYTES);
+});
+
+test("parseFailingTestCases: carries the clipping reader's omitted-line count through", () => {
+  // Large reports are clipped while being read, and mark the cut with a sentinel inside the
+  // CDATA. The count has to survive into the elision marker, or a 385 MB report would claim
+  // it hid only the handful of lines the renderer itself removed.
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.example.ClipTest" tests="1" failures="1" errors="0" skipped="0" time="1.0">
+  <testcase name="clipped" classname="com.example.ClipTest" time="1.0">
+    <failure message="boom">trace</failure>
+    <system-out><![CDATA[head line
+@@fit-cli-omitted-lines:123456@@
+tail line]]></system-out>
+  </testcase>
+</testsuite>`;
+  const [tc] = parseFailingTestCases(xml);
+  assert.equal(tc.stdoutOmittedLines, 123456, "the sentinel's count should be preserved");
+  assert.ok(!tc.stdout?.includes("fit-cli-omitted-lines"), "the sentinel itself should not be shown");
+  assert.ok(tc.stdout?.includes("head line") && tc.stdout?.includes("tail line"), "head and tail survive");
+});
+
+test("renderJunitMarkdown: a stream clipped while reading still reports the full hidden count", () => {
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.example.ClipTest" tests="1" failures="1" errors="0" skipped="0" time="1.0">
+  <testcase name="clipped" classname="com.example.ClipTest" time="1.0">
+    <failure message="boom">trace</failure>
+    <system-out><![CDATA[head line
+@@fit-cli-omitted-lines:123456@@
+tail line]]></system-out>
+  </testcase>
+</testsuite>`;
+  const md = renderJunitMarkdown(parseJunitData([{ filename: "TEST-com.example.ClipTest.xml", xml }]));
+  assert.ok(/~12345\d lines hidden/.test(md), `expected the clip count in the marker, got:\n${md.slice(-800)}`);
 });

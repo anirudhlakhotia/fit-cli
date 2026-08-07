@@ -11,9 +11,10 @@
  * Add --markdown to see what a GitHub Actions step summary will contain (--lean for the
  * reduced form, --bytes for just the size). See --help.
  */
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { closeSync, existsSync, mkdtempSync, openSync, readFileSync, readSync, readdirSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { extname, join } from "node:path";
+import { StringDecoder } from "node:string_decoder";
+import { basename, extname, join } from "node:path";
 import { isMain } from "../../../util/non-fit/cli.js";
 import { run } from "../../../util/non-fit/proc.js";
 
@@ -28,8 +29,18 @@ export interface FailingTestCase {
   name: string;
   timeMs: number;
   issues: TestIssue[];
+  /** Head and tail of the captured stdout, clipped at parse time — see MAX_RETAINED_STREAM_BYTES. */
   stdout?: string;
   stderr?: string;
+  /** Lines dropped from the middle of stdout when it was clipped at parse time, if any. */
+  stdoutOmittedLines?: number;
+  stderrOmittedLines?: number;
+}
+
+/** A report too large to parse in full; its counts are read, its failure detail is not. */
+export interface OversizedReport {
+  filename: string;
+  bytes: number;
 }
 
 export interface PackageStats {
@@ -44,12 +55,47 @@ export interface PackageStats {
 export interface JunitMarkdownData {
   packages: PackageStats[];
   failingCases: FailingTestCase[];
+  /** Reports skipped for size; counted in the totals, but with no per-failure detail. */
+  oversizedReports?: OversizedReport[];
   totalPassed: number;
   totalFailures: number;
   totalErrors: number;
   totalSkipped: number;
   totalTimeMs: number;
 }
+
+/**
+ * How much of a test's stdout/stderr is kept in memory.
+ *
+ * Rendering only ever shows a head and a tail — at most `2 * DEFAULT_OUTPUT_WINDOW_BYTES`
+ * per failure — so anything beyond this is provably unreachable, and holding it is what
+ * made a run cost gigabytes. Deliberately larger than the biggest render window so that
+ * `truncate` always fires when clipping happened, keeping the "~N lines hidden" count
+ * honest (it adds the parse-time and render-time omissions together).
+ */
+export const MAX_RETAINED_STREAM_BYTES = 64 * 1024;
+
+/**
+ * A single TEST-*.xml above this is not read whole. One real nightly run produced a 385 MB
+ * report; V8 refuses strings beyond roughly 512 MB, so a slightly worse run would not
+ * degrade, it would throw `Invalid string length` and take all reporting with it. Above the
+ * threshold only the head is read — enough for the `<testsuite>` counts, which sit at the
+ * very top — and the suite's failure detail is reported as unavailable.
+ */
+export const MAX_FULL_PARSE_BYTES = 64 * 1024 * 1024;
+
+/** Above this a report is read through the clipping streamer rather than in one piece. */
+export const MAX_UNCLIPPED_PARSE_BYTES = 8 * 1024 * 1024;
+
+/** Enough to cover the `<testsuite ...>` element of an unreadable report. */
+const OVERSIZED_HEAD_BYTES = 64 * 1024;
+
+/**
+ * Marks where a stream was clipped while the file was being read, carrying the line count
+ * through to `extractTagContent` so the elision marker can report the true total. Sits
+ * inside the CDATA, so it never disturbs the XML structure.
+ */
+const STREAM_CLIP_SENTINEL = "@@fit-cli-omitted-lines:";
 
 function getAttr(attrs: string, name: string): string {
   const m = attrs.match(new RegExp(`\\b${name}="([^"]*)"`, "i"));
@@ -73,12 +119,29 @@ function unwrapCdata(s: string): string {
   return s.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1");
 }
 
-/** Extract the (single) `<tag>...</tag>` content from a `<testcase>` body, e.g. `system-out`/`system-err`. */
-function extractTagContent(inner: string, tag: string): string | undefined {
+/**
+ * Extract the (single) `<tag>...</tag>` content from a `<testcase>` body, e.g.
+ * `system-out`/`system-err`, keeping only as much as could ever be rendered.
+ */
+function extractTagContent(inner: string, tag: string): { text: string; omittedLines: number } | undefined {
   const m = inner.match(new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)</${tag}>`));
   if (!m) return undefined;
-  const content = unwrapCdata(m[1]).trim();
-  return content.length > 0 ? content : undefined;
+  let content = unwrapCdata(m[1]).trim();
+  if (content.length === 0) return undefined;
+  // Lines already dropped by the clipping reader, if this came from a large report.
+  let streamOmitted = 0;
+  const sentinel = content.match(new RegExp(`${STREAM_CLIP_SENTINEL}(\\d+)@@`));
+  if (sentinel) {
+    streamOmitted = Number(sentinel[1]);
+    content = content.replace(sentinel[0], "").trim();
+  }
+  if (content.length <= MAX_RETAINED_STREAM_BYTES) return { text: content, omittedLines: streamOmitted };
+  const half = Math.floor(MAX_RETAINED_STREAM_BYTES / 2);
+  const dropped = content.substring(half, content.length - half);
+  return {
+    text: content.substring(0, half) + content.substring(content.length - half),
+    omittedLines: dropped.split("\n").length - 1 + streamOmitted,
+  };
 }
 
 /** Parse failing/erroring <testcase> elements from a single TEST-*.xml file. */
@@ -106,18 +169,30 @@ export function parseFailingTestCases(xml: string): FailingTestCase[] {
       const timeMs = Math.round(parseFloat(getAttr(attrs, "time") || "0") * 1000);
       const stdout = extractTagContent(inner, "system-out");
       const stderr = extractTagContent(inner, "system-err");
-      cases.push({ classname, name, timeMs, issues, stdout, stderr });
+      cases.push({
+        classname,
+        name,
+        timeMs,
+        issues,
+        stdout: stdout?.text,
+        stderr: stderr?.text,
+        ...(stdout && stdout.omittedLines > 0 ? { stdoutOmittedLines: stdout.omittedLines } : {}),
+        ...(stderr && stderr.omittedLines > 0 ? { stderrOmittedLines: stderr.omittedLines } : {}),
+      });
     }
   }
   return cases;
 }
 
 /** Parse suite-level stats and failing test cases from an array of {filename, xml} pairs. */
-export function parseJunitData(files: ReadonlyArray<{ filename: string; xml: string }>): JunitMarkdownData {
+export function parseJunitData(files: Iterable<{ filename: string; xml: string; oversizedBytes?: number }>): JunitMarkdownData {
   const packageMap = new Map<string, Omit<PackageStats, "pkg">>();
   const failingCases: FailingTestCase[] = [];
+  const oversizedReports: OversizedReport[] = [];
 
-  for (const { filename, xml } of files) {
+  // Iterable rather than an array so parseJunitDataFromDir can stream: holding every
+  // report's XML at once cost 1.16 GB on one real run.
+  for (const { filename, xml, oversizedBytes } of files) {
     const suiteMatch = xml.match(/<testsuite\b([^>]*)>/);
     if (!suiteMatch) continue;
     const attrs = suiteMatch[1];
@@ -140,7 +215,13 @@ export function parseJunitData(files: ReadonlyArray<{ filename: string; xml: str
       timeMs: existing.timeMs + timeMs,
     });
 
-    failingCases.push(...parseFailingTestCases(xml));
+    if (oversizedBytes !== undefined) {
+      // Only the head was read, so the counts above are sound but the testcase elements are
+      // not all present. Record it rather than parsing a truncated document.
+      oversizedReports.push({ filename, bytes: oversizedBytes });
+    } else {
+      failingCases.push(...parseFailingTestCases(xml));
+    }
   }
 
   // Packages with failures/errors first, then alphabetical.
@@ -167,7 +248,16 @@ export function parseJunitData(files: ReadonlyArray<{ filename: string; xml: str
     totalTimeMs += s.timeMs;
   }
 
-  return { packages, failingCases, totalPassed, totalFailures, totalErrors, totalSkipped, totalTimeMs };
+  return {
+    packages,
+    failingCases,
+    ...(oversizedReports.length > 0 ? { oversizedReports } : {}),
+    totalPassed,
+    totalFailures,
+    totalErrors,
+    totalSkipped,
+    totalTimeMs,
+  };
 }
 
 function pctSuccess(passed: number, failed: number): string {
@@ -198,20 +288,30 @@ function elisionMarker(omittedLines: number): string {
  * now derived from the step-summary budget and can be small enough that ~160 bytes of
  * marker matters.
  */
-function truncate(s: string, max = 16 * 1024): string {
-  if (s.length <= max) return s;
+/**
+ * `alreadyOmittedLines` covers content dropped when the stream was clipped at parse time,
+ * so the marker reports the true total rather than only what this call removed.
+ * MAX_RETAINED_STREAM_BYTES is larger than any render window, so a clipped stream always
+ * reaches the truncating path below and the count is never silently lost.
+ */
+function truncate(s: string, max = 16 * 1024, alreadyOmittedLines = 0): string {
+  if (s.length <= max) {
+    // Small enough to keep whole, but the reader may already have dropped part of it —
+    // say so rather than presenting a clipped stream as complete.
+    return alreadyOmittedLines > 0 ? s + elisionMarker(alreadyOmittedLines).trimEnd() : s;
+  }
   // Two passes: the marker's length depends on the hidden line count, which depends on
   // where we cut. One refinement is enough to settle it.
-  let half = Math.max(0, Math.floor((max - elisionMarker(0).length) / 2));
+  let half = Math.max(0, Math.floor((max - elisionMarker(alreadyOmittedLines).length) / 2));
   for (let pass = 0; pass < 2; pass++) {
-    const omittedLines = s.substring(half, s.length - half).split("\n").length - 1;
+    const omittedLines = s.substring(half, s.length - half).split("\n").length - 1 + alreadyOmittedLines;
     half = Math.max(0, Math.floor((max - elisionMarker(omittedLines).length) / 2));
   }
   if (half === 0) {
     // No room for any content alongside the marker — say what was dropped and nothing else.
-    return elisionMarker(s.split("\n").length - 1).trim();
+    return elisionMarker(s.split("\n").length - 1 + alreadyOmittedLines).trim();
   }
-  const omittedLines = s.substring(half, s.length - half).split("\n").length - 1;
+  const omittedLines = s.substring(half, s.length - half).split("\n").length - 1 + alreadyOmittedLines;
   return s.substring(0, half) + elisionMarker(omittedLines) + s.substring(s.length - half);
 }
 
@@ -391,6 +491,16 @@ export function renderJunitMarkdown(data: JunitMarkdownData, options: JunitMarkd
   lines.push("</details>");
   lines.push("");
 
+  if (data.oversizedReports && data.oversizedReports.length > 0) {
+    const mb = (n: number): string => (n / (1024 * 1024)).toFixed(0);
+    lines.push(
+      `> ⚠️ ${data.oversizedReports.length} test report(s) were too large to render inline and are counted above but not detailed: ` +
+        data.oversizedReports.map((r) => `\`${r.filename}\` (${mb(r.bytes)} MB)`).join(", ") +
+        `. Read them in this run's ARTIFACT_DIR, fetchable via \`fit archive fetch ...\` (see above).`,
+    );
+    lines.push("");
+  }
+
   if (!includeFailureDetail) {
     if (failingCases.length > 0) {
       lines.push(`_${failingCases.length} failing test(s) — detail omitted to stay within GitHub's step-summary limit; see the run artifacts above._`);
@@ -456,15 +566,20 @@ export function renderJunitMarkdown(data: JunitMarkdownData, options: JunitMarkd
       }
     }
     // Share this failure's allowance across only the streams it actually has.
-    const streams = ([["stdout", tc.stdout], ["stderr", tc.stderr]] as const).filter(([, output]) => Boolean(output));
+    const streams = (
+      [
+        ["stdout", tc.stdout, tc.stdoutOmittedLines ?? 0],
+        ["stderr", tc.stderr, tc.stderrOmittedLines ?? 0],
+      ] as const
+    ).filter(([, output]) => Boolean(output));
     const perStream = streams.length > 0 ? Math.floor(outputBudgetPerFailure / streams.length) : outputBudgetPerFailure;
-    for (const [label, output] of streams) {
+    for (const [label, output, alreadyOmitted] of streams) {
       if (!output) continue;
       lines.push("<details>");
       lines.push(`<summary><b>🖥️ Test output (${label})</b></summary>`);
       lines.push("");
       lines.push("```");
-      lines.push(truncate(output, perStream));
+      lines.push(truncate(output, perStream, alreadyOmitted));
       lines.push("```");
       lines.push("");
       lines.push("</details>");
@@ -579,6 +694,13 @@ export function renderJunitPlainText(data: JunitMarkdownData, maxFailuresPerPack
 
   renderTable();
 
+  if (data.oversizedReports && data.oversizedReports.length > 0) {
+    lines.push("");
+    for (const r of data.oversizedReports) {
+      lines.push(`${RED}! ${r.filename} was too large to render (${(r.bytes / (1024 * 1024)).toFixed(0)} MB) — counted above, not detailed${RESET}`);
+    }
+  }
+
   if (failingCases.length > 0) {
     lines.push("");
     lines.push("Failures:");
@@ -611,12 +733,13 @@ export function renderJunitPlainText(data: JunitMarkdownData, maxFailuresPerPack
             }
           }
         }
-        for (const [label, output] of [
-          ["stdout", tc.stdout],
-          ["stderr", tc.stderr],
+        for (const [label, output, alreadyOmitted] of [
+          ["stdout", tc.stdout, tc.stdoutOmittedLines ?? 0],
+          ["stderr", tc.stderr, tc.stderrOmittedLines ?? 0],
         ] as const) {
           if (!output) continue;
-          const { text, omittedCount } = tailLines(output, maxOutputLines);
+          const { text, omittedCount: cut } = tailLines(output, maxOutputLines);
+          const omittedCount = cut + alreadyOmitted;
           lines.push(`    Test output (${label})${omittedCount > 0 ? ` [${omittedCount} earlier line(s) omitted]` : ""}:`);
           for (const line of text.split("\n")) {
             lines.push(`      ${line}`);
@@ -636,15 +759,15 @@ export function renderJunitPlainText(data: JunitMarkdownData, maxFailuresPerPack
   return lines.join("\n") + "\n";
 }
 
-/** Recursively collect all TEST-*.xml files under `dir`. */
-function findXmlFiles(dir: string): Array<{ filename: string; xml: string }> {
-  const results: Array<{ filename: string; xml: string }> = [];
+/** Recursively collect the paths of all TEST-*.xml files under `dir`. */
+function findXmlPaths(dir: string): string[] {
+  const results: string[] = [];
   function walk(current: string): void {
     for (const entry of readdirSync(current, { withFileTypes: true })) {
       if (entry.isDirectory()) {
         walk(join(current, entry.name));
       } else if (entry.name.startsWith("TEST-") && entry.name.endsWith(".xml")) {
-        results.push({ filename: entry.name, xml: readFileSync(join(current, entry.name), "utf8") });
+        results.push(join(current, entry.name));
       }
     }
   }
@@ -652,10 +775,143 @@ function findXmlFiles(dir: string): Array<{ filename: string; xml: string }> {
   return results;
 }
 
+/**
+ * Read a report, discarding the middle of each `system-out`/`system-err` as it goes.
+ *
+ * Those sections are effectively all of a large report — one real run had a 385 MB report
+ * of which the structure was under a megabyte — so clipping them while streaming keeps
+ * every testcase while bounding memory. Reading such a file whole peaked at 2.4 GB;
+ * V8 also refuses strings past roughly 512 MB, so a slightly worse report would have
+ * thrown `Invalid string length` rather than degrading.
+ */
+function readXmlClippingOutput(path: string, retainPerEnd: number): string {
+  const OPEN = /<system-(out|err)\b[^>]*>/;
+  // Longest token we must not split across a chunk boundary.
+  const CARRY = 64;
+  const decoder = new StringDecoder("utf8");
+  const fd = openSync(path, "r");
+  const out: string[] = [];
+  let buf = "";
+  let inside: "out" | "err" | undefined;
+  let head = "";
+  let tail = "";
+  let dropped = 0;
+
+  const consume = (text: string): void => {
+    if (head.length < retainPerEnd) {
+      const room = retainPerEnd - head.length;
+      head += text.substring(0, room);
+      text = text.substring(room);
+    }
+    if (text.length === 0) return;
+    tail += text;
+    if (tail.length > retainPerEnd) {
+      const cut = tail.substring(0, tail.length - retainPerEnd);
+      dropped += cut.split("\n").length - 1;
+      tail = tail.substring(tail.length - retainPerEnd);
+    }
+  };
+  const closeSection = (): string => {
+    const body = dropped > 0 ? `${head}\n${STREAM_CLIP_SENTINEL}${dropped}@@\n${tail}` : head + tail;
+    head = "";
+    tail = "";
+    dropped = 0;
+    inside = undefined;
+    return body;
+  };
+
+  try {
+    const chunk = Buffer.alloc(1024 * 1024);
+    for (;;) {
+      const read = readSync(fd, chunk, 0, chunk.length, null);
+      const text = read > 0 ? decoder.write(chunk.subarray(0, read)) : decoder.end();
+      buf += text;
+      const atEof = read === 0;
+
+      for (;;) {
+        if (inside === undefined) {
+          const m = OPEN.exec(buf);
+          if (m && m.index !== undefined) {
+            out.push(buf.substring(0, m.index + m[0].length));
+            inside = m[1] as "out" | "err";
+            buf = buf.substring(m.index + m[0].length);
+            continue;
+          }
+          const keep = atEof ? 0 : Math.min(CARRY, buf.length);
+          out.push(buf.substring(0, buf.length - keep));
+          buf = buf.substring(buf.length - keep);
+          break;
+        }
+        const closeTag = `</system-${inside}>`;
+        const at = buf.indexOf(closeTag);
+        if (at !== -1) {
+          consume(buf.substring(0, at));
+          out.push(closeSection() + closeTag);
+          buf = buf.substring(at + closeTag.length);
+          continue;
+        }
+        const keep = atEof ? 0 : Math.min(CARRY, buf.length);
+        consume(buf.substring(0, buf.length - keep));
+        buf = buf.substring(buf.length - keep);
+        break;
+      }
+      if (atEof) {
+        if (inside !== undefined) out.push(closeSection());
+        else out.push(buf);
+        break;
+      }
+    }
+  } finally {
+    closeSync(fd);
+  }
+  return out.join("");
+}
+
+/** Read just the first `bytes` of a file, for reports too large to hold whole. */
+function readHead(path: string, bytes: number): string {
+  const fd = openSync(path, "r");
+  try {
+    const buf = Buffer.alloc(bytes);
+    const read = readSync(fd, buf, 0, bytes, 0);
+    return buf.subarray(0, read).toString("utf8");
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/**
+ * Yield one report at a time so only one is in memory at once, reading oversized ones by
+ * the head alone.
+ */
+function* readXmlFiles(paths: readonly string[]): Generator<{ filename: string; xml: string; oversizedBytes?: number }> {
+  for (const path of paths) {
+    const filename = basename(path);
+    let size: number;
+    try {
+      size = statSync(path).size;
+    } catch {
+      continue;
+    }
+    if (size > MAX_UNCLIPPED_PARSE_BYTES) {
+      // Clip stdout/stderr as the file is read, so every testcase survives at bounded cost.
+      const xml = readXmlClippingOutput(path, MAX_RETAINED_STREAM_BYTES);
+      // If the structure alone is still unreasonable the report is genuinely unusable, so
+      // fall back to counts only rather than risking the heap on it.
+      if (xml.length > MAX_FULL_PARSE_BYTES) {
+        yield { filename, xml: readHead(path, OVERSIZED_HEAD_BYTES), oversizedBytes: size };
+      } else {
+        yield { filename, xml };
+      }
+    } else {
+      yield { filename, xml: readFileSync(path, "utf8") };
+    }
+  }
+}
+
 /** Parse all TEST-*.xml files recursively under `dir`. Returns undefined if none found. */
 export function parseJunitDataFromDir(dir: string): JunitMarkdownData | undefined {
-  const files = findXmlFiles(dir);
-  return files.length === 0 ? undefined : parseJunitData(files);
+  const paths = findXmlPaths(dir);
+  return paths.length === 0 ? undefined : parseJunitData(readXmlFiles(paths));
 }
 
 /**
