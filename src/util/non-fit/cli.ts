@@ -12,7 +12,7 @@ import {
   formatFailureSummaryLine,
   type RunOutput,
 } from "./artifacts.js";
-import { installFitCliConsoleFormatting, printInvocationOnce, fitCliError, runScriptPrefix } from "./fit-cli-log.js";
+import { installFitCliConsoleFormatting, printInvocationOnce, fitCliError, fitCliInfo, runScriptPrefix } from "./fit-cli-log.js";
 import { startSessionLog, startDebugLog } from "./proc.js";
 import { ensurePromptSession } from "./replay.js";
 import { emitGhaArtifactNotice, appendArtifactFetchToGhaSummary } from "../../fit/util/gha.js";
@@ -40,16 +40,16 @@ async function renderRunSummary(runDir: string, runOutput: RunOutput): Promise<v
   ].filter(Boolean);
   const summaryOutput = sections.join("\n\n") || undefined;
   if (summaryOutput) {
-    console.log(`\n${summaryOutput}`);
+    fitCliInfo(`\n${summaryOutput}`);
   }
   for (const detail of runOutput.details ?? []) {
     if (detail.callToAction) {
-      console.log(`\n${formatCallToActionBanner(detail.label, detail.value)}`);
+      fitCliInfo(`\n${formatCallToActionBanner(detail.label, detail.value)}`);
     }
   }
   const s3Uri = await maybeUploadRunArtifacts(runDir);
   if (!s3Uri) {
-    console.log(`\nTo upload run artifacts to S3 (optional):\n  ${runScriptPrefix("archive")} s3-upload --zip ${runDir} s3://fit-cli/runs/`);
+    fitCliInfo(`\nTo upload run artifacts to S3 (optional):\n  ${runScriptPrefix("archive")} s3-upload --zip ${runDir} s3://fit-cli/runs/`);
   } else {
     appendArtifactFetchToGhaSummary(s3Uri);
   }
@@ -108,7 +108,7 @@ export function runCli(main: () => Promise<void | Partial<RunOutput>>): void {
     })
     .catch(async (err) => {
       if (err instanceof Error && err.name === "ExitPromptError") {
-        console.log("\nCancelled.");
+        fitCliInfo("\nCancelled.");
         await Promise.all([sessionLog.flush(), debugLog.flush()]);
         process.exit(0);
       }

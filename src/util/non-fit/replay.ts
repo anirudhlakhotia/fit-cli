@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { inspect } from "node:util";
-import { runScriptPrefix } from "./fit-cli-log.js";
+import { fitCliInfo, runScriptPrefix } from "./fit-cli-log.js";
 
 /**
  * Absolute path to the fit-cli repo root, derived from this file's location
@@ -329,8 +329,8 @@ export class PromptSession {
     if (replayFile) {
       const resolved = isAbsolute(replayFile) ? replayFile : resolve(process.cwd(), replayFile);
       const log = readPromptLog(resolved);
-      console.log(`ARTIFACT_DIR: ${runDir}`);
-      console.log(
+      fitCliInfo(`ARTIFACT_DIR: ${runDir}`);
+      fitCliInfo(
         `${replayDefaults ? "Replaying prompt log as defaults" : "Replaying prompt log"}: ${resolved}\n`,
       );
       return new PromptSession(
@@ -360,9 +360,9 @@ export class PromptSession {
       hooks,
     );
     session.persist();
-    console.log(`Artifacts from this run will be written to: ${runDir}`);
+    fitCliInfo(`Artifacts from this run will be written to: ${runDir}`);
     if (mode === "non-interactive") {
-      console.log("Running non-interactively with default answers.\n");
+      fitCliInfo("Running non-interactively with default answers.\n");
     }
     return session;
   }
