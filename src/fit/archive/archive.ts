@@ -21,6 +21,7 @@ import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { ZipArchive } from "archiver";
 import { Upload } from "@aws-sdk/lib-storage";
 import { s3Client } from "../../cloud/util/aws/aws-clients.js";
+import { checkAwsCredentials } from "../../cloud/util/aws/identity.js";
 import { uploadDirectoryToS3 } from "../../cloud/util/aws/upload-directory.js";
 import { isMain, runCli } from "../../util/non-fit/cli.js";
 import { runScriptPrefix } from "../../util/non-fit/fit-cli-log.js";
@@ -106,6 +107,11 @@ async function cmdZip(argv: string[]): Promise<void> {
 }
 
 async function cmdS3Upload(argv: string[]): Promise<void> {
+  const creds = await checkAwsCredentials();
+  if (!creds.ok) {
+    throw new Error(`AWS credentials are not usable: ${creds.message}`);
+  }
+
   const args = [...argv];
   const zipIdx = args.indexOf("--zip");
   const doZip = zipIdx !== -1;
@@ -168,6 +174,11 @@ export async function downloadFileFromS3(
 }
 
 async function cmdFetch(argv: string[]): Promise<void> {
+  const creds = await checkAwsCredentials();
+  if (!creds.ok) {
+    throw new Error(`AWS credentials are not usable: ${creds.message}`);
+  }
+
   const [s3Uri, outputDirArg, ...extra] = argv;
   if (!s3Uri || extra.length > 0) {
     console.error(`Usage: ${runScriptPrefix("archive")} fetch <s3-zip-uri> [<output-dir>]`);
