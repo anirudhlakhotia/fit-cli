@@ -29,6 +29,15 @@ export const GITHUB_AWS_SECRET_ID = "fit-cli/github/token";
  */
 export const ROSA_AWS_SECRET_ID = "fit-cli/rosa/openshift";
 
+/**
+ * AWS Secrets Manager secret carrying the Slack bot token used to post FIT run
+ * summaries to a Slack thread. Field: `token` (a `xoxb-…` bot token with
+ * chat:write). Resolved as a fallback when no `SLACK_BOT_TOKEN` env var is set —
+ * CI runs already assume fit-cli-role, so they read it here and no Slack secret
+ * needs to live in any GitHub Actions workflow.
+ */
+export const SLACK_AWS_SECRET_ID = "fit-cli/slack/token";
+
 /** Default OpenShift login user when the ROSA secret doesn't override it. */
 export const DEFAULT_ROSA_USERNAME = "cluster-admin";
 
@@ -579,6 +588,31 @@ export async function resolveGithubTokenWithSource(
     return { token, source: token ? "aws" : "none" };
   } catch {
     return { token: undefined, source: "none" };
+  }
+}
+
+/**
+ * Resolve the Slack bot token: the `SLACK_BOT_TOKEN` env var, else the `token`
+ * field of the {@link SLACK_AWS_SECRET_ID} AWS secret. Returns undefined when
+ * neither is available — Slack posting is always optional, so callers treat a
+ * missing token as "skip Slack", never as a run failure.
+ */
+export async function resolveSlackToken(
+  options: {
+    env?: NodeJS.ProcessEnv;
+    fetchSecret?: (secretId: string) => Promise<Record<string, string>>;
+  } = {},
+): Promise<string | undefined> {
+  const env = options.env ?? process.env;
+  const fromEnv = env.SLACK_BOT_TOKEN?.trim();
+  if (fromEnv) return fromEnv;
+
+  try {
+    const fetchSecret = options.fetchSecret ?? getJsonSecret;
+    const secret = await fetchSecret(SLACK_AWS_SECRET_ID);
+    return secret.token?.trim() || undefined;
+  } catch {
+    return undefined;
   }
 }
 

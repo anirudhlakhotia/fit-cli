@@ -58,6 +58,7 @@ import { confirm, select } from "../../../util/non-fit/prompts.js";
 import { DEFAULT_CAPELLA_ENV, resolveCapellaConfig, resolveFitPerformerDir, resolveGithubCredentials, resolveResultsDbCredentials, resolveRosaCredentials } from "../../util/config.js";
 import { terminateInstanceCommand } from "../../util/aws/lifecycle-warning.js";
 import { maybeUploadRunArtifacts } from "../../util/aws/upload-run-artifacts.js";
+import { postRunSummaryToSlack } from "../../slack/post-run-summary.js";
 import { AWS_REGION } from "../../../cloud/util/aws/aws-target.js";
 import { deleteVpcEndpointsForCluster } from "../../../cloud/util/aws/delete-vpc-endpoints.js";
 import { checkAwsCredentials, type AwsCredentials } from "../../../cloud/util/aws/identity.js";
@@ -1694,6 +1695,12 @@ export interface RunFromDefinitionOptions {
   resumeSelector?: ResumeSelector;
   cbcollect?: boolean;
   /**
+   * A Slack thread reference (permalink / channel:ts / p-number / ts). When set, a
+   * run summary is posted as a threaded reply once the run finishes. Best-effort:
+   * a Slack failure warns but never affects the run's outcome or exit code.
+   */
+  slackThread?: string;
+  /**
    * Disambiguator appended to prompt ids that are issued once per runFromDefinition
    * call. When a preset group runs several presets in one process (see run.ts), each
    * call would otherwise reuse the same fixed prompt id (e.g. the teardown leave-up
@@ -1709,7 +1716,7 @@ export async function runFromDefinition(
   options: RunFromDefinitionOptions = {},
 ): Promise<RunOutput> {
   const tracker = new RunFailureTracker();
-  const { resumeAt, resumeSelector = {}, cbcollect = false, promptScope } = options;
+  const { resumeAt, resumeSelector = {}, cbcollect = false, slackThread, promptScope } = options;
   const phases = phasesForResumePoint(resumeAt);
   const definition = loadDefinition(definitionPath);
   const resolved = resolveDefinition(definition);
@@ -2452,6 +2459,16 @@ export async function runFromDefinition(
     // Best-effort: ship the run's artifacts to S3 after teardown (so anything
     // teardown writes is included). Runs only inside GitHub Actions; never throws.
     await maybeUploadRunArtifacts(runDir);
+  }
+  // Best-effort Slack summary into the supplied thread. Never throws (see the hard
+  // rule in post-run-summary.ts) so it can't affect the run's outcome or exit code.
+  if (slackThread) {
+    await postRunSummaryToSlack({
+      slackThread,
+      title: definition.description || basename(definitionPath),
+      results: runResults,
+      passed: tracker.worst === undefined && runResults.every((r) => r.ok),
+    });
   }
   return finalizeRunFromDefinition(artifacts, details, runDir, tracker.worst, tracker.failureCount);
 }
