@@ -814,8 +814,8 @@ export async function runTests(
     captureCommand: (command, args) => execution.capture(command, args),
     dockerCommand: execution.dockerCommand,
   });
-  artifacts.push(...performerSanity.artifacts);
-  if (!performerSanity.ok) {
+  artifacts.push(...(performerSanity?.artifacts ?? []));
+  if (!performerSanity?.ok) {
     throwFatalToSession("Performer cluster sanity check failed; stopping this iteration.");
   }
 

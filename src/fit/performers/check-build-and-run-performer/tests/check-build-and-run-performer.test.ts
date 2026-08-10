@@ -13,7 +13,6 @@ test("checkBuildAndRunPerformerArgs runs the prebuilt GHCR image on the default 
   assert.deepEqual(checkBuildAndRunPerformerArgs(sdk), [
     "run",
     "--detach",
-    "--rm",
     "--publish",
     `${DEFAULT_PERFORMER_PORT}:${DEFAULT_PERFORMER_PORT}`,
     "ghcr.io/couchbase/java-fit-performer:main",
@@ -26,7 +25,6 @@ test("checkBuildAndRunPerformerArgs publishes a custom host port for tagged imag
   assert.deepEqual(checkBuildAndRunPerformerArgs(sdk, "4.2.0", 18060), [
     "run",
     "--detach",
-    "--rm",
     "--publish",
     "18060:8060",
     "ghcr.io/couchbase/cxx-fit-performer:4.2.0",
@@ -39,7 +37,6 @@ test("checkBuildAndRunPerformerArgs can attach the performer to a Docker network
   assert.deepEqual(checkBuildAndRunPerformerArgs(sdk, undefined, DEFAULT_PERFORMER_PORT, "fit-net"), [
     "run",
     "--detach",
-    "--rm",
     "--network",
     "fit-net",
     "--publish",
