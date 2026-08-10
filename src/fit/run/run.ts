@@ -58,8 +58,8 @@ function buildHelp(): string {
   return `Run FIT tests from a preset or a definition file.
 
 Usage:
-  ${run} preset <preset>[,<preset>...] --performer <image> [--env-override <path>=<value>] [resume flags] [--cbcollect]
-  ${run} definition <file.json5> [--override <dotpath>=<value>] [--resume-at=<point>] [resume selectors] [--cbcollect]
+  ${run} preset <preset>[,<preset>...] --performer <image> [--env-override <path>=<value>] [resume flags] [--cbcollect] [--slack-thread <ref>]
+  ${run} definition <file.json5> [--override <dotpath>=<value>] [--resume-at=<point>] [resume selectors] [--cbcollect] [--slack-thread <ref>]
   ${run} --help
 
 Subcommands:
@@ -77,6 +77,11 @@ Shared options (both subcommands):
   --repo-dir <repo>=<path>         Override, for this run only, where a local repo checkout lives —
                                   normally set once via \`${runScriptPrefix("config")} edit\` (repeatable).
                                   e.g. --repo-dir transactions-fit-performer=/path/to/checkout
+  --slack-thread <ref>            Post a run summary as a reply into a Slack thread. <ref> is a message
+                                  permalink, channel:ts (C0123:1720000000.123456), a p-number, or a bare ts.
+                                  The FIT bot must be a member of the target channel. Needs a bot token via
+                                  SLACK_BOT_TOKEN or the fit-cli/slack/token AWS secret; best-effort — a
+                                  Slack failure warns but never fails the run.
 
 preset options:
   --performer <image>             SDK-specific performer image ref (e.g. java-fit-performer:refs-changes-67-246067-3 or ghcr.io/couchbase/java-fit-performer:refs-changes-67-246067-3). Alias: --performer-image-name.
@@ -136,6 +141,27 @@ function extractKeyValueFlag(
     }
   }
   return { values, positionals };
+}
+
+/**
+ * Pull `--slack-thread <ref>` (or `--slack-thread=<ref>`) out of an argv list. The
+ * ref points at a Slack thread to post the run summary into: a message permalink,
+ * `channel:ts`, a p-number, or a bare `ts`.
+ */
+function extractSlackThreadFlag(argv: readonly string[]): { slackThread?: string; positionals: string[] } {
+  const positionals: string[] = [];
+  let slackThread: string | undefined;
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === "--slack-thread") {
+      slackThread = argv[++i];
+    } else if (arg.startsWith("--slack-thread=")) {
+      slackThread = arg.slice("--slack-thread=".length);
+    } else {
+      positionals.push(arg);
+    }
+  }
+  return { slackThread, positionals };
 }
 
 /** Pull `--override key=value` entries out of an argv list (repeatable). */
@@ -208,7 +234,8 @@ function extractPerformerImageName(argv: readonly string[]): { performerImageNam
 function extractRunOptions(argv: readonly string[]): { runOpts: RunFromDefinitionOptions; positionals: string[] } {
   const { resumeAt, positionals: afterResume } = extractResumeAt(argv);
   const { selector: resumeSelector, positionals: afterSelector } = extractResumeSelector(afterResume);
-  const { cbcollect, positionals } = extractCbcollectFlag(afterSelector);
+  const { cbcollect, positionals: afterCbcollect } = extractCbcollectFlag(afterSelector);
+  const { slackThread, positionals } = extractSlackThreadFlag(afterCbcollect);
   let resumePoint;
   try {
     resumePoint = parseResumePoint(resumeAt);
@@ -216,7 +243,12 @@ function extractRunOptions(argv: readonly string[]): { runOpts: RunFromDefinitio
     console.error((err as Error).message);
     process.exit(2);
   }
-  const runOpts = { ...(resumePoint ? { resumeAt: resumePoint } : {}), resumeSelector, ...(cbcollect ? { cbcollect } : {}) };
+  const runOpts = {
+    ...(resumePoint ? { resumeAt: resumePoint } : {}),
+    resumeSelector,
+    ...(cbcollect ? { cbcollect } : {}),
+    ...(slackThread ? { slackThread } : {}),
+  };
   return { runOpts, positionals };
 }
 

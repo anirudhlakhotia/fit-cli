@@ -35,6 +35,10 @@ on:
         description: Build cbdinocluster from this couchbaselabs/cbdinocluster PR number instead of installing the latest release.
         type: string
         default: ""
+      slack_thread:
+        description: 'Optional: Slack thread to post a run summary into (a message permalink or channel:ts). The FIT bot must be a member of that channel.'
+        type: string
+        default: ""
   workflow_call:
     inputs:
       preset:
@@ -68,6 +72,10 @@ on:
         default: ""
       cbdinocluster_pr:
         description: Build cbdinocluster from this couchbaselabs/cbdinocluster PR number instead of installing the latest release.
+        type: string
+        default: ""
+      slack_thread:
+        description: 'Optional: Slack thread to post a run summary into (a message permalink or channel:ts). The FIT bot must be a member of that channel.'
         type: string
         default: ""
 
@@ -119,6 +127,7 @@ jobs:
           PRESET: ${{ matrix.preset }}
           PERFORMER: ${{ inputs.performer }}
           COLLECT_EXTRA_DIAGNOSTICS: ${{ inputs.collect_extra_diagnostics }}
+          SLACK_THREAD: ${{ inputs.slack_thread || '' }}
         run: |
           curl -fsSL https://raw.githubusercontent.com/couchbaselabs/fit-cli/main/install.sh | CHANNEL="$CHANNEL" bash
           args=(preset "$PRESET" --performer "$PERFORMER")
@@ -130,6 +139,11 @@ jobs:
           fi
           if [ -n "$CBDINOCLUSTER_PR" ]; then
             args+=(--override "setup.cbdinocluster.source.git.pr=$CBDINOCLUSTER_PR")
+          fi
+          # When set, fit-cli posts a run summary into this Slack thread. Best-effort:
+          # a Slack failure warns but never fails the run.
+          if [ -n "$SLACK_THREAD" ]; then
+            args+=(--slack-thread "$SLACK_THREAD")
           fi
 
           fit run "${args[@]}"
