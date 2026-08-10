@@ -27,6 +27,16 @@ import { checkRunningPerformer, stopRunningPerformer } from "../check-running-pe
 export { DEFAULT_PERFORMER_PORT } from "../util/performer-port.js";
 import { DEFAULT_PERFORMER_PORT, type PortInUsePolicy } from "../util/performer-port.js";
 
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+// How long we watch a freshly-started container for an immediate crash before
+// declaring it up. The container is never started with --rm, so it sticks
+// around either way — this just decides how long we wait before reporting the
+// crash to the user rather than letting it surface later as a confusing
+// "no such container" sanity-check failure.
+const STARTUP_CRASH_CHECK_INTERVAL_MS = 250;
+const STARTUP_CRASH_CHECK_TOTAL_MS = 2000;
+
 /** Normalize a performer tag into a filesystem-safe log-file component. */
 function tagLogComponent(version?: string): string {
   return (
@@ -75,7 +85,6 @@ export function checkBuildAndRunPerformerArgs(
   return [
     "run",
     "--detach",
-    "--rm",
     ...(dockerNetwork ? ["--network", dockerNetwork] : []),
     "--publish",
     `${hostPort}:${DEFAULT_PERFORMER_PORT}`,
@@ -175,6 +184,38 @@ export async function checkBuildAndRunPerformer(
       ["logs", "--follow", "--timestamps", containerId],
       targetLogFile,
     );
+
+    // Watch for a container that crashes right on startup (e.g. an incompatible
+    // CPU under Rosetta emulation). Without --rm the container isn't torn down
+    // out from under us, so the logs above and the inspect below both still see
+    // it even if it already exited.
+    let exitedEarly = false;
+    for (let waited = 0; waited < STARTUP_CRASH_CHECK_TOTAL_MS; waited += STARTUP_CRASH_CHECK_INTERVAL_MS) {
+      await sleep(STARTUP_CRASH_CHECK_INTERVAL_MS);
+      const running = await execution
+        .capture(execution.dockerCommand, ["inspect", "--format", "{{.State.Running}}", containerId])
+        .then((out) => out.trim() === "true")
+        .catch(() => true); // if inspect itself fails, don't second-guess a running container
+      if (!running) {
+        exitedEarly = true;
+        break;
+      }
+    }
+
+    if (exitedEarly) {
+      const exitCode = await execution
+        .capture(execution.dockerCommand, ["inspect", "--format", "{{.State.ExitCode}}", containerId])
+        .then((out) => out.trim())
+        .catch(() => "unknown");
+      await logStream.drain();
+      const collectedPath = await execution.collectFile(targetLogFile, logFile).catch(() => logFile);
+      await execution.run(execution.dockerCommand, ["rm", containerId]).catch(() => {});
+      console.error(
+        `\n✗ The ${sdk.name} performer container exited immediately (exit code ${exitCode}) instead of staying up. See the captured logs:\n  ${collectedPath}`,
+      );
+      return undefined;
+    }
+
     return {
       containerId,
       logFile,
@@ -214,6 +255,15 @@ export async function stopManagedPerformer(
     console.log(`\n✓ Stopped performer container ${performer.containerId}`);
   } catch (err) {
     console.error(`\n✗ Failed to stop performer container ${performer.containerId}: ${(err as Error).message}`);
+  }
+
+  // We no longer run the container with --rm (that raced its own crash logs and
+  // sanity checks — see checkBuildAndRunPerformerArgs), so it isn't auto-removed
+  // on stop. Clean it up ourselves now that we're done with it.
+  try {
+    await execution.run(execution.dockerCommand, ["rm", performer.containerId]);
+  } catch (err) {
+    console.error(`\n✗ Failed to remove performer container ${performer.containerId}: ${(err as Error).message}`);
   }
 
   if (performer.logFile) {

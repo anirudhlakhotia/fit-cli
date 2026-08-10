@@ -341,7 +341,6 @@ export function remotePerformerArgs(
   return [
     "run",
     "--detach",
-    "--rm",
     "--add-host",
     REMOTE_DOCKER_HOST_ALIAS,
     ...(dockerNetwork ? ["--network", dockerNetwork] : []),
@@ -422,7 +421,6 @@ export function createLocalFitExecutionContext(): FitExecutionContext {
     performerRunArgs: (imageName, hostPort = DEFAULT_PERFORMER_PORT, dockerNetwork) => [
       "run",
       "--detach",
-      "--rm",
       "--add-host",
       REMOTE_DOCKER_HOST_ALIAS,
       ...(dockerNetwork ? ["--network", dockerNetwork] : []),

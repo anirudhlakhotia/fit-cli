@@ -41,7 +41,6 @@ test("createLocalFitExecutionContext builds local docker run args with host-gate
   assert.deepEqual(execution.performerRunArgs("performer-node-main"), [
     "run",
     "--detach",
-    "--rm",
     "--add-host",
     "host.docker.internal:host-gateway",
     "--publish",
@@ -57,7 +56,6 @@ test("createLocalFitExecutionContext can attach the performer to a cluster Docke
   assert.deepEqual(execution.performerRunArgs("performer-node-main", 8060, "fit-net"), [
     "run",
     "--detach",
-    "--rm",
     "--add-host",
     "host.docker.internal:host-gateway",
     "--network",
@@ -74,7 +72,6 @@ test("remotePerformerArgs add the host-gateway alias and can join a Docker netwo
   assert.deepEqual(remotePerformerArgs("performer-node-main", 8060, "fit-net"), [
     "run",
     "--detach",
-    "--rm",
     "--add-host",
     "host.docker.internal:host-gateway",
     "--network",
