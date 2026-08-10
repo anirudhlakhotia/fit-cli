@@ -28,6 +28,7 @@ function collectExecutor(opts: { collectFails?: boolean } = {}): ClusterCommandE
       }
       return Promise.resolve();
     },
+    runHiddenUntilFailure: () => Promise.resolve(),
     capture: (_command, args) =>
       args.includes("-1") ? Promise.resolve("node1.zip\nnode2.zip\n") : Promise.resolve(""),
     streamToTerminalAndFile: () => Promise.resolve(),

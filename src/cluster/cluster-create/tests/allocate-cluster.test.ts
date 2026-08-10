@@ -24,6 +24,7 @@ function fakeExecutor(): ClusterCommandExecutor & { capturedArgs: string[] } {
     description: "fake",
     capturedArgs: [] as string[],
     run: () => Promise.resolve(),
+    runHiddenUntilFailure: () => Promise.resolve(),
     capture: () => Promise.resolve(""),
     streamToTerminalAndFile: (_command: string, args: string[], targetPath: string) => {
       executor.capturedArgs = args;

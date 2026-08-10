@@ -16,7 +16,7 @@ import { artifactFromPath, type RunOutput, type Artifact } from "../../util/non-
 import { isMain, runCli } from "../../util/non-fit/cli.js";
 import { input } from "../../util/non-fit/prompts.js";
 import { formatCommandLine, printFileContent } from "../../util/non-fit/fit-cli-log.js";
-import { capture, run, type RunOptions } from "../../util/non-fit/proc.js";
+import { capture, run, runHiddenUntilFailure, type RunOptions } from "../../util/non-fit/proc.js";
 import { ensureRunDir } from "../../util/non-fit/replay.js";
 import { posixQuote, teeToFileCommand } from "../../util/non-fit/remote-target.js";
 import { findOnPath } from "../../util/non-fit/which.js";
@@ -56,6 +56,8 @@ export interface ClusterCommandExecutor {
   readonly description: string;
   run(command: string, args: string[], cwd?: string, opts?: RunOptions): Promise<void>;
   capture(command: string, args: string[], cwd?: string, opts?: RunOptions): Promise<string>;
+  /** L2 HiddenUntilFailure — see {@link FitExecutionContext.runHiddenUntilFailure}. */
+  runHiddenUntilFailure(command: string, args: string[], cwd?: string, opts?: RunOptions): Promise<void>;
   /** L1 StreamToTerminal + saved-to-file — see {@link FitExecutionContext.streamToTerminalAndFile}. */
   streamToTerminalAndFile(command: string, args: string[], targetPath: string, cwd?: string): Promise<void>;
   targetFilePath(localPath: string): string;
@@ -70,6 +72,7 @@ export function localClusterCommandExecutor(): ClusterCommandExecutor {
     description: "this machine",
     run,
     capture,
+    runHiddenUntilFailure,
     streamToTerminalAndFile: (command, args, targetPath, cwd) => {
       mkdirSync(dirname(targetPath), { recursive: true, mode: 0o700 });
       // Stream live to the terminal (LogType1) AND save to the file for artifact

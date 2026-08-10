@@ -66,6 +66,7 @@ function executor(): ClusterCommandExecutor {
   return {
     description: "test target",
     run: () => Promise.resolve(),
+    runHiddenUntilFailure: () => Promise.resolve(),
     capture: () => Promise.resolve(""),
     streamToTerminalAndFile: () => Promise.resolve(),
     targetFilePath: (path) => path,

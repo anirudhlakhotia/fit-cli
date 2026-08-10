@@ -245,8 +245,11 @@ export async function runCbdinoclusterInit(
   // block disabled and `cbdinocluster allocate --deployer cloud` later fatals with
   // "no deployers"). `execution.run` would otherwise ssh in non-login. The
   // credentials are kept out of the echoed command via `display`.
+  // Hidden unless it fails: the SSH transport itself can print unrelated
+  // diagnostics on stderr (e.g. a cloud provider's OS Login banner naming the
+  // account), which we don't want streamed live for every init.
   const initCmdline = [cbdinocluster, "init", ...initArgs, ...credArgs].map(posixQuote).join(" ");
-  await execution.run("bash", ["-lc", initCmdline], undefined, {
+  await execution.runHiddenUntilFailure("bash", ["-lc", initCmdline], undefined, {
     display: `cbdinocluster init ${args}`,
   });
   const network = dockerNetworkFromInitArgs(args);
@@ -389,7 +392,7 @@ async function listExistingClusters(
         `initializing a default one with \`${cbdinocluster} init --auto\`.`,
     );
     try {
-      await execution.run(cbdinocluster, ["init", "--auto"]);
+      await execution.runHiddenUntilFailure(cbdinocluster, ["init", "--auto"]);
     } catch (initErr) {
       console.error(`\n✗ setup-cluster: couldn't initialize cbdinocluster: ${(initErr as Error).message}`);
       return undefined;
