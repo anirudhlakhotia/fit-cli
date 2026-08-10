@@ -27,6 +27,10 @@ function executor(): ClusterCommandExecutor & {
       runCalls.push({ command, args });
       return Promise.resolve();
     },
+    runHiddenUntilFailure: (command, args) => {
+      runCalls.push({ command, args });
+      return Promise.resolve();
+    },
     capture: (_command, args) => {
       if (args[0] === "ps") {
         psCalls += 1;
@@ -68,6 +72,7 @@ function configReadingExecutor(config: string): ClusterCommandExecutor & { kind:
     kind: "remote",
     description: "remote host",
     run: () => Promise.resolve(),
+    runHiddenUntilFailure: () => Promise.resolve(),
     capture: () => Promise.resolve(config),
     streamToTerminalAndFile: () => Promise.resolve(),
     targetFilePath: (path) => path,
@@ -103,6 +108,10 @@ function initAwareExecutor(): ClusterCommandExecutor & {
     runCalls,
     stagedFiles,
     run: (command, args) => {
+      runCalls.push({ command, args });
+      return Promise.resolve();
+    },
+    runHiddenUntilFailure: (command, args) => {
       runCalls.push({ command, args });
       // init now runs through a login shell (`bash -lc "cbdinocluster init …"`)
       // so it sources ~/.profile and inherits the forwarded CAPELLA_*/AWS_* vars.
