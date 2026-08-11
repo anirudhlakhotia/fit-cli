@@ -231,14 +231,23 @@ function capellaConfigScript(capella: ResolvedCapellaConfig): string {
   // The env var names cbdinocluster's `init` reads (see its cmd/init.go). With
   // CAPELLA_USER present, `init --auto` enables Capella and fills the block from
   // these; the situational init args leave Capella enabled for exactly this.
-  return (
-    [
-      `export CAPELLA_USER=${posixQuote(capella.username ?? "")}`,
-      `export CAPELLA_ENDPOINT=${posixQuote(capella.endpoint)}`,
-      `export CAPELLA_OID=${posixQuote(capella.organizationId)}`,
-      `export CAPELLA_PASS=${posixQuote(capella.password)}`,
-    ].join("\n") + "\n"
-  );
+  const lines = [
+    `export CAPELLA_USER=${posixQuote(capella.username ?? "")}`,
+    `export CAPELLA_ENDPOINT=${posixQuote(capella.endpoint)}`,
+    `export CAPELLA_OID=${posixQuote(capella.organizationId)}`,
+    `export CAPELLA_PASS=${posixQuote(capella.password)}`,
+  ];
+  // Optional: only present for environments the Capella team has issued them for
+  // (currently just "dev"). Both have env-var fallbacks in cbdinocluster's `init`,
+  // unlike --upload-server-logs-host-name (which has none, so it's passed as an
+  // explicit init flag instead — see default-cbdinocluster-init-config.ts).
+  if (capella.internalSupportToken) {
+    lines.push(`export CAPELLA_INTERNAL_SUPPORT_TOKEN=${posixQuote(capella.internalSupportToken)}`);
+  }
+  if (capella.overrideToken) {
+    lines.push(`export CAPELLA_OVERRIDE_TOKEN=${posixQuote(capella.overrideToken)}`);
+  }
+  return lines.join("\n") + "\n";
 }
 
 /**

@@ -20,6 +20,7 @@ import {
   type ClusterCommandExecutor,
 } from "../cluster-create/allocate-cluster.js";
 import { ensureCbdinocluster } from "../cluster-create/ensure-cbdinocluster.js";
+import { DEFAULT_CAPELLA_ENV, capellaLogCollectionAvailable } from "../../fit/util/config.js";
 
 /** Build the `cbdinocluster collect-logs <id> <dest-path>` args. */
 export function collectLogsArgs(id: string, destPath: string): string[] {
@@ -69,6 +70,46 @@ export async function collectClusterLogs(
     console.error(`\n✗ Failed to collect diagnostics for ${id}: ${(err as Error).message}`);
     return false;
   }
+}
+
+/**
+ * Like {@link collectClusterLogs}, but for a Capella-cloud cluster (one with
+ * `couchbaseClusterUuid` set) first checks whether the cluster's Capella environment
+ * actually has cbcollect support configured (see `capellaLogCollectionAvailable`) —
+ * cbdinocluster's internal-support API fails outright without an internal support
+ * token, which the Capella team can currently only issue for "dev". Skips with an
+ * explanatory message instead of attempting and failing when it's not configured.
+ * Docker/CNG clusters (no `couchbaseClusterUuid`) are unaffected and always attempt
+ * collection, as before.
+ */
+export async function collectClusterLogsIfSupported(
+  clusterState: {
+    cbdinoclusterCommand?: string;
+    clusterId?: string;
+    logsDir?: string;
+    couchbaseClusterUuid?: string;
+    capellaEnvironment?: string;
+  },
+  execution: ClusterCommandExecutor,
+  options: { checkAvailable?: (block: string) => Promise<boolean> } = {},
+): Promise<boolean> {
+  const checkAvailable = options.checkAvailable ?? capellaLogCollectionAvailable;
+  const { cbdinoclusterCommand, clusterId, logsDir, couchbaseClusterUuid } = clusterState;
+  if (!cbdinoclusterCommand || !clusterId || !logsDir) {
+    return false;
+  }
+  if (couchbaseClusterUuid !== undefined) {
+    const capellaEnvironment = clusterState.capellaEnvironment ?? DEFAULT_CAPELLA_ENV;
+    if (!(await checkAvailable(capellaEnvironment))) {
+      console.log(
+        `\nSkipping cluster diagnostics for ${clusterId}: Capella environment "${capellaEnvironment}" has no ` +
+          `internal support token configured (only "dev" does) — cbdinocluster can't collect logs from a ` +
+          `Capella cluster without one.`,
+      );
+      return false;
+    }
+  }
+  return collectClusterLogs(cbdinoclusterCommand, clusterId, logsDir, execution);
 }
 
 if (isMain(import.meta.url)) {

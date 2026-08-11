@@ -470,6 +470,12 @@ export interface SetupDeclarativeClusterResult extends RunOutput {
    * `couchbaseClusterUuid` alone, since that's now set for every cloud cluster.
    */
   privateEndpointEnabled?: boolean;
+  /**
+   * The Capella environment this cluster was allocated against, present alongside
+   * `couchbaseClusterUuid` for `cloud`-deployer clusters. Lets teardown check
+   * whether cbcollect is supported for this environment before attempting it.
+   */
+  capellaEnvironment?: string;
 }
 
 const FAILED = (extra: Partial<SetupDeclarativeClusterResult> = {}): SetupDeclarativeClusterResult => ({
@@ -1037,6 +1043,7 @@ async function allocate(
     clusterId: allocated.clusterId,
     cbdinocluster,
     ...(couchbaseClusterUuid ? { couchbaseClusterUuid } : {}),
+    ...(deployer === "cloud" && capellaEnvironment ? { capellaEnvironment } : {}),
     // Only true when PE was actually set up this run — gates whether teardown should
     // also attempt to delete a VPC endpoint. `couchbaseClusterUuid` alone isn't enough:
     // it's now populated for every cloud cluster, not just PE ones.

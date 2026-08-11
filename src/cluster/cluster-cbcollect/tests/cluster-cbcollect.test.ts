@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import type { ClusterCommandExecutor } from "../../cluster-create/allocate-cluster.js";
-import { collectClusterLogs, collectLogsArgs } from "../cluster-cbcollect.js";
+import { collectClusterLogs, collectClusterLogsIfSupported, collectLogsArgs } from "../cluster-cbcollect.js";
 
 test("collectLogsArgs builds the cbdinocluster collect-logs invocation", () => {
   assert.deepEqual(collectLogsArgs("abc123", "/tmp/logs"), ["collect-logs", "abc123", "/tmp/logs"]);
@@ -74,6 +74,62 @@ test("collectClusterLogs is best effort — a collect failure resolves false wit
     const ok = await collectClusterLogs("cbdinocluster", "abc123", logsDir, execution);
     assert.equal(ok, false);
     assert.equal(execution.collectedFiles.length, 0);
+  } finally {
+    rmSync(logsDir, { recursive: true, force: true });
+  }
+});
+
+test("collectClusterLogsIfSupported skips a Capella cluster when the environment has no support configured", async () => {
+  const execution = collectExecutor();
+  let checked: string | undefined;
+  const ok = await collectClusterLogsIfSupported(
+    {
+      cbdinoclusterCommand: "cbdinocluster",
+      clusterId: "abc123",
+      logsDir: "/tmp/whatever",
+      couchbaseClusterUuid: "cluster-uuid",
+      capellaEnvironment: "prod",
+    },
+    execution,
+    { checkAvailable: (block) => { checked = block; return Promise.resolve(false); } },
+  );
+  assert.equal(ok, false);
+  assert.equal(checked, "prod");
+  // Never attempted collect-logs at all.
+  assert.deepEqual(execution.runCalls, []);
+});
+
+test("collectClusterLogsIfSupported collects a Capella cluster when the environment has support configured", async () => {
+  const execution = collectExecutor();
+  const logsDir = mkdtempSync(join(tmpdir(), "fit-cbcollect-"));
+  try {
+    const ok = await collectClusterLogsIfSupported(
+      {
+        cbdinoclusterCommand: "cbdinocluster",
+        clusterId: "abc123",
+        logsDir,
+        couchbaseClusterUuid: "cluster-uuid",
+        capellaEnvironment: "dev",
+      },
+      execution,
+      { checkAvailable: () => Promise.resolve(true) },
+    );
+    assert.equal(ok, true);
+  } finally {
+    rmSync(logsDir, { recursive: true, force: true });
+  }
+});
+
+test("collectClusterLogsIfSupported always collects a non-Capella (docker/CNG) cluster, unaffected by support checks", async () => {
+  const execution = collectExecutor();
+  const logsDir = mkdtempSync(join(tmpdir(), "fit-cbcollect-"));
+  try {
+    const ok = await collectClusterLogsIfSupported(
+      { cbdinoclusterCommand: "cbdinocluster", clusterId: "abc123", logsDir },
+      execution,
+      { checkAvailable: () => { throw new Error("should not be called for a non-Capella cluster"); } },
+    );
+    assert.equal(ok, true);
   } finally {
     rmSync(logsDir, { recursive: true, force: true });
   }

@@ -72,7 +72,7 @@ import { printClusterUiAccess } from "../../../cluster/cluster-diag/cluster-ui-l
 import { prepareCbdinoclusterInit, remoteCbdinoclusterCloudEnabled, removeCluster, setupDeclarativeCluster } from "../../../cluster/cluster-create/setup-declarative-cluster.js";
 import { capellaFunctionalCbdinoclusterInitArgs, capellaAnalyticsCbdinoclusterInitArgs, situationalCbdinoclusterInitArgs } from "../../../cluster/cluster-create/default-cbdinocluster-init-config.js";
 import { isAlias, resolveAlias } from "../../../cluster/cluster-create/cb-alias.js";
-import { collectClusterLogs } from "../../../cluster/cluster-cbcollect/cluster-cbcollect.js";
+import { collectClusterLogsIfSupported } from "../../../cluster/cluster-cbcollect/cluster-cbcollect.js";
 import { installCbdinoclusterRemote } from "../../../cluster/cluster-create/install-cbdinocluster.js";
 import {
   buildRemoteK8sBlock,
@@ -654,6 +654,7 @@ export async function setupCluster(
           logsDir: join(clusterDir, "server-logs"),
           ...(outcome.couchbaseClusterUuid ? { couchbaseClusterUuid: outcome.couchbaseClusterUuid } : {}),
           ...(outcome.privateEndpointEnabled ? { privateEndpointEnabled: true } : {}),
+          ...(outcome.capellaEnvironment ? { capellaEnvironment: outcome.capellaEnvironment } : {}),
         }
       : undefined;
     return {
@@ -1403,7 +1404,7 @@ async function disposeGroupClusterAndPerformers(
   popLogContext("performer", "run");
   if (clusterState?.allocated && clusterState.clusterId && clusterState.cbdinoclusterCommand) {
     if (clusterState.logsDir && cbcollect) {
-      await collectClusterLogs(clusterState.cbdinoclusterCommand, clusterState.clusterId, clusterState.logsDir, execution);
+      await collectClusterLogsIfSupported(clusterState, execution);
     }
     await removeCluster(clusterState.cbdinoclusterCommand, clusterState.clusterId, execution);
     if (clusterState.privateEndpointEnabled && clusterState.couchbaseClusterUuid) {
@@ -1603,7 +1604,7 @@ async function teardownRun(inputs: TeardownInputs): Promise<{ leftUp: boolean }>
     popLogContext("performer", "run");
     if (clusterState?.allocated && clusterState.clusterId && clusterState.cbdinoclusterCommand) {
       if (clusterState.logsDir && cbcollect) {
-        await collectClusterLogs(clusterState.cbdinoclusterCommand, clusterState.clusterId, clusterState.logsDir, execution);
+        await collectClusterLogsIfSupported(clusterState, execution);
       }
       await removeCluster(clusterState.cbdinoclusterCommand, clusterState.clusterId, execution);
       if (clusterState.privateEndpointEnabled && clusterState.couchbaseClusterUuid) {
@@ -2150,7 +2151,13 @@ export async function runFromDefinition(
               ...functionalCycle,
               cbdinocluster: {
                 ...functionalCycle.cbdinocluster!,
-                init: { args: capellaFunctionalCbdinoclusterInitArgs(capellaSetup.cloudProvider, undefined, capellaSetup.privateEndpoint !== undefined) },
+                init: {
+                  args: capellaFunctionalCbdinoclusterInitArgs(
+                    capellaSetup.cloudProvider,
+                    undefined,
+                    capellaSetup.privateEndpoint !== undefined,
+                  ),
+                },
                 deployer: "cloud",
               },
             };

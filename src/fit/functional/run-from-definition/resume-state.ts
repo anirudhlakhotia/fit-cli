@@ -55,6 +55,13 @@ export interface ResumeClusterState {
    * populated for every cloud cluster.
    */
   privateEndpointEnabled?: boolean;
+  /**
+   * The Capella environment ("dev"/"prod"/…) this cluster was created against, when
+   * `couchbaseClusterUuid` is set. Used at teardown to check whether cbcollect is
+   * supported for this environment (see `capellaLogCollectionAvailable`) before
+   * attempting it.
+   */
+  capellaEnvironment?: string;
 }
 
 /** A performer a previous run left running, per run. */
