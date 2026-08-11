@@ -7,8 +7,10 @@ import {
   TICK,
   UNKNOWN,
   capCell,
+  formatCapFocusReport,
   formatCapGroupTable,
   reportedNumbers,
+  summariseCapSupport,
   unknownCapNumbers,
   type CapsFetchResult,
 } from "../caps-table.js";
@@ -115,6 +117,27 @@ describe("formatCapGroupTable", () => {
       order[0] < order[1] && order[1] < order[2],
       `expected descending-by-number order, got positions ${order.join(", ")}`,
     );
+  });
+});
+
+describe("summariseCapSupport", () => {
+  test("splits SDKs into supported, unsupported, and unknown", () => {
+    const { supported, unsupported, unknown } = summariseCapSupport(results, "sdk", 0);
+    assert.deepEqual(supported.map((s) => s.value), ["java"]);
+    assert.deepEqual(unsupported.map((s) => s.value), ["go"]);
+    assert.deepEqual(unknown.map((s) => s.value), ["rust"]);
+  });
+});
+
+describe("formatCapFocusReport", () => {
+  test("names the cap and lists which SDKs have it", () => {
+    const cap = { name: "SDK_KV_RANGE_SCAN", group: "sdk" as const, number: 1, jira: "CBD-5161", description: "" };
+    const report = formatCapFocusReport(cap, results);
+    assert.match(report, /SDK_KV_RANGE_SCAN/);
+    assert.match(report, /CBD-5161/);
+    assert.match(report, /Supported: java, go/);
+    assert.match(report, /Not supported: none/);
+    assert.match(report, /No answer: rust/);
   });
 });
 

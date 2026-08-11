@@ -75,6 +75,41 @@ export function unknownCapNumbers(results: readonly CapsFetchResult[], known: Ma
   return [...unknown].sort((a, b) => a - b);
 }
 
+/** Which SDKs reported a cap, which didn't, and which we couldn't ask. */
+export function summariseCapSupport(
+  results: readonly CapsFetchResult[],
+  group: CapGroup,
+  capNumber: number,
+): { supported: Sdk[]; unsupported: Sdk[]; unknown: Sdk[] } {
+  const supported: Sdk[] = [];
+  const unsupported: Sdk[] = [];
+  const unknown: Sdk[] = [];
+  for (const result of results) {
+    const cell = capCell(result, group, capNumber);
+    if (cell === TICK) supported.push(result.sdk);
+    else if (cell === CROSS) unsupported.push(result.sdk);
+    else unknown.push(result.sdk);
+  }
+  return { supported, unsupported, unknown };
+}
+
+/** A focused report answering "which SDKs have this cap?" for a single capability. */
+export function formatCapFocusReport(cap: Cap, results: readonly CapsFetchResult[]): string {
+  const { supported, unsupported, unknown } = summariseCapSupport(results, cap.group, cap.number);
+  const sdkList = (sdks: Sdk[]) => (sdks.length > 0 ? sdks.map((sdk) => sdk.value).join(", ") : "none");
+
+  const lines: string[] = [`${paint(cap.name, BOLD)} (${cap.group} cap #${cap.number})`];
+  if (cap.jira) lines.push(`Jira: ${cap.jira}`);
+  if (cap.description) lines.push(`Description: ${cap.description}`);
+  lines.push("");
+  lines.push(`${paint(TICK, GREEN)} Supported: ${sdkList(supported)}`);
+  lines.push(`${paint(CROSS, RED)} Not supported: ${sdkList(unsupported)}`);
+  if (unknown.length > 0) {
+    lines.push(`${paint(UNKNOWN, DIM)} No answer: ${sdkList(unknown)}`);
+  }
+  return lines.join("\n");
+}
+
 /** Column header for an SDK — short, because there can be ten of them. */
 export function sdkColumnLabel(sdk: Sdk): string {
   return sdk.value;

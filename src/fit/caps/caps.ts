@@ -20,8 +20,8 @@ import { ensureRunDir } from "../../util/non-fit/replay.js";
 import { OPERATIONAL_PREBUILT_SDKS, SDKS, isAnalyticsSdk, sdkPublishesPerformerImage, type Sdk } from "../../util/sdk/sdks.js";
 import { DEFAULT_PERFORMER_IMAGE_TAG } from "../performers/util/performer-image.js";
 import { ensureGhcrLogin, fetchCapsForSdk } from "./fetch-caps/fetch-caps.js";
-import { DEFAULT_CAPS_PATH, loadCapsFile } from "./util/caps-metadata.js";
-import { formatCapsMarkdown, formatCapsReport, type CapsFetchResult } from "./util/caps-table.js";
+import { DEFAULT_CAPS_PATH, findCap, loadCapsFile } from "./util/caps-metadata.js";
+import { formatCapFocusReport, formatCapsMarkdown, formatCapsReport, type CapsFetchResult } from "./util/caps-table.js";
 import { formatCapsFile, syncCapsFile } from "./util/sync-caps-file.js";
 
 /**
@@ -49,6 +49,9 @@ Subcommands:
             --sdks   Only query these SDKs (default: the operational SDKs — the
                      Analytics performers do not implement this RPC).
             --tag    Performer image tag to use (default: ${DEFAULT_PERFORMER_IMAGE_TAG}).
+            --cap    Only show which SDKs have this one capability, by its name in
+                     caps.json5 (e.g. --cap SDK_KV_RANGE_SCAN). The full Markdown
+                     artifact is still written.
 
   sync    Refresh caps.json5 from the FIT protos in a transactions-fit-performer
           checkout. Adds capabilities the protos have gained; never overwrites the
@@ -109,7 +112,18 @@ function flagValue(argv: string[], flag: string): string | undefined {
 async function cmdTable(argv: string[]): Promise<RunOutput> {
   const sdks = resolveSdks(flagValue(argv, "--sdks"));
   const tag = flagValue(argv, "--tag");
+  const capName = flagValue(argv, "--cap");
   const capsFile = loadCapsFile();
+
+  // Fail fast on a typo'd --cap before spending minutes pulling and starting
+  // performer images to answer a question we can already tell is unanswerable.
+  const cap = capName ? findCap(capsFile, capName) : undefined;
+  if (capName && (!cap || cap.length === 0)) {
+    throw new Error(`Unknown capability "${capName}". Run 'fit caps table' to see the full list, or 'fit caps sync' if it's new.`);
+  }
+  if (cap && cap.length > 1) {
+    throw new Error(`"${capName}" matches a cap in more than one group (${cap.map((c) => c.group).join(", ")}) — this shouldn't happen, please raise it.`);
+  }
 
   // Explain who isn't in the table, rather than leaving a reader to wonder where they
   // went: Node and Python publish no performer image at all, and the Analytics
@@ -142,7 +156,7 @@ async function cmdTable(argv: string[]): Promise<RunOutput> {
     fetchCapsForSdk(sdk, { tag, port: BASE_PORT + index, loggedIn }),
   );
 
-  printWithoutTimestamps(`\n${formatCapsReport(capsFile, results)}\n`);
+  printWithoutTimestamps(`\n${cap ? formatCapFocusReport(cap[0], results) : formatCapsReport(capsFile, results)}\n`);
 
   const markdownPath = join(ensureRunDir(), "fit-caps.md");
   writeFileSync(markdownPath, formatCapsMarkdown(capsFile, results));

@@ -97,6 +97,24 @@ export function capsInGroup(capsFile: CapsFile, group: CapGroup): Cap[] {
 }
 
 /**
+ * Find a cap by name, across all three groups (case-insensitive).
+ *
+ * Names are only guaranteed unique within a group, not across groups, so this
+ * returns every match rather than picking one — callers should treat more than
+ * one match as ambiguous.
+ */
+export function findCap(capsFile: CapsFile, name: string): Cap[] {
+  const needle = name.toLowerCase();
+  const matches: Cap[] = [];
+  for (const group of CAP_GROUPS) {
+    for (const [capName, meta] of Object.entries(capsFile[group])) {
+      if (capName.toLowerCase() === needle) matches.push({ ...meta, name: capName, group });
+    }
+  }
+  return matches;
+}
+
+/**
  * Name a cap number a performer reported.
  *
  * A number we don't know about means the protos have gained a cap that caps.json5
