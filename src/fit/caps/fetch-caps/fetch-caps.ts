@@ -19,7 +19,6 @@ import { createRunFilePath } from "../../../util/non-fit/replay.js";
 import { sdkByValue, type Sdk } from "../../../util/sdk/sdks.js";
 import { resolveGithubToken } from "../../util/config.js";
 import { dockerLoginCommand, dockerPullArgs } from "../../performers/check-and-pull-performer/check-and-pull-performer.js";
-import { performerImageInspectArgs } from "../../performers/check-performer/check-performer.js";
 import { performerImageName } from "../../performers/util/performer-image.js";
 import { DEFAULT_PERFORMER_PORT } from "../../performers/util/performer-port.js";
 import type { CapsFetchResult } from "../util/caps-table.js";
@@ -48,15 +47,6 @@ export function capsContainerName(sdk: Sdk): string {
   return `fit-cli-caps-${sdk.value}`;
 }
 
-async function imageIsLocal(image: string): Promise<boolean> {
-  try {
-    await capture("docker", performerImageInspectArgs(image), process.cwd(), { quiet: true });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 /** Log Docker into GHCR, keeping the token off argv by piping it from a file. */
 async function loginToGhcr(token: string): Promise<void> {
   const tokenPath = createRunFilePath("ghcr-token");
@@ -69,16 +59,13 @@ async function loginToGhcr(token: string): Promise<void> {
 }
 
 /**
- * Log Docker into GHCR once, up front, if any of these images still needs pulling.
+ * Log Docker into GHCR once, up front, for a whole batch of SDKs.
  *
- * Without this the workers each discover their image is missing at the same moment and
- * all race to run `docker login`. Returns whether login happened, to be passed to
+ * Without this the workers would each hit their own `docker login` at the same moment
+ * and race each other. Returns whether login happened, to be passed to
  * {@link fetchCapsForSdk} as `loggedIn`.
  */
-export async function ensureGhcrLogin(sdks: readonly Sdk[], tag?: string): Promise<boolean> {
-  const local = await Promise.all(sdks.map((sdk) => imageIsLocal(performerImageName(sdk, tag))));
-  if (local.every(Boolean)) return false;
-
+export async function ensureGhcrLogin(): Promise<boolean> {
   const token = await resolveGithubToken();
   if (!token) {
     throw new Error(
@@ -89,13 +76,12 @@ export async function ensureGhcrLogin(sdks: readonly Sdk[], tag?: string): Promi
   return true;
 }
 
-/** Pull the performer image unless it's already here. */
+/** Pull the performer image, always refreshing a mutable tag rather than trusting a local copy. */
 export async function ensurePerformerImage(sdk: Sdk, tag?: string, loggedIn = false): Promise<void> {
   const image = performerImageName(sdk, tag);
-  if (await imageIsLocal(image)) return;
 
   if (!loggedIn) {
-    await ensureGhcrLogin([sdk], tag);
+    await ensureGhcrLogin();
   }
   await run("docker", dockerPullArgs(image));
 }
