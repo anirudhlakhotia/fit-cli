@@ -62,8 +62,8 @@ const LEGACY_CONFIG_YAML_BASENAME = "config.yaml";
 export const CLOUD_INSTANCE_PURPOSES = ["functional", "situational", "perf"] as const;
 export type CloudInstancePurpose = (typeof CLOUD_INSTANCE_PURPOSES)[number];
 
-/** Cloud service providers fit-cli can provision instances on. Only AWS today. */
-export const CLOUD_PROVIDERS = ["aws"] as const;
+/** Cloud service providers fit-cli can provision instances on. */
+export const CLOUD_PROVIDERS = ["aws", "gcp"] as const;
 export type CloudProvider = (typeof CLOUD_PROVIDERS)[number];
 
 /** Baked-in default instance type per purpose, used when the config omits one. */
@@ -77,6 +77,12 @@ export const DEFAULT_CLOUD_INSTANCE_TYPES: Record<CloudProvider, Record<CloudIns
     situational: "c5.2xlarge",
     perf: "c5.4xlarge",
   },
+  // n2-standard-8 (8 vCPU / 32 GiB) is the rough GCP peer of c5.2xlarge.
+  gcp: {
+    functional: "n2-standard-8",
+    situational: "n2-standard-8",
+    perf: "n2-standard-8",
+  },
 };
 
 export type FitCliInstanceTypes = Partial<Record<CloudInstancePurpose, string>>;
@@ -86,13 +92,14 @@ export interface FitCliAwsConfig {
   instanceTypes?: FitCliInstanceTypes;
 }
 
-/**
- * Per-CSP cloud settings. Today only `aws` exists, but instance types are keyed
- * by purpose under each provider so a future GCP/Azure section can carry its own
- * sizes without restructuring.
- */
+export interface FitCliGcpConfig {
+  instanceTypes?: FitCliInstanceTypes;
+}
+
+/** Per-CSP cloud settings. Instance types are keyed by purpose under each provider. */
 export interface FitCliCloudConfig {
   aws?: FitCliAwsConfig;
+  gcp?: FitCliGcpConfig;
 }
 
 export interface FitCliGithubConfig {
@@ -472,6 +479,10 @@ function validateCloudConfig(cloudValue: Record<string, unknown>): FitCliCloudCo
   if (awsValue !== undefined && !isRecord(awsValue)) {
     throw new InvalidFitCliConfigError(`Field "cloud.aws" must be a mapping; got ${JSON.stringify(awsValue)}`);
   }
+  const gcpValue = cloudValue.gcp;
+  if (gcpValue !== undefined && !isRecord(gcpValue)) {
+    throw new InvalidFitCliConfigError(`Field "cloud.gcp" must be a mapping; got ${JSON.stringify(gcpValue)}`);
+  }
 
   let aws: FitCliAwsConfig | undefined;
   if (awsValue) {
@@ -479,8 +490,14 @@ function validateCloudConfig(cloudValue: Record<string, unknown>): FitCliCloudCo
     if (instanceTypes) aws = { instanceTypes };
   }
 
-  if (!aws) return undefined;
-  return { aws };
+  let gcp: FitCliGcpConfig | undefined;
+  if (gcpValue) {
+    const instanceTypes = validateInstanceTypes(gcpValue.instanceTypes, "cloud.gcp.instanceTypes");
+    if (instanceTypes) gcp = { instanceTypes };
+  }
+
+  if (!aws && !gcp) return undefined;
+  return { ...(aws ? { aws } : {}), ...(gcp ? { gcp } : {}) };
 }
 
 /** Validate and compact a per-purpose instance-type mapping. */

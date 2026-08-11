@@ -1,301 +1,273 @@
 #!/usr/bin/env node
 /**
- * Top-level entry for managing fit-cli EC2 instances.
+ * Top-level entry for managing fit-cli's cloud instances. Operates on both AWS
+ * EC2 and GCP by default (--cloud all); pass --cloud aws or --cloud gcp to
+ * scope to one.
  *
- * bun run cloud-instances list [--all-users]
+ * This file is glue: parse argv, decide which cloud(s) to call, and render
+ * the combined table. The actual per-cloud work (credential checks,
+ * filtering, confirmation prompts, termination) lives in
+ * cloud/util/aws/instances-cli.ts and cloud/util/gcp/instances-cli.ts.
+ *
+ * bun run cloud-instances list [--all-users] [--cloud aws|gcp|all] [--project <id>] [--zone <zone>]
  * bun run cloud-instances manage [--all-users] [--tag key=value] [--key <key-name>]
- * bun run cloud-instances remove <instance-id> [--force]
- * bun run cloud-instances remove-all [--all-users] [--older-than <duration>] [--dry-run] [--force]
+ * bun run cloud-instances remove <instance-id-or-name> [--force] [--cloud aws|gcp|all] [--project <id>] [--zone <zone>]
+ * bun run cloud-instances remove-all [--all-users] [--older-than <duration>] [--dry-run] [--force] [--cloud aws|gcp|all] [--project <id>] [--zone <zone>]
  * bun run cloud-instances --help
+ *
+ * `manage` (the interactive browse/act TUI) is AWS-only for now — GCP's
+ * list/remove/remove-all cover what the scheduled cleanup workflow needs.
  */
 import { isMain, runCli } from "../../util/non-fit/cli.js";
-import { logAwsAction } from "../../cloud/util/aws/aws-cli.js";
-import { AWS_REGION } from "../../cloud/util/aws/aws-target.js";
-import { checkAwsCredentials } from "../../cloud/util/aws/identity.js";
-import { listInstances, LIVE_STATES } from "../../cloud/util/aws/list-instances.js";
-import { terminateInstance } from "../../cloud/util/aws/terminate-instance.js";
-import { describeInstance } from "../../cloud/util/aws/describe-instance.js";
-import { deleteKeyPair } from "../../cloud/util/aws/key-pair.js";
-import { formatAge, instanceAgeMs, parseDuration, selectAgedOut } from "../../cloud/util/aws/instance-age.js";
-import { confirm } from "../../util/non-fit/prompts.js";
-import { FIT_OWNER_TAG } from "../../fit/util/aws/fit-instance.js";
-import {
-  awsConsoleInstancesUrl,
-  formatExistingInstancesBanner,
-  terminateInstanceCommand,
-  type InstanceListContext,
-} from "../../fit/util/aws/lifecycle-warning.js";
-import { manageInstances, type InstanceQuery } from "../../cloud/util/aws/manage-instances.js";
 import { runScriptPrefix } from "../../util/non-fit/fit-cli-log.js";
+import * as aws from "../util/aws/instances-cli.js";
+import * as gcp from "../util/gcp/instances-cli.js";
+import { defaultGcpProjectZone } from "../util/gcp/gcp-cli.js";
+import type { InstanceRow } from "../util/instance-row.js";
+
+type Cloud = "aws" | "gcp" | "all";
+
+function flag(argv: string[], name: string): string | undefined {
+  const index = argv.indexOf(`--${name}`);
+  return index !== -1 ? argv[index + 1] : undefined;
+}
+
+function parseCloud(argv: string[]): Cloud {
+  const value = flag(argv, "cloud") ?? "all";
+  if (value !== "aws" && value !== "gcp" && value !== "all") {
+    throw new Error(`Invalid --cloud "${value}". Expected "aws", "gcp", or "all".`);
+  }
+  return value;
+}
+
+/** Resolve --project/--zone, falling back to environments.json5's defaults.gcp. Throws if either is still missing. */
+function resolveGcpProjectZone(argv: string[]): { project: string; zone: string } {
+  const defaults = defaultGcpProjectZone();
+  const project = flag(argv, "project") ?? defaults.project;
+  const zone = flag(argv, "zone") ?? defaults.zone;
+  if (!project || !zone) {
+    throw new Error(
+      "GCP project/zone not resolved. Pass --project and --zone, or set defaults.gcp.project/zone in environments.json5.",
+    );
+  }
+  return { project, zone };
+}
+
+/** Parse --older-than, throwing the usage error if it's passed with no value. Duration format itself is validated downstream. */
+function parseOlderThan(argv: string[]): string | undefined {
+  const value = flag(argv, "older-than");
+  if (argv.includes("--older-than") && !value) {
+    throw new Error("--older-than needs a duration, e.g. --older-than 24h.");
+  }
+  return value;
+}
+
+/**
+ * Run an AWS-only and a GCP-only implementation of the same subcommand
+ * according to `cloud`: just the one for "aws"/"gcp", or both in sequence
+ * (never concurrently, so confirmation prompts don't interleave) for "all" —
+ * the default. Both are attempted even if one fails, so e.g. a GCP outage
+ * doesn't prevent EC2 cleanup from running; failures from either are combined
+ * into a single thrown error so the overall command (and a CI job) still
+ * fails loudly.
+ */
+async function runForClouds(
+  cloud: Cloud,
+  awsFn: () => Promise<void>,
+  gcpFn: () => Promise<void>,
+): Promise<void> {
+  if (cloud === "aws") return awsFn();
+  if (cloud === "gcp") return gcpFn();
+
+  const errors: string[] = [];
+  for (const [label, fn] of [
+    ["AWS", awsFn],
+    ["GCP", gcpFn],
+  ] as const) {
+    try {
+      await fn();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`✗ ${label}: ${message}`);
+      errors.push(`${label}: ${message}`);
+    }
+  }
+  if (errors.length > 0) {
+    throw new Error(errors.join("\n"));
+  }
+}
 
 function helpText(): string {
   const p = runScriptPrefix("cloud-instances");
-  return `Manage fit-cli EC2 instances.
+  return `Manage fit-cli cloud instances (AWS EC2 and GCP together by default).
 
 Usage:
-  ${p} list [--all-users]
-  ${p} manage [--all-users] [--tag key=value] [--key <key-name>]
-  ${p} remove <instance-id> [--force]
-  ${p} remove-all [--all-users] [--older-than <duration>] [--dry-run] [--force]
+  ${p} list [--all-users] [--cloud aws|gcp|all] [--project <id>] [--zone <zone>]
+  ${p} manage [--all-users] [--tag key=value] [--key <key-name>]   (AWS only)
+  ${p} remove <instance-id-or-name> [--force] [--cloud aws|gcp|all] [--project <id>] [--zone <zone>]
+  ${p} remove-all [--all-users] [--older-than <duration>] [--dry-run] [--force] [--cloud aws|gcp|all] [--project <id>] [--zone <zone>]
   ${p} --help
 
 Subcommands:
   list        Show fit-cli instances (yours by default; --all-users for everyone's).
-  manage      Interactively browse and act on instances (terminate, view details).
+  manage      Interactively browse and act on AWS EC2 instances (terminate, view details).
               Scoped to your instances by default; --all-users for everyone's.
-  remove      Terminate an instance by id (prompts for confirmation unless --force).
-  remove-all  Terminate every fit-cli instance you created (add --all-users for
+  remove      Terminate/delete an instance by id (AWS) or name (GCP); prompts for
+              confirmation unless --force. With --cloud all (the default), looks the
+              identifier up on both clouds and acts on whichever one has it.
+  remove-all  Terminate/delete every fit-cli instance you created (add --all-users for
               everyone's; prompts for confirmation unless --force).
 
-list / manage options:
+list / manage / remove / remove-all options:
+  --cloud <aws|gcp|all>  Which cloud(s) to operate on (default: all).
+  --project <id>     GCP project (default: environments.json5's defaults.gcp.project).
+  --zone <zone>      GCP zone (default: environments.json5's defaults.gcp.zone).
+
+list / manage / remove-all options:
   --all-users        Include instances created by everyone, not just you.
 
 remove-all options:
-  --all-users        Include instances created by everyone, not just you.
-  --older-than <d>   Only reap instances launched at least this long ago, e.g.
+  --older-than <d>   Only reap instances launched/created at least this long ago, e.g.
                      24h, 90m, 2d. Boxes whose age can't be determined are kept.
   --dry-run          List what would be terminated, then exit without touching it.
   --force            Skip the confirmation prompt (required for unattended runs,
                      e.g. the scheduled cleanup workflow).`;
 }
 
+/** Render rows from both clouds as a single terminal table, mirroring util/non-fit/artifacts.ts's table style. */
+function formatInstancesTable(rows: InstanceRow[]): string {
+  const headers = { cloud: "CLOUD", id: "ID", address: "ADDRESS", state: "STATE", creator: "CREATED-BY" } as const;
+  const widths = {
+    cloud: Math.max(headers.cloud.length, ...rows.map((r) => r.cloud.length)),
+    id: Math.max(headers.id.length, ...rows.map((r) => r.id.length)),
+    address: Math.max(headers.address.length, ...rows.map((r) => r.address.length)),
+    state: Math.max(headers.state.length, ...rows.map((r) => r.state.length)),
+    creator: Math.max(headers.creator.length, ...rows.map((r) => r.creator.length)),
+  };
+  const formatRow = (r: { cloud: string; id: string; address: string; state: string; creator: string }): string =>
+    `${r.cloud.padEnd(widths.cloud)} | ${r.id.padEnd(widths.id)} | ${r.address.padEnd(widths.address)} | ${r.state.padEnd(widths.state)} | ${r.creator.padEnd(widths.creator)}`;
+  return [
+    formatRow(headers),
+    `${"-".repeat(widths.cloud)}-+-${"-".repeat(widths.id)}-+-${"-".repeat(widths.address)}-+-${"-".repeat(widths.state)}-+-${"-".repeat(widths.creator)}`,
+    ...rows.map(formatRow),
+  ].join("\n");
+}
+
+/**
+ * List instances across the requested cloud(s) as a single combined table —
+ * unlike remove/remove-all, this always fans out to both clouds for --cloud
+ * all rather than printing two separate per-cloud sections, since the whole
+ * point of `list` is one glance at everything fit-cli owns.
+ */
 async function cmdList(argv: string[]): Promise<void> {
+  const cloud = parseCloud(argv);
   const allUsers = argv.includes("--all-users");
 
-  const creds = await checkAwsCredentials();
-  const context: InstanceListContext | undefined = creds.ok
-    ? { account: creds.identity.account, creator: callerCreator(creds.identity) }
-    : undefined;
-
-  if (!allUsers && !creds.ok) {
-    throw new Error(
-      "Can't determine who you are from AWS credentials, so can't scope listing to your own instances. " +
-        "Fix your credentials, or pass --all-users to list every fit-cli instance.",
-    );
+  const sources: { name: "AWS" | "GCP"; fetch: () => Promise<InstanceRow[]> }[] = [];
+  if (cloud === "aws" || cloud === "all") sources.push({ name: "AWS", fetch: () => aws.listInstanceRows(allUsers) });
+  if (cloud === "gcp" || cloud === "all") {
+    const { project, zone } = resolveGcpProjectZone(argv);
+    sources.push({ name: "GCP", fetch: () => gcp.listInstanceRows({ allUsers, project, zone }) });
   }
 
-  logAwsAction("Listing fit-cli EC2 instances", {
-    tag: `${FIT_OWNER_TAG.key}=${FIT_OWNER_TAG.value}`,
-    states: LIVE_STATES,
-    scope: allUsers ? "all users" : "current user",
-  });
-
-  const all = await listInstances(FIT_OWNER_TAG);
-  const instances = allUsers ? all : all.filter((i) => i.creator === context?.creator);
-
-  if (instances.length === 0) {
-    console.log(`No fit-cli EC2 instances found in ${AWS_REGION}.`);
-    if (context) {
-      console.log(`Filter: tag:fit-cli=owned  ·  account: ${context.account}  ·  user: ${context.creator}`);
+  const rows: InstanceRow[] = [];
+  const errors: string[] = [];
+  for (const { name, fetch } of sources) {
+    try {
+      rows.push(...(await fetch()));
+    } catch (err) {
+      // A single explicitly-requested cloud fails hard; --cloud all is best-effort
+      // (see runForClouds) so one cloud's outage doesn't hide the other's table.
+      if (cloud !== "all") throw err;
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`✗ ${name}: ${message}`);
+      errors.push(`${name}: ${message}`);
     }
-    console.log(`Console: ${awsConsoleInstancesUrl()}`);
-    return;
   }
 
-  console.log(formatExistingInstancesBanner(instances, context));
+  if (rows.length === 0) {
+    console.log("No fit-cli instances found.");
+  } else {
+    console.log(`Found ${rows.length} fit-cli instance(s):\n`);
+    console.log(formatInstancesTable(rows));
+  }
+
+  if (errors.length > 0) {
+    throw new Error(errors.join("\n"));
+  }
 }
 
 async function cmdManage(argv: string[]): Promise<void> {
   const allUsers = argv.includes("--all-users");
 
-  const flag = (name: string): string | undefined => {
-    const index = argv.indexOf(`--${name}`);
-    return index !== -1 ? argv[index + 1] : undefined;
-  };
-
-  let query: InstanceQuery;
-  const key = flag("key");
+  let query: aws.InstanceQuery;
+  const key = flag(argv, "key");
   if (key) {
     query = { kind: "key", keyName: key };
   } else {
-    const tag = flag("tag");
+    const tag = flag(argv, "tag");
     query = {
       kind: "tag",
       tag: tag ? { key: tag.split("=")[0], value: tag.split("=")[1] ?? "" } : undefined,
     };
   }
 
-  const creds = await checkAwsCredentials();
-  const creator = creds.ok ? callerCreator(creds.identity) : undefined;
-
-  if (!allUsers && !creator) {
-    throw new Error(
-      "Can't determine who you are from AWS credentials, so can't scope manage to your own instances. " +
-        "Fix your credentials, or pass --all-users to manage every fit-cli instance.",
-    );
-  }
-
-  logAwsAction(
-    "Managing EC2 instances",
-    query.kind === "key"
-      ? { keyName: query.keyName, states: LIVE_STATES, scope: allUsers ? "all users" : "current user" }
-      : { tag: query.tag ? `${query.tag.key}=${query.tag.value}` : "fit-cli=owned", states: LIVE_STATES, scope: allUsers ? "all users" : "current user" },
-  );
-
-  await manageInstances(query, allUsers ? undefined : creator);
+  await aws.manageInstancesCli({ allUsers, query });
 }
 
 async function cmdRemove(argv: string[]): Promise<void> {
-  const instanceId = argv.find((arg) => !arg.startsWith("-"));
-  if (!instanceId) {
-    throw new Error(`Usage: ${runScriptPrefix("cloud-instances")} remove <instance-id> [--force]`);
-  }
-
+  const cloud = parseCloud(argv);
   const force = argv.includes("--force");
-
-  const creds = await checkAwsCredentials();
-  if (!creds.ok) {
-    throw new Error(creds.message);
-  }
-  logAwsAction("Terminating EC2 instance", { instanceId });
-
-  const info = await describeInstance(instanceId);
-  if (!info) {
-    throw new Error(`Instance ${instanceId} not found in ${AWS_REGION}.`);
+  const identifier = argv.find((arg) => !arg.startsWith("-"));
+  if (!identifier) {
+    throw new Error(`Usage: ${runScriptPrefix("cloud-instances")} remove <instance-id-or-name> [--force]`);
   }
 
-  const addr = info.publicDns || info.publicIp;
-  const creatorPart = info.creator ? `  created-by: ${info.creator}` : "";
-  console.log(`Instance: ${instanceId}${addr ? ` (${addr})` : ""}${creatorPart}  state: ${info.state}`);
-  console.log(`Terminate command: ${terminateInstanceCommand(instanceId)}`);
+  if (cloud === "aws") return aws.removeInstance(identifier, force);
+  if (cloud === "gcp") {
+    const { project, zone } = resolveGcpProjectZone(argv);
+    return gcp.removeInstance({ name: identifier, force, project, zone });
+  }
 
-  if (!force) {
-    const confirmed = await confirm({
-      promptId: "cloud-instances.remove.confirm",
-      message: `Terminate ${instanceId}? This cannot be undone.`,
-      default: false,
-    });
-    if (!confirmed) {
-      console.log("Cancelled — instance left running.");
-      return;
+  // --cloud all (the default): a single instance is only ever on one cloud, so
+  // look the identifier up on both (best-effort — a broken credential on one
+  // side shouldn't stop us checking the other) and act on whichever finds it.
+  if (await aws.findInstance(identifier)) {
+    return aws.removeInstance(identifier, force);
+  }
+
+  let gcpProject: string | undefined;
+  let gcpZone: string | undefined;
+  try {
+    ({ project: gcpProject, zone: gcpZone } = resolveGcpProjectZone(argv));
+    if (await gcp.findInstance({ identifier, project: gcpProject, zone: gcpZone })) {
+      return gcp.removeInstance({ name: identifier, force, project: gcpProject, zone: gcpZone });
     }
+  } catch {
+    // GCP project/zone unresolved or credentials unusable — fall through to the not-found error below.
   }
 
-  await terminateInstance(instanceId);
-  console.log(`✓ Terminating ${instanceId}`);
-
-  if (info.keyName) {
-    try {
-      await deleteKeyPair(info.keyName);
-      console.log(`✓ Deleted key pair ${info.keyName}`);
-    } catch (err) {
-      console.error(`✗ Failed to delete key pair ${info.keyName}: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
-}
-
-/** Derive the readable creator id fit-cli stamps as the `created-by` tag. */
-function callerCreator(identity: { arn: string; userId: string }): string {
-  return identity.arn.split("/").at(-1) ?? identity.userId;
+  throw new Error(
+    `Instance ${identifier} not found in AWS (${aws.AWS_REGION})` +
+      (gcpProject && gcpZone ? ` or GCP (${gcpProject}/${gcpZone}).` : ", and GCP couldn't be checked (see above)."),
+  );
 }
 
 async function cmdRemoveAll(argv: string[]): Promise<void> {
+  const cloud = parseCloud(argv);
   const allUsers = argv.includes("--all-users");
   const force = argv.includes("--force");
   const dryRun = argv.includes("--dry-run");
-  const olderThanIndex = argv.indexOf("--older-than");
-  const olderThanArg = olderThanIndex !== -1 ? argv[olderThanIndex + 1] : undefined;
-  if (olderThanIndex !== -1 && !olderThanArg) {
-    throw new Error("--older-than needs a duration, e.g. --older-than 24h.");
-  }
-  // Parse up front so a bad duration fails before we touch AWS.
-  const cutoffMs = olderThanArg !== undefined ? parseDuration(olderThanArg) : undefined;
+  const olderThan = parseOlderThan(argv);
 
-  const creds = await checkAwsCredentials();
-
-  logAwsAction("Removing fit-cli EC2 instances", {
-    tag: `${FIT_OWNER_TAG.key}=${FIT_OWNER_TAG.value}`,
-    states: LIVE_STATES,
-    scope: allUsers ? "all users" : "current user",
-    ...(olderThanArg !== undefined ? { olderThan: olderThanArg } : {}),
-    ...(dryRun ? { dryRun: true } : {}),
-  });
-
-  const context: InstanceListContext | undefined = creds.ok
-    ? { account: creds.identity.account, creator: callerCreator(creds.identity) }
-    : undefined;
-  if (!allUsers && !creds.ok) {
-    throw new Error(
-      "Can't determine who you are from AWS credentials, so can't scope removal to your own instances. " +
-        "Fix your credentials, or pass --all-users to remove every fit-cli instance.",
-    );
-  }
-
-  const all = await listInstances(FIT_OWNER_TAG);
-  const scoped = allUsers ? all : all.filter((instance) => instance.creator === context?.creator);
-
-  // Age-gate when asked. Anything younger than the cutoff (or whose age we can't
-  // determine) is left alone — see selectAgedOut.
-  let mine = scoped;
-  if (cutoffMs !== undefined) {
-    const now = Date.now();
-    const { reap, keep } = selectAgedOut(scoped, cutoffMs, now);
-    mine = reap;
-    if (keep.length > 0) {
-      console.log(
-        `Skipping ${keep.length} instance(s) younger than ${olderThanArg} (or with unknown age): ` +
-          keep
-            .map((i) => {
-              const age = instanceAgeMs(i, now);
-              return `${i.instanceId} (${age === undefined ? "age unknown" : formatAge(age)})`;
-            })
-            .join(", "),
-      );
-    }
-  }
-
-  if (mine.length === 0) {
-    const scope = allUsers ? "" : ` created by ${context?.creator}`;
-    const ageNote = cutoffMs !== undefined ? ` older than ${olderThanArg}` : "";
-    console.log(`No fit-cli EC2 instances${scope}${ageNote} found in ${AWS_REGION}.`);
-    return;
-  }
-
-  console.log(formatExistingInstancesBanner(mine, context));
-
-  if (dryRun) {
-    console.log(`\nDry run — would terminate ${mine.length} instance(s); leaving them running.`);
-    return;
-  }
-
-  if (!force) {
-    const confirmed = await confirm({
-      promptId: "cloud-instances.remove-all.confirm",
-      message: `Terminate all ${mine.length} instance(s) above? This cannot be undone.`,
-      default: false,
-    });
-    if (!confirmed) {
-      console.log("Cancelled — instances left running.");
-      return;
-    }
-  }
-
-  const failures: { instanceId: string; error: string }[] = [];
-  for (const instance of mine) {
-    try {
-      await terminateInstance(instance.instanceId);
-      console.log(`✓ Terminating ${instance.instanceId}`);
-    } catch (err) {
-      const error = err instanceof Error ? err.message : String(err);
-      failures.push({ instanceId: instance.instanceId, error });
-      console.error(`✗ Failed to terminate ${instance.instanceId}: ${error}`);
-      continue;
-    }
-
-    if (instance.keyName) {
-      try {
-        await deleteKeyPair(instance.keyName);
-        console.log(`✓ Deleted key pair ${instance.keyName}`);
-      } catch (err) {
-        console.error(`✗ Failed to delete key pair ${instance.keyName}: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    }
-  }
-
-  if (failures.length > 0) {
-    throw new Error(`Failed to terminate ${failures.length} of ${mine.length} instance(s).`);
-  }
-  console.log(`\n✓ Terminating ${mine.length} instance(s).`);
+  await runForClouds(
+    cloud,
+    () => aws.removeAllInstances({ allUsers, force, dryRun, olderThan }),
+    () => {
+      const { project, zone } = resolveGcpProjectZone(argv);
+      return gcp.removeAllInstances({ allUsers, force, dryRun, olderThan, project, zone });
+    },
+  );
 }
 
 export function runCloudInstancesMain(): void {

@@ -1,10 +1,9 @@
-# fit-cli-role — the role fit-cli (human and CI) assumes for all its AWS/EC2
+# fit-cli-role — the role fit-cli (human and CI) assumes for all its AWS/EC2/SSM
 # work.
-#
-# NOTE: this role also carries SSM-specific permissions (ssm:SendCommand etc.) and
-# an SSM instance-profile PassRole grant, added on the (unmerged) ssh-to-ssm-transport
-# branch. Those live only there for now — this file covers what private endpoint
-# testing needs. Reconcile into one file when that branch merges.
+
+module "trusted_repos" {
+  source = "../shared/trusted-repos"
+}
 
 resource "aws_iam_role" "fit_cli_role" {
   name        = "fit-cli-role"
@@ -28,19 +27,7 @@ resource "aws_iam_role" "fit_cli_role" {
           }
           StringLike = {
             "token.actions.githubusercontent.com:sub" = [
-              "repo:couchbaselabs/fit-cli:*",
-              "repo:couchbaselabs/transactions-fit-performer:*",
-              "repo:couchbase/couchbase-jvm-clients:*",
-              "repo:couchbase/couchbase-analytics-jvm-clients:*",
-              "repo:couchbase/couchbase-cxx-client:*",
-              "repo:couchbase/couchbase-net-client:*",
-              "repo:couchbase/gocb:*",
-              "repo:couchbase/couchnode:*",
-              "repo:couchbase/couchbase-python-client:*",
-              "repo:couchbase/couchbase-ruby-client:*",
-              "repo:couchbase/couchbase-rs:*",
-              "repo:couchbase/couchbase-php-client:*",
-              "repo:couchbase/analytics-dotnet-client:*",
+              for r in module.trusted_repos.repos : "repo:${r}:*"
             ]
           }
         }
@@ -101,6 +88,10 @@ resource "aws_iam_role_policy" "fit_cli_ec2_permissions" {
           "ec2:ModifyVpcEndpoint",
           "ec2:DeleteVpcEndpoints",
           "route53:AssociateVPCWithHostedZone",
+          "ssm:SendCommand",
+          "ssm:GetCommandInvocation",
+          "ssm:DescribeInstanceInformation",
+          "ssm:StartSession",
         ]
         Resource = "*"
       },
@@ -122,6 +113,36 @@ resource "aws_iam_role_policy" "fit_cli_ec2_permissions" {
           "s3:GetObject",
         ]
         Resource = "arn:aws:s3:::fit-cli/*"
+      },
+      {
+        # Needed so fit-cli can attach fit-cli-ssm-instance-role's instance profile when
+        # launching EC2 instances (ec2:RunInstances with IamInstanceProfile).
+        Sid      = "FitCliPassSsmInstanceRole"
+        Effect   = "Allow"
+        Action   = "iam:PassRole"
+        Resource = aws_iam_role.fit_cli_ssm_instance_role.arn
+      },
+      {
+        # For ensureSsmLogGroup's self-provisioning (create/set retention) and SsmTarget's
+        # reading of SendCommand output via CloudWatch Logs. Scoped to just the one log
+        # group fit-cli uses for SSM command output.
+        Sid    = "FitCliSsmOutputLogGroup"
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:PutRetentionPolicy",
+          "logs:FilterLogEvents",
+          "logs:DeleteLogStream",
+        ]
+        Resource = "arn:aws:logs:*:958525475024:log-group:/fit-cli/ssm-command-output:*"
+      },
+      {
+        # logs:DescribeLogGroups doesn't support resource-level restriction in IAM (AWS
+        # always evaluates it against "*"), so it can't be scoped like the statement above.
+        Sid      = "FitCliDescribeLogGroups"
+        Effect   = "Allow"
+        Action   = "logs:DescribeLogGroups"
+        Resource = "*"
       },
     ]
   })

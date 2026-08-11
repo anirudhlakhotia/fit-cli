@@ -62,6 +62,29 @@ test("the cbdino and database blocks are merged under situational, without the p
   });
 });
 
+test("a gcp deployer and region are forwarded into the cbdino block", () => {
+  const config = buildSituationalConfiguration(database, {
+    version: "8.0",
+    cbDinoClusterAppPath: "cbdinocluster",
+    enablePrivateEndpoint: true,
+    deployer: "gcp",
+    region: "us-west1",
+  });
+  assert.deepEqual(config.situational, {
+    cbdino: {
+      version: "8.0",
+      cbDinoClusterAppPath: "cbdinocluster",
+      enablePrivateEndpoint: true,
+      deployer: "gcp",
+      region: "us-west1",
+    },
+    database: {
+      jdbc: "jdbc:postgresql://faas.couchbase.com:5432/perf",
+      username: "postgres",
+    },
+  });
+});
+
 test("cbdino settings default to a DEFAULT_CAPELLA_CLUSTER_VERSION cluster on the PATH binary", () => {
   const config = buildSituationalConfiguration(database) as {
     situational: { cbdino: typeof DEFAULT_CBDINO_SETTINGS };

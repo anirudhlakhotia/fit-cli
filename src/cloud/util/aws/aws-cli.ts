@@ -68,7 +68,13 @@ export async function freshCallerIdentity(): Promise<CredentialsCheck> {
 
 /** The outcome of {@link assumeFitCliRole}. */
 export type AssumeRoleOutcome =
-  | { ok: true; preAssumeIdentity: CallerIdentity; identity: CallerIdentity; sessionExpiry: string }
+  | {
+      ok: true;
+      preAssumeIdentity: CallerIdentity;
+      identity: CallerIdentity;
+      sessionExpiry: string;
+      isChained: boolean;
+    }
   | { ok: false; preAssumeIdentity?: CallerIdentity; message: string };
 
 let cachedAssumeResult: AssumeRoleOutcome | undefined;
@@ -136,7 +142,7 @@ export async function assumeFitCliRole(): Promise<AssumeRoleOutcome> {
   }
 
   if (pre.identity.arn.includes("fit-cli-role")) {
-    fitCliInfo(`Assuming fit-cli-role (already assumed as ${pre.identity.arn})`);
+    fitCliInfo(`Assuming AWS fit-cli-role (already assumed as ${pre.identity.arn})`);
     // We didn't assume anything, so there's nothing for us to refresh — whatever provided
     // these credentials (OIDC / instance profile / a prior assume) owns their lifecycle.
     didSetEnvCreds = false;
@@ -146,11 +152,12 @@ export async function assumeFitCliRole(): Promise<AssumeRoleOutcome> {
       preAssumeIdentity: pre.identity,
       identity: pre.identity,
       sessionExpiry: "already active",
+      isChained: true,
     };
     return cachedAssumeResult;
   }
 
-  fitCliInfo(`Assuming fit-cli-role...`);
+  fitCliInfo(`Assuming AWS fit-cli-role...`);
   fitCliInfo(`  current identity: ${pre.identity.arn}`);
 
   let sessionName: string;
@@ -161,10 +168,17 @@ export async function assumeFitCliRole(): Promise<AssumeRoleOutcome> {
   }
 
   // AWS caps "role chaining" — assuming a role using credentials that are themselves
-  // temporary (SSO, an EC2 instance profile, an already-assumed role) — at 1 hour,
-  // hard-erroring if DurationSeconds is set higher. Only a direct long-term IAM user
-  // (arn contains ":user/") can be granted the longer session requested below.
-  const isChained = !pre.identity.arn.includes(":user/");
+  // temporary (SSO, an EC2 instance profile, an already-assumed role, or a custom
+  // credential_process/provider that mints a session token) — at 1 hour, hard-erroring
+  // if DurationSeconds is set higher. This is a property of the *credentials*
+  // (presence of a session token), not the caller identity's ARN shape: some
+  // credential providers (e.g. custom SSO-like login tools) return temporary,
+  // session-token-backed credentials for an IAM user ARN, which would falsely look
+  // "long-term" if we pattern-matched on ":user/" instead of checking the credentials
+  // themselves.
+  const currentCreds = await fromNodeProviderChain()();
+  const isChained = Boolean(currentCreds.sessionToken);
+  console.log(`  chained credentials (session token present): ${isChained}`);
 
   try {
     const freshSts = new STSClient({ region: AWS_REGION });
@@ -186,7 +200,7 @@ export async function assumeFitCliRole(): Promise<AssumeRoleOutcome> {
     credsExpiration = creds.Expiration;
     didSetEnvCreds = true;
     const sessionExpiry = creds.Expiration?.toISOString() ?? "unknown";
-    fitCliInfo(`✓ Assumed fit-cli-role (session expires: ${sessionExpiry})`);
+    fitCliInfo(`✓ Assumed AWS fit-cli-role (session expires: ${sessionExpiry})`);
     cachedAssumeResult = {
       ok: true,
       preAssumeIdentity: pre.identity,
@@ -196,11 +210,12 @@ export async function assumeFitCliRole(): Promise<AssumeRoleOutcome> {
         userId: "",
       },
       sessionExpiry,
+      isChained,
     };
     return cachedAssumeResult;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    console.warn(`⚠  Could not assume fit-cli-role: ${message}`);
+    console.warn(`⚠  Could not assume AWS fit-cli-role: ${message}`);
     cachedAssumeResult = { ok: false, preAssumeIdentity: pre.identity, message };
     return cachedAssumeResult;
   }

@@ -1,4 +1,5 @@
 import { AWS_REGION } from "../../cloud/util/aws/aws-target.js";
+import { loadEnvironments } from "../../fit/util/environments.js";
 import type { CapellaCloudProvider } from "./build-cluster-def.js";
 
 /** The docker network clean FIT environments allocate their clusters on. */
@@ -49,14 +50,32 @@ export function defaultCbdinoclusterInitArgs(
  * `CAPELLA_ENDPOINT/USER/PASS/OID`). With a `CAPELLA_USER` present, `--auto`
  * enables and fills in Capella; without one it leaves Capella disabled.
  *
- * AWS credentials are uploaded before init runs (see `uploadRemoteAwsCredentials`
- * in `run-from-definition.ts`), so `--aws-region` here lets `--auto` enable the
- * aws block directly rather than needing a post-init config patch.
+ * `cloudProvider` picks which direct cloud-infra block cbdinocluster also needs:
+ * situational PE (`private-endpoints setup-link`) calls the CSP's API directly, so
+ * whichever CSP the instance/cluster is on needs its block enabled — mirroring
+ * {@link capellaFunctionalCbdinoclusterInitArgs}. AWS credentials are uploaded
+ * before init runs (see `uploadRemoteAwsCredentials` in `run-from-definition.ts`),
+ * so `--aws-region` here lets `--auto` enable the aws block directly. GCP needs no
+ * equivalent upload — the box's attached service account already provides ADC, so
+ * `--gcp-project-id`/`--gcp-region` alone are enough for `--auto` to enable the
+ * gcp block.
  */
 export function situationalCbdinoclusterInitArgs(
   dockerNetwork: string = DEFAULT_CBDINOCLUSTER_DOCKER_NETWORK,
+  cloudProvider: "aws" | "gcp" = "aws",
 ): string {
-  return baseCbdinoclusterInitArgs(dockerNetwork, false, AWS_REGION);
+  const gcp = loadEnvironments().defaults.gcp;
+  return [
+    "--auto",
+    ...(cloudProvider === "aws" ? [`--aws-region ${AWS_REGION}`] : ["--disable-aws"]),
+    "--disable-azure",
+    ...(cloudProvider === "gcp" && gcp?.project && gcp.region
+      ? [`--gcp-project-id ${gcp.project}`, `--gcp-region ${gcp.region}`]
+      : ["--disable-gcp"]),
+    "--disable-k8s",
+    "--disable-dns",
+    `--docker-network ${dockerNetwork}`,
+  ].join(" ");
 }
 
 /**
@@ -67,10 +86,16 @@ export function situationalCbdinoclusterInitArgs(
  * through its own API — so those blocks stay disabled.
  *
  * `privateEndpoint` is the exception: `cbdinocluster private-endpoints setup-link`
- * calls the AWS EC2 API directly (`CreateVpcEndpoint`/`ModifyVpcEndpoint`) to wire up
- * PrivateLink, so it needs the `aws` block enabled. AWS credentials are uploaded
- * before init runs (see `uploadRemoteAwsCredentials` in `run-from-definition.ts`),
- * so `--aws-region` here lets `--auto` enable the aws block directly.
+ * calls the CSP's API directly to wire up the private link (AWS `CreateVpcEndpoint`/
+ * `ModifyVpcEndpoint`, or GCP's PSC forwarding-rule equivalent), so it needs the
+ * matching cloud block enabled — whichever one matches `cloudProvider`, since PE
+ * only makes sense when the test box and the Capella cluster share a CSP.
+ * AWS credentials are uploaded before init runs (see `uploadRemoteAwsCredentials`
+ * in `run-from-definition.ts`), so `--aws-region` here lets `--auto` enable the aws
+ * block directly. GCP needs no equivalent upload: the box's attached service
+ * account (see `terraform/gcp/service-account.tf`) already provides ADC, so
+ * `--gcp-project-id`/`--gcp-region` alone are enough for `--auto` to enable the
+ * gcp block.
  *
  * `--capella-provider` sets the default provider in `~/.cbdinocluster`;
  * `--capella-*-region` pre-fills the per-provider region defaults so
@@ -83,11 +108,14 @@ export function capellaFunctionalCbdinoclusterInitArgs(
   dockerNetwork: string = DEFAULT_CBDINOCLUSTER_DOCKER_NETWORK,
   privateEndpoint = false,
 ): string {
+  const gcp = loadEnvironments().defaults.gcp;
   return [
     "--auto",
-    ...(privateEndpoint ? [`--aws-region ${AWS_REGION}`] : ["--disable-aws"]),
+    ...(privateEndpoint && cloudProvider === "aws" ? [`--aws-region ${AWS_REGION}`] : ["--disable-aws"]),
     "--disable-azure",
-    "--disable-gcp",
+    ...(privateEndpoint && cloudProvider === "gcp" && gcp?.project && gcp.region
+      ? [`--gcp-project-id ${gcp.project}`, `--gcp-region ${gcp.region}`]
+      : ["--disable-gcp"]),
     `--capella-provider ${cloudProvider}`,
     // Pre-fill region defaults for all three providers so init --auto never prompts.
     "--capella-aws-region us-west-2",

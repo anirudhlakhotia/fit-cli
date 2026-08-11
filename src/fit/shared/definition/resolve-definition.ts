@@ -62,6 +62,7 @@ export type { PrivateEndpointSetup } from "./types.js";
 
 export type ResolvedInstance =
   | { kind: "aws"; instanceType?: string; privateEndpoint?: PrivateEndpointSetup }
+  | { kind: "gcp"; instanceType?: string; privateEndpoint?: PrivateEndpointSetup }
   | { kind: "localhost" };
 
 export function resolveInstance(instance: InstanceLifetime): ResolvedInstance {
@@ -70,6 +71,13 @@ export function resolveInstance(instance: InstanceLifetime): ResolvedInstance {
       kind: "aws",
       ...(instance.aws.instanceType !== undefined ? { instanceType: instance.aws.instanceType } : {}),
       ...(instance.aws.privateEndpoint !== undefined ? { privateEndpoint: instance.aws.privateEndpoint } : {}),
+    };
+  }
+  if ("gcp" in instance) {
+    return {
+      kind: "gcp",
+      ...(instance.gcp.instanceType !== undefined ? { instanceType: instance.gcp.instanceType } : {}),
+      ...(instance.gcp.privateEndpoint !== undefined ? { privateEndpoint: instance.gcp.privateEndpoint } : {}),
     };
   }
   return { kind: "localhost" };

@@ -66,7 +66,7 @@ function describeCluster(cluster: ClusterLifetime): string {
 }
 
 function describeInstance(instance: InstanceLifetime): string {
-  const mode = "aws" in instance ? "AWS" : "localhost";
+  const mode = "aws" in instance ? "AWS" : "gcp" in instance ? "GCP" : "localhost";
   const clusterParts = instance.clusters.map(describeCluster);
   const clusterlessSessions = instance.clusterlessSessions ?? [];
   const clusterlessParts = clusterlessSessions.length > 0

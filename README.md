@@ -69,7 +69,7 @@ bun run wizard
 At the start of a FIT functional run you can choose to run on your own machine, or on a clean, throwaway AWS EC2 instance.
 If you can run the `aws` command locally, then everything else should work. 
 
-The AWS region and VPC are fixed (region `us-west-2`, VPC `fit-cli-vpc`, managed by `terraform/vpc.tf`) and are not configurable because:
+The AWS region and VPC are fixed (region `us-west-2`, VPC `fit-cli-vpc`, managed by `terraform/aws/vpc.tf`) and are not configurable because:
 
 * Simplifies and derisks where to look for user's instances for cleanup.
 * It means we always have a VPC and avoid hitting VPCIdNotSpecified if the user specifies a region that does not have a default one.

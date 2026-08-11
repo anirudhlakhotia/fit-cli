@@ -44,6 +44,25 @@ test("parses a minimal nested functional definition", () => {
   assert.equal(def.instances[0]?.clusters[0]?.sessions[0]?.runs[0]?.type, "functional");
 });
 
+test("parses a gcp instance", () => {
+  const def = FUNCTIONAL.replace("- aws:\n      instanceType: c5.4xlarge", "- gcp:\n      instanceType: n2-standard-8");
+  const parsed = parseDefinition(def);
+  assert.ok(parsed.instances[0] && "gcp" in parsed.instances[0]);
+  assert.deepEqual(parsed.instances[0].gcp, { instanceType: "n2-standard-8" });
+});
+
+test("parses a gcp instance with privateEndpoint", () => {
+  const def = FUNCTIONAL.replace("- aws:\n      instanceType: c5.4xlarge", "- gcp:\n      privateEndpoint: {}");
+  const parsed = parseDefinition(def);
+  assert.ok(parsed.instances[0] && "gcp" in parsed.instances[0]);
+  assert.deepEqual(parsed.instances[0].gcp, { privateEndpoint: {} });
+});
+
+test("rejects a gcp instance with a non-empty privateEndpoint", () => {
+  const def = FUNCTIONAL.replace("- aws:\n      instanceType: c5.4xlarge", "- gcp:\n      privateEndpoint: { foo: bar }");
+  assert.throws(() => parseDefinition(def), InvalidDefinitionError);
+});
+
 test("parses addToDefaultExcludedGroups on a functional run", () => {
   const def = parseDefinition(
     FUNCTIONAL.replace("presets: [all]", "presets: [all]\n                  addToDefaultExcludedGroups: [protostellarWillWorkLater]"),
@@ -102,6 +121,38 @@ instances:
               presets: [all]
 `);
   assert.equal(def.instances[0]?.clusterlessSessions?.[0]?.runs[0]?.type, "situational");
+});
+
+test("parses a gcp instance with a situational privateEndpoint run", () => {
+  const def = parseDefinition(`
+version: 1
+type: fit
+instances:
+  - gcp:
+      privateEndpoint: {}
+    setup:
+      cbdinocluster:
+        init:
+          config:
+            version: 6
+    clusters: []
+    clusterlessSessions:
+      - performer:
+          image: java-fit-performer:main
+        runs:
+          - type: situational
+            situational:
+              database:
+                mode: hosted
+              privateEndpoint: {}
+            tests:
+              presets: [all]
+`);
+  assert.ok(def.instances[0] && "gcp" in def.instances[0]);
+  assert.deepEqual(def.instances[0].gcp, { privateEndpoint: {} });
+  const run = def.instances[0]?.clusterlessSessions?.[0]?.runs[0];
+  assert.ok(run?.type === "situational");
+  assert.deepEqual(run.situational.privateEndpoint, {});
 });
 
 const FUNCTIONAL_WITH_INIT_ARGS = `

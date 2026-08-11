@@ -27,7 +27,13 @@
               ],
             },
           ],
-        },
+        }
+      ],
+    },
+    {
+      // This block is primarily to test previous release line, but we mix up the CSPs too.
+      gcp: {},
+      clusters: [
         {
           // Functional on-prem testing, previous release line.
           clusterConfig: 'previous',
@@ -48,7 +54,7 @@
           ],
         },
       ],
-    },
+    }
   ],
   clusterConfigs: [
     {

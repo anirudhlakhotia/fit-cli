@@ -41,6 +41,14 @@ export interface CbdinoSettings {
   cbDinoClusterAppPath: string;
   enablePrivateEndpoint: boolean;
   /**
+   * Which CSP cbdino should deploy the Capella cluster on ("aws"|"gcp"|"azure").
+   * The driver (`CbDinoRaw.deployer`) defaults to aws when omitted, so this is
+   * only set explicitly for gcp — see {@link situationalCbdinoSettings}.
+   */
+  deployer?: string;
+  /** Region for `deployer`, e.g. "us-west1" for gcp. Only meaningful alongside `deployer`. */
+  region?: string;
+  /**
    * When present, cbdino builds the cluster via the Couchbase Autonomous Operator
    * (CAO) / CNG gateway (OpenShift) instead of a Capella cloud cluster — the
    * situational counterpart of functional's `cao` cbdinocluster block.
@@ -100,6 +108,8 @@ export function situationalConfigPiece(database: ResultsDatabase, cbdino: Cbdino
           version: cbdino.version,
           cbDinoClusterAppPath: cbdino.cbDinoClusterAppPath,
           enablePrivateEndpoint: cbdino.enablePrivateEndpoint,
+          ...(cbdino.deployer !== undefined ? { deployer: cbdino.deployer } : {}),
+          ...(cbdino.region !== undefined ? { region: cbdino.region } : {}),
           ...(cbdino.cao
             ? { deployer: "cao", operatorVersion: cbdino.cao.operatorVersion, gatewayVersion: cbdino.cao.gatewayVersion }
             : {}),

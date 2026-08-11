@@ -10,8 +10,8 @@ import type { DefinitionRunPath } from "../../../util/non-fit/replay.js";
  * identical everywhere.
  */
 export interface RunLabelParts {
-  /** Execution target kind — distinguishes `aws1` from `local`. */
-  instanceKind?: "aws" | "localhost";
+  /** Execution target kind — distinguishes `aws1` / `gcp1` from `local`. */
+  instanceKind?: "aws" | "gcp" | "localhost";
   /** Cluster provenance — `cbdino1` (allocated) vs `existing1` (connection/useExisting). */
   clusterMode?: "connection" | "useExisting" | "cbdinocluster";
   /** Couchbase Server version of an allocated cbdino cluster, e.g. `8.1.0`. When known, replaces the `cbdino1` index form with the version itself. */
@@ -35,13 +35,16 @@ export interface RunLabelParts {
   privateEndpoint?: boolean;
 }
 
-/** `local` / `aws1` / (fallback) `instance1`. */
+/** `local` / `aws1` / `gcp1` / (fallback) `instance1`. */
 export function instanceLabel(path: DefinitionRunPath, kind?: RunLabelParts["instanceKind"]): string {
   if (kind === "localhost") {
     return "local";
   }
   if (kind === "aws") {
     return `aws${path.instanceIndex + 1}`;
+  }
+  if (kind === "gcp") {
+    return `gcp${path.instanceIndex + 1}`;
   }
   return `instance${path.instanceIndex + 1}`;
 }

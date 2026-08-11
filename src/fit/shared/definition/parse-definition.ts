@@ -24,6 +24,7 @@ import {
   SITUATIONAL_DATABASE_MODES,
   TEST_PRESETS,
   type AwsInstanceSetup,
+  type GcpInstanceSetup,
   type PrivateEndpointSetup,
   type CbdinoclusterInitSetup,
   type CbdinoclusterSetup,
@@ -292,6 +293,20 @@ function validateAwsInstance(value: unknown, path: string): AwsInstanceSetup {
     aws.privateEndpoint = validatePrivateEndpointSetup(record["privateEndpoint"], `${path}.privateEndpoint`);
   }
   return aws;
+}
+
+function validateGcpInstance(value: unknown, path: string): GcpInstanceSetup {
+  const record = value === null ? {} : requireRecord(value, path);
+  rejectUnknown(record, ["instanceType", "privateEndpoint"], path);
+  const gcp: GcpInstanceSetup = {};
+  const instanceType = validateOptionalString(record, "instanceType", `${path}.instanceType`);
+  if (instanceType !== undefined) {
+    gcp.instanceType = instanceType;
+  }
+  if (record["privateEndpoint"] !== undefined) {
+    gcp.privateEndpoint = validatePrivateEndpointSetup(record["privateEndpoint"], `${path}.privateEndpoint`);
+  }
+  return gcp;
 }
 
 function validateLocalhostInstance(value: unknown, path: string): Record<string, never> {
@@ -825,11 +840,12 @@ function validateInstanceSetup(value: unknown, path: string): InstanceSetup | un
 function validateInstance(value: unknown, index: number): InstanceLifetime {
   const path = `instances[${index}]`;
   const record = requireRecord(value, path);
-  rejectUnknown(record, ["aws", "localhost", "setup", "clusters", "clusterlessSessions", "cbdinocluster"], path);
+  rejectUnknown(record, ["aws", "gcp", "localhost", "setup", "clusters", "clusterlessSessions", "cbdinocluster"], path);
   const hasAws = record.aws !== undefined;
+  const hasGcp = record.gcp !== undefined;
   const hasLocalhost = record.localhost !== undefined;
-  if (hasAws === hasLocalhost) {
-    throw new InvalidDefinitionError(`"${path}" must have exactly one of "aws" or "localhost".`);
+  if (Number(hasAws) + Number(hasGcp) + Number(hasLocalhost) !== 1) {
+    throw new InvalidDefinitionError(`"${path}" must have exactly one of "aws", "gcp" or "localhost".`);
   }
   const clusters = Array.isArray(record.clusters)
     ? record.clusters.map((cluster, clusterIndex) => validateCluster(cluster, `${path}.clusters[${clusterIndex}]`))
@@ -848,7 +864,9 @@ function validateInstance(value: unknown, index: number): InstanceLifetime {
   const instance: InstanceLifetime = {
     ...(hasAws
       ? { aws: validateAwsInstance(record.aws, `${path}.aws`) }
-      : { localhost: validateLocalhostInstance(record.localhost, `${path}.localhost`) }),
+      : hasGcp
+        ? { gcp: validateGcpInstance(record.gcp, `${path}.gcp`) }
+        : { localhost: validateLocalhostInstance(record.localhost, `${path}.localhost`) }),
     clusters,
   };
   if (record.cbdinocluster !== undefined) {
