@@ -164,7 +164,7 @@ export function awsTenantAliasForAccount(
   return Object.entries(environments.awsTenants).find(([, tenant]) => tenant.accountId === accountId)?.[0];
 }
 
-/** The configured AWS tenant aliases (e.g. ["cb-sdk", "cb-qe"]). */
+/** The configured AWS tenant aliases (e.g. ["cb-sdk"]). */
 export function awsTenantAliases(environments: EnvironmentsFile = loadEnvironments()): string[] {
   return Object.keys(environments.awsTenants);
 }

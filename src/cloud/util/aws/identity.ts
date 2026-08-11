@@ -116,8 +116,8 @@ function printAwsProfileSummary(profiles: AwsProfilesInfo): void {
   console.log("  fit-cli will try and assume the role 'fit-cli-role' from the cb-sdk account, which has all AWS permissions needed.");
   console.log("  This is done both on localhost testing and when run on a GHA, so that the two environments are similar and isolated from user's setup.");
   console.log("  There are some limits on how long a role can be assumed: 1-12 hours, depending on how logged in.  But fit-cli should automatically refresh the role as needed.");
-  console.log("  'fit-cli-role' can only be assumed from these two AWS accounts: cb-sdk (958525475024) and cb-qe (516524556673).");
-  console.log("  E.g. you must be on one of these two accounts: if not, create an IT ticket.");
+  console.log("  'fit-cli-role' can only be assumed from the cb-sdk AWS account (958525475024).");
+  console.log("  E.g. you must be on that account: if not, create an IT ticket.");
   console.log("  Instances are always created on us-west-2 and in VPC `fit-cli-vpc` for several reasons (see README).");
   console.log("AWS profile:");
   const activeEntry = profiles.profiles.find((p) => p.name === profiles.active);
@@ -149,7 +149,7 @@ export function printCredentialsDiagnostic(env: NodeJS.ProcessEnv = process.env)
 function printAwsFailureGuidance(profiles: AwsProfilesInfo, _environments: EnvironmentsFile): void {
   console.log("");
   console.log("To fix this:");
-  console.log(`  1. You will need AWS access if you don't have it already, and be on either the "cb-sdk" or "cb-qe" tenants: 
+  console.log(`  1. You will need AWS access if you don't have it already, and be on the "cb-sdk" account:
       Install aws cli (https://aws.amazon.com/cli/).
       Create an IT ticket asking for access to the "cb-sdk" tenant.`);
   console.log(`  2. Make sure you've logged into AWS recently so your cached credentials are up-to-date:`);
@@ -157,8 +157,8 @@ function printAwsFailureGuidance(profiles: AwsProfilesInfo, _environments: Envir
   console.log(`       aws sso login    (if you use AWS SSO)`);
   if (profiles.profiles.length > 1) {
     console.log(`  3. You have multiple AWS profiles configured (note you have ${profiles.profiles.map((p) => p.name).join(", ")}).`);
-    console.log(`     Then run with the right one with (note that only "cb-sdk" and "cb-qe" are supported):`);
-    console.log(`       AWS_PROFILE="cb-sdk" fit ...  or AWS_PROFILE="cb-qe" fit ...`);
+    console.log(`     Then run with the right one with (note that only "cb-sdk" is supported):`);
+    console.log(`       AWS_PROFILE="cb-sdk" fit ...`);
   }
 }
 
@@ -216,7 +216,7 @@ let cachedResult: AwsCredentialsResult | undefined;
  * work. Always prints (success or failure): where it looked for credentials and which
  * sources are set, the active AWS profile and how many are configured, the caller
  * identity, and (on success) the fit-cli-role session it assumed. Fails fast — with
- * guidance on how to fix it — if the account isn't a supported tenant (cb-sdk/cb-qe,
+ * guidance on how to fix it — if the account isn't a supported tenant (cb-sdk,
  * per fit-cli-role's trust policy) or the role can't be assumed.
  *
  * Call this as early as possible in any workflow that will need AWS (see the
@@ -293,7 +293,7 @@ Usage:
 
 Scenarios (no real AWS calls, no ~/.aws files read):
   no-creds       no AWS credentials found anywhere
-  wrong-tenant   valid credentials, but not on the cb-sdk/cb-qe tenant
+  wrong-tenant   valid credentials, but not on the cb-sdk tenant
   assume-fail    on a supported tenant, but assuming fit-cli-role fails (e.g. expired session)
   success        everything works`;
 }
@@ -307,7 +307,6 @@ function simulatedOptions(scenario: Scenario): CheckAwsCredentialsOptions {
     profiles: [
       { name: "default", accountId: "958525475024", tenant: "cb-sdk" },
       { name: "cb-sdk", accountId: "958525475024", tenant: "cb-sdk" },
-      { name: "cb-qe-shared", accountId: "516524556673", tenant: "cb-qe" },
     ],
   };
   const environments = loadEnvironments();
