@@ -39,10 +39,10 @@ import { checkPlatform } from "./check-platform.js";
 const WORKFLOW_PROMPT_MESSAGE = "What would you like to do?";
 
 const WORKFLOW_CHOICES = [
+  { name: "Run or export a preset", value: "preset" },
   { name: "Build a FIT definition file", value: "create-definition" },
   { name: "Run or share a recently generated definition file", value: "recent-definitions" },
   { name: "Run a FIT definition file", value: "run-definition" },
-  { name: "Export or run a preset", value: "preset" },
   { name: "Configure fit-cli", value: "configure" },
 ] as const;
 
@@ -84,10 +84,10 @@ export async function chooseWorkflow(
 
   const choices = configMissing
     ? ([
+        { name: "Run or export a preset", value: "preset" },
         { name: "Build a FIT definition file", value: "create-definition" },
         { name: "Run or share a recently generated definition file", value: "recent-definitions" },
         { name: "Run a FIT definition file", value: "run-definition" },
-        { name: "Export or run a preset", value: "preset" },
         { name: "Configure fit-cli (recommended)", value: "configure" },
       ] as const)
     : WORKFLOW_CHOICES;

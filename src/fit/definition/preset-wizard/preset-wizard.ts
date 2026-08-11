@@ -12,7 +12,7 @@
  */
 import { Separator } from "@inquirer/prompts";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
-import { type RunOutput } from "../../../util/non-fit/artifacts.js";
+import { combineRunOutputs, type RunOutput } from "../../../util/non-fit/artifacts.js";
 import { select } from "../../../util/non-fit/prompts.js";
 import { chooseAnalyticsFunctionalSdk, chooseSdk } from "../../../util/sdk/choose-sdk.js";
 import { askPerformerTag } from "../../performers/util/ask-performer-image.js";
@@ -26,8 +26,8 @@ import {
   groupPresetsByTag,
   presetDescriptions,
   presetUsesAnalyticsDriver,
-  type PresetType,
 } from "../generate-preset/generate-preset.js";
+import { expandPresetGroupNames, presetGroupDescriptions } from "../generate-preset/preset-groups.js";
 
 const PROMPT_PREFIX = "preset";
 const ACTION_PROMPT_ID = `${PROMPT_PREFIX}.action`;
@@ -45,25 +45,34 @@ async function choosePresetAction(): Promise<PresetAction> {
     promptId: ACTION_PROMPT_ID,
     message: "What would you like to do with a preset?",
     choices: [
-      { name: "Export a preset — write a ready-to-run definition file you can edit, share, or hand to CI", value: "export" },
       { name: "Run a preset — write the definition file and execute it now", value: "run" },
+      { name: "Export a preset — write a ready-to-run definition file you can edit, share, or hand to CI", value: "export" },
     ],
   });
 }
 
-/** Build the preset picker's choice list, grouped by tag with a separator header per group. */
+/**
+ * Build the preset picker's choice list, grouped by tag with a separator header per
+ * group — presets and preset groups (e.g. `op-multi-lite`) intermingled, same as
+ * `fit preset list`. A group's "description" is its immediate members, since a full
+ * description gets long fast (see `formatPresetsAndGroupsListing`).
+ */
 export function buildPresetTypeChoices(): unknown[] {
-  const presets = presetDescriptions();
-  const col = presets.reduce((max, p) => Math.max(max, p.type.length), 0);
-  const groups = groupPresetsByTag(presets);
+  const entries = [
+    ...presetDescriptions().map((p) => ({ type: p.type, tags: p.tags, description: p.description })),
+    ...presetGroupDescriptions().map((g) => ({ type: g.name, tags: g.tags, description: `[groups: ${g.presets.join(", ")}]`, isGroup: true })),
+  ];
+  const col = entries.reduce((max, e) => Math.max(max, e.type.length), 0);
+  const groups = groupPresetsByTag(entries);
   return groups.flatMap(({ tag, items }) => [
     new Separator(`── ${tag}${describeTag(tag) ? `: ${describeTag(tag)}` : ""} ──`),
-    ...items.map((p) => ({ name: `${p.type.padEnd(col)}  ${p.description}`, value: p.type })),
+    ...items.map((e) => ({ name: `${e.type.padEnd(col)}  ${e.description}`, value: e.type })),
   ]);
 }
 
-async function choosePresetType(): Promise<PresetType> {
-  return select<PresetType>({
+/** Returns a preset or preset-group name — see `expandPresetGroupNames` for resolving it. */
+async function choosePresetType(): Promise<string> {
+  return select<string>({
     promptId: TYPE_PROMPT_ID,
     message: "Which preset?",
     choices: buildPresetTypeChoices(),
@@ -77,19 +86,37 @@ async function choosePresetType(): Promise<PresetType> {
  */
 export async function runPresetWizard(options: RunPresetWizardOptions = {}): Promise<RunOutput> {
   const action = await choosePresetAction();
-  const type = await choosePresetType();
-  const sdk = presetUsesAnalyticsDriver(type)
+  const name = await choosePresetType();
+  const types = expandPresetGroupNames(name);
+  if (types.length > 1) {
+    console.log(`"${name}" expands to ${types.length} presets, run in sequence: ${types.join(", ")}\n`);
+  }
+  // A group's presets share one SDK family (see generate-preset.ts's `<family>-multi-*`
+  // comment), so checking the first expanded preset is representative of the whole group.
+  const sdk = presetUsesAnalyticsDriver(types[0])
     ? await chooseAnalyticsFunctionalSdk("Which Analytics SDK's performer should the preset run against?", PROMPT_PREFIX)
     : await chooseSdk("Which SDK's performer should the preset run against?", PROMPT_PREFIX);
   const tag = await askPerformerTag(sdk, PROMPT_PREFIX);
   const image = performerImageShortName(sdk, tag);
 
   if (action === "run") {
-    const { path } = await generatePreset({ type, image, skipGuidance: true });
-    return runFromDefinition(path);
+    const outputs: RunOutput[] = [];
+    for (const [index, type] of types.entries()) {
+      if (types.length > 1) {
+        console.log(`\n=== Running preset ${index + 1}/${types.length}: ${type} ===\n`);
+      }
+      const { path } = await generatePreset({ type, image, skipGuidance: true });
+      // Presets in a group run in one process, so scope per-run prompt ids by preset
+      // name — see run.ts's identical handling for why single-preset runs stay unscoped.
+      const output = await runFromDefinition(path, types.length > 1 ? { promptScope: type } : undefined);
+      if (output) outputs.push(output);
+    }
+    return combineRunOutputs(...outputs);
   }
 
-  await generatePreset({ type, image, format: options.format, pushGistVisibility: options.pushGistVisibility });
+  for (const type of types) {
+    await generatePreset({ type, image, format: options.format, pushGistVisibility: options.pushGistVisibility });
+  }
   return { artifacts: [], details: [] };
 }
 
