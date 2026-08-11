@@ -1,7 +1,3 @@
-// TODO: eventually this should span multiple real Capella clusters (e.g. two server
-// versions), mirroring op-onprem-func-release's two on-prem clusters — deferred for now, so
-// this is a single-cluster run against prod, differing from op-capella-func-lite only in
-// the Capella environment used.
 {
   preset: {
     order: 30,
@@ -14,7 +10,28 @@
       aws: {},
       clusters: [
         {
-          clusterConfig: 'cluster-0',
+          // Functional Capella testing, latest server version.
+          clusterConfig: 'latest',
+          sessions: [
+            {
+              performer: {
+                image: '{{PERFORMER_IMAGE}}',
+                onPortInUse: 'reuse',
+              },
+              runs: [
+                {
+                  type: 'functional',
+                  tests: {
+                    presets: ['{{environments.testSets.FUNCTIONAL_SET_RELEASE}}'],
+                  },
+                },
+              ],
+            },
+          ],
+        },
+        {
+          // Functional Capella testing, previous server version.
+          clusterConfig: 'previous',
           sessions: [
             {
               performer: {
@@ -37,13 +54,34 @@
   ],
   clusterConfigs: [
     {
-      id: 'cluster-0',
+      id: 'latest',
       cbdinocluster: {
         config: {
           nodes: [
             {
               count: 3,
               version: '{{environments.defaults.capellaClusterVersion}}',
+            },
+          ],
+          cloud: {
+            'cloud-provider': 'aws',
+          },
+        },
+        onClusterExists: 'useExisting',
+        capella: {
+          cloudProvider: 'aws',
+          environment: 'prod',
+        },
+      },
+    },
+    {
+      id: 'previous',
+      cbdinocluster: {
+        config: {
+          nodes: [
+            {
+              count: 3,
+              version: '{{environments.defaults.capellaPreviousClusterVersion}}',
             },
           ],
           cloud: {
