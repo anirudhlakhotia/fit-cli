@@ -58,7 +58,7 @@ async function ghcrImageExists(execution: FitExecutionContext, imageName: string
   }
 }
 
-/** Check for a performer image and pull it from GHCR if it is missing locally. */
+/** Check for a performer image and pull it from GHCR, always refreshing a mutable tag. */
 export async function checkAndPullPerformer(
   execution: FitExecutionContext,
   sdk: Sdk,
@@ -72,12 +72,7 @@ export async function checkAndPullPerformer(
     return false;
   }
 
-  if (await ghcrImageExists(execution, imageName)) {
-    console.log(`✓ Found the ${sdk.name} performer Docker image ${imageName}`);
-    await logPerformerImageMetadata(execution, imageName);
-    return true;
-  }
-
+  const existedBefore = await ghcrImageExists(execution, imageName);
   const { token: githubToken, source: tokenSource } = await resolveGithubTokenWithSource();
   console.log(`\nPulling performer with:\n  docker ${dockerPullArgs(imageName).join(" ")}\n`);
 
@@ -114,7 +109,7 @@ export async function checkAndPullPerformer(
     return false;
   }
 
-  console.log(`\n✓ Pulled the ${sdk.name} performer Docker image ${imageName}`);
+  console.log(`\n✓ ${existedBefore ? "Refreshed" : "Pulled"} the ${sdk.name} performer Docker image ${imageName}`);
   await logPerformerImageMetadata(execution, imageName);
   return true;
 }

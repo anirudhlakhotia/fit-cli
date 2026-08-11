@@ -147,7 +147,7 @@ async function cmdTable(argv: string[]): Promise<RunOutput> {
   // it at the same moment and they all race to run `docker login`.
   let loggedIn = false;
   try {
-    loggedIn = await ensureGhcrLogin(sdks, tag);
+    loggedIn = await ensureGhcrLogin();
   } catch {
     // Report this per-SDK below (as a pull failure) rather than losing the whole run.
   }
