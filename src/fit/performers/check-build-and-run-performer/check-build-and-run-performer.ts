@@ -189,6 +189,7 @@ export async function checkBuildAndRunPerformer(
     // CPU under Rosetta emulation). Without --rm the container isn't torn down
     // out from under us, so the logs above and the inspect below both still see
     // it even if it already exited.
+    console.log(`Checking the performer doesn't crash on startup (polling for ${STARTUP_CRASH_CHECK_TOTAL_MS}ms)...`);
     let exitedEarly = false;
     for (let waited = 0; waited < STARTUP_CRASH_CHECK_TOTAL_MS; waited += STARTUP_CRASH_CHECK_INTERVAL_MS) {
       await sleep(STARTUP_CRASH_CHECK_INTERVAL_MS);
