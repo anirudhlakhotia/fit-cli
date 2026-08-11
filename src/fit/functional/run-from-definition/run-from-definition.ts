@@ -543,17 +543,6 @@ function withRemoteK8sInit(
   };
 }
 
-/** Node count to preflight for when a functional CNG cluster's own def is unavailable. */
-const FUNCTIONAL_CNG_DEFAULT_NODE_COUNT = 3;
-
-/**
- * The largest cluster situational CNG (`CngTest`'s rebalance5To3/rebalance3To5
- * methods) is known to build, per transactions-fit-performer. Situational's
- * cluster shape is otherwise opaque to fit-cli, so this is the conservative
- * preflight target rather than a derived per-run figure.
- */
-const SITUATIONAL_CNG_MAX_NODE_COUNT = 5;
-
 /**
  * Make an execution target CNG-ready and return the `k8s` config-patch block to
  * merge onto `~/.cbdinocluster`, or `undefined` when nothing needs patching (the
@@ -564,10 +553,7 @@ const SITUATIONAL_CNG_MAX_NODE_COUNT = 5;
  * to the legacy local k3d cluster. Shared by both functional and situational CNG
  * cycles — {@link prepareFunctionalCngCycle} and {@link prepareSituationalCngCycle}.
  */
-async function resolveCngK8sConfigPatch(
-  execution: FitExecutionContext,
-  requiredNodes: number,
-): Promise<PieceData | undefined> {
+async function resolveCngK8sConfigPatch(execution: FitExecutionContext): Promise<PieceData | undefined> {
   if (execution.kind === "remote") {
     const home = remoteHomeFromWorkspace(execution.rootDir);
     if (cngKubernetesBackend() === "k3d") {
@@ -578,7 +564,7 @@ async function resolveCngK8sConfigPatch(
     if (typeof creds === "string") {
       throwFatalToCluster(creds);
     }
-    const { context } = await provisionRemoteOpenShift(execution, home, creds, resolveOcVersion(), requiredNodes);
+    const { context } = await provisionRemoteOpenShift(execution, home, creds, resolveOcVersion());
     return buildOpenShiftK8sBlock(home, context);
   }
   const check = checkLocalhostCngKubernetes();
@@ -597,9 +583,7 @@ async function prepareFunctionalCngCycle(
   if (!group.cng) {
     return group;
   }
-  const requiredNodes =
-    group.cbdinocluster?.config.nodes.reduce((sum, n) => sum + n.count, 0) ?? FUNCTIONAL_CNG_DEFAULT_NODE_COUNT;
-  const k8sBlock = await resolveCngK8sConfigPatch(execution, requiredNodes);
+  const k8sBlock = await resolveCngK8sConfigPatch(execution);
   return k8sBlock ? withRemoteK8sInit(group, k8sBlock) : group;
 }
 
@@ -617,12 +601,7 @@ async function prepareSituationalCngCycle(
   if (!group.cng) {
     return group;
   }
-  // Situational's cluster shape is opaque to fit-cli (decided by whichever Java
-  // test class the driver runs, e.g. CngTest's rebalance5To3/3To5 methods build a
-  // 5-node cluster) — there's no per-run node count to inspect ahead of time like
-  // functional has, so preflight for the largest cluster situational CNG is known
-  // to build rather than trying to derive it.
-  const k8sBlock = await resolveCngK8sConfigPatch(execution, SITUATIONAL_CNG_MAX_NODE_COUNT);
+  const k8sBlock = await resolveCngK8sConfigPatch(execution);
   if (!k8sBlock) {
     return group;
   }
