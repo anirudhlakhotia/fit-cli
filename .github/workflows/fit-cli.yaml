@@ -14,7 +14,6 @@ on:
       definition_file:
         description: A fit-cli definition file e.g. "https://gist.githubusercontent.com/programmatix/<gist-id>/raw" or "examples/fit-functional-sanity-test.json5" (local to fit-cli).
         type: string
-        default: examples/fit-functional-sanity-test.json5
       definition_base_64:
         description: Optional base64-encoded definition contents. When set, this takes precedence over definitionFile.
         type: string
@@ -36,9 +35,8 @@ on:
         type: string
         default: ""
       slack_thread:
-        description: 'Optional: Slack thread to post a run summary into (a message permalink or channel:ts). The FIT bot must be a member of that channel.'
+        description: Slack thread to post a run summary into (e.g. https://couchbase.slack.com/archives/C05LNBVQRE3/p1786376341783169).
         type: string
-        default: ""
   workflow_call:
     inputs:
       preset:
@@ -52,7 +50,6 @@ on:
       definition_file:
         description: A fit-cli definition file e.g. "https://gist.githubusercontent.com/programmatix/<gist-id>/raw" or "examples/fit-functional-sanity-test.json5" (local to fit-cli).
         type: string
-        default: examples/fit-functional-sanity-test.json5
       definition_base_64:
         description: Optional base64-encoded definition contents. When set, this takes precedence over definitionFile.
         type: string
@@ -75,9 +72,8 @@ on:
         type: string
         default: ""
       slack_thread:
-        description: 'Optional: Slack thread to post a run summary into (a message permalink or channel:ts). The FIT bot must be a member of that channel.'
+        description: Slack thread to post a run summary into (e.g. https://couchbase.slack.com/archives/C05LNBVQRE3/p1786376341783169).  Only works for specific Slack channels
         type: string
-        default: ""
 
 permissions:
   id-token: write   # required for GitHub OIDC
