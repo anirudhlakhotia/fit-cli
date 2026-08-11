@@ -25,9 +25,9 @@ These are stored in environments.json5 and AWS Secrets [SECRETS1].
 ## AWS
 [SECRETS2] After encountering various problems when using user's localhost credentials in the clean EC2 testing, have decided to settle on EC2 testing exclusively using info from AWS secrets (Github PAT, Gerrit creds, etc).
 Those problems included the user's local Github PAT token not being recently SSO-authorised to access couchbaselabs repos (very common).
-[AWS1] The exception to this is AWS credentials themselves; the user must already have these.  They don't have to have `aws` installed; they can just get an access key and secret key from the AWS UI and set these via env vars.  These must come from either the cb-sdk or cb-qe accounts for [SECRETS3].
-[SECRETS3] There is a `fit-cli-role` that has all permissions needed for clean EC2 testing.  In GHAs we assume this role using OIDC.  When a user runs `fit-cli` we also assume the role.  The goal is that no matter if the user is on either cb-sdk or cb-qe, they will be able to assume `fit-cli-role` and it'll work.  
-If they are not on one of those two, they should get output guidance on how to achieve it (`AWS_PROFILE="cb-sdk" fit run...`).
+[AWS1] The exception to this is AWS credentials themselves; the user must already have these.  They don't have to have `aws` installed; they can just get an access key and secret key from the AWS UI and set these via env vars.  These must come from the cb-sdk account for [SECRETS3].
+[SECRETS3] There is a `fit-cli-role` that has all permissions needed for clean EC2 testing.  In GHAs we assume this role using OIDC.  When a user runs `fit-cli` we also assume the role.  The goal is that anyone on cb-sdk will be able to assume `fit-cli-role` and it'll work.
+If they are not on that account, they should get output guidance on how to achieve it (`AWS_PROFILE="cb-sdk" fit run...`).
 Similarly if they do not have AWS setup at all they should get guidance on that.
 
 ## Localhost testing
