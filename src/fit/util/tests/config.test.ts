@@ -8,6 +8,7 @@ import {
   FIT_CLI_CONFIG_VERSION,
   UnsupportedFitCliConfigVersionError,
   applyFitCliConfigToEnv,
+  capellaLogCollectionAvailable,
   ensureFitCliConfigEnv,
   loadFitCliConfig,
   parseFitCliConfig,
@@ -380,6 +381,90 @@ test("resolveCapellaConfig keeps the registry username even when a personal pass
   });
   assert.equal(resolved.username, "sdk_qe@couchbase.com");
   assert.equal(resolved.password, "my-pw");
+});
+
+test("resolveCapellaConfig picks up internalSupportToken/overrideToken from the shared secret", async () => {
+  const resolved = await resolveCapellaConfig({
+    block: "dev",
+    environments: TEST_ENVIRONMENTS,
+    config: { version: FIT_CLI_CONFIG_VERSION },
+    env: {},
+    fetchSecret: () =>
+      Promise.resolve({ password: "svc-pw", internalSupportToken: "support-tok", overrideToken: "override-tok" }),
+  });
+  assert.equal(resolved.internalSupportToken, "support-tok");
+  assert.equal(resolved.overrideToken, "override-tok");
+});
+
+test("resolveCapellaConfig omits internalSupportToken/overrideToken and never touches AWS when personal creds are set", async () => {
+  const resolved = await resolveCapellaConfig({
+    block: "dev",
+    environments: TEST_ENVIRONMENTS,
+    config: { version: FIT_CLI_CONFIG_VERSION, capella: { username: "me@cb.com", password: "pw" } },
+    env: {},
+    fetchSecret: noFetch,
+  });
+  assert.equal(resolved.internalSupportToken, undefined);
+  assert.equal(resolved.overrideToken, undefined);
+});
+
+test("resolveCapellaConfig reads uploadServerLogsHostName from the registry (non-secret)", async () => {
+  const resolved = await resolveCapellaConfig({
+    block: "dev",
+    environments: {
+      ...TEST_ENVIRONMENTS,
+      capella: { dev: { ...TEST_ENVIRONMENTS.capella.dev, uploadServerLogsHostName: "logs.example.com" } },
+    },
+    config: { version: FIT_CLI_CONFIG_VERSION },
+    env: {},
+    fetchSecret: () => Promise.resolve({ password: "svc-pw" }),
+  });
+  assert.equal(resolved.uploadServerLogsHostName, "logs.example.com");
+});
+
+test("capellaLogCollectionAvailable is true from just internalSupportToken — uploadServerLogsHostName isn't required", async () => {
+  const available = await capellaLogCollectionAvailable("dev", {
+    environments: TEST_ENVIRONMENTS,
+    env: {},
+    fetchSecret: () => Promise.resolve({ internalSupportToken: "support-tok" }),
+  });
+  assert.equal(available, true);
+});
+
+test("capellaLogCollectionAvailable is false when the secret has no internalSupportToken", async () => {
+  const available = await capellaLogCollectionAvailable("dev", {
+    environments: {
+      ...TEST_ENVIRONMENTS,
+      capella: { dev: { ...TEST_ENVIRONMENTS.capella.dev, uploadServerLogsHostName: "logs.example.com" } },
+    },
+    env: {},
+    fetchSecret: () => Promise.resolve({ password: "svc-pw" }),
+  });
+  assert.equal(available, false);
+});
+
+test("capellaLogCollectionAvailable is true when the token is configured alongside an optional host name", async () => {
+  const available = await capellaLogCollectionAvailable("dev", {
+    environments: {
+      ...TEST_ENVIRONMENTS,
+      capella: { dev: { ...TEST_ENVIRONMENTS.capella.dev, uploadServerLogsHostName: "logs.example.com" } },
+    },
+    env: {},
+    fetchSecret: () => Promise.resolve({ internalSupportToken: "support-tok" }),
+  });
+  assert.equal(available, true);
+});
+
+test("capellaLogCollectionAvailable is false for an environment with no secretId at all", async () => {
+  const available = await capellaLogCollectionAvailable("prod", {
+    environments: {
+      ...TEST_ENVIRONMENTS,
+      capella: { ...TEST_ENVIRONMENTS.capella, prod: { endpoint: "https://prod.example", oid: "oid-prod" } },
+    },
+    env: {},
+    fetchSecret: noFetch,
+  });
+  assert.equal(available, false);
 });
 
 test("resolveCapellaConfig throws for an unprovisioned environment", async () => {

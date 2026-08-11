@@ -865,6 +865,11 @@ export interface ResolvedCapellaConfig {
   endpoint: string;
   organizationId: string;
   password: string;
+  /** Only set for environments the Capella team has issued one for (currently just "dev"). */
+  internalSupportToken?: string;
+  overrideToken?: string;
+  /** Non-secret; forwarded to cbdinocluster alongside internalSupportToken. */
+  uploadServerLogsHostName?: string;
 }
 
 /** First non-empty trimmed env var among `names`, or undefined. */
@@ -921,6 +926,7 @@ export async function resolveCapellaConfig(
   let username = c?.username ?? firstEnv(env, ["CAPELLA_USER", "CAP_USER"]) ?? entry.username?.trim();
   // Password: personal first, else the shared account password from the secret.
   let password = c?.password ?? firstEnv(env, ["CAPELLA_PASS", "CAP_PASS"]);
+  let secret: Record<string, string> | undefined;
   if (!password) {
     if (!entry.secretId) {
       throw new InvalidFitCliConfigError(
@@ -931,7 +937,7 @@ export async function resolveCapellaConfig(
       `No personal Capella password configured — using the shared "${block}" account password from AWS Secrets Manager.\n` +
         `  Set CAPELLA_PASS (or run \`${runScriptPrefix("config")} edit\`) to use your own.`,
     );
-    const secret = await fetchSecret(entry.secretId);
+    secret = await fetchSecret(entry.secretId);
     password = secret.password?.trim();
     username = username ?? secret.username?.trim();
   }
@@ -939,7 +945,59 @@ export async function resolveCapellaConfig(
     const missing = [!username && "username", !password && "password"].filter(Boolean).join(", ");
     throw new InvalidFitCliConfigError(`Could not resolve Capella ${missing} for "${block}".`);
   }
-  return { username, endpoint, organizationId, password };
+
+  // internalSupportToken/overrideToken live only on the shared account's secret — they
+  // belong to the shared "dev" account, not to whatever personal creds might override
+  // username/password above. Only read them from `secret` when it was already fetched
+  // (i.e. no personal password was configured); per [CONFIG2] we don't touch AWS Secrets
+  // Manager at all when personal creds satisfy everything.
+  const internalSupportToken =
+    firstEnv(env, ["CAPELLA_INTERNAL_SUPPORT_TOKEN"]) ?? secret?.internalSupportToken?.trim() ?? undefined;
+  const overrideToken = firstEnv(env, ["CAPELLA_OVERRIDE_TOKEN"]) ?? secret?.overrideToken?.trim() ?? undefined;
+  const uploadServerLogsHostName = entry.uploadServerLogsHostName?.trim() || undefined;
+
+  return {
+    username,
+    endpoint,
+    organizationId,
+    password,
+    ...(internalSupportToken ? { internalSupportToken } : {}),
+    ...(overrideToken ? { overrideToken } : {}),
+    ...(uploadServerLogsHostName ? { uploadServerLogsHostName } : {}),
+  };
+}
+
+/**
+ * Whether cbdinocluster can collect cbcollect diagnostics from a Capella-cloud cluster in
+ * the given environment — it needs an internal support token (see
+ * {@link ResolvedCapellaConfig}); cbdinocluster's internal-support API fails outright
+ * without one. `uploadServerLogsHostName` is a separate, optional field — Capella's own
+ * API defaults it to `uploads.couchbase.com` when omitted, so it's never required here.
+ * Only "dev" currently has a token (the Capella team can't issue one for stage/prod), so
+ * this is effectively a dev-only check today, driven purely by what's configured rather
+ * than a hardcoded environment name.
+ */
+export async function capellaLogCollectionAvailable(
+  block: string,
+  options: {
+    environments?: EnvironmentsFile;
+    env?: NodeJS.ProcessEnv;
+    fetchSecret?: (secretId: string) => Promise<Record<string, string>>;
+  } = {},
+): Promise<boolean> {
+  const environments = options.environments ?? loadEnvironments();
+  const env = options.env ?? process.env;
+  const fetchSecret = options.fetchSecret ?? getJsonSecret;
+
+  const entry = environments.capella[block];
+  if (!entry?.secretId) {
+    return false;
+  }
+  if (firstEnv(env, ["CAPELLA_INTERNAL_SUPPORT_TOKEN"])) {
+    return true;
+  }
+  const secret = await fetchSecret(entry.secretId).catch(() => undefined);
+  return Boolean(secret?.internalSupportToken?.trim());
 }
 
 const CANDIDATE_GERRIT_SSH_KEY_NAMES = ["id_rsa", "id_ed25519", "id_ecdsa"];
