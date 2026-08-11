@@ -868,8 +868,6 @@ export interface ResolvedCapellaConfig {
   /** Only set for environments the Capella team has issued one for (currently just "dev"). */
   internalSupportToken?: string;
   overrideToken?: string;
-  /** Non-secret; forwarded to cbdinocluster alongside internalSupportToken. */
-  uploadServerLogsHostName?: string;
 }
 
 /** First non-empty trimmed env var among `names`, or undefined. */
@@ -954,7 +952,6 @@ export async function resolveCapellaConfig(
   const internalSupportToken =
     firstEnv(env, ["CAPELLA_INTERNAL_SUPPORT_TOKEN"]) ?? secret?.internalSupportToken?.trim() ?? undefined;
   const overrideToken = firstEnv(env, ["CAPELLA_OVERRIDE_TOKEN"]) ?? secret?.overrideToken?.trim() ?? undefined;
-  const uploadServerLogsHostName = entry.uploadServerLogsHostName?.trim() || undefined;
 
   return {
     username,
@@ -963,7 +960,6 @@ export async function resolveCapellaConfig(
     password,
     ...(internalSupportToken ? { internalSupportToken } : {}),
     ...(overrideToken ? { overrideToken } : {}),
-    ...(uploadServerLogsHostName ? { uploadServerLogsHostName } : {}),
   };
 }
 
@@ -971,11 +967,9 @@ export async function resolveCapellaConfig(
  * Whether cbdinocluster can collect cbcollect diagnostics from a Capella-cloud cluster in
  * the given environment — it needs an internal support token (see
  * {@link ResolvedCapellaConfig}); cbdinocluster's internal-support API fails outright
- * without one. `uploadServerLogsHostName` is a separate, optional field — Capella's own
- * API defaults it to `uploads.couchbase.com` when omitted, so it's never required here.
- * Only "dev" currently has a token (the Capella team can't issue one for stage/prod), so
- * this is effectively a dev-only check today, driven purely by what's configured rather
- * than a hardcoded environment name.
+ * without one. Only "dev" currently has a token (the Capella team can't issue one for
+ * stage/prod), so this is effectively a dev-only check today, driven purely by what's
+ * configured rather than a hardcoded environment name.
  */
 export async function capellaLogCollectionAvailable(
   block: string,

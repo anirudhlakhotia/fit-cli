@@ -55,7 +55,7 @@ import {
 } from "../../../util/non-fit/replay.js";
 import { clusterLabel as clusterSegmentLabel, formatRunLabel, instanceLabel, performerLabel, runLabel, type RunLabelParts } from "../../shared/util/run-labels.js";
 import { confirm, select } from "../../../util/non-fit/prompts.js";
-import { DEFAULT_CAPELLA_ENV, resolveCapellaConfig, resolveFitPerformerDir, resolveGithubCredentials, resolveResultsDbCredentials, resolveRosaCredentials, type ResolvedCapellaConfig } from "../../util/config.js";
+import { DEFAULT_CAPELLA_ENV, resolveCapellaConfig, resolveFitPerformerDir, resolveGithubCredentials, resolveResultsDbCredentials, resolveRosaCredentials } from "../../util/config.js";
 import { ssmStartSessionCommand, terminateInstanceCommand } from "../../util/aws/lifecycle-warning.js";
 import { gcpDebugAccessCommand, gcpTerminateInstanceCommand } from "../../util/gcp/lifecycle-warning.js";
 import { maybeUploadRunArtifacts } from "../../util/aws/upload-run-artifacts.js";
@@ -421,7 +421,7 @@ async function uploadCapellaCredsForCloudDeployer(
   execution: FitExecutionContext,
   capellaEnvironment: string,
   caller: string,
-): Promise<ResolvedCapellaConfig> {
+): Promise<string> {
   let capella;
   try {
     capella = await resolveCapellaConfig({ block: capellaEnvironment });
@@ -431,7 +431,7 @@ async function uploadCapellaCredsForCloudDeployer(
     );
   }
   await uploadRemoteCapellaConfig(execution.target, execution.rootDir, capella);
-  return capella;
+  return capella.endpoint;
 }
 
 /** Print what an iteration resolved to, so a CI log shows the run's inputs. */
@@ -2143,11 +2143,11 @@ export async function runFromDefinition(
           const capellaSetup = functionalCycle.cbdinocluster?.capella;
           if (capellaSetup !== undefined) {
             const capellaEnvironment = capellaSetup.environment ?? DEFAULT_CAPELLA_ENV;
-            let capella: ResolvedCapellaConfig | undefined;
             if (execution.kind === "remote") {
               if (!group.cbdinoclusterSource && !(await execution.commandAvailable("cbdinocluster"))) {
                 await installCbdinoclusterRemote(execution);
               }
+              let capella;
               try {
                 capella = await resolveCapellaConfig({ block: capellaEnvironment });
               } catch (err) {
@@ -2177,7 +2177,6 @@ export async function runFromDefinition(
                     capellaSetup.cloudProvider,
                     undefined,
                     capellaSetup.privateEndpoint !== undefined,
-                    capella?.uploadServerLogsHostName,
                   ),
                 },
                 deployer: "cloud",
@@ -2196,7 +2195,7 @@ export async function runFromDefinition(
             // forwarding, but skip AWS (the cloud deployer talks to the Capella
             // control plane, not EC2 directly).
             if (isCapellaAnalyticsGroup(functionalCycle) && execution.kind === "remote") {
-              const analyticsCapella = await uploadCapellaCredsForCloudDeployer(
+              await uploadCapellaCredsForCloudDeployer(
                 execution,
                 functionalCycle.capellaEnvironment,
                 `Capella Analytics clusters use cbdinocluster's cloud deployer`,
@@ -2208,10 +2207,7 @@ export async function runFromDefinition(
                   ...functionalCycle,
                   cbdinocluster: {
                     ...functionalCycle.cbdinocluster,
-                    init: {
-                      ...functionalCycle.cbdinocluster.init,
-                      args: capellaAnalyticsCbdinoclusterInitArgs(undefined, analyticsCapella.uploadServerLogsHostName),
-                    },
+                    init: { ...functionalCycle.cbdinocluster.init, args: capellaAnalyticsCbdinoclusterInitArgs() },
                   },
                 };
               }
@@ -2261,7 +2257,6 @@ export async function runFromDefinition(
           // cluster's capella.cloudProvider.
           const cloudProvider: "aws" | "gcp" = group.instance.kind === "gcp" ? "gcp" : "aws";
           let capellaEndpoint: string | undefined;
-          let uploadServerLogsHostName: string | undefined;
           if (execution.kind === "remote") {
             // When a source is specified the binary will be built from the PR
             // by prepareCbdinoclusterInit → resolveCbdinoclusterCommand; skip
@@ -2274,13 +2269,11 @@ export async function runFromDefinition(
             // (run via a login shell sourcing ~/.profile) picks them up and writes the
             // capella and aws blocks. Without a username it can't enable Capella, so fail
             // clearly rather than letting `cbdinocluster allocate` later fail with "no deployers".
-            const situationalCapella = await uploadCapellaCredsForCloudDeployer(
+            capellaEndpoint = await uploadCapellaCredsForCloudDeployer(
               execution,
               capellaEnvironment,
               `Situational runs allocate Capella clusters`,
             );
-            capellaEndpoint = situationalCapella.endpoint;
-            uploadServerLogsHostName = situationalCapella.uploadServerLogsHostName;
             // GCP needs no equivalent credential upload — the box's attached service
             // account already provides ADC for cbdinocluster's GCP PSC calls.
             if (cloudProvider === "aws" && awsCredentials) {
@@ -2302,7 +2295,6 @@ export async function runFromDefinition(
             githubCredentials,
             instanceRunDir(group.path),
             group.cbdinoclusterSource,
-            uploadServerLogsHostName,
           );
           // Fail fast if init left the cloud (Capella) deployer disabled — otherwise
           // every situational test fatals later at `allocate --deployer cloud` with

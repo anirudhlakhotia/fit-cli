@@ -408,21 +408,7 @@ test("resolveCapellaConfig omits internalSupportToken/overrideToken and never to
   assert.equal(resolved.overrideToken, undefined);
 });
 
-test("resolveCapellaConfig reads uploadServerLogsHostName from the registry (non-secret)", async () => {
-  const resolved = await resolveCapellaConfig({
-    block: "dev",
-    environments: {
-      ...TEST_ENVIRONMENTS,
-      capella: { dev: { ...TEST_ENVIRONMENTS.capella.dev, uploadServerLogsHostName: "logs.example.com" } },
-    },
-    config: { version: FIT_CLI_CONFIG_VERSION },
-    env: {},
-    fetchSecret: () => Promise.resolve({ password: "svc-pw" }),
-  });
-  assert.equal(resolved.uploadServerLogsHostName, "logs.example.com");
-});
-
-test("capellaLogCollectionAvailable is true from just internalSupportToken — uploadServerLogsHostName isn't required", async () => {
+test("capellaLogCollectionAvailable is true from just internalSupportToken", async () => {
   const available = await capellaLogCollectionAvailable("dev", {
     environments: TEST_ENVIRONMENTS,
     env: {},
@@ -433,26 +419,11 @@ test("capellaLogCollectionAvailable is true from just internalSupportToken — u
 
 test("capellaLogCollectionAvailable is false when the secret has no internalSupportToken", async () => {
   const available = await capellaLogCollectionAvailable("dev", {
-    environments: {
-      ...TEST_ENVIRONMENTS,
-      capella: { dev: { ...TEST_ENVIRONMENTS.capella.dev, uploadServerLogsHostName: "logs.example.com" } },
-    },
+    environments: TEST_ENVIRONMENTS,
     env: {},
     fetchSecret: () => Promise.resolve({ password: "svc-pw" }),
   });
   assert.equal(available, false);
-});
-
-test("capellaLogCollectionAvailable is true when the token is configured alongside an optional host name", async () => {
-  const available = await capellaLogCollectionAvailable("dev", {
-    environments: {
-      ...TEST_ENVIRONMENTS,
-      capella: { dev: { ...TEST_ENVIRONMENTS.capella.dev, uploadServerLogsHostName: "logs.example.com" } },
-    },
-    env: {},
-    fetchSecret: () => Promise.resolve({ internalSupportToken: "support-tok" }),
-  });
-  assert.equal(available, true);
 });
 
 test("capellaLogCollectionAvailable is false for an environment with no secretId at all", async () => {
