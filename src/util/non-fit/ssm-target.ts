@@ -119,6 +119,43 @@ export async function waitForSsmReady(
 
 const TERMINAL_STATUSES = new Set(["Success", "Failed", "Cancelled", "TimedOut"]);
 
+/**
+ * A command's output with the two streams kept apart. They must stay separate all
+ * the way to the caller: `capture()` hands `stdout` back as data to be parsed, so
+ * folding diagnostics into it silently corrupts the value. That is not theoretical —
+ * merging them turned `cbdinocluster connstr --couchbase2` (a one-line connection
+ * string on stdout, zap/log.Printf diagnostics on stderr) into a multi-line blob,
+ * and the SDK rejected the result with "Malformed connection string".
+ */
+interface StreamedOutput {
+  /** The command's stdout — the data callers parse. Never mixed with stderr. */
+  stdout: string;
+  /** The command's stderr — diagnostics, and the detail worth quoting when it fails. */
+  stderr: string;
+  /** Both streams in event order, for humans and the debug log. */
+  combined: string;
+}
+
+/** SSM writes each invocation's streams to `<commandId>/<instanceId>/aws-runShellScript/<suffix>`. */
+const SSM_STREAM_SUFFIXES = ["stdout", "stderr"] as const;
+
+/**
+ * Split CloudWatch events into stdout and stderr by the log stream each came from.
+ * Only an explicit `/stderr` stream is held back from stdout — anything unclassified
+ * stays with the data rather than being silently dropped from it.
+ */
+export function partitionLogEvents(events: readonly { message?: string; logStreamName?: string }[]): StreamedOutput {
+  const stdout: string[] = [];
+  const stderr: string[] = [];
+  const combined: string[] = [];
+  for (const event of events) {
+    if (!event.message) continue;
+    (event.logStreamName?.endsWith("/stderr") ? stderr : stdout).push(event.message);
+    combined.push(event.message);
+  }
+  return { stdout: stdout.join(""), stderr: stderr.join(""), combined: combined.join("") };
+}
+
 interface InvocationStatus {
   done: boolean;
   status: string;
@@ -130,17 +167,19 @@ interface InvocationStatus {
    * runShellCommandCaptured), and doubles as the signal that the command produced
    * output at all.
    */
-  inlineOutput: string;
+  inline: StreamedOutput;
 }
 
 async function getInvocationStatus(instanceId: string, commandId: string): Promise<InvocationStatus> {
   const resp = await ssmClient.send(new GetCommandInvocationCommand({ CommandId: commandId, InstanceId: instanceId }));
   const status = resp.Status ?? "Pending";
+  const stdout = resp.StandardOutputContent ?? "";
+  const stderr = resp.StandardErrorContent ?? "";
   return {
     done: TERMINAL_STATUSES.has(status),
     status,
     exitCode: resp.ResponseCode ?? (status === "Success" ? 0 : 1),
-    inlineOutput: (resp.StandardOutputContent ?? "") + (resp.StandardErrorContent ?? ""),
+    inline: { stdout, stderr, combined: stdout + stderr },
   };
 }
 
@@ -160,11 +199,13 @@ async function pollUntilDone(instanceId: string, commandId: string): Promise<Inv
  * come from the instance and any clock skew between it and here would otherwise
  * silently filter out real output.
  */
-async function fetchNewLogLines(commandId: string, instanceId: string, afterMs: number): Promise<{ text: string; lastMs: number }> {
+async function fetchNewLogLines(commandId: string, instanceId: string, afterMs: number): Promise<StreamedOutput & { lastMs: number }> {
   let lastMs = afterMs;
-  const lines: string[] = [];
+  const events: { message?: string; logStreamName?: string }[] = [];
   let nextToken: string | undefined;
   do {
+    // The prefix deliberately spans both the stdout and stderr streams, so one read
+    // gets everything; partitionLogEvents then keeps them apart by stream name.
     const resp = await cloudWatchLogsClient.send(new FilterLogEventsCommand({
       logGroupName: SSM_LOG_GROUP_NAME,
       logStreamNamePrefix: `${commandId}/${instanceId}`,
@@ -172,12 +213,12 @@ async function fetchNewLogLines(commandId: string, instanceId: string, afterMs: 
       nextToken,
     }));
     for (const event of resp.events ?? []) {
-      if (event.message) lines.push(event.message);
+      events.push(event);
       if (event.timestamp && event.timestamp > lastMs) lastMs = event.timestamp;
     }
     nextToken = resp.nextToken;
   } while (nextToken);
-  return { text: lines.join(""), lastMs };
+  return { ...partitionLogEvents(events), lastMs };
 }
 
 // CloudWatch ingestion can lag a second or two behind the command finishing. Only
@@ -191,11 +232,11 @@ const OUTPUT_SETTLE_POLL_MS = 1_000;
  * keep retrying until something shows up (or the settle timeout expires) rather than
  * accepting an empty read that's really just ingestion lag.
  */
-async function settledLogLines(commandId: string, instanceId: string, afterMs: number, expectOutput: boolean): Promise<string> {
+async function settledLogLines(commandId: string, instanceId: string, afterMs: number, expectOutput: boolean): Promise<StreamedOutput> {
   const deadline = Date.now() + OUTPUT_SETTLE_TIMEOUT_MS;
   for (;;) {
-    const { text } = await fetchNewLogLines(commandId, instanceId, afterMs);
-    if (text || !expectOutput || Date.now() >= deadline) return text;
+    const output = await fetchNewLogLines(commandId, instanceId, afterMs);
+    if (output.combined || !expectOutput || Date.now() >= deadline) return output;
     await sleep(OUTPUT_SETTLE_POLL_MS);
   }
 }
@@ -209,7 +250,7 @@ const INLINE_TRUNCATION_MARKER = /output truncated/i;
 
 /** Best-effort: the log group's own retention policy is the real safety net. */
 async function deleteLogStreams(commandId: string, instanceId: string): Promise<void> {
-  for (const suffix of ["stdout", "stderr"]) {
+  for (const suffix of SSM_STREAM_SUFFIXES) {
     await cloudWatchLogsClient
       .send(new DeleteLogStreamCommand({ logGroupName: SSM_LOG_GROUP_NAME, logStreamName: `${commandId}/${instanceId}/aws-runShellScript/${suffix}` }))
       .catch(() => {});
@@ -239,23 +280,25 @@ async function runShellCommandStreamed(instanceId: string, remoteCmd: string, ru
   let lastMs = 0;
   let wroteAnything = false;
   for (;;) {
+    // Streamed output is for a human to read, so both streams go to the terminal
+    // interleaved — only capture() needs them kept apart.
     const chunk = await fetchNewLogLines(commandId, instanceId, lastMs);
-    if (chunk.text) {
-      process.stdout.write(chunk.text);
+    if (chunk.combined) {
+      process.stdout.write(chunk.combined);
       wroteAnything = true;
     }
     lastMs = chunk.lastMs;
 
     const status = await withSsmRetry(() => getInvocationStatus(instanceId, commandId));
     if (status.done) {
-      const tail = await settledLogLines(commandId, instanceId, lastMs, status.inlineOutput.length > 0 && !wroteAnything);
-      if (tail) {
-        process.stdout.write(tail);
+      const tail = await settledLogLines(commandId, instanceId, lastMs, status.inline.combined.length > 0 && !wroteAnything);
+      if (tail.combined) {
+        process.stdout.write(tail.combined);
         wroteAnything = true;
       }
       // With CloudWatch output unavailable there is nothing to stream, so fall back to
       // the inline content so the user still sees something rather than silence.
-      if (!wroteAnything && status.inlineOutput) process.stdout.write(status.inlineOutput);
+      if (!wroteAnything && status.inline.combined) process.stdout.write(status.inline.combined);
       void deleteLogStreams(commandId, instanceId);
       if (status.status !== "Success") {
         throw new Error(`command on ${instanceId} exited with status ${status.status} (code ${status.exitCode})`);
@@ -267,7 +310,7 @@ async function runShellCommandStreamed(instanceId: string, remoteCmd: string, ru
 }
 
 interface CapturedResult {
-  output: string;
+  output: StreamedOutput;
   ok: boolean;
   status: string;
   exitCode: number;
@@ -295,18 +338,18 @@ async function runShellCommandCaptured(instanceId: string, remoteCmd: string, ru
   // A non-empty inline output means the command definitely produced output, so an empty
   // CloudWatch read at this point is ingestion lag rather than a genuinely silent
   // command - wait it out instead of falling straight through to the capped inline copy.
-  const text = await settledLogLines(commandId, instanceId, 0, result.inlineOutput.length > 0);
+  const fromLogs = await settledLogLines(commandId, instanceId, 0, result.inline.combined.length > 0);
   void deleteLogStreams(commandId, instanceId);
   // Falling back to GetCommandInvocation's inline content is fine as far as it goes, but
   // it is capped. Whether that matters depends on the caller: harmless for output only
   // shown to a human, corrupting for output parsed as data - see capture().
-  const output = text || result.inlineOutput;
+  const output = fromLogs.combined ? fromLogs : result.inline;
   return {
     output,
     ok: result.status === "Success",
     status: result.status,
     exitCode: result.exitCode,
-    truncated: !text && INLINE_TRUNCATION_MARKER.test(result.inlineOutput),
+    truncated: !fromLogs.combined && INLINE_TRUNCATION_MARKER.test(result.inline.combined),
   };
 }
 
@@ -341,9 +384,11 @@ export class SsmTarget implements ExecutionTarget {
   async capture(command: string, args: string[], cwd?: string, opts?: RunOptions): Promise<string> {
     this.echo(command, args, opts);
     const result = await runShellCommandCaptured(this.instanceId, buildRemoteCommand(command, args, cwd), this.runAsUser);
-    writeCommandOutputToDebugLog(result.output);
+    writeCommandOutputToDebugLog(result.output.combined);
     if (!result.ok) {
-      const detail = result.output.trim();
+      // Failures explain themselves on stderr far more often than on stdout, so lead
+      // with it and fall back to stdout for the commands that don't use it.
+      const detail = result.output.stderr.trim() || result.output.stdout.trim();
       throw new Error(`${command} on ${this.instanceId} exited with status ${result.status} (code ${result.exitCode})${detail ? `: ${detail}` : ""}`);
     }
     // capture()'s callers consume the output as data, so handing back a truncated copy
@@ -353,15 +398,19 @@ export class SsmTarget implements ExecutionTarget {
     if (result.truncated) {
       throw new Error(truncationExplanation(this.instanceId));
     }
-    return result.output;
+    // stdout only — see StreamedOutput. Mixing stderr in here is what produced
+    // "Malformed connection string" from an otherwise healthy CNG cluster.
+    return result.output.stdout;
   }
 
   async runHiddenUntilFailure(command: string, args: string[], cwd?: string, opts?: RunOptions): Promise<void> {
     this.echo(command, args, opts);
     const result = await runShellCommandCaptured(this.instanceId, buildRemoteCommand(command, args, cwd), this.runAsUser);
-    writeCommandOutputToDebugLog(result.output);
+    writeCommandOutputToDebugLog(result.output.combined);
     if (!result.ok) {
-      if (result.output) process.stderr.write(result.output.endsWith("\n") ? result.output : `${result.output}\n`);
+      // Dumped for a human to read, so both streams, interleaved as they were emitted.
+      const dump = result.output.combined;
+      if (dump) process.stderr.write(dump.endsWith("\n") ? dump : `${dump}\n`);
       if (result.truncated) fitCliWarn(truncationExplanation(this.instanceId));
       throw new Error(`${command} on ${this.instanceId} exited with status ${result.status} (code ${result.exitCode})`);
     }
