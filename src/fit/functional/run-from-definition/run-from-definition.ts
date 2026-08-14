@@ -1728,6 +1728,13 @@ export interface RunFromDefinitionOptions {
    * for single-preset / single-definition runs so their prompt ids stay unchanged.
    */
   promptScope?: string;
+  /**
+   * Escalate a failing run (FatalToRun/FatalToSession) to abort the entire
+   * definition run instead of continuing to the next run — backs `--repeat-until-failure`
+   * so a repeated run stops at its first failure rather than working through every
+   * `repeat` iteration regardless of outcome.
+   */
+  repeatUntilFailure?: boolean;
 }
 
 /** Run FIT functional tests as described by the definition file at `definitionPath`. */
@@ -1736,7 +1743,7 @@ export async function runFromDefinition(
   options: RunFromDefinitionOptions = {},
 ): Promise<RunOutput> {
   const tracker = new RunFailureTracker();
-  const { resumeAt, resumeSelector = {}, cbcollect = false, slackThread, promptScope } = options;
+  const { resumeAt, resumeSelector = {}, cbcollect = false, slackThread, promptScope, repeatUntilFailure = false } = options;
   const phases = phasesForResumePoint(resumeAt);
   const definition = loadDefinition(definitionPath);
   const resolved = resolveDefinition(definition);
@@ -2361,6 +2368,9 @@ export async function runFromDefinition(
               err instanceof ClassifiedFailure &&
               (err.classification === "FatalToRun" || err.classification === "FatalToSession")
             ) {
+              if (repeatUntilFailure) {
+                throw new ClassifiedFailure(`${err.message} (stopping — --repeat-until-failure)`, "FatalToAll");
+              }
               const nextStep = isLastIteration
                 ? "no more runs in this execution group"
                 : "moving to the next run";
