@@ -58,8 +58,8 @@ function buildHelp(): string {
   return `Run FIT tests from a preset or a definition file.
 
 Usage:
-  ${run} preset <preset>[,<preset>...] --performer <image> [--env-override <path>=<value>] [resume flags] [--cbcollect] [--slack-thread <ref>]
-  ${run} definition <file.json5> [--override <dotpath>=<value>] [--resume-at=<point>] [resume selectors] [--cbcollect] [--slack-thread <ref>]
+  ${run} preset <preset>[,<preset>...] --performer <image> [--env-override <path>=<value>] [resume flags] [--cbcollect] [--slack-thread <ref>] [--repeat <n>] [--repeat-until-failure]
+  ${run} definition <file.json5> [--override <dotpath>=<value>] [--resume-at=<point>] [resume selectors] [--cbcollect] [--slack-thread <ref>] [--repeat <n>] [--repeat-until-failure]
   ${run} --help
 
 Subcommands:
@@ -82,6 +82,12 @@ Shared options (both subcommands):
                                   The FIT bot must be a member of the target channel. Needs a bot token via
                                   SLACK_BOT_TOKEN or the fit-cli/slack/token AWS secret; best-effort — a
                                   Slack failure warns but never fails the run.
+  --repeat <n>                     Run every test in the definition (or generated preset) n times in a row,
+                                  reusing the same cluster/performer — sets "repeat: n" on every run. Errors
+                                  if any run already sets the mutually-exclusive "versions" field; target
+                                  that run individually with --override instead.
+  --repeat-until-failure           Keep repeating until a run fails, then stop the whole run there. Combine
+                                  with --repeat <n> to cap the number of iterations; alone, caps at ${DEFAULT_REPEAT_UNTIL_FAILURE_CAP}.
 
 preset options:
   --performer <image>             SDK-specific performer image ref (e.g. java-fit-performer:refs-changes-67-246067-3 or ghcr.io/couchbase/java-fit-performer:refs-changes-67-246067-3). Alias: --performer-image-name.
@@ -227,15 +233,105 @@ function extractPerformerImageName(argv: readonly string[]): { performerImageNam
   return { performerImageName, positionals };
 }
 
+/** `--repeat-until-failure` without an explicit `--repeat N` caps the loop at this many iterations. */
+const DEFAULT_REPEAT_UNTIL_FAILURE_CAP = 1000;
+
+/** Pull `--repeat <n>` and `--repeat-until-failure` out of an argv list. */
+export function extractRepeatFlags(argv: readonly string[]): { repeat?: number; repeatUntilFailure: boolean; positionals: string[] } {
+  const positionals: string[] = [];
+  let repeat: number | undefined;
+  let repeatUntilFailure = false;
+  const inline = "--repeat=";
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === "--repeat-until-failure") {
+      repeatUntilFailure = true;
+      continue;
+    }
+    const kv = arg === "--repeat" ? argv[++i] : arg.startsWith(inline) ? arg.slice(inline.length) : undefined;
+    if (kv === undefined) {
+      positionals.push(arg);
+      continue;
+    }
+    const n = Number(kv);
+    if (!Number.isInteger(n) || n < 1) {
+      console.error(`--repeat must be a positive integer; got ${JSON.stringify(kv)}`);
+      process.exit(2);
+    }
+    repeat = n;
+  }
+  return { repeat, repeatUntilFailure, positionals };
+}
+
 /**
- * Extract the resume point/selector and `--cbcollect` shared by both run
- * subcommands, returning the parsed run options and the remaining positionals.
+ * Set `repeat: n` on every run under `session.runs`, erroring if a run already sets
+ * the mutually-exclusive `versions` field (see {@link SituationalRun.versions}).
  */
-function extractRunOptions(argv: readonly string[]): { runOpts: RunFromDefinitionOptions; positionals: string[] } {
+function setRepeatOnSession(session: Record<string, unknown>, n: number, path: string): void {
+  const runs = Array.isArray(session.runs) ? (session.runs as Record<string, unknown>[]) : [];
+  runs.forEach((run, runIndex) => {
+    if (run.versions !== undefined) {
+      throw new Error(
+        `--repeat can't apply to "${path}.runs.${runIndex}" — it already sets "versions", which is mutually ` +
+          `exclusive with "repeat". Target that run individually instead, e.g. ` +
+          `--override ${path}.runs.${runIndex}.repeat=${n}.`,
+      );
+    }
+    run.repeat = n;
+  });
+}
+
+/** Set `repeat: n` on every run in a raw (pre-validation) definition object, for `--repeat`. */
+export function applyRepeatOverride(raw: Record<string, unknown>, n: number): void {
+  const instances = Array.isArray(raw.instances) ? (raw.instances as Record<string, unknown>[]) : [];
+  instances.forEach((instance, instanceIndex) => {
+    const clusters = Array.isArray(instance.clusters) ? (instance.clusters as Record<string, unknown>[]) : [];
+    clusters.forEach((cluster, clusterIndex) => {
+      const sessions = Array.isArray(cluster.sessions) ? (cluster.sessions as Record<string, unknown>[]) : [];
+      sessions.forEach((session, sessionIndex) => {
+        setRepeatOnSession(session, n, `instances.${instanceIndex}.clusters.${clusterIndex}.sessions.${sessionIndex}`);
+      });
+    });
+    const clusterlessSessions = Array.isArray(instance.clusterlessSessions)
+      ? (instance.clusterlessSessions as Record<string, unknown>[])
+      : [];
+    clusterlessSessions.forEach((session, sessionIndex) => {
+      setRepeatOnSession(session, n, `instances.${instanceIndex}.clusterlessSessions.${sessionIndex}`);
+    });
+  });
+}
+
+/**
+ * Read a definition file, apply `patch` to its raw (pre-validation) object, validate
+ * the result, and write it to a fresh `/tmp/fit-cli/patched-*` file. Used by
+ * `--override` and `--repeat` on `run definition`, and by `--repeat` on `run preset`
+ * (which patches the just-generated preset file).
+ */
+function patchDefinitionFile(resolvedPath: string, patch: (raw: Record<string, unknown>) => void): string {
+  const rawText = readFileSync(resolvedPath, "utf8");
+  const format = detectDefinitionFormat(resolvedPath);
+  const raw = parseDefinitionRaw(rawText, format);
+  patch(raw as Record<string, unknown>);
+  const definition = validateDefinition(raw);
+  console.log(definitionSummary(definition));
+  const patched = formatFitDefinition(definition, format);
+  mkdirSync("/tmp/fit-cli", { recursive: true });
+  const patchedPath = join("/tmp/fit-cli", `patched-${Date.now()}.${format}`);
+  writeFileSync(patchedPath, patched, "utf8");
+  return patchedPath;
+}
+
+/**
+ * Extract the resume point/selector, `--cbcollect` and `--repeat`/`--repeat-until-failure`
+ * shared by both run subcommands, returning the parsed run options, the run count
+ * requested via `--repeat` (if any), and the remaining positionals.
+ */
+function extractRunOptions(argv: readonly string[]): { runOpts: RunFromDefinitionOptions; repeat?: number; positionals: string[] } {
   const { resumeAt, positionals: afterResume } = extractResumeAt(argv);
   const { selector: resumeSelector, positionals: afterSelector } = extractResumeSelector(afterResume);
   const { cbcollect, positionals: afterCbcollect } = extractCbcollectFlag(afterSelector);
-  const { slackThread, positionals } = extractSlackThreadFlag(afterCbcollect);
+  const { slackThread, positionals: afterSlackThread } = extractSlackThreadFlag(afterCbcollect);
+  const { repeat: repeatFlag, repeatUntilFailure, positionals } = extractRepeatFlags(afterSlackThread);
   let resumePoint;
   try {
     resumePoint = parseResumePoint(resumeAt);
@@ -243,13 +339,18 @@ function extractRunOptions(argv: readonly string[]): { runOpts: RunFromDefinitio
     console.error((err as Error).message);
     process.exit(2);
   }
+  if (repeatUntilFailure && repeatFlag === undefined) {
+    console.log(`--repeat-until-failure without --repeat: capping at ${DEFAULT_REPEAT_UNTIL_FAILURE_CAP} repeats.`);
+  }
+  const repeat = repeatUntilFailure ? (repeatFlag ?? DEFAULT_REPEAT_UNTIL_FAILURE_CAP) : repeatFlag;
   const runOpts = {
     ...(resumePoint ? { resumeAt: resumePoint } : {}),
     resumeSelector,
     ...(cbcollect ? { cbcollect } : {}),
     ...(slackThread ? { slackThread } : {}),
+    ...(repeatUntilFailure ? { repeatUntilFailure } : {}),
   };
-  return { runOpts, positionals };
+  return { runOpts, repeat, positionals };
 }
 
 /**
@@ -283,7 +384,7 @@ export async function runDispatch(argv: string[]): Promise<RunOutput | void> {
   applyRepoDirs(repoDirs);
 
   if (subcommand === "preset") {
-    const { runOpts, positionals: afterRunOpts } = extractRunOptions(afterRepoDirs);
+    const { runOpts, repeat, positionals: afterRunOpts } = extractRunOptions(afterRepoDirs);
     const { overrides, positionals: afterOverrides } = extractOverrides(afterRunOpts);
     const { envOverrides, positionals: afterEnvOverrides } = extractEnvOverrides(afterOverrides);
     const { performerImageName, positionals } = extractPerformerImageName(afterEnvOverrides);
@@ -332,13 +433,22 @@ export async function runDispatch(argv: string[]): Promise<RunOutput | void> {
       if (types.length > 1) {
         console.log(`\n=== Running preset ${index + 1}/${types.length}: ${type} ===\n`);
       }
-      const { path: definitionPath } = await generatePreset({
+      let { path: definitionPath } = await generatePreset({
         type,
         image: performerImageShortName(parsed.sdk, parsed.tag),
         skipGuidance: true,
         ...(Object.keys(overrides).length > 0 ? { overrides } : {}),
         ...(Object.keys(envOverrides).length > 0 ? { envOverrides } : {}),
       });
+      if (repeat !== undefined) {
+        try {
+          definitionPath = patchDefinitionFile(definitionPath, (raw) => applyRepeatOverride(raw, repeat));
+        } catch (err) {
+          console.error((err as Error).message);
+          process.exit(2);
+        }
+        console.log(`✓ Applied --repeat ${repeat}; running from ${definitionPath}`);
+      }
       // Presets in a group run in one process, so scope per-run prompt ids by preset
       // name — otherwise the second preset's teardown reuses the leave-up prompt id and
       // trips the replay "used more than once" guard. Single-preset runs stay unscoped.
@@ -384,32 +494,38 @@ export async function runDispatch(argv: string[]): Promise<RunOutput | void> {
     );
     process.exit(2);
   }
-  const { runOpts, positionals } = extractRunOptions(afterEnvOverrides);
+  const { runOpts, repeat, positionals } = extractRunOptions(afterEnvOverrides);
   const [definitionPath, ...extra] = positionals;
   if (!definitionPath || extra.length > 0) {
     console.error(
-      `Usage: ${runScriptPrefix("run")} definition <file.json5> [--override <dotpath>=<value>] [--resume-at=<point>] [resume selectors]\n` +
+      `Usage: ${runScriptPrefix("run")} definition <file.json5> [--override <dotpath>=<value>] [--repeat <n>] [--repeat-until-failure] [--resume-at=<point>] [resume selectors]\n` +
         "  --override: override a field in the definition (repeatable)\n" +
+        "  --repeat: run every test in the file this many times\n" +
+        "  --repeat-until-failure: keep repeating until a run fails (or --repeat is hit, if set)\n" +
         "  --resume-at: after-instance-creation | after-remote-preparation | after-cluster-creation | after-performer\n" +
         "  resume selectors: --resume-instance=<n> --resume-cluster=<n> --resume-session=<n> --resume-clusterless-session=<n> --resume-run=<n>",
     );
     process.exit(2);
   }
-  if (Object.keys(overrides).length > 0) {
+  if (Object.keys(overrides).length > 0 || repeat !== undefined) {
     const resolvedPath = isDefinitionUrl(definitionPath) ? await cacheDefinition(definitionPath) : definitionPath;
-    const rawText = readFileSync(resolvedPath, "utf8");
-    const format = detectDefinitionFormat(resolvedPath);
-    const raw = parseDefinitionRaw(rawText, format);
-    for (const [dotPath, rawValue] of Object.entries(overrides)) {
-      applyDotPathOverride(raw as Record<string, unknown>, dotPath, rawValue);
+    let patchedPath: string;
+    try {
+      patchedPath = patchDefinitionFile(resolvedPath, (raw) => {
+        for (const [dotPath, rawValue] of Object.entries(overrides)) {
+          applyDotPathOverride(raw, dotPath, rawValue);
+        }
+        if (repeat !== undefined) applyRepeatOverride(raw, repeat);
+      });
+    } catch (err) {
+      console.error((err as Error).message);
+      process.exit(2);
     }
-    const definition = validateDefinition(raw);
-    console.log(definitionSummary(definition));
-    const patched = formatFitDefinition(definition, format);
-    mkdirSync("/tmp/fit-cli", { recursive: true });
-    const patchedPath = join("/tmp/fit-cli", `patched-${Date.now()}.${format}`);
-    writeFileSync(patchedPath, patched, "utf8");
-    console.log(`✓ Applied ${Object.keys(overrides).length} override(s); running from ${patchedPath}`);
+    const appliedParts = [
+      ...(Object.keys(overrides).length > 0 ? [`${Object.keys(overrides).length} override(s)`] : []),
+      ...(repeat !== undefined ? [`--repeat ${repeat}`] : []),
+    ];
+    console.log(`✓ Applied ${appliedParts.join(" and ")}; running from ${patchedPath}`);
     return runFromDefinition(patchedPath, runOpts);
   }
   const { resolvedPath, definition } = await resolveAndLoadDefinition(definitionPath);
