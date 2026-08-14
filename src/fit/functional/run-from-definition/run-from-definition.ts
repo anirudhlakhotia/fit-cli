@@ -1729,12 +1729,13 @@ export interface RunFromDefinitionOptions {
    */
   promptScope?: string;
   /**
-   * Escalate a failing run (FatalToRun/FatalToSession) to abort the entire
-   * definition run instead of continuing to the next run — backs `--repeat-until-failure`
-   * so a repeated run stops at its first failure rather than working through every
-   * `repeat` iteration regardless of outcome.
+   * Escalate any failure (FatalToInstance/FatalToCluster/FatalToSession/FatalToRun)
+   * to FatalToAll, aborting the entire definition run instead of continuing to the
+   * next run/cluster/instance — backs `--stop-on-failure`. NonFatal failures (e.g. a
+   * transient AWS credential refresh) are untouched; they were never something a run
+   * should abort over.
    */
-  repeatUntilFailure?: boolean;
+  stopOnFailure?: boolean;
 }
 
 /** Run FIT functional tests as described by the definition file at `definitionPath`. */
@@ -1743,7 +1744,7 @@ export async function runFromDefinition(
   options: RunFromDefinitionOptions = {},
 ): Promise<RunOutput> {
   const tracker = new RunFailureTracker();
-  const { resumeAt, resumeSelector = {}, cbcollect = false, slackThread, promptScope, repeatUntilFailure = false } = options;
+  const { resumeAt, resumeSelector = {}, cbcollect = false, slackThread, promptScope, stopOnFailure = false } = options;
   const phases = phasesForResumePoint(resumeAt);
   const definition = loadDefinition(definitionPath);
   const resolved = resolveDefinition(definition);
@@ -2046,8 +2047,12 @@ export async function runFromDefinition(
         artifacts.push(...targetOutcome.artifacts);
         instanceDetails.push(...targetOutcome.details);
         if (!targetOutcome.ready) {
-          fitCliError({ classification: "FatalToInstance" }, `\n✗ Could not acquire an execution target for execution group ${cycleIndex + 1}; skipping it.`);
-          tracker.record("FatalToInstance", `Could not acquire an execution target for execution group ${cycleIndex + 1}`, failureContextFromPath(group.path, failureLabel(group)));
+          const message = `Could not acquire an execution target for execution group ${cycleIndex + 1}`;
+          if (stopOnFailure) {
+            throw new ClassifiedFailure(`${message} (stopping — --stop-on-failure)`, "FatalToAll");
+          }
+          fitCliError({ classification: "FatalToInstance" }, `\n✗ ${message}; skipping it.`);
+          tracker.record("FatalToInstance", message, failureContextFromPath(group.path, failureLabel(group)));
           globalIterationIndex += countGroupIterations(group);
           continue;
         }
@@ -2368,8 +2373,8 @@ export async function runFromDefinition(
               err instanceof ClassifiedFailure &&
               (err.classification === "FatalToRun" || err.classification === "FatalToSession")
             ) {
-              if (repeatUntilFailure) {
-                throw new ClassifiedFailure(`${err.message} (stopping — --repeat-until-failure)`, "FatalToAll");
+              if (stopOnFailure) {
+                throw new ClassifiedFailure(`${err.message} (stopping — --stop-on-failure)`, "FatalToAll");
               }
               const nextStep = isLastIteration
                 ? "no more runs in this execution group"
@@ -2384,6 +2389,9 @@ export async function runFromDefinition(
         }
       } catch (err) {
         if (err instanceof ClassifiedFailure && err.classification === "FatalToCluster") {
+          if (stopOnFailure) {
+            throw new ClassifiedFailure(`${err.message} (stopping — --stop-on-failure)`, "FatalToAll");
+          }
           fitCliError({ classification: "FatalToCluster" }, `\n✗ ${err.message}`);
           tracker.record("FatalToCluster", err.message, failureContextFromPath(group.path, failureLabel(activeCycle)));
           globalIterationIndex += countGroupIterations(activeCycle);

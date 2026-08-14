@@ -58,8 +58,8 @@ function buildHelp(): string {
   return `Run FIT tests from a preset or a definition file.
 
 Usage:
-  ${run} preset <preset>[,<preset>...] --performer <image> [--env-override <path>=<value>] [resume flags] [--cbcollect] [--slack-thread <ref>] [--repeat <n>] [--repeat-until-failure]
-  ${run} definition <file.json5> [--override <dotpath>=<value>] [--resume-at=<point>] [resume selectors] [--cbcollect] [--slack-thread <ref>] [--repeat <n>] [--repeat-until-failure]
+  ${run} preset <preset>[,<preset>...] --performer <image> [--env-override <path>=<value>] [resume flags] [--cbcollect] [--slack-thread <ref>] [--repeat <n>] [--stop-on-failure]
+  ${run} definition <file.json5> [--override <dotpath>=<value>] [--resume-at=<point>] [resume selectors] [--cbcollect] [--slack-thread <ref>] [--repeat <n>] [--stop-on-failure]
   ${run} --help
 
 Subcommands:
@@ -86,8 +86,9 @@ Shared options (both subcommands):
                                   reusing the same cluster/performer — sets "repeat: n" on every run. Errors
                                   if any run already sets the mutually-exclusive "versions" field; target
                                   that run individually with --override instead.
-  --repeat-until-failure           Keep repeating until a run fails, then stop the whole run there. Combine
-                                  with --repeat <n> to cap the number of iterations; alone, caps at ${DEFAULT_REPEAT_UNTIL_FAILURE_CAP}.
+  --stop-on-failure                Turn any failure into an immediate abort of the whole run (instead of
+                                  continuing to the next run/cluster/instance). Combine with --repeat <n> to
+                                  stop a repeated run at its first failure.
 
 preset options:
   --performer <image>             SDK-specific performer image ref (e.g. java-fit-performer:refs-changes-67-246067-3 or ghcr.io/couchbase/java-fit-performer:refs-changes-67-246067-3). Alias: --performer-image-name.
@@ -233,19 +234,17 @@ function extractPerformerImageName(argv: readonly string[]): { performerImageNam
   return { performerImageName, positionals };
 }
 
-/** `--repeat-until-failure` without an explicit `--repeat N` caps the loop at this many iterations. */
-const DEFAULT_REPEAT_UNTIL_FAILURE_CAP = 1000;
-
-/** Pull `--repeat <n>` and `--repeat-until-failure` out of an argv list. */
-export function extractRepeatFlags(argv: readonly string[]): { repeat?: number; repeatUntilFailure: boolean; positionals: string[] } {
+/** Pull `--repeat <n>` and `--stop-on-failure` out of an argv list. They're independent: `--stop-on-failure`
+ * escalates any failure to abort the whole run and doesn't require `--repeat` to be set. */
+export function extractRepeatFlags(argv: readonly string[]): { repeat?: number; stopOnFailure: boolean; positionals: string[] } {
   const positionals: string[] = [];
   let repeat: number | undefined;
-  let repeatUntilFailure = false;
+  let stopOnFailure = false;
   const inline = "--repeat=";
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg === "--repeat-until-failure") {
-      repeatUntilFailure = true;
+    if (arg === "--stop-on-failure") {
+      stopOnFailure = true;
       continue;
     }
     const kv = arg === "--repeat" ? argv[++i] : arg.startsWith(inline) ? arg.slice(inline.length) : undefined;
@@ -260,7 +259,7 @@ export function extractRepeatFlags(argv: readonly string[]): { repeat?: number; 
     }
     repeat = n;
   }
-  return { repeat, repeatUntilFailure, positionals };
+  return { repeat, stopOnFailure, positionals };
 }
 
 /**
@@ -322,7 +321,7 @@ function patchDefinitionFile(resolvedPath: string, patch: (raw: Record<string, u
 }
 
 /**
- * Extract the resume point/selector, `--cbcollect` and `--repeat`/`--repeat-until-failure`
+ * Extract the resume point/selector, `--cbcollect` and `--repeat`/`--stop-on-failure`
  * shared by both run subcommands, returning the parsed run options, the run count
  * requested via `--repeat` (if any), and the remaining positionals.
  */
@@ -331,7 +330,7 @@ function extractRunOptions(argv: readonly string[]): { runOpts: RunFromDefinitio
   const { selector: resumeSelector, positionals: afterSelector } = extractResumeSelector(afterResume);
   const { cbcollect, positionals: afterCbcollect } = extractCbcollectFlag(afterSelector);
   const { slackThread, positionals: afterSlackThread } = extractSlackThreadFlag(afterCbcollect);
-  const { repeat: repeatFlag, repeatUntilFailure, positionals } = extractRepeatFlags(afterSlackThread);
+  const { repeat, stopOnFailure, positionals } = extractRepeatFlags(afterSlackThread);
   let resumePoint;
   try {
     resumePoint = parseResumePoint(resumeAt);
@@ -339,16 +338,12 @@ function extractRunOptions(argv: readonly string[]): { runOpts: RunFromDefinitio
     console.error((err as Error).message);
     process.exit(2);
   }
-  if (repeatUntilFailure && repeatFlag === undefined) {
-    console.log(`--repeat-until-failure without --repeat: capping at ${DEFAULT_REPEAT_UNTIL_FAILURE_CAP} repeats.`);
-  }
-  const repeat = repeatUntilFailure ? (repeatFlag ?? DEFAULT_REPEAT_UNTIL_FAILURE_CAP) : repeatFlag;
   const runOpts = {
     ...(resumePoint ? { resumeAt: resumePoint } : {}),
     resumeSelector,
     ...(cbcollect ? { cbcollect } : {}),
     ...(slackThread ? { slackThread } : {}),
-    ...(repeatUntilFailure ? { repeatUntilFailure } : {}),
+    ...(stopOnFailure ? { stopOnFailure } : {}),
   };
   return { runOpts, repeat, positionals };
 }
@@ -498,10 +493,10 @@ export async function runDispatch(argv: string[]): Promise<RunOutput | void> {
   const [definitionPath, ...extra] = positionals;
   if (!definitionPath || extra.length > 0) {
     console.error(
-      `Usage: ${runScriptPrefix("run")} definition <file.json5> [--override <dotpath>=<value>] [--repeat <n>] [--repeat-until-failure] [--resume-at=<point>] [resume selectors]\n` +
+      `Usage: ${runScriptPrefix("run")} definition <file.json5> [--override <dotpath>=<value>] [--repeat <n>] [--stop-on-failure] [--resume-at=<point>] [resume selectors]\n` +
         "  --override: override a field in the definition (repeatable)\n" +
         "  --repeat: run every test in the file this many times\n" +
-        "  --repeat-until-failure: keep repeating until a run fails (or --repeat is hit, if set)\n" +
+        "  --stop-on-failure: abort the whole run at the first failure\n" +
         "  --resume-at: after-instance-creation | after-remote-preparation | after-cluster-creation | after-performer\n" +
         "  resume selectors: --resume-instance=<n> --resume-cluster=<n> --resume-session=<n> --resume-clusterless-session=<n> --resume-run=<n>",
     );

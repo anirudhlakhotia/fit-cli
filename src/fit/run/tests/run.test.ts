@@ -3,9 +3,9 @@ import test from "node:test";
 import { applyRepeatOverride, extractRepeatFlags } from "../run.js";
 
 test("extractRepeatFlags pulls --repeat <n> out of argv", () => {
-  const { repeat, repeatUntilFailure, positionals } = extractRepeatFlags(["definition.json5", "--repeat", "5"]);
+  const { repeat, stopOnFailure, positionals } = extractRepeatFlags(["definition.json5", "--repeat", "5"]);
   assert.equal(repeat, 5);
-  assert.equal(repeatUntilFailure, false);
+  assert.equal(stopOnFailure, false);
   assert.deepEqual(positionals, ["definition.json5"]);
 });
 
@@ -15,17 +15,17 @@ test("extractRepeatFlags accepts --repeat=<n>", () => {
   assert.deepEqual(positionals, ["definition.json5"]);
 });
 
-test("extractRepeatFlags pulls --repeat-until-failure out of argv", () => {
-  const { repeat, repeatUntilFailure, positionals } = extractRepeatFlags(["--repeat-until-failure", "definition.json5"]);
+test("extractRepeatFlags pulls --stop-on-failure out of argv", () => {
+  const { repeat, stopOnFailure, positionals } = extractRepeatFlags(["--stop-on-failure", "definition.json5"]);
   assert.equal(repeat, undefined);
-  assert.equal(repeatUntilFailure, true);
+  assert.equal(stopOnFailure, true);
   assert.deepEqual(positionals, ["definition.json5"]);
 });
 
-test("extractRepeatFlags combines --repeat and --repeat-until-failure", () => {
-  const { repeat, repeatUntilFailure } = extractRepeatFlags(["--repeat", "20", "--repeat-until-failure"]);
+test("extractRepeatFlags combines --repeat and --stop-on-failure", () => {
+  const { repeat, stopOnFailure } = extractRepeatFlags(["--repeat", "20", "--stop-on-failure"]);
   assert.equal(repeat, 20);
-  assert.equal(repeatUntilFailure, true);
+  assert.equal(stopOnFailure, true);
 });
 
 test("extractRepeatFlags rejects a non-positive-integer --repeat value", () => {
