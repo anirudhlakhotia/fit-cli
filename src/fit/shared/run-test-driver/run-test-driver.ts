@@ -316,16 +316,18 @@ export async function runTestDriver(
 
   // The test-driver still writes JUnit reports when tests fail, so collect them
   // on both paths — the failing run is the one most worth visualising.
-  let commandOk: boolean;
+  // Keep the failure itself, not just the fact of it: how the command died is what
+  // separates a Maven build failure from the driver being killed out from under us.
+  let commandError: Error | undefined;
   const startMs = Date.now();
   try {
     await execution.streamToArtifactFile("./mvnw", args, targetLogFile, execution.fitPerformerDir, driverEnv);
     console.log("\n✓ FIT test-driver finished");
-    commandOk = true;
   } catch (err) {
-    console.error(`\n✗ FIT test-driver failed: ${(err as Error).message}`);
-    commandOk = false;
+    commandError = err as Error;
+    console.error(`\n✗ FIT test-driver failed: ${commandError.message}`);
   }
+  const commandOk = commandError === undefined;
   const durationMs = Date.now() - startMs;
 
   const collectedLogFile = await execution.collectFile(targetLogFile, logFile);
@@ -347,13 +349,20 @@ export async function runTestDriver(
   try {
     artifacts = combineArtifacts([logArtifact, ...csvArtifact], await execution.collectJunitArtifacts(sourceSurefireDir, path));
   } catch (err) {
-    // collectJunitArtifacts already classifies a report-less run as FatalToRun, but
-    // its "no JUnit reports found" message masks the real cause when Maven itself
-    // failed (e.g. a compile error) before ever reaching the tests — surface that
-    // instead, using the log we just captured.
-    if (!commandOk && err instanceof ClassifiedFailure && err.classification === "FatalToRun") {
+    // collectJunitArtifacts already classifies a report-less run as FatalToRun, but its
+    // "no JUnit reports found" message masks why the command failed — so surface that
+    // instead, using the log we just captured. Two very different causes land here:
+    // Maven failing before it ever reached the tests (e.g. a compile error), or the
+    // driver being killed mid-run from outside. A TimedOut status is the latter — the
+    // command hit its execution-timeout ceiling, and tests may well have been passing
+    // right up to the kill. Quoting the command's own failure keeps us from asserting
+    // the wrong one, which is worth the longer message: blaming Maven for an infra kill
+    // points whoever reads it at the build instead of at the timeout.
+    if (commandError && err instanceof ClassifiedFailure && err.classification === "FatalToRun") {
       throwFatalToRun(
-        `Maven build failed before the test-driver produced any JUnit reports — see ${logFile} for the full log. Tail:\n${tailOfLog(collectedLogFile)}`,
+        `The FIT test-driver produced no JUnit reports; the command running it failed: ${commandError.message}. ` +
+          `Either Maven failed before reaching the tests, or the driver was killed mid-run (a TimedOut status means ` +
+          `it hit the execution-timeout ceiling). See ${logFile} for the full log. Tail:\n${tailOfLog(collectedLogFile)}`,
       );
     }
     throw err;

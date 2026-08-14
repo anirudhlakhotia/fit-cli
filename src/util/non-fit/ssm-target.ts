@@ -37,11 +37,19 @@ export const DEFAULT_SSM_USER = "ubuntu";
 const SSM_LOG_GROUP_NAME = "/fit-cli/ssm-command-output";
 const SSM_LOG_RETENTION_DAYS = 3;
 const POLL_INTERVAL_MS = 1_500;
-// Unlike ssh.ts's ServerAliveInterval (an idle timeout that never fires on an active
-// connection), SSM's TimeoutSeconds is a hard ceiling regardless of activity — a healthy,
-// actively-producing command gets killed at this deadline just the same as a hung one.
-// Set to match the GHA run cap (specs/timers-and-lifetimes.md) since no run should need
-// longer than that anyway.
+// SSM has two unrelated deadlines and only the second one bounds a running command:
+//   - SendCommand's TimeoutSeconds is a *delivery* deadline. If the command hasn't started
+//     on the instance by then it never runs; it says nothing about how long one that did
+//     start may take.
+//   - AWS-RunShellScript's own executionTimeout parameter is the real ceiling, and it
+//     defaults to 3600 no matter what TimeoutSeconds says. Unlike ssh.ts's
+//     ServerAliveInterval (an idle timeout that never fires on an active connection), it
+//     is a hard ceiling regardless of activity: a healthy, actively-producing command is
+//     killed at that deadline just the same as a hung one, surfacing as status TimedOut
+//     with exit code 137. So it has to be set explicitly — leaving it defaulted caps every
+//     command at an hour, which a situational suite exceeds routinely.
+// Both are set to the GHA run cap (specs/timers-and-lifetimes.md) since no run should need
+// longer than that anyway. AWS caps executionTimeout at 172800 (48h), well above ours.
 const DEFAULT_TIMEOUT_SECONDS = 6 * 60 * 60;
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -266,7 +274,7 @@ async function sendShellCommand(instanceId: string, command: string, runAsUser: 
   const resp = await withSsmRetry(() => ssmClient.send(new SendCommandCommand({
     InstanceIds: [instanceId],
     DocumentName: "AWS-RunShellScript",
-    Parameters: { commands: [script] },
+    Parameters: { commands: [script], executionTimeout: [String(DEFAULT_TIMEOUT_SECONDS)] },
     TimeoutSeconds: DEFAULT_TIMEOUT_SECONDS,
     CloudWatchOutputConfig: { CloudWatchLogGroupName: SSM_LOG_GROUP_NAME, CloudWatchOutputEnabled: true },
   })));
