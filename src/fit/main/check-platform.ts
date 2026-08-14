@@ -42,6 +42,7 @@ export function checkPlatform(platform: string = process.platform): void {
 }
 
 if (isMain(import.meta.url)) {
+  // eslint-disable-next-line @typescript-eslint/require-await -- runCli requires an async callback; checkPlatform itself is synchronous
   runCli(async () => {
     const args = process.argv.slice(2);
     if (args.includes("--help") || args.includes("-h")) {

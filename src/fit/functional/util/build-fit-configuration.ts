@@ -279,7 +279,7 @@ function connectionSpecPiece(spec: FitConnectionSpec, cluster: SelectedCluster):
     const resolved = tls !== undefined ? tls : fallback;
     if (resolved === null) return null;
     if (resolved === undefined) return undefined;
-    return resolved as PieceData;
+    return resolved;
   };
 
   let clusterAccess: PieceData;

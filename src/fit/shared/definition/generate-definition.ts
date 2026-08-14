@@ -9,7 +9,6 @@ import { artifactFromPath, type Artifact, type RunOutput } from "../../../util/n
 import { printWithoutTimestamps } from "../../../util/non-fit/fit-cli-log.js";
 import { ensureRunDir } from "../../../util/non-fit/replay.js";
 import { recordRecentDefinition } from "./recent-definitions.js";
-import type { PieceData } from "../../../util/non-fit/config-pieces.js";
 import type { Sdk } from "../../../util/sdk/sdks.js";
 import { buildClusterDefObject, type ClusterDef } from "../../../cluster/cluster-create/build-cluster-def.js";
 import type { ClusterExistsPolicy } from "../../../cluster/cluster-create/cluster-exists-policy.js";

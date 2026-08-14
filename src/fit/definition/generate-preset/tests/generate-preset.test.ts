@@ -111,7 +111,7 @@ test("applyDotPathOverride coerces boolean and numeric strings", () => {
 
 test("applyDotPathOverride overwrites an existing leaf", () => {
   const obj = { setup: { repos: { "transactions-fit-performer": { gerritRef: "old" } } } };
-  applyDotPathOverride(obj as unknown as Record<string, unknown>, "setup.repos.transactions-fit-performer.gerritRef", "new");
+  applyDotPathOverride(obj, "setup.repos.transactions-fit-performer.gerritRef", "new");
   assert.equal(obj.setup.repos["transactions-fit-performer"].gerritRef, "new");
 });
 

@@ -31,7 +31,7 @@ export function loadRecentDefinitions(): RecentDefinitionEntry[] {
   try {
     if (!existsSync(RECENT_DEFS_FILE)) return [];
     const raw = readFileSync(RECENT_DEFS_FILE, "utf8");
-    const parsed = JSON5.parse(raw) as RecentDefinitionEntry[];
+    const parsed = JSON5.parse<RecentDefinitionEntry[]>(raw);
     if (!Array.isArray(parsed)) return [];
     return parsed;
   } catch {

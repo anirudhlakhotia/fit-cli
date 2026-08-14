@@ -183,7 +183,7 @@ test("resolveGithubToken falls back to AWS secret when no local config or env", 
     await resolveGithubToken({
       config: { version: FIT_CLI_CONFIG_VERSION },
       env: {},
-      fetchSecret: async () => ({ token: "aws-pat", user: "aws-user" }),
+      fetchSecret: () => Promise.resolve({ token: "aws-pat", user: "aws-user" }),
     }),
     "aws-pat",
   );

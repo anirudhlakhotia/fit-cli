@@ -8,7 +8,6 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
-import { loadEnvironments } from "../../../fit/util/environments.js";
 import { projectsClient } from "./gcp-clients.js";
 
 /** The bits of a GCP project confirmation we care about. */

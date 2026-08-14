@@ -178,10 +178,7 @@ export function parseFitTests(output: string, domain: FitTestDomain = FUNCTIONAL
 }
 
 /** List test-driver tests from the committed cache (see fit-tests-cache.json5). */
-export async function listFitTests(
-  _execution: FitExecutionContext,
-  domain: FitTestDomain = FUNCTIONAL_TEST_DOMAIN,
-): Promise<FitTestCase[]> {
+export function listFitTests(_execution: FitExecutionContext, domain: FitTestDomain = FUNCTIONAL_TEST_DOMAIN): FitTestCase[] {
   return loadFitTestsFromCache(domain);
 }
 
@@ -510,7 +507,7 @@ export async function selectFitTests(
   promptIdPrefix?: string,
 ): Promise<FitTestSelection> {
   try {
-    return await promptForFitTestSelection(await listFitTests(execution, domain), domain, promptIdPrefix);
+    return await promptForFitTestSelection(listFitTests(execution, domain), domain, promptIdPrefix);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.warn(`\nCould not select specific FIT tests (${message}). Continuing with all tests.`);

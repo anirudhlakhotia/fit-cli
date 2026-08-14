@@ -89,6 +89,7 @@ export interface TimestampedChunk {
 // `cursorShow` (`[?25h`) that @inquirer/core appends after the trailing
 // newline when a prompt resolves. These are invisible on the terminal and
 // must not count as "content" when deciding whether we're at line start.
+// eslint-disable-next-line no-control-regex
 const ANSI_CSI_SEQUENCE = /\u001B\[[0-9;?]*[A-Za-z]/g;
 
 function advanceLineStart(text: string, atLineStart: boolean): boolean {

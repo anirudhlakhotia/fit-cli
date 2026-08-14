@@ -102,7 +102,7 @@ async function loadTagMeta(): Promise<Record<string, TagMeta>> {
   const raw = !import.meta.url.includes("/$bunfs/")
     ? readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../../../presets", TAGS_FILENAME), "utf8")
     : ((await import("../../../../presets/tags.json5", { with: { type: "text" } })) as { default: string }).default;
-  return JSON5.parse(raw) as Record<string, TagMeta>;
+  return JSON5.parse<Record<string, TagMeta>>(raw);
 }
 
 const TAG_META = await loadTagMeta();
@@ -150,9 +150,9 @@ interface PresetMeta {
 function extractPresetMeta(raw: string): PresetMeta {
   try {
     const filled = raw.replace(/\{\{PERFORMER_IMAGE\}\}/g, "placeholder");
-    const parsed = JSON5.parse(filled) as {
+    const parsed = JSON5.parse<{
       preset?: { order?: number; description?: string; tags?: string[] };
-    };
+    }>(filled);
     return {
       order: parsed.preset?.order ?? 50,
       description: parsed.preset?.description,
@@ -253,7 +253,7 @@ export function autoDescribeName(name: string, tags: string[]): string {
 export function presetUsesAnalyticsDriver(type: PresetType): boolean {
   try {
     const filled = loadPresetTemplate(type).replace(/\{\{PERFORMER_IMAGE\}\}/g, "placeholder");
-    const parsed = JSON5.parse(filled) as FitDefinition;
+    const parsed = JSON5.parse<FitDefinition>(filled);
     return (parsed.instances ?? []).some((instance) =>
       [...(instance.clusterlessSessions ?? []), ...(instance.clusters ?? []).flatMap((c) => c.sessions)]
         .flatMap((s) => s.runs)
@@ -508,7 +508,7 @@ export function resolveEnvironmentsPlaceholders(template: string, envOverrides: 
  */
 function applyPresetParams(template: string, image: string, envOverrides: Record<string, string> = {}): FitDefinition {
   const filled = resolveEnvironmentsPlaceholders(template.replace(/\{\{PERFORMER_IMAGE\}\}/g, image), envOverrides);
-  const definition = JSON5.parse(filled) as FitDefinition & { preset?: unknown };
+  const definition = JSON5.parse<FitDefinition & { preset?: unknown }>(filled);
   delete definition.preset;
   // `preset.description` above is menu-only and already stripped; this is the separate,
   // optional file-level `description`. Synthesize one if the template didn't hand-author it.
@@ -678,7 +678,9 @@ export function parseGeneratePresetArgs(argv: string[]): GeneratePresetArgs {
 
   if (!type) throw new Error(`--type is required.\nAvailable presets:\n${formatKnownPresetsWithDescriptions()}`);
   if (!isPresetType(type)) {
-    throw new Error(`Unknown preset type: ${type}\nKnown types:\n${formatKnownPresetsWithDescriptions()}`);
+    // `PresetType` is just `string`, so this branch narrows `type` to `never` — the `String()`
+    // wrap is only to satisfy the linter, `type` is still a plain string here.
+    throw new Error(`Unknown preset type: ${String(type)}\nKnown types:\n${formatKnownPresetsWithDescriptions()}`);
   }
   if (!performerImageName) {
     throw new Error("--performer-image-name is required, e.g. java-fit-performer:main");

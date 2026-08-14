@@ -70,6 +70,24 @@ export function isMain(metaUrl: string): boolean {
 }
 
 /**
+ * Render an arbitrary error property for display. Strings pass through; anything
+ * else is JSON, falling back to String() for values JSON.stringify rejects — some
+ * error properties (e.g. Bun's source-mapped stack frames) are cyclic, and the
+ * formatter must not itself crash and hide the real error.
+ *
+ * Not for Errors: their `message`/`stack` are non-enumerable, so JSON.stringify
+ * flattens them to `{}`. Callers holding a possible Error use String() instead.
+ */
+function renderErrorValue(value: unknown): string {
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+/**
  * Format an uncaught error for the final terminal line: the stack trace (which
  * includes the message) when available, plus any AWS SDK error metadata
  * (request id, service error code) that isn't part of `.message` — AWS SDK v3
@@ -79,7 +97,9 @@ export function isMain(metaUrl: string): boolean {
 export function formatUncaughtError(err: unknown): string {
   if (!(err instanceof Error)) return String(err);
   const parts = [err.stack ?? err.message];
-  if (err.cause !== undefined) parts.push(`cause: ${String(err.cause)}`);
+  if (err.cause !== undefined) {
+    parts.push(`cause: ${err.cause instanceof Error ? String(err.cause) : renderErrorValue(err.cause)}`);
+  }
   // AWS SDK v3 errors carry extra own-enumerable properties (name, $metadata, $fault, Code,
   // __type, etc.) beyond the standard Error shape — dump anything present rather than
   // guessing which fields a given service/exception happens to use, since unmodeled service
@@ -90,20 +110,7 @@ export function formatUncaughtError(err: unknown): string {
     .map((key) => [key, (err as unknown as Record<string, unknown>)[key]] as const)
     .filter(([, value]) => value !== undefined);
   for (const [key, value] of extra) {
-    let rendered: string;
-    if (typeof value === "string") {
-      rendered = value;
-    } else {
-      try {
-        rendered = JSON.stringify(value);
-      } catch {
-        // Some error properties (e.g. Bun's source-mapped stack frames) can be
-        // cyclic, which JSON.stringify rejects outright — fall back to String()
-        // rather than letting the formatter itself crash and hide the real error.
-        rendered = String(value);
-      }
-    }
-    parts.push(`${key}: ${rendered}`);
+    parts.push(`${key}: ${renderErrorValue(value)}`);
   }
   return parts.join("\n");
 }

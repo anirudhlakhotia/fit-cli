@@ -53,11 +53,13 @@ async function loadPresetGroups(): Promise<Record<string, RawPresetGroup>> {
   const raw = !import.meta.url.includes("/$bunfs/")
     ? readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../../../presets", GROUPS_FILENAME), "utf8")
     : ((await import("../../../../presets/groups.json5", { with: { type: "text" } })) as { default: string }).default;
-  const parsed = JSON5.parse(raw) as Record<string, RawPresetGroup>;
+  const parsed = JSON5.parse<Record<string, RawPresetGroup>>(raw);
   for (const [name, group] of Object.entries(parsed)) {
     for (const member of group.presets) {
       if (!isPresetType(member) && !(member in parsed)) {
-        throw new Error(`presets/groups.json5: group "${name}" references unknown preset or group "${member}"`);
+        // `PresetType` is just `string`, so the `isPresetType` check above narrows `member`
+        // to `never` here — the `String()` wrap is only to satisfy the linter.
+        throw new Error(`presets/groups.json5: group "${name}" references unknown preset or group "${String(member)}"`);
       }
     }
   }
@@ -168,6 +170,8 @@ function expandName(name: string, visiting: Set<string>, out: string[]): void {
     return;
   }
   if (isPresetGroupName(name)) {
+    // `PresetType` is just `string`, so the `isPresetType` check above narrows `name`
+    // to `never` from here on — `String(name)` below is only to satisfy the linter.
     // checkNoCycle at load time already guarantees no cycles reachable from a
     // top-level group, so `visiting` here is just defensive.
     if (visiting.has(name)) {
@@ -175,7 +179,7 @@ function expandName(name: string, visiting: Set<string>, out: string[]): void {
     }
     const removalDate = PRESET_GROUPS[name].removalDate;
     if (removalDate) {
-      process.stderr.write(`Warning: preset group "${name}" is deprecated and will be removed after ${removalDate}.\n`);
+      process.stderr.write(`Warning: preset group "${String(name)}" is deprecated and will be removed after ${removalDate}.\n`);
     }
     visiting.add(name);
     for (const member of PRESET_GROUPS[name].presets) {

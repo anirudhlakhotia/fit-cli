@@ -40,6 +40,8 @@ test("createLocalFitExecutionContext builds local docker run args with host-gate
   const execution = createLocalFitExecutionContext();
   assert.deepEqual(execution.performerRunArgs("performer-node-main"), [
     "run",
+    "--platform",
+    "linux/amd64",
     "--detach",
     "--add-host",
     "host.docker.internal:host-gateway",
@@ -55,6 +57,8 @@ test("createLocalFitExecutionContext can attach the performer to a cluster Docke
   const execution = createLocalFitExecutionContext();
   assert.deepEqual(execution.performerRunArgs("performer-node-main", 8060, "fit-net"), [
     "run",
+    "--platform",
+    "linux/amd64",
     "--detach",
     "--add-host",
     "host.docker.internal:host-gateway",

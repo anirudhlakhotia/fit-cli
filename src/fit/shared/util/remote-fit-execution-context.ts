@@ -4,7 +4,7 @@ import { basename, dirname, join, relative } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { createGunzip } from "node:zlib";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
-import { commandOn, formatBytes, formatCommandLine, runScriptPrefix } from "../../../util/non-fit/fit-cli-log.js";
+import { commandOn, formatBytes, formatCommandLine } from "../../../util/non-fit/fit-cli-log.js";
 import { ensureRunDir, instanceInternalRunDir, type DefinitionRunPath } from "../../../util/non-fit/replay.js";
 import { announceArtifactStream, type BackgroundStream } from "../../../util/non-fit/proc.js";
 import { posixQuote, teeToFileCommand } from "../../../util/non-fit/remote-target.js";

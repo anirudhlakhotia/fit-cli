@@ -2,7 +2,6 @@
  * Turn a validated `fit` definition into concrete run inputs.
  */
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
-import type { PieceData } from "../../../util/non-fit/config-pieces.js";
 import type { DefinitionRunPath } from "../../../util/non-fit/replay.js";
 import { clusterLabel, instanceLabel, performerLabel, runLabel } from "../util/run-labels.js";
 import { classifyConnectionString } from "../../../cluster/cluster-select/classify-connection-string.js";
@@ -45,7 +44,6 @@ import type {
   CbdinoclusterSource,
   ClusterLifetime,
   ConnectionClusterSetup,
-  FitConfigPiece,
   FitDefinition,
   FitRun,
   InstanceLifetime,

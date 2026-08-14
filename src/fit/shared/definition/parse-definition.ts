@@ -753,7 +753,7 @@ function validateSchemeAndTls(value: unknown, path: string): SchemeAndTls {
   rejectUnknown(record, ["scheme", "tls"], path);
   return {
     ...(record.scheme !== undefined ? { scheme: validateConnectionScheme(record.scheme, `${path}.scheme`) } : {}),
-    ...(record.tls !== undefined ? { tls: record.tls as SchemeAndTls["tls"] } : {}),
+    ...(record.tls !== undefined ? { tls: record.tls } : {}),
   };
 }
 
@@ -762,7 +762,7 @@ function validateFitConnectionSpec(value: unknown, path: string): FitConnectionS
   rejectUnknown(record, ["scheme", "tls", "driver", "performer"], path);
   return {
     ...(record.scheme !== undefined ? { scheme: validateConnectionScheme(record.scheme, `${path}.scheme`) } : {}),
-    ...(record.tls !== undefined ? { tls: record.tls as FitConnectionSpec["tls"] } : {}),
+    ...(record.tls !== undefined ? { tls: record.tls } : {}),
     ...(record.driver !== undefined ? { driver: validateSchemeAndTls(record.driver, `${path}.driver`) } : {}),
     ...(record.performer !== undefined ? { performer: validateSchemeAndTls(record.performer, `${path}.performer`) } : {}),
   };

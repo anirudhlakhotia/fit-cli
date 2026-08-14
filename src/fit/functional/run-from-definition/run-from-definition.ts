@@ -60,7 +60,6 @@ import { ssmStartSessionCommand, terminateInstanceCommand } from "../../util/aws
 import { gcpDebugAccessCommand, gcpTerminateInstanceCommand } from "../../util/gcp/lifecycle-warning.js";
 import { maybeUploadRunArtifacts } from "../../util/aws/upload-run-artifacts.js";
 import { postRunSummaryToSlack } from "../../slack/post-run-summary.js";
-import { AWS_REGION } from "../../../cloud/util/aws/aws-target.js";
 import { deleteVpcEndpointsForCluster } from "../../../cloud/util/aws/delete-vpc-endpoints.js";
 import { checkAwsCredentials, type AwsCredentials } from "../../../cloud/util/aws/identity.js";
 import {
@@ -298,14 +297,11 @@ export function finalizeRunFromDefinition(
  * unioned with any explicit `extraClasses` (trusted even if not discovered, so a
  * `Class#method` selector listed alongside a preset still reaches Maven).
  */
-async function resolveTestSelectionMode(
-  selection: FitTestSelection,
-  execution: FitExecutionContext,
-): Promise<FitTestSelection> {
+function resolveTestSelectionMode(selection: FitTestSelection, execution: FitExecutionContext): FitTestSelection {
   if (!selection.presets?.length) {
     return selection;
   }
-  const tests = await listFitTests(execution, FUNCTIONAL_TEST_DOMAIN);
+  const tests = listFitTests(execution, FUNCTIONAL_TEST_DOMAIN);
   const presetClasses = new Set<string>();
   for (const preset of selection.presets) {
     const matched =
@@ -811,7 +807,7 @@ export async function runTests(
     throwFatalToSession("Performer cluster sanity check failed; stopping this iteration.");
   }
 
-  const resolvedTestSelection = await resolveTestSelectionMode(run.testSelection, execution);
+  const resolvedTestSelection = resolveTestSelectionMode(run.testSelection, execution);
   const testRun = await runTestDriverFn(
     execution,
     resolvedTestSelection,
@@ -2296,7 +2292,7 @@ export async function runFromDefinition(
 
         const allSessionsAndRuns = activeCycle.type === "functional"
           ? activeCycle.sessions.flatMap((session) => session.runs.map((run) => ({ session, run })))
-          : activeCycle.runs.map((run) => ({ session: null as null, run }));
+          : activeCycle.runs.map((run) => ({ session: null, run }));
         const totalIterations = allSessionsAndRuns.length;
 
         // Iterate sessions (functional) or runs (situational). For functional groups,

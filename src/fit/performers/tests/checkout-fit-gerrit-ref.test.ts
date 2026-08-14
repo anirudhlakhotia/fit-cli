@@ -7,7 +7,6 @@ import {
   gerritSshCommand,
   gitStatusIsClean,
   resolveFitGerritUser,
-  resolveGerritUserFromGhCli,
   requireFitGerritUser,
 } from "../checkout-fit-gerrit-ref/checkout-fit-gerrit-ref.js";
 import { resolveGerritSshKey } from "../../util/config.js";
