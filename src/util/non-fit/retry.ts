@@ -25,12 +25,15 @@ export interface RetryWholeOptions {
   totalBudgetMs?: number;
   /**
    * Whether a failure is worth another attempt at all — a misconfiguration
-   * usually isn't. Defaults to retrying everything.
+   * usually isn't. Defaults to retrying everything. Sees the thrown value as
+   * thrown, deliberately: a predicate may want to treat "not even an Error" as a
+   * bug in our own code rather than as something transient.
    */
-  shouldRetry?: (err: Error) => boolean;
+  shouldRetry?: (err: unknown) => boolean;
   /**
    * Called after a failed attempt, before sleeping — `nextAttempt` is 1-based and
-   * counts the first attempt, so the first retry reports attempt 2.
+   * counts the first attempt, so the first retry reports attempt 2. A thrown value
+   * that isn't an Error is wrapped in one, so reporters can rely on `.message`.
    */
   onRetry?: (err: Error, waitMs: number, nextAttempt: number) => void;
   /** Clock, injectable so the budget can be tested without waiting. */
@@ -58,7 +61,7 @@ export async function retryWhole<T>(
       if (attempt >= totalAttempts) {
         throw err;
       }
-      if (opts.shouldRetry && !opts.shouldRetry(err as Error)) {
+      if (opts.shouldRetry && !opts.shouldRetry(err)) {
         throw err;
       }
       const waitMs = opts.delaysMs[attempt - 1] ?? 0;
@@ -67,7 +70,9 @@ export async function retryWhole<T>(
       if (opts.totalBudgetMs !== undefined && now() - startedAt + waitMs >= opts.totalBudgetMs) {
         throw err;
       }
-      opts.onRetry?.(err as Error, waitMs, attempt + 1);
+      // Only the report gets a wrapped value; the original is what we rethrow, so a
+      // caller's own error handling still sees exactly what was thrown.
+      opts.onRetry?.(err instanceof Error ? err : new Error(String(err)), waitMs, attempt + 1);
       await new Promise<void>((resolve) => setTimeout(resolve, waitMs));
     }
   }

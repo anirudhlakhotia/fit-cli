@@ -119,12 +119,58 @@ test("retryWhole: shouldRetry sees the failure and can allow it", async () => {
   await retryWhole(op, {
     delaysMs: [0],
     shouldRetry: (err) => {
-      seen.push(err.message);
+      seen.push(err instanceof Error ? err.message : String(err));
       return true;
     },
   });
   assert.equal(calls(), 2);
   assert.deepEqual(seen, ["attempt 1 failed"]);
+});
+
+test("retryWhole: a non-Error throw is wrapped for onRetry but rethrown as-is", async () => {
+  let calls = 0;
+  const reported: unknown[] = [];
+  await assert.rejects(
+    retryWhole(
+      () => {
+        calls++;
+        // The point of the test: something that isn't an Error. eslint would rather
+        // we didn't, which is precisely the case callers can't be trusted to avoid.
+        // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
+        return Promise.reject("boom");
+      },
+      { delaysMs: [0], onRetry: (err) => reported.push(err) },
+    ),
+    // Rethrown unchanged — not wrapped, not stringified.
+    (err: unknown) => err === "boom",
+  );
+  assert.equal(calls, 2);
+  assert.ok(reported[0] instanceof Error);
+  assert.equal(reported[0].message, "boom");
+});
+
+test("retryWhole: shouldRetry sees the thrown value as thrown, not wrapped", async () => {
+  let calls = 0;
+  const types: string[] = [];
+  await assert.rejects(
+    retryWhole(
+      () => {
+        calls++;
+        // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
+        return Promise.reject("boom");
+      },
+      {
+        delaysMs: [0],
+        shouldRetry: (err) => {
+          types.push(typeof err);
+          return false;
+        },
+      },
+    ),
+    (err: unknown) => err === "boom",
+  );
+  assert.equal(calls, 1);
+  assert.deepEqual(types, ["string"]);
 });
 
 test("retryWhole: a budget that the next attempt's wait would exceed stops the retries", async () => {

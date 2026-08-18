@@ -10,10 +10,12 @@
  * config is needed to switch it on. The destination bucket and prefix are fixed,
  * mirroring the fixed AWS region — the bucket lives in us-west-2 (see AWS_REGION).
  *
- * Called from exactly one place — renderRunSummary in cli.ts, which runs after
- * teardown on both the success and the failure path, and turns the returned URI
- * into the GHA notice and fetch hint. Keep it that way: a second caller means the
- * same (often gigabyte-scale) zip is built and uploaded twice.
+ * Must be triggered at most once per run: it builds and ships an often
+ * gigabyte-scale zip, so a second caller silently doubles both the egress and the
+ * wall clock — which is exactly what used to happen. That single trigger is
+ * currently renderRunSummary in cli.ts, which runs after teardown on both the
+ * success and the failure path and turns the returned URI into the GHA notice and
+ * fetch hint.
  */
 import { existsSync, statSync } from "node:fs";
 import { basename } from "node:path";
