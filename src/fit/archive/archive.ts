@@ -13,7 +13,7 @@
  * fetch:      Downloads a .zip from S3 and extracts it locally. Output dir
  *             defaults to /tmp/fetched/<name-without-.zip>.
  */
-import { createReadStream, createWriteStream, existsSync, mkdirSync } from "node:fs";
+import { createReadStream, createWriteStream, existsSync, mkdirSync, statSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -71,22 +71,65 @@ export async function zipDirectory(sourceDir: string, outputPath: string): Promi
 }
 
 /** Upload a single local file to an S3 URI (s3://bucket/key). */
-export async function uploadFileToS3(localPath: string, s3Uri: string): Promise<void> {
+export async function uploadFileToS3(
+  localPath: string,
+  s3Uri: string,
+  onProgress?: (transferred: number, total: number | undefined) => void,
+): Promise<void> {
   const match = s3Uri.match(/^s3:\/\/([^/]+)\/(.+)$/);
   if (!match) {
     throw new Error(`Invalid S3 URI for a single file (must include a key): ${s3Uri}`);
   }
   const [, bucket, key] = match;
+  const total = statSync(localPath).size;
   // Upload uses multipart under the hood for large files and retries each part,
   // avoiding the non-retryable streaming timeout that PutObjectCommand hits.
-  await new Upload({
+  const upload = new Upload({
     client: s3Client,
     params: {
       Bucket: bucket,
       Key: key,
       Body: createReadStream(localPath),
     },
-  }).done();
+  });
+  upload.on("httpUploadProgress", (progress) => {
+    onProgress?.(progress.loaded ?? 0, progress.total ?? total);
+  });
+  await upload.done();
+}
+
+/**
+ * Returns a renderer for a live, overwrite-in-place progress bar plus a
+ * matching clear function. Shared by cmdFetch (download) and cmdS3Upload
+ * (upload) so both S3 transfers get the same terminal feedback.
+ */
+function createProgressRenderer(): {
+  render: (transferred: number, total: number | undefined) => void;
+  clear: () => void;
+} {
+  const MB = 1024 * 1024;
+  let lineLen = 0;
+  return {
+    render(transferred, total) {
+      const doneMB = (transferred / MB).toFixed(1);
+      let line: string;
+      if (total) {
+        const pct = transferred / total;
+        const width = 30;
+        const filled = Math.round(pct * width);
+        const bar = "█".repeat(filled) + "░".repeat(width - filled);
+        const totalMB = (total / MB).toFixed(1);
+        line = `  [${bar}] ${doneMB} / ${totalMB} MB (${Math.round(pct * 100)}%)`;
+      } else {
+        line = `  ${doneMB} MB transferred`;
+      }
+      process.stderr.write(`\r${line.padEnd(lineLen)}`);
+      lineLen = line.length;
+    },
+    clear() {
+      process.stderr.write(`\r${" ".repeat(lineLen)}\r`);
+    },
+  };
 }
 
 async function cmdZip(argv: string[]): Promise<void> {
@@ -137,7 +180,9 @@ async function cmdS3Upload(argv: string[]): Promise<void> {
     console.log(`✓ Created ${zipPath}`);
     const zipKey = destination.endsWith("/") ? `${destination}${dirName}.zip` : destination;
     console.log(`Uploading ${zipPath} → ${zipKey} ...`);
-    await uploadFileToS3(zipPath, zipKey);
+    const progress = createProgressRenderer();
+    await uploadFileToS3(zipPath, zipKey, progress.render);
+    progress.clear();
     console.log(`✓ Uploaded to ${zipKey}`);
     console.log(`  Download:   ${runScriptPrefix("archive")} fetch ${zipKey}`);
     console.log(`  Or direct:  aws s3 cp ${zipKey} .`);
@@ -194,29 +239,10 @@ async function cmdFetch(argv: string[]): Promise<void> {
   const outputDir = outputDirArg ?? `/tmp/fetched/${runName}`;
   const zipPath = `${outputDir}.zip`;
 
-  const MB = 1024 * 1024;
-  let progressLineLen = 0;
-
-  function renderProgress(downloaded: number, total: number | undefined): void {
-    const dlMB = (downloaded / MB).toFixed(1);
-    let line: string;
-    if (total) {
-      const pct = downloaded / total;
-      const width = 30;
-      const filled = Math.round(pct * width);
-      const bar = "█".repeat(filled) + "░".repeat(width - filled);
-      const totalMB = (total / MB).toFixed(1);
-      line = `  [${bar}] ${dlMB} / ${totalMB} MB (${Math.round(pct * 100)}%)`;
-    } else {
-      line = `  ${dlMB} MB downloaded`;
-    }
-    process.stderr.write(`\r${line.padEnd(progressLineLen)}`);
-    progressLineLen = line.length;
-  }
-
   console.log(`Downloading ${s3Uri} → ${zipPath} ...`);
-  await downloadFileFromS3(s3Uri, zipPath, renderProgress);
-  process.stderr.write(`\r${" ".repeat(progressLineLen)}\r`);
+  const progress = createProgressRenderer();
+  await downloadFileFromS3(s3Uri, zipPath, progress.render);
+  progress.clear();
   console.log(`✓ Downloaded to ${zipPath}`);
 
   mkdirSync(outputDir, { recursive: true });
