@@ -11,3 +11,5 @@ This is a human-written doc.  Targeted, specific, reviewed LLM edits are permitt
 5m - how often fit-cli re-checks the remote box's AWS credentials against that 30m mark, so a failed attempt still has ~6 tries before they lapse. A failed refresh is warned about immediately and reported in the run summary, but does not abort the run: fit-cli cannot interrupt an in-flight test-driver process.
 2h - SSH/SCP idle timeout for remote instance sessions (ServerAliveInterval=30 x ServerAliveCountMax=240), deliberately generous to allow long-running remote processes to keep the connection alive.
 6h - how long a single SSM command may run on a remote instance.
+180 days - S3 lifecycle expiration on the `fit-cli` bucket's `runs/` prefix (uploaded run artifacts), set in `terraform/aws/s3-bucket.tf`.
+1 day - S3 lifecycle expiration on the `fit-cli` bucket's `ssm-relay/` prefix (scratch SSM file-relay objects), also in `terraform/aws/s3-bucket.tf`.

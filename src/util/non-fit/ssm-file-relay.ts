@@ -32,7 +32,7 @@ function scratchKey(instanceId: string, filename: string): string {
 
 async function deleteScratchObject(key: string): Promise<void> {
   // Best-effort: a bucket lifecycle rule on the ssm-relay/ prefix is the real
-  // safety net (see the migration plan) — this is just tidiness.
+  // safety net (see terraform/aws/s3-bucket.tf) — this is just tidiness.
   await s3Client.send(new DeleteObjectCommand({ Bucket: ARTIFACTS_BUCKET, Key: key })).catch(() => {});
 }
 
