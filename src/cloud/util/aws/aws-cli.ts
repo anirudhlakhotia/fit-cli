@@ -178,7 +178,7 @@ export async function assumeFitCliRole(): Promise<AssumeRoleOutcome> {
   // themselves.
   const currentCreds = await fromNodeProviderChain()();
   const isChained = Boolean(currentCreds.sessionToken);
-  console.log(`  chained credentials (session token present): ${isChained}`);
+  fitCliInfo(`  chained credentials (session token present): ${isChained}`);
 
   try {
     const freshSts = new STSClient({ region: AWS_REGION });

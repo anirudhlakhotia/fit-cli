@@ -12,7 +12,7 @@
  */
 import { existsSync, statSync } from "node:fs";
 import { basename } from "node:path";
-import { echoCommand, fitCliWarn, runScriptPrefix } from "../../../util/non-fit/fit-cli-log.js";
+import { fitCliInfo, fitCliWarn, runScriptPrefix } from "../../../util/non-fit/fit-cli-log.js";
 import { zipDirectory, uploadFileToS3 } from "../../archive/archive.js";
 
 /** Bucket run artifacts are uploaded to (us-west-2, see AWS_REGION). */
@@ -42,13 +42,13 @@ export async function maybeUploadRunArtifacts(runDir: string, env: NodeJS.Proces
   const zipPath = `${runDir}.zip`;
   const zipKey = `${s3Base}${dirName}.zip`;
   try {
-    echoCommand(`${runScriptPrefix("archive")} s3-upload --zip ${runDir} ${s3Base}`);
+    fitCliInfo(`${runScriptPrefix("archive")} s3-upload --zip ${runDir} ${s3Base}`);
     await zipDirectory(runDir, zipPath);
     const zipSizeMb = (statSync(zipPath).size / (1024 * 1024)).toFixed(1);
-    console.log(`Uploading run artifacts (${zipSizeMb} MB) → ${zipKey}`);
+    fitCliInfo(`Uploading run artifacts (${zipSizeMb} MB) → ${zipKey}`);
     await uploadFileToS3(zipPath, zipKey);
-    console.log(`✓ Uploaded run artifacts to ${zipKey}`);
-    console.log(`  Can fetch later with:     fit archive fetch ${zipKey}`);
+    fitCliInfo(`✓ Uploaded run artifacts to ${zipKey}`);
+    fitCliInfo(`  Can fetch later with:     fit archive fetch ${zipKey}`);
     return zipKey;
   } catch (err) {
     fitCliWarn(`Could not upload run artifacts to ${s3Base}: ${(err as Error).message}`);
