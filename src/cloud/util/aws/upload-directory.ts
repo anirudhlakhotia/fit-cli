@@ -7,7 +7,7 @@
  * Run on its own:
  *   bun src/cloud/util/aws/upload-directory.ts ./local s3://my-bucket/prefix
  */
-import { createReadStream, readdirSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { isMain, runCli } from "../../../util/non-fit/cli.js";
@@ -47,7 +47,8 @@ export async function uploadDirectoryToS3(localDir: string, s3Uri: string): Prom
     await s3Client.send(new PutObjectCommand({
       Bucket: bucket,
       Key: key,
-      Body: createReadStream(file),
+      // bun drops chunks from streamed bodies (oven-sh/bun#39752), so buffer instead
+      Body: readFileSync(file),
       ContentLength: statSync(file).size,
     }));
     console.log(`  ${relPath}`);
