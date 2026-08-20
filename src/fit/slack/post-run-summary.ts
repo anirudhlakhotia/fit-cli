@@ -8,6 +8,10 @@
  *
  * Run directly (development), posting a fake summary to a thread:
  *   SLACK_BOT_TOKEN=xoxb-… bun src/fit/slack/post-run-summary.ts <permalink|channel:ts>
+ *
+ * Add --group to post a fake *combined* summary instead — the shape a preset group
+ * (run.ts) posts once for the whole group, rather than one message per preset:
+ *   SLACK_BOT_TOKEN=xoxb-… bun src/fit/slack/post-run-summary.ts <permalink|channel:ts> --group
  */
 import type { RunResultSummary } from "../functional/run-from-definition/run-from-definition.js";
 import { isMain, runCli } from "../../util/non-fit/cli.js";
@@ -23,6 +27,11 @@ function ghaRunUrl(env: NodeJS.ProcessEnv = process.env): string | undefined {
   const { GITHUB_REPOSITORY, GITHUB_RUN_ID } = env;
   if (!GITHUB_REPOSITORY || !GITHUB_RUN_ID) return undefined;
   return `https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}`;
+}
+
+/** Map each of a run's RunResultSummary rows (with their surefire dirs) to the Slack renderer's input. */
+export function buildSlackRunResults(results: readonly RunResultSummary[]): SlackRunResult[] {
+  return results.map(toSlackResult);
 }
 
 /** Map a run's RunResultSummary (with its surefire dir) to the Slack renderer's input. */
@@ -54,12 +63,25 @@ export interface PostRunSummaryOptions {
   passed: boolean;
 }
 
+export interface PostSlackRunResultsOptions {
+  /** Thread reference: a permalink, channel:ts, p-number, or bare ts. */
+  slackThread: string;
+  /** Header label — the preset, definition, or preset-group name. */
+  title: string;
+  results: SlackRunResult[];
+  /** Overall pass (no run-failing failure), across every result. */
+  passed: boolean;
+}
+
 /**
- * Post the run summary as a threaded reply. Resolves the bot token (env → AWS
+ * Post an already-built set of Slack run rows as a threaded reply. This is the shared
+ * core behind `postRunSummaryToSlack` — pulled out so a preset-group run can collect
+ * `SlackRunResult`s from each preset (via `buildSlackRunResults`) and post them all as
+ * one combined message instead of one per preset. Resolves the bot token (env → AWS
  * secret) and the channel (from the reference, else SLACK_CHANNEL_ID, else the
  * environments.json5 default). Any problem is logged and swallowed.
  */
-export async function postRunSummaryToSlack(options: PostRunSummaryOptions): Promise<void> {
+export async function postSlackRunResults(options: PostSlackRunResultsOptions): Promise<void> {
   try {
     loadDotenv();
     const token = await resolveSlackToken();
@@ -87,7 +109,7 @@ export async function postRunSummaryToSlack(options: PostRunSummaryOptions): Pro
 
     const { text, blocks } = renderSlackRunSummary({
       title: options.title,
-      results: options.results.map(toSlackResult),
+      results: options.results,
       passed: options.passed,
       ...(ghaRunUrl() ? { ghaRunUrl: ghaRunUrl() } : {}),
     });
@@ -100,10 +122,43 @@ export async function postRunSummaryToSlack(options: PostRunSummaryOptions): Pro
   }
 }
 
+/**
+ * Post the run summary as a threaded reply. Thin wrapper over `postSlackRunResults`
+ * for the common case of a single run's own `RunResultSummary[]`.
+ */
+export async function postRunSummaryToSlack(options: PostRunSummaryOptions): Promise<void> {
+  await postSlackRunResults({ ...options, results: buildSlackRunResults(options.results) });
+}
+
 if (isMain(import.meta.url)) {
   runCli(async () => {
-    const [thread] = process.argv.slice(2);
-    if (!thread) throw new Error("Usage: post-run-summary <permalink|channel:ts|ts>");
+    const args = process.argv.slice(2);
+    const group = args.includes("--group");
+    const [thread] = args.filter((a) => a !== "--group");
+    if (!thread) throw new Error("Usage: post-run-summary <permalink|channel:ts|ts> [--group]");
+    if (group) {
+      await postSlackRunResults({
+        slackThread: thread,
+        title: "op-multi-lite (demo group)",
+        passed: false,
+        results: [
+          { label: "aws1 / cbdino1 / java:main / func", sdk: "java:main", ok: true, testsRun: 412, failures: 0, errors: 0, skipped: 0, durationMs: 842000 },
+          {
+            label: "aws2 / cbdino2 / go:main / func",
+            sdk: "go:main",
+            ok: false,
+            testsRun: 200,
+            failures: 1,
+            errors: 0,
+            skipped: 0,
+            durationMs: 601000,
+            failingTests: [{ name: "TxnTest.timeout", detail: "context deadline exceeded" }],
+          },
+          { label: "op-crashed-preset", sdk: "op-crashed-preset", ok: false },
+        ],
+      });
+      return;
+    }
     await postRunSummaryToSlack({
       slackThread: thread,
       title: "demo-preset",

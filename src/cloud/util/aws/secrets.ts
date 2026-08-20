@@ -8,6 +8,7 @@
  * Run on its own:
  *   bun src/cloud/util/aws/secrets.ts <secret-id>
  *   bun src/cloud/util/aws/secrets.ts fit-cli/gerrit/ssh-key
+ *   bun src/cloud/util/aws/secrets.ts fit-cli/slack/token --reveal   # print full key/token/password fields
  */
 import { SecretsManagerClient, GetSecretValueCommand } from "@aws-sdk/client-secrets-manager";
 import { AWS_REGION } from "./aws-target.js";
@@ -57,9 +58,11 @@ export async function getJsonSecret(secretId: string): Promise<Record<string, st
 }
 
 if (isMain(import.meta.url)) {
-  const secretId = process.argv[2];
+  const args = process.argv.slice(2);
+  const reveal = args.includes("--reveal");
+  const [secretId] = args.filter((a) => a !== "--reveal");
   if (!secretId) {
-    console.error("Usage: bun src/cloud/util/aws/secrets.ts <secret-id>");
+    console.error("Usage: bun src/cloud/util/aws/secrets.ts <secret-id> [--reveal]");
     process.exit(2);
   }
   try {
@@ -68,9 +71,8 @@ if (isMain(import.meta.url)) {
     console.log(`\nSecret "${secretId}" (${keys.length} field(s)):\n`);
     for (const key of keys) {
       const val = secret[key];
-      const display = key.toLowerCase().includes("key") || key.toLowerCase().includes("token") || key.toLowerCase().includes("password")
-        ? `${val.slice(0, 8)}... (${val.length} chars)`
-        : val;
+      const isSensitive = key.toLowerCase().includes("key") || key.toLowerCase().includes("token") || key.toLowerCase().includes("password");
+      const display = isSensitive && !reveal ? `${val.slice(0, 8)}... (${val.length} chars)` : val;
       console.log(`  ${key}: ${display}`);
     }
   } catch (err) {

@@ -44,6 +44,8 @@ import { combineRunOutputs, type RunOutput } from "../../util/non-fit/artifacts.
 import { printVersion } from "../version/version.js";
 import { runScriptPrefix } from "../../util/non-fit/fit-cli-log.js";
 import { FIT_PERFORMER } from "../util/repos.js";
+import { postSlackRunResults } from "../slack/post-run-summary.js";
+import type { SlackRunResult } from "../slack/util/slack-results.js";
 
 /** Maps a `--repo-dir` key (a {@link Repo.name}) to the env var {@link resolveFitPerformerDir} reads it from. */
 const REPO_DIR_ENV_VARS: Record<string, string> = {
@@ -424,6 +426,10 @@ export async function runDispatch(argv: string[]): Promise<RunOutput | void> {
       process.exit(2);
     }
     const outputs: RunOutput[] = [];
+    // Collects every preset's Slack rows when running a group, so the whole group posts
+    // one combined message instead of one per preset (each still posts on its own for a
+    // single-preset run, below).
+    const groupSlackResults: SlackRunResult[] = [];
     for (const [index, type] of types.entries()) {
       if (types.length > 1) {
         console.log(`\n=== Running preset ${index + 1}/${types.length}: ${type} ===\n`);
@@ -452,11 +458,26 @@ export async function runDispatch(argv: string[]): Promise<RunOutput | void> {
         // the group down with it — one bad preset shouldn't cost the results of every
         // preset after it. Single-preset runs keep propagating straight to runCli's own
         // handler, which is the more useful behaviour there (full stack trace, exit 1).
+        const slackResultsBefore = groupSlackResults.length;
         try {
-          const output = await runFromDefinition(definitionPath, { ...runOpts, promptScope: type });
+          const output = await runFromDefinition(definitionPath, {
+            ...runOpts,
+            promptScope: type,
+            ...(runOpts.slackThread ? { deferSlackTo: groupSlackResults } : {}),
+          });
           if (output) outputs.push(output);
+          // Some failures (e.g. resuming with no saved state) return normally without
+          // ever reaching the Slack block inside runFromDefinition, so no rows get
+          // pushed — without this, such a preset would silently vanish from the
+          // combined message instead of showing up as a failure.
+          if (runOpts.slackThread && output?.worstFailure && groupSlackResults.length === slackResultsBefore) {
+            groupSlackResults.push({ label: type, sdk: type, ok: false });
+          }
         } catch (err) {
           console.error(`\nPreset ${type} crashed and did not produce a result; continuing with the remaining presets.\n${formatUncaughtError(err)}`);
+          if (runOpts.slackThread) {
+            groupSlackResults.push({ label: type, sdk: type, ok: false });
+          }
           outputs.push({
             artifacts: [],
             details: [],
@@ -472,6 +493,16 @@ export async function runDispatch(argv: string[]): Promise<RunOutput | void> {
         const output = await runFromDefinition(definitionPath, runOpts);
         if (output) outputs.push(output);
       }
+    }
+    if (types.length > 1 && runOpts.slackThread) {
+      await postSlackRunResults({
+        slackThread: runOpts.slackThread,
+        title: typeList,
+        results: groupSlackResults,
+        // Mirrors the single-run formula (tracker.worst === undefined && results.every(ok)):
+        // no preset recorded a run-failing failure, and every collected row passed.
+        passed: outputs.every((o) => !o.worstFailure) && groupSlackResults.every((r) => r.ok),
+      });
     }
     return combineRunOutputs(...outputs);
   }

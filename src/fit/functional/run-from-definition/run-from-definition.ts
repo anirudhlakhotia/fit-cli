@@ -58,7 +58,9 @@ import { confirm, select } from "../../../util/non-fit/prompts.js";
 import { DEFAULT_CAPELLA_ENV, resolveCapellaConfig, resolveFitPerformerDir, resolveGithubCredentials, resolveResultsDbCredentials, resolveRosaCredentials } from "../../util/config.js";
 import { ssmStartSessionCommand, terminateInstanceCommand } from "../../util/aws/lifecycle-warning.js";
 import { gcpDebugAccessCommand, gcpTerminateInstanceCommand } from "../../util/gcp/lifecycle-warning.js";
-import { postRunSummaryToSlack } from "../../slack/post-run-summary.js";
+import { maybeUploadRunArtifacts } from "../../util/aws/upload-run-artifacts.js";
+import { buildSlackRunResults, postSlackRunResults } from "../../slack/post-run-summary.js";
+import type { SlackRunResult } from "../../slack/util/slack-results.js";
 import { deleteVpcEndpointsForCluster } from "../../../cloud/util/aws/delete-vpc-endpoints.js";
 import { checkAwsCredentials, type AwsCredentials } from "../../../cloud/util/aws/identity.js";
 import {
@@ -1735,6 +1737,13 @@ export interface RunFromDefinitionOptions {
    * should abort over.
    */
   stopOnFailure?: boolean;
+  /**
+   * When set alongside slackThread, this call appends its SlackRunResult rows to this
+   * array instead of posting its own message. Lets a preset group (run.ts) collect
+   * every preset's rows and post one combined Slack message after the whole group
+   * finishes, instead of one message per preset.
+   */
+  deferSlackTo?: SlackRunResult[];
 }
 
 /** Run FIT functional tests as described by the definition file at `definitionPath`. */
@@ -1743,7 +1752,7 @@ export async function runFromDefinition(
   options: RunFromDefinitionOptions = {},
 ): Promise<RunOutput> {
   const tracker = new RunFailureTracker();
-  const { resumeAt, resumeSelector = {}, cbcollect = false, slackThread, promptScope, stopOnFailure = false } = options;
+  const { resumeAt, resumeSelector = {}, cbcollect = false, slackThread, promptScope, stopOnFailure = false, deferSlackTo } = options;
   const phases = phasesForResumePoint(resumeAt);
   const definition = loadDefinition(definitionPath);
   const resolved = resolveDefinition(definition);
@@ -2522,12 +2531,18 @@ export async function runFromDefinition(
   // Best-effort Slack summary into the supplied thread. Never throws (see the hard
   // rule in post-run-summary.ts) so it can't affect the run's outcome or exit code.
   if (slackThread) {
-    await postRunSummaryToSlack({
-      slackThread,
-      title: definition.description || basename(definitionPath),
-      results: runResults,
-      passed: tracker.worst === undefined && runResults.every((r) => r.ok),
-    });
+    const slackResults = buildSlackRunResults(runResults);
+    if (deferSlackTo) {
+      // Part of a preset group: let the caller post one combined message instead.
+      deferSlackTo.push(...slackResults);
+    } else {
+      await postSlackRunResults({
+        slackThread,
+        title: definition.description || basename(definitionPath),
+        results: slackResults,
+        passed: tracker.worst === undefined && runResults.every((r) => r.ok),
+      });
+    }
   }
   return finalizeRunFromDefinition(artifacts, details, runDir, tracker.worst, tracker.failureCount);
 }
