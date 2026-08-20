@@ -17,15 +17,17 @@ import { createReadStream, createWriteStream, existsSync, mkdirSync, statSync } 
 import { basename, dirname, resolve } from "node:path";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { GetObjectCommand } from "@aws-sdk/client-s3";
+import { GetObjectCommand, type S3Client } from "@aws-sdk/client-s3";
 import { ZipArchive } from "archiver";
 import { Upload } from "@aws-sdk/lib-storage";
 import { s3Client } from "../../cloud/util/aws/aws-clients.js";
 import { checkAwsCredentials } from "../../cloud/util/aws/identity.js";
+import { isTransientAwsFailure } from "../../cloud/util/aws/transient-failure.js";
 import { uploadDirectoryToS3 } from "../../cloud/util/aws/upload-directory.js";
 import { isMain, runCli } from "../../util/non-fit/cli.js";
-import { runScriptPrefix } from "../../util/non-fit/fit-cli-log.js";
+import { fitCliWarn, runScriptPrefix } from "../../util/non-fit/fit-cli-log.js";
 import { run } from "../../util/non-fit/proc.js";
+import { retryWhole } from "../../util/non-fit/retry.js";
 import { ARTIFACTS_BUCKET, ARTIFACTS_PREFIX } from "../util/aws/upload-run-artifacts.js";
 
 function helpText(): string {
@@ -70,11 +72,62 @@ export async function zipDirectory(sourceDir: string, outputPath: string): Promi
   });
 }
 
-/** Upload a single local file to an S3 URI (s3://bucket/key). */
+/**
+ * Multipart part size. The SDK default of 5 MB means ~300 uploads for a 1.5 GB
+ * situational run zip; 16 MB cuts that by three, so there are far fewer requests
+ * to lose a socket on. queueSize stays at its default of 4, so at most 64 MB is
+ * buffered in memory at once.
+ */
+const UPLOAD_PART_SIZE = 16 * 1024 * 1024;
+
+/**
+ * Concurrent part uploads on the first attempt (the SDK's own default, stated here
+ * because a retry deliberately differs from it — see uploadFileToS3).
+ */
+const UPLOAD_QUEUE_SIZE = 4;
+
+/**
+ * Backoff between whole-upload attempts, so three attempts at most. Longer than a
+ * blink on purpose: the one failure we have data for killed two attempts a minute
+ * apart, so a 5-second wait would have hit exactly the same weather.
+ */
+const UPLOAD_RETRY_DELAYS_MS = [10_000, 30_000];
+
+/**
+ * Ceiling on the whole upload including its retries. Expressed as a budget rather
+ * than an attempt count so it scales itself: a 90 MB archive uploads in seconds and
+ * gets every attempt, a 1.5 GB one takes ~a minute an attempt and gets fewer.
+ */
+const UPLOAD_BUDGET_MS = 5 * 60_000;
+
+/**
+ * Upload a single local file to an S3 URI (s3://bucket/key).
+ *
+ * `Upload` uses multipart under the hood and retries an individual part, avoiding
+ * the non-retryable streaming timeout that PutObjectCommand hits. What it can't
+ * survive is a socket dropped mid-transfer, which surfaces as "The socket
+ * connection was closed unexpectedly" and takes the whole transfer with it (seen
+ * on 1.4 GB run zips on GHA). Recovering means starting over with a fresh read
+ * stream, since a consumed one can't be replayed — hence the retry wrapping the
+ * whole `Upload` rather than living inside it.
+ *
+ * A retry is also a different attempt, not a repeat: by the time we get here the
+ * SDK has already retried the failing part and lost, so the second attempt sends
+ * one part at a time. If the cause is client-side connection handling, that's the
+ * thing most likely to get through; if it isn't, the logs say so.
+ *
+ * `onProgress` is reported per attempt, so a retry restarts it at zero — which is
+ * what's actually happening, the bytes from the dead attempt having gone nowhere.
+ *
+ * `client` defaults to the shared S3 client and exists to be pointed elsewhere —
+ * at a local endpoint that drops connections on purpose — when verifying that a
+ * retry really does re-read the file from the start.
+ */
 export async function uploadFileToS3(
   localPath: string,
   s3Uri: string,
   onProgress?: (transferred: number, total: number | undefined) => void,
+  client: S3Client = s3Client,
 ): Promise<void> {
   const match = s3Uri.match(/^s3:\/\/([^/]+)\/(.+)$/);
   if (!match) {
@@ -82,20 +135,36 @@ export async function uploadFileToS3(
   }
   const [, bucket, key] = match;
   const total = statSync(localPath).size;
-  // Upload uses multipart under the hood for large files and retries each part,
-  // avoiding the non-retryable streaming timeout that PutObjectCommand hits.
-  const upload = new Upload({
-    client: s3Client,
-    params: {
-      Bucket: bucket,
-      Key: key,
-      Body: createReadStream(localPath),
+  await retryWhole(
+    // The read stream is opened inside the attempt, not outside it: an attempt that
+    // fails part-way has consumed some of it, so a retry needs its own.
+    async (attempt) => {
+      const upload = new Upload({
+        client,
+        params: {
+          Bucket: bucket,
+          Key: key,
+          Body: createReadStream(localPath),
+        },
+        partSize: UPLOAD_PART_SIZE,
+        queueSize: attempt === 1 ? UPLOAD_QUEUE_SIZE : 1,
+      });
+      upload.on("httpUploadProgress", (progress) => {
+        onProgress?.(progress.loaded ?? 0, progress.total ?? total);
+      });
+      await upload.done();
     },
-  });
-  upload.on("httpUploadProgress", (progress) => {
-    onProgress?.(progress.loaded ?? 0, progress.total ?? total);
-  });
-  await upload.done();
+    {
+      delaysMs: UPLOAD_RETRY_DELAYS_MS,
+      totalBudgetMs: UPLOAD_BUDGET_MS,
+      shouldRetry: isTransientAwsFailure,
+      onRetry: (err, waitMs, nextAttempt) =>
+        fitCliWarn(
+          `Upload of ${basename(localPath)} failed (${err.message}), retrying from the start in ` +
+            `${waitMs / 1000}s (attempt ${nextAttempt} of ${UPLOAD_RETRY_DELAYS_MS.length + 1}, one part at a time)...`,
+        ),
+    },
+  );
 }
 
 /**

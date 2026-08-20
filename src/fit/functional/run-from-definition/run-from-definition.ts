@@ -58,7 +58,6 @@ import { confirm, select } from "../../../util/non-fit/prompts.js";
 import { DEFAULT_CAPELLA_ENV, resolveCapellaConfig, resolveFitPerformerDir, resolveGithubCredentials, resolveResultsDbCredentials, resolveRosaCredentials } from "../../util/config.js";
 import { ssmStartSessionCommand, terminateInstanceCommand } from "../../util/aws/lifecycle-warning.js";
 import { gcpDebugAccessCommand, gcpTerminateInstanceCommand } from "../../util/gcp/lifecycle-warning.js";
-import { maybeUploadRunArtifacts } from "../../util/aws/upload-run-artifacts.js";
 import { postRunSummaryToSlack } from "../../slack/post-run-summary.js";
 import { deleteVpcEndpointsForCluster } from "../../../cloud/util/aws/delete-vpc-endpoints.js";
 import { checkAwsCredentials, type AwsCredentials } from "../../../cloud/util/aws/identity.js";
@@ -2519,9 +2518,6 @@ export async function runFromDefinition(
     if (leftUp) {
       details.push(...instanceDetails);
     }
-    // Best-effort: ship the run's artifacts to S3 after teardown (so anything
-    // teardown writes is included). Runs only inside GitHub Actions; never throws.
-    await maybeUploadRunArtifacts(runDir);
   }
   // Best-effort Slack summary into the supplied thread. Never throws (see the hard
   // rule in post-run-summary.ts) so it can't affect the run's outcome or exit code.
