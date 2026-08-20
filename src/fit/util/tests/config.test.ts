@@ -200,6 +200,7 @@ test("resolveGithubToken falls back to AWS secret when no local config or env", 
 const STUB_DEFAULTS = {
   clusterVersion: "8.0-stable",
   previousClusterVersion: "7.6-stable",
+  nextClusterVersion: "8.5-stable",
   cngClusterVersion: "8.0.2-5503",
   enterpriseAnalyticsVersion: "2.2.0-1166",
   caoOperatorVersion: "2.9.2",

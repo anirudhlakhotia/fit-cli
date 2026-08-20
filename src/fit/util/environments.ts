@@ -89,6 +89,8 @@ export interface Defaults {
   clusterVersion: string;
   /** The previous server release line, for presets spanning two release lines. */
   previousClusterVersion: string;
+  /** The upcoming server release line, not yet used by any preset. */
+  nextClusterVersion: string;
   /** Default Couchbase Server version for CNG/OpenShift (cb-rhcc registry). */
   cngClusterVersion: string;
   /** Default self-managed Enterprise Analytics build. */

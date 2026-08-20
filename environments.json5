@@ -37,6 +37,11 @@
     // latest and the previous line before sign-off).
     previousClusterVersion: "7.6-stable",
 
+    // The upcoming server release line, once it exists on cb-alias but before it
+    // becomes clusterVersion. Not yet used by any preset — reserved for when a
+    // release preset is added that also tests against the next line ahead of GA.
+    nextClusterVersion: "8.5-stable",
+
     // CNG generally uses OpenShift which uses server builds from cb-rhcc (rather than
     // cb-vanilla). The same builds _should_ be available on both, but see:
     // https://couchbase.slack.com/archives/C04DB7P157T/p1781783413258219
