@@ -26,6 +26,7 @@
                   tests: {
                     presets: ['{{environments.testSets.FUNCTIONAL_SET_RELEASE}}'],
                     addToDefaultExcludedGroups: ['protostellarWillWorkLater'],
+                    reincludeDefaultExcludedGroups: ['slow'],
                   },
                 },
               ],

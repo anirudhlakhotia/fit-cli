@@ -163,7 +163,7 @@ test("runTestDriverArgs omits -Dtest when all tests are selected", () => {
     "-Dmaven.test.failure.ignore=true",
     "-Dsurefire.failIfNoSpecifiedTests=false",
     "test",
-    "-DexcludedGroups=situational,openshift,syncgateway",
+    "-DexcludedGroups=situational,openshift,syncgateway,slow",
   ]);
 });
 
@@ -185,7 +185,7 @@ test("runTestDriverArgs adds the selected tests to -Dtest", () => {
     "-Dsurefire.failIfNoSpecifiedTests=false",
     "-Dtest=com.couchbase.transactions.StandardTest,com.couchbase.transactions.MultipleBucketsTest",
     "test",
-    "-DexcludedGroups=situational,openshift,syncgateway",
+    "-DexcludedGroups=situational,openshift,syncgateway,slow",
   ]);
 });
 
@@ -206,7 +206,7 @@ test("runTestDriverArgs adds the generated FIT config path", () => {
     "-Dsurefire.failIfNoSpecifiedTests=false",
     "-Dfit.config=/tmp/fit-cli/run-123/FITConfiguration.json",
     "test",
-    "-DexcludedGroups=situational,openshift,syncgateway",
+    "-DexcludedGroups=situational,openshift,syncgateway,slow",
   ]);
 });
 

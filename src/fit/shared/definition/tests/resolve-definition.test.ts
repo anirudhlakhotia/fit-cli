@@ -239,8 +239,21 @@ test("omitting excludedGroups keeps the default Maven args", () => {
 
 test("addToDefaultExcludedGroups appends to the default functional exclusions", () => {
   assert.deepEqual(resolveMavenArgs({ addToDefaultExcludedGroups: ["protostellarWillWorkLater"] }), [
-    "-DexcludedGroups=situational,openshift,syncgateway,protostellarWillWorkLater",
+    "-DexcludedGroups=situational,openshift,syncgateway,slow,protostellarWillWorkLater",
   ]);
+});
+
+test("reincludeDefaultExcludedGroups removes groups from the default functional exclusions", () => {
+  assert.deepEqual(resolveMavenArgs({ reincludeDefaultExcludedGroups: ["slow"] }), [
+    "-DexcludedGroups=situational,openshift,syncgateway",
+  ]);
+});
+
+test("reincludeDefaultExcludedGroups composes with addToDefaultExcludedGroups", () => {
+  assert.deepEqual(
+    resolveMavenArgs({ reincludeDefaultExcludedGroups: ["slow"], addToDefaultExcludedGroups: ["protostellarWillWorkLater"] }),
+    ["-DexcludedGroups=situational,openshift,syncgateway,protostellarWillWorkLater"],
+  );
 });
 
 test("addToDefaultExcludedGroups appends to the default situational exclusions", () => {

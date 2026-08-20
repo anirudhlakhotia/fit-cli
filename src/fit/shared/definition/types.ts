@@ -210,9 +210,16 @@ export interface TestsSection {
   /**
    * Adds these groups on top of the built-in defaults (the common case when a
    * preset just needs one extra exclusion). Mutually exclusive with
-   * `excludedGroups`.
+   * `excludedGroups`. Composes with `reincludeDefaultExcludedGroups`.
    */
   addToDefaultExcludedGroups?: string[];
+  /**
+   * Removes these groups from the built-in default exclusions (e.g. a release
+   * preset opting back into `slow` tests that every other tier skips).
+   * Mutually exclusive with `excludedGroups`. Composes with
+   * `addToDefaultExcludedGroups`.
+   */
+  reincludeDefaultExcludedGroups?: string[];
   maven?: MavenOptions;
 }
 

@@ -87,6 +87,30 @@ test("rejects setting both excludedGroups and addToDefaultExcludedGroups", () =>
   );
 });
 
+test("parses reincludeDefaultExcludedGroups on a functional run", () => {
+  const def = parseDefinition(
+    FUNCTIONAL.replace("presets: [all]", "presets: [all]\n                  reincludeDefaultExcludedGroups: [slow]"),
+  );
+  assert.deepEqual(
+    def.instances[0]?.clusters[0]?.sessions[0]?.runs[0] &&
+      "tests" in def.instances[0].clusters[0].sessions[0].runs[0]
+      ? def.instances[0].clusters[0].sessions[0].runs[0].tests.reincludeDefaultExcludedGroups
+      : undefined,
+    ["slow"],
+  );
+});
+
+test("rejects setting both excludedGroups and reincludeDefaultExcludedGroups", () => {
+  const def = FUNCTIONAL.replace(
+    "presets: [all]",
+    "presets: [all]\n                  excludedGroups: [openshift]\n                  reincludeDefaultExcludedGroups: [slow]",
+  );
+  assert.throws(
+    () => parseDefinition(def),
+    (err: unknown) => err instanceof InvalidDefinitionError && /mutually exclusive/.test(err.message),
+  );
+});
+
 test("accepts the Python performer image", () => {
   const def = FUNCTIONAL.replace("image: java-fit-performer:main", "image: python-fit-performer:main");
   assert.equal(parseDefinition(def).instances[0]?.clusters[0]?.sessions[0]?.performer.image, "python-fit-performer:main");

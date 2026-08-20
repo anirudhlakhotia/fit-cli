@@ -26,6 +26,7 @@
                   type: 'functional',
                   tests: {
                     presets: ['{{environments.testSets.FUNCTIONAL_SET_RELEASE}}'],
+                    reincludeDefaultExcludedGroups: ['slow'],
                   },
                 },
               ],

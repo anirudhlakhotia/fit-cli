@@ -320,16 +320,20 @@ function resolveMavenSuffix(tests: TestsSection): string[] {
 
 /**
  * The final excluded-groups list for a run, or undefined to keep the built-in
- * default args. `excludedGroups` replaces the defaults outright;
- * `addToDefaultExcludedGroups` appends to them (the common case — a preset just
- * needs one extra exclusion on top of the defaults). The two are mutually
- * exclusive (enforced at parse time).
+ * default args. `excludedGroups` replaces the defaults outright (mutually
+ * exclusive with the other two, enforced at parse time). `addToDefaultExcludedGroups`
+ * appends to the defaults and `reincludeDefaultExcludedGroups` removes from them (e.g. a release
+ * preset opting back into `slow` tests); the two compose freely.
  */
 function resolveExcludedGroups(tests: TestsSection, defaults: readonly string[]): string[] | undefined {
-  if (tests.addToDefaultExcludedGroups !== undefined) {
-    return [...defaults, ...tests.addToDefaultExcludedGroups];
+  if (tests.excludedGroups !== undefined) {
+    return tests.excludedGroups;
   }
-  return tests.excludedGroups;
+  if (tests.addToDefaultExcludedGroups === undefined && tests.reincludeDefaultExcludedGroups === undefined) {
+    return undefined;
+  }
+  const reincluded = new Set(tests.reincludeDefaultExcludedGroups ?? []);
+  return [...defaults.filter((group) => !reincluded.has(group)), ...(tests.addToDefaultExcludedGroups ?? [])];
 }
 
 export function resolveMavenArgs(tests: TestsSection): string[] {

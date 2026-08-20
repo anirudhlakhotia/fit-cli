@@ -22,6 +22,7 @@
                   type: 'functional',
                   tests: {
                     presets: ['{{environments.testSets.FUNCTIONAL_SET_RELEASE}}'],
+                    reincludeDefaultExcludedGroups: ['slow'],
                   },
                 },
               ],
@@ -47,6 +48,32 @@
                   type: 'functional',
                   tests: {
                     presets: ['{{environments.testSets.FUNCTIONAL_SET_RELEASE}}'],
+                    reincludeDefaultExcludedGroups: ['slow'],
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+    {
+      // Functional on-prem testing, next (pre-GA) release line.
+      aws: {},
+      clusters: [
+        {
+          clusterConfig: 'next',
+          sessions: [
+            {
+              performer: {
+                image: '{{PERFORMER_IMAGE}}',
+              },
+              runs: [
+                {
+                  type: 'functional',
+                  tests: {
+                    presets: ['{{environments.testSets.FUNCTIONAL_SET_RELEASE}}'],
+                    reincludeDefaultExcludedGroups: ['slow'],
                   },
                 },
               ],
@@ -84,6 +111,25 @@
             {
               count: 3,
               version: '{{environments.defaults.previousClusterVersion}}',
+              services: ['kv', 'n1ql', 'index', 'fts'],
+            },
+          ],
+          docker: {
+            'kv-memory': 4096,
+            'fts-memory': 4096,
+          },
+        },
+        onClusterExists: 'useExisting',
+      },
+    },
+    {
+      id: 'next',
+      cbdinocluster: {
+        config: {
+          nodes: [
+            {
+              count: 3,
+              version: '{{environments.defaults.nextClusterVersion}}',
               services: ['kv', 'n1ql', 'index', 'fts'],
             },
           ],

@@ -435,7 +435,7 @@ function validateMaven(value: unknown, path: string): MavenOptions {
 
 function validateTestsSection(value: unknown, path: string): TestsSection {
   const record = requireRecord(value, path);
-  rejectUnknown(record, ["presets", "packages", "classes", "excludedGroups", "addToDefaultExcludedGroups", "maven", "run"], path);
+  rejectUnknown(record, ["presets", "packages", "classes", "excludedGroups", "addToDefaultExcludedGroups", "reincludeDefaultExcludedGroups", "maven", "run"], path);
   if (record.run !== undefined) {
     throw new InvalidDefinitionError(
       `"${path}.run" is no longer supported; use "${path}.presets" (a list of ${TEST_PRESETS.join("/")}) and/or "${path}.classes" (a list of test class names).`,
@@ -475,6 +475,15 @@ function validateTestsSection(value: unknown, path: string): TestsSection {
       throw new InvalidDefinitionError(`"${path}.excludedGroups" and "${path}.addToDefaultExcludedGroups" are mutually exclusive; set only one.`);
     }
     tests.addToDefaultExcludedGroups = record.addToDefaultExcludedGroups;
+  }
+  if (record.reincludeDefaultExcludedGroups !== undefined) {
+    if (!isStringArray(record.reincludeDefaultExcludedGroups)) {
+      throw new InvalidDefinitionError(`"${path}.reincludeDefaultExcludedGroups" must be a list of strings when present; got ${JSON.stringify(record.reincludeDefaultExcludedGroups)}`);
+    }
+    if (record.excludedGroups !== undefined) {
+      throw new InvalidDefinitionError(`"${path}.excludedGroups" and "${path}.reincludeDefaultExcludedGroups" are mutually exclusive; set only one.`);
+    }
+    tests.reincludeDefaultExcludedGroups = record.reincludeDefaultExcludedGroups;
   }
   if (record.maven !== undefined) {
     tests.maven = validateMaven(record.maven, `${path}.maven`);

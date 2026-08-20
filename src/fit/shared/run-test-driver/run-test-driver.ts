@@ -30,8 +30,13 @@ export const DEFAULT_TEST_DRIVER_MODULE = "test-driver";
  */
 export const ANALYTICS_TEST_DRIVER_MODULE = "columnar-test-driver";
 
-/** The Maven groups excluded by default on a functional run. */
-export const DEFAULT_EXCLUDED_GROUPS = ["situational", "openshift", "syncgateway"] as const;
+/**
+ * The Maven groups excluded by default on a functional run. `slow` covers
+ * expensive, long-running tests (e.g. TenThousandCollectionsTest) meant to run
+ * at release time only — release presets (e.g. op-onprem-func-release.json5)
+ * opt back in via an explicit `excludedGroups` override.
+ */
+export const DEFAULT_EXCLUDED_GROUPS = ["situational", "openshift", "syncgateway", "slow"] as const;
 
 export const DEFAULT_MAVEN_TEST_ARGS = [
   `-DexcludedGroups=${DEFAULT_EXCLUDED_GROUPS.join(",")}`,
